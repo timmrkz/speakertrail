@@ -1,0 +1,34 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+X-WR-TIMEZONE:Europe/Berlin
+BEGIN:VEVENT
+UID:1@example
+SUMMARY:Gründer Abend Münster
+DTSTART;TZID=Europe/Berlin:20261014T190000
+DTEND;TZID=Europe/Berlin:20261014T213000
+LOCATION:REACH Start-up Center\, Geiststraße 24\, 48151 Münster
+URL:https://example.org/gruender-abend
+DESCRIPTION:Zwei Gründer erzählen.\nSpeaker: Felix Ausgedacht (Solar Beispiel) und 
+ Hanna Probe
+ORGANIZER;CN=münster gründet:mailto:info@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:2@example
+SUMMARY:Webinar Businessplan
+DTSTART:20261015T160000Z
+LOCATION:https://zoom.example/j/1
+END:VEVENT
+BEGIN:VEVENT
+UID:3@example
+SUMMARY:Gründungstage
+DTSTART;VALUE=DATE:20261109
+DTEND;VALUE=DATE:20261112
+LOCATION:Münster
+END:VEVENT
+BEGIN:VEVENT
+UID:4@example
+SUMMARY:Abgesagt
+DTSTART:20261016T160000Z
+STATUS:CANCELLED
+END:VEVENT
+END:VCALENDAR

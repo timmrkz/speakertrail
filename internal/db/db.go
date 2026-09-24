@@ -30,12 +30,12 @@ func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// Migrate applies all pending migrations.
+// Migrate applies all pending migrations. It logs each one at debug level.
 func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	return withProvider(pool, func(p *goose.Provider) error {
 		results, err := p.Up(ctx)
 		for _, r := range results {
-			slog.Info("migration applied", "version", r.Source.Version, "file", r.Source.Path, "duration", r.Duration)
+			slog.Debug("migration applied", "version", r.Source.Version, "file", r.Source.Path, "duration", r.Duration)
 		}
 		return err
 	})

@@ -32,6 +32,9 @@ import (
 	"github.com/timmrkz/speakertrail/web"
 )
 
+// version is set at build time to the commit.
+var version = "dev"
+
 const usage = `Usage: speakertrail <command> [flags]
 
 Commands:
@@ -66,6 +69,9 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("no command given")
 	}
 	cfg := config.FromEnv()
+	if args[0] == "serve" || args[0] == "nightly" || args[0] == "worker" {
+		slog.Info("speakertrail starting", "command", args[0], "version", version)
+	}
 	switch args[0] {
 	case "serve":
 		return runServe(ctx, cfg, args[1:])

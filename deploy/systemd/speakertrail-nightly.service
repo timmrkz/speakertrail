@@ -1,0 +1,12 @@
+# Plan B on a plain Linux server: the nightly crawl through docker compose.
+# Copy both files to /etc/systemd/system, adjust WorkingDirectory, then run
+# systemctl enable --now speakertrail-nightly.timer
+[Unit]
+Description=Speaker Trail nightly crawl
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/speakertrail
+ExecStart=/usr/bin/docker compose run --rm nightly

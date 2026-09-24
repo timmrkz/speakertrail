@@ -94,7 +94,9 @@ func (b *Browser) start(userAgent string) error {
 			chromedp.Flag("mute-audio", true),
 			chromedp.Flag("disable-dev-shm-usage", true),
 		)
-		if os.Geteuid() == 0 {
+		// Chromium's own sandbox needs privileges containers rarely have. The
+		// container is the sandbox there, so the image sets CHROME_NO_SANDBOX.
+		if os.Geteuid() == 0 || os.Getenv("CHROME_NO_SANDBOX") != "" {
 			flags = append(flags, chromedp.NoSandbox)
 		}
 		allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), flags...)

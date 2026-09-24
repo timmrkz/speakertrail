@@ -1,0 +1,7 @@
+.git
+.github
+.claude
+web/node_modules
+web/dist
+**/*.test
+docs

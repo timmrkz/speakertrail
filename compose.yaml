@@ -1,0 +1,16 @@
+# Local development database. The serve and worker services join once the
+# Dockerfiles exist.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: speakertrail
+      POSTGRES_PASSWORD: speakertrail
+      POSTGRES_DB: speakertrail
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+
+volumes:
+  postgres:

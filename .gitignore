@@ -1,0 +1,4 @@
+/speakertrail
+*.test
+*.out
+.env

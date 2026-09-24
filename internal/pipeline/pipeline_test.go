@@ -314,6 +314,15 @@ func TestEnqueueDue(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'check_source'"); c != 12 {
 		t.Errorf("%d check jobs after queueing twice", c)
 	}
+
+	// The next run replaces checks the last one left behind.
+	next, _ := e.p.StartRun(ctx, "nightly")
+	if _, err := e.p.EnqueueDue(ctx, next); err != nil {
+		t.Fatal(err)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND status = 'queued' AND key LIKE $1", fmt.Sprintf("run:%d:%%", run)); c != 0 {
+		t.Errorf("%d checks of the old run are still queued", c)
+	}
 }
 
 func TestSeeds(t *testing.T) {

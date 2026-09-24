@@ -38,6 +38,13 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		return 0, err
 	}
 	now := p.now()
+	// Checks left over from an earlier run are replaced by this one.
+	if _, err := p.Pool.Exec(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = 'replaced by run ' || $1, locked_until = NULL, updated_at = $2
+		WHERE kind = $3 AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
+		fmt.Sprint(runID), now, KindCheckSource); err != nil {
+		return 0, err
+	}
 	rows, err := p.Pool.Query(ctx, `
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status IN ('active', 'probation', 'retired')
@@ -113,7 +120,7 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 		return err
 	}
 	p.log().Info("nightly run started", "run", runID, "sources", n)
-	werr := w.RunUntilIdle(ctx)
+	werr := p.workWithRetries(ctx, w, runID)
 	// Record the end even when the context was cancelled.
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
@@ -122,6 +129,38 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 	}
 	p.log().Info("nightly run finished", "run", runID)
 	return werr
+}
+
+// retryWait is how long a run waits for retries of its own checks. It
+// covers the 1 and 10 minute backoffs, not the hourly ones.
+const retryWait = 11 * time.Minute
+
+// workWithRetries works until idle, then waits for this run's checks that
+// retry soon, so a short outage of a site does not cost it a night.
+func (p *Pipeline) workWithRetries(ctx context.Context, w Worker, runID int64) error {
+	for {
+		if err := w.RunUntilIdle(ctx); err != nil {
+			return err
+		}
+		var next *time.Time
+		err := p.Pool.QueryRow(ctx, `
+			SELECT min(run_after) FROM jobs
+			WHERE status = 'queued' AND key LIKE 'run:' || $1 || ':%' AND run_after <= $2`,
+			fmt.Sprint(runID), p.now().Add(retryWait)).Scan(&next)
+		if err != nil {
+			return err
+		}
+		if next == nil {
+			return nil
+		}
+		wait := time.Until(*next) + time.Second
+		p.log().Info("waiting for retries", "run", runID, "wait", wait.Round(time.Second))
+		select {
+		case <-time.After(max(wait, 0)):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // EnqueueSeed queues the processing of one seed.

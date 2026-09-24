@@ -93,6 +93,9 @@ func (b *Browser) start(userAgent string) error {
 			chromedp.Flag("hide-scrollbars", true),
 			chromedp.Flag("mute-audio", true),
 			chromedp.Flag("disable-dev-shm-usage", true),
+			// A cold start on a busy machine can take longer than the
+			// default 20 seconds.
+			chromedp.WSURLReadTimeout(60*time.Second),
 		)
 		// Chromium's own sandbox needs privileges containers rarely have. The
 		// container is the sandbox there, so the image sets CHROME_NO_SANDBOX.

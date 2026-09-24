@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   web:
+    if: hashFiles('web/package.json') != ''
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -59,6 +60,7 @@ jobs:
         run: go test -race -count=1 ./...
 
   image:
+    if: hashFiles('web/package.json') != ''
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5

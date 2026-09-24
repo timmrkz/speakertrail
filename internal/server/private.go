@@ -46,9 +46,9 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 					'manual', count(*) FILTER (WHERE status = 'manual')) FROM sources)),
 			'last_7_days', json_build_object(
 				'people', (SELECT count(*) FROM people WHERE created_at >= $3),
-				'events', (SELECT count(*) FROM events WHERE created_at >= $3),
+				'events', (SELECT count(*) FROM events WHERE created_at >= $3 AND fit = 'kept'),
 				'organisations', (SELECT count(*) FROM organisations WHERE created_at >= $3),
-				'sources', (SELECT count(*) FROM sources WHERE created_at >= $3)),
+				'sources', (SELECT count(*) FROM sources WHERE created_at >= $3 AND status IN ('active', 'probation', 'candidate'))),
 			'weekly', (SELECT json_agg(json_build_object(
 				'week_start', to_char(week, 'YYYY-MM-DD'),
 				'people', (SELECT count(*) FROM people WHERE date_trunc('week', created_at AT TIME ZONE 'Europe/Berlin') = week),

@@ -143,6 +143,9 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		if err := p.recordCheck(ctx, src, runID, rec); err != nil {
 			return err
 		}
+		if _, err := p.Pool.Exec(ctx, `UPDATE sources SET last_checked_at = $2 WHERE id = $1`, src.ID, start); err != nil {
+			return err
+		}
 		if blocked(fetchErr, page) {
 			return p.makeManual(ctx, src, fetchErr)
 		}

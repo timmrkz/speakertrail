@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 )
 
 //go:embed migrations/*.sql
@@ -19,7 +20,13 @@ var migrations embed.FS
 
 // Open connects to the database and checks that it answers.
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, url)
+	cfg, err := pgxpool.ParseConfig(url)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	// Times leave the database in UTC, as the API promises.
+	cfg.ConnConfig.RuntimeParams["timezone"] = "UTC"
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -67,7 +74,13 @@ func newProvider(conn *sql.DB) (*goose.Provider, error) {
 	if err != nil {
 		return nil, err
 	}
-	p, err := goose.NewProvider(goose.DialectPostgres, conn, sub)
+	// A session lock lets serve and the nightly job start at the same time
+	// without migrating twice.
+	locker, err := lock.NewPostgresSessionLocker()
+	if err != nil {
+		return nil, err
+	}
+	p, err := goose.NewProvider(goose.DialectPostgres, conn, sub, goose.WithSessionLocker(locker))
 	if err != nil {
 		return nil, fmt.Errorf("migrations: %w", err)
 	}

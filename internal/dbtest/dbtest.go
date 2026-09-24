@@ -60,7 +60,7 @@ func NewEmpty(t testing.TB) *pgxpool.Pool {
 		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
 	}
 	u.Path = "/" + name
-	pool, err := pgxpool.New(ctx, u.String())
+	pool, err := db.Open(ctx, u.String())
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}

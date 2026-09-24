@@ -139,7 +139,7 @@ func (p *Pipeline) discover(ctx context.Context, src Source, links []string) (in
 			INSERT INTO sources (name, kind, url, status, discovered_from_source_id, discovered_note)
 			VALUES ($1, $2, $3, 'candidate', $4, $5)
 			ON CONFLICT (url) WHERE url IS NOT NULL DO NOTHING`,
-			nameFromURL(cal), SourceKindFor(cal), cal, src.ID, "Linked from "+src.Name)
+			NameFromURL(cal), SourceKindFor(cal), cal, src.ID, "Linked from "+src.Name)
 		if err != nil {
 			return added, err
 		}
@@ -148,7 +148,7 @@ func (p *Pipeline) discover(ctx context.Context, src Source, links []string) (in
 	return added, nil
 }
 
-func nameFromURL(raw string) string {
+func NameFromURL(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw

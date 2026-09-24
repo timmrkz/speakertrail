@@ -189,7 +189,7 @@ func (p *Pipeline) seedToSource(ctx context.Context, seedID int64, input string)
 	err = p.Pool.QueryRow(ctx, `
 		INSERT INTO sources (name, kind, url, status, discovered_from_seed_id, discovered_note)
 		VALUES ($1, $2, $3, 'candidate', $4, 'Pasted by Tim') RETURNING id`,
-		nameFromURL(cal), SourceKindFor(cal), cal, seedID).Scan(&id)
+		NameFromURL(cal), SourceKindFor(cal), cal, seedID).Scan(&id)
 	if err != nil {
 		return "", false, err
 	}

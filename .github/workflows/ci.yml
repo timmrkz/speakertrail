@@ -17,18 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
-        if: hashFiles('web/package.json') != ''
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - if: hashFiles('web/package.json') != ''
-        run: npm ci
       - name: Check
-        if: hashFiles('web/package.json') != ''
-        run: npm run check
+        working-directory: .
+        run: make interface
       - name: Build
-        if: hashFiles('web/package.json') != ''
         run: npm run build
 
   go:
@@ -63,18 +59,16 @@ jobs:
         run: go vet ./...
       # The runner has Google Chrome, which the browser tests use.
       - name: Test
-        run: go test -race -count=1 ./...
+        run: make unit
 
   image:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - name: Build the image
-        if: hashFiles('web/package.json') != ''
         run: docker build --platform linux/amd64 -t speakertrail:ci .
       # The image must start and find its browser, without any cloud.
       - name: Smoke test
-        if: hashFiles('web/package.json') != ''
         run: |
           docker run --rm speakertrail:ci help
           docker run --rm --entrypoint /headless-shell/headless-shell speakertrail:ci --version || true

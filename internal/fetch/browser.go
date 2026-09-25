@@ -49,7 +49,12 @@ func FindChromium() string {
 			return p
 		}
 	}
-	for _, p := range []string{"/headless-shell/headless-shell", "/opt/pw-browsers/chromium"} {
+	for _, p := range []string{
+		"/headless-shell/headless-shell",
+		"/opt/pw-browsers/chromium",
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+	} {
 		if _, err := os.Stat(p); err == nil {
 			return p
 		}

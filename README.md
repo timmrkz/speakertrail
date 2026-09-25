@@ -39,37 +39,23 @@ The source list, the fit rules and every number live in the Settings screen.
 | `internal/db` | Migrations |
 | `web` | The interface, Svelte 5 with TypeScript |
 | `deploy` | Scaleway and plan B |
+| `docs` | the API, building, and working with Claude |
 
 ## Running it locally
 
-You need Go 1.27, Node 22 and Docker.
+On a Mac with Homebrew:
 
 ```sh
-docker compose up -d postgres
-export DATABASE_URL="postgres://speakertrail:speakertrail@localhost:5432/speakertrail?sslmode=disable"
-export UI_PASSWORD_HASH="$(go run ./cmd/speakertrail hash-password)"
-export SESSION_SECRET="$(openssl rand -hex 32)"
-
-(cd web && npm ci && npm run build)
-go run ./cmd/speakertrail import
-go run ./cmd/speakertrail serve
+make run
 ```
 
-Open http://localhost:8080 and log in. To crawl once, run `go run ./cmd/speakertrail nightly`. It uses Chromium when it finds one, or the one named in `CHROME_PATH`.
+It installs what is missing, builds the app, starts a local database, loads
+the starting sources and opens the app on http://localhost:8080. The first
+time it prints a password for this machine, which stays in `.env`. `make
+help` lists everything else, and [docs/BUILD.md](docs/BUILD.md) explains it.
 
-To work on the interface with live reload, run `npm run dev` in `web/` next to `serve`. `MOCK=1 npm run dev` runs it with example data and no backend.
-
-The whole system also runs in Docker: `docker compose up -d postgres web`, and `docker compose run --rm nightly` for a crawl.
-
-## Tests
-
-```sh
-export TEST_DATABASE_URL="$DATABASE_URL"
-go test ./...
-(cd web && npm run check)
-```
-
-Each database test gets its own throwaway database. Without `TEST_DATABASE_URL` those tests are skipped locally and fail in CI. Tests never touch a live website. The pages in `internal/extract/testdata` are synthetic, with invented people. One test runs the real browser through a recording proxy to prove it never reaches LinkedIn or Instagram.
+`make crawl` checks every due source once, like the nightly job, and `make
+test` runs all tests.
 
 ## Environment variables
 

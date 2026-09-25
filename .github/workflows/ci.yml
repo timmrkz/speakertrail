@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Check
+        working-directory: .
+        run: make interface
+      - name: Build
+        run: npm run build
+
+  go:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: speakertrail
+          POSTGRES_PASSWORD: speakertrail
+          POSTGRES_DB: speakertrail
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U speakertrail"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://speakertrail:speakertrail@localhost:5432/speakertrail?sslmode=disable
+      # Ubuntu 24.04 blocks the user namespaces Chrome's sandbox needs. The
+      # runner is a throwaway machine, like the container in production.
+      CHROME_NO_SANDBOX: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Vet
+        run: go vet ./...
+      # The runner has Google Chrome, which the browser tests use.
+      - name: Test
+        run: make unit
+
+  # What make test runs on a laptop: the toolbox from compose.yaml, with its
+  # own database and Chromium.
+  toolbox:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test in the toolbox
+        run: docker compose run --rm --build dev make test
+      - name: Stop
+        if: always()
+        run: docker compose --profile '*' down --volumes
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the image
+        run: docker build --platform linux/amd64 -t speakertrail:ci .
+      # The image must start and find its browser, without any cloud.
+      - name: Smoke test
+        run: |
+          docker run --rm speakertrail:ci help
+          docker run --rm --entrypoint /headless-shell/headless-shell speakertrail:ci --version || true
+          docker run --rm -e DATABASE_URL=postgres://nobody@127.0.0.1:1/x speakertrail:ci migrate && exit 1 || echo "fails without a database, as it should"

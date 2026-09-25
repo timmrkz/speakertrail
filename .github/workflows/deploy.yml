@@ -1,0 +1,78 @@
+name: Deploy
+
+# Deploys every commit on main once CI has passed. Until the Scaleway
+# secrets are set, it only says what is missing.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  scaleway:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    env:
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+      SCW_DEFAULT_ORGANIZATION_ID: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+      SCW_DEFAULT_REGION: fr-par
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      UI_PASSWORD_HASH: ${{ secrets.UI_PASSWORD_HASH }}
+      SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+    steps:
+      - name: Check the secrets
+        id: secrets
+        run: |
+          missing=""
+          for name in SCW_ACCESS_KEY SCW_SECRET_KEY SCW_DEFAULT_PROJECT_ID SCW_DEFAULT_ORGANIZATION_ID DATABASE_URL UI_PASSWORD_HASH SESSION_SECRET; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "Not deployed. Missing repository secrets:$missing. See deploy/scaleway/README.md." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: scaleway/action-scw@v0
+        if: steps.secrets.outputs.ready == 'true'
+        with:
+          save-config: true
+          export-config: true
+          access-key: ${{ secrets.SCW_ACCESS_KEY }}
+          secret-key: ${{ secrets.SCW_SECRET_KEY }}
+          default-project-id: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+          default-organization-id: ${{ secrets.SCW_DEFAULT_ORGANIZATION_ID }}
+
+      - name: Build and push the image
+        if: steps.secrets.outputs.ready == 'true'
+        id: image
+        run: |
+          registry=$(deploy/scaleway/registry.sh)
+          sha=$(git rev-parse --short=12 HEAD)
+          image="$registry/speakertrail:$sha"
+          echo "$SCW_SECRET_KEY" | docker login "$registry" -u nologin --password-stdin
+          docker build --platform linux/amd64 --build-arg VERSION="$sha" -t "$image" .
+          docker push "$image"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the web interface and the nightly job
+        if: steps.secrets.outputs.ready == 'true'
+        env:
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: deploy/scaleway/deploy.sh

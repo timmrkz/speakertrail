@@ -1,0 +1,6 @@
+/speakertrail
+*.test
+*.out
+.env
+/.claude/worktrees/
+/bin/

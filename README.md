@@ -12,6 +12,7 @@ It is one Go binary with the web interface built in.
 | `speakertrail migrate` | Applies database migrations. Every other command does this too |
 | `speakertrail import` | Loads the starting sources from the brief. Safe to repeat |
 | `speakertrail fetch <url>` | Shows what the engine finds on one page. `-browser` loads it with JavaScript, `-save file` keeps the page |
+| `speakertrail people <url>...` | Who is on stage on event pages, by the rules and by the local language model. `-file` reads saved pages |
 | `speakertrail hash-password` | Prints the hash for `UI_PASSWORD_HASH` |
 
 ## How it works

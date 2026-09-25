@@ -11,6 +11,9 @@
 #
 #   make            build the app
 #   make crawl      check every due source once, like the nightly job
+#   make people URL="https://… https://…"
+#                   who is on stage on these event pages, by the engine's
+#                   rules and by the local model. Stores nothing
 #   make ui         the interface with live reload on http://localhost:5173,
 #                   next to a running make run
 #   make mock       the interface alone, with invented data and no backend
@@ -34,10 +37,16 @@ SHELL := /bin/sh
 # the tools that are already there. DOCKER=0 forces the direct way.
 DOCKER ?= $(if $(or $(CI),$(CLAUDE_CODE_REMOTE),$(SPEAKERTRAIL_IN_DOCKER)),0,1)
 
-.PHONY: all run crawl ui mock test unit interface shell check db pull-prod image stop clean help docker
+# The language model for make people. It runs on this machine, on the Mac
+# through Docker Model Runner. Any model on hub.docker.com/u/ai works, for
+# example MODEL=ai/gemma3:4b-q4_K_M for a faster, smaller one.
+MODEL ?= ai/gemma3:12b-q4_K_M
+NEED_URL = @test -n "$(URL)" || { echo 'Name one or more event pages: make people URL="https://…"'; exit 1; }
+
+.PHONY: all run crawl people model ui mock test unit interface shell check db pull-prod image stop clean help docker
 
 help:
-	@sed -n '1,28p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
 
 ifeq ($(DOCKER),1)
 
@@ -61,6 +70,16 @@ run: all .env
 
 crawl: all
 	@$(COMPOSE) run --rm nightly
+
+people: all model
+	$(NEED_URL)
+	@$(COMPOSE) run --rm --no-deps -e LLM_MODEL=$(MODEL) web people $(URL)
+
+# The model, downloaded once. The first time takes a while, it is several GB.
+model: docker
+	@docker model version >/dev/null 2>&1 || { \
+		echo "Docker Model Runner is off. Turn it on with: docker desktop enable model-runner"; exit 1; }
+	@docker model pull $(MODEL)
 
 # The toolbox runs this same Makefile, which then works directly.
 test unit interface: docker
@@ -151,6 +170,14 @@ run: all db
 
 crawl: all db
 	@$(ENV) $(BIN)/speakertrail nightly
+
+# Directly, the model answers on http://localhost:12434, or at LLM_URL.
+people: all
+	$(NEED_URL)
+	@LLM_MODEL=$(MODEL) $(BIN)/speakertrail people $(URL)
+
+model:
+	@echo "Directly, start the model yourself and set LLM_URL if it is not on localhost:12434"
 
 # The toolbox's database is its own container, which compose starts.
 db:

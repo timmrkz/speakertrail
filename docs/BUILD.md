@@ -39,6 +39,7 @@ reachable from the Mac, and only from the Mac itself.
 | `make run` | builds and starts the app with its database, on http://localhost:8080 |
 | `make` | builds the app |
 | `make crawl` | checks every due source once, like the nightly job |
+| `make people URL="…"` | who is on stage on one or more event pages, by the engine's rules and by the local model, see below. Stores nothing |
 | `make ui` | the interface with live reload on http://localhost:5173, sending the API to a `make run` in another terminal |
 | `make mock` | the interface alone with invented data, on http://localhost:5173. The mock password is `speakertrail` |
 | `make test` | `unit` and `interface` |
@@ -51,6 +52,30 @@ reachable from the Mac, and only from the Mac itself.
 | `make stop` | stops every container make started |
 | `make clean` | removes the built app, the images and the caches. The database stays |
 | `make help` | this list |
+
+## The language model
+
+The engine reads people better with a language model. It runs on this Mac,
+not with a paid service: Docker Desktop's Model Runner runs it on the Mac's
+graphics chip, and the app's container asks it.
+
+Model Runner is on by default in Docker Desktop on Apple silicon. If `make
+people` says it is off:
+
+```
+docker desktop enable model-runner
+```
+
+The first `make people` downloads the model, `ai/gemma3:12b-q4_K_M`, about
+8 GB. After that it starts in seconds. To try another one, name it:
+
+```
+make people MODEL=ai/gemma3:4b-q4_K_M URL="https://…"
+```
+
+Each line the model gives comes with the passage from the page that puts
+the person on stage. A name the page does not contain is left out, and so is
+anyone who is only a contact person or in the imprint.
 
 ## Settings
 

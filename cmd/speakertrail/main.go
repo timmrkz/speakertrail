@@ -44,6 +44,7 @@ Commands:
   migrate         apply database migrations
   import          load the sources and seeds from the brief
   fetch <url>     show what the engine finds on one page
+  people <url>... who is on stage, by the rules and by the local model
   hash-password   print the hash for UI_PASSWORD_HASH, reading the password from stdin
 
 Run "speakertrail <command> -h" for the flags of a command.
@@ -101,6 +102,8 @@ func run(ctx context.Context, args []string) error {
 		})
 	case "fetch":
 		return runFetch(ctx, args[1:])
+	case "people":
+		return runPeople(ctx, args[1:])
 	case "hash-password":
 		return runHashPassword()
 	case "help", "-h", "--help":

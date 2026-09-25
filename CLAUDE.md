@@ -161,6 +161,9 @@ messages, pull request text, code comments and chat replies.
 - The interface is built by make into `web/dist/`, which Go embeds. Only
   `web/dist/.keep` is in the repository. Never commit build output or
   `.env`.
+- **The language model runs locally.** It runs on Tim's Mac through Docker
+  Model Runner, with no paid model API, no key and no credit card. The
+  engine works without it and only reads people better with it.
 - Every paid API gets a monthly budget in Settings, and the engine stops
   calling it once the budget is reached.
 

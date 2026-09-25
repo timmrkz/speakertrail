@@ -147,10 +147,24 @@ func TestLoginIsRateLimited(t *testing.T) {
 func TestPublicCalendar(t *testing.T) {
 	e := setup(t)
 	ctx := t.Context()
-	// Closed by default.
+	// Closed by default. The config still answers, so the front page can
+	// say so, and it gives away no cities.
 	if code, _ := e.do(t, "GET", "/api/public/events", ""); code != 404 {
 		t.Errorf("public events while closed: %d", code)
 	}
+	if code, body := e.do(t, "GET", "/api/public/config", ""); code != 200 ||
+		!strings.Contains(body, `"public_calendar":false`) || !strings.Contains(body, `"owner":false`) || !strings.Contains(body, `"cities":[]`) {
+		t.Errorf("config while closed: %d %s", code, body)
+	}
+	// Tim sees the calendar before it opens.
+	e.login(t)
+	if code, body := e.do(t, "GET", "/api/public/events", ""); code != 200 || !strings.Contains(body, `"events":[`) {
+		t.Errorf("owner preview while closed: %d %s", code, body)
+	}
+	if _, body := e.do(t, "GET", "/api/public/config", ""); !strings.Contains(body, `"owner":true`) {
+		t.Errorf("config for the owner: %s", body)
+	}
+	e.do(t, "POST", "/api/logout", "")
 	e.pool.Exec(ctx, `UPDATE settings SET value = 'true' WHERE key = 'public_calendar'`)
 
 	code, body := e.do(t, "GET", "/api/public/events", "")

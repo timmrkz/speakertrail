@@ -217,16 +217,18 @@ const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
 const PUBLIC_ROUTES: [string, RegExp, Handler][] = [
-  ['GET', /^\/api\/public\/config$/, (s) => {
-    if (setting(s, 'public_calendar') !== true) return err(404, 'The public calendar is off')
+  ['GET', /^\/api\/public\/config$/, (s, _m, _q, _b, loggedIn) => {
+    const open = setting(s, 'public_calendar') === true
+    const show_people = setting(s, 'public_show_people') === true
+    if (!open && !loggedIn) return ok({ public_calendar: false, owner: false, show_people, cities: [] })
     const now = new Date().toISOString()
     const count = new Map<string, number>()
     for (const e of s.events) if (e.fit === 'kept' && e.format !== 'online' && e.starts_at >= now) count.set(e.city, (count.get(e.city) ?? 0) + 1)
     const cities = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
-    return ok({ public_calendar: true, show_people: setting(s, 'public_show_people') === true, cities })
+    return ok({ public_calendar: open, owner: loggedIn, show_people, cities })
   }],
-  ['GET', /^\/api\/public\/events$/, (s, _m, q) => {
-    if (setting(s, 'public_calendar') !== true) return err(404, 'The public calendar is off')
+  ['GET', /^\/api\/public\/events$/, (s, _m, q, _b, loggedIn) => {
+    if (setting(s, 'public_calendar') !== true && !loggedIn) return err(404, 'The calendar is not open yet')
     const from = q.get('from') || todayBerlin()
     const to = q.get('to') || addDays(from, Number(setting(s, 'collect_ahead_days') ?? 30))
     const show = setting(s, 'public_show_people') === true

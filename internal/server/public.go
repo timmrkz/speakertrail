@@ -57,25 +57,27 @@ func window(r *http.Request, cfg settings.Settings, now time.Time) (from, to tim
 	return from, to.AddDate(0, 0, 1), nil
 }
 
+// publicConfig answers everyone, also while the calendar is closed, so the
+// front page can say so. Tim, logged in, gets owner true and sees the
+// calendar before it opens.
 func (s *Server) publicConfig(w http.ResponseWriter, r *http.Request) {
 	cfg, err := settings.Load(r.Context(), s.opts.Pool)
 	if err != nil {
 		s.internal(w, r, err)
 		return
 	}
-	if !cfg.Bool("public_calendar", false) {
-		fail(w, http.StatusNotFound, "The public calendar is not open yet")
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	// The answer depends on the login, so no cache may keep it.
+	w.Header().Set("Cache-Control", "no-cache")
 	s.sendQuery(w, r, http.StatusOK, `
 		SELECT json_build_object(
-			'public_calendar', true,
-			'show_people', $1::boolean,
-			'cities', (SELECT COALESCE(json_agg(city ORDER BY n DESC, city), '[]') FROM (
+			'public_calendar', $1::boolean,
+			'owner', $2::boolean,
+			'show_people', $3::boolean,
+			'cities', CASE WHEN $1 OR $2 THEN (SELECT COALESCE(json_agg(city ORDER BY n DESC, city), '[]') FROM (
 				SELECT city, count(*) AS n FROM events
-				WHERE fit = 'kept' AND format <> 'online' AND starts_at >= $2 AND city <> ''
-				GROUP BY city) c))`,
+				WHERE fit = 'kept' AND format <> 'online' AND starts_at >= $4 AND city <> ''
+				GROUP BY city) c) ELSE '[]'::json END)`,
+		cfg.Bool("public_calendar", false), s.sessions.loggedIn(r),
 		cfg.Bool("public_show_people", false), s.opts.Now().Add(-12*time.Hour))
 }
 
@@ -85,8 +87,9 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 		s.internal(w, r, err)
 		return
 	}
-	if !cfg.Bool("public_calendar", false) {
-		fail(w, http.StatusNotFound, "The public calendar is not open yet")
+	open := cfg.Bool("public_calendar", false)
+	if !open && !s.sessions.loggedIn(r) {
+		fail(w, http.StatusNotFound, "The calendar is not open yet")
 		return
 	}
 	from, to, err := window(r, cfg, s.opts.Now())
@@ -95,7 +98,11 @@ func (s *Server) publicEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	w.Header().Set("Cache-Control", "public, max-age=300")
+	if open {
+		w.Header().Set("Cache-Control", "public, max-age=300")
+	} else {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	show := "false"
 	if cfg.Bool("public_show_people", false) {
 		show = "true"

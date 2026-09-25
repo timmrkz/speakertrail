@@ -26,6 +26,8 @@ export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidat
 
 export interface PublicConfig {
   public_calendar: boolean
+  // True for Tim, logged in. He sees the calendar before it opens.
+  owner: boolean
   show_people: boolean
   cities: string[]
 }

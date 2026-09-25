@@ -9,7 +9,7 @@
     { href: '/app/runs', label: 'Runs', text: 'Nightly runs and each check', icon: 'runs' },
     { href: '/app/seeds', label: 'Seeds', text: 'Tips for the crawler', icon: 'seeds' },
     { href: '/app/settings', label: 'Settings', text: 'How the crawler behaves', icon: 'settings' },
-    { href: '/', label: 'Public calendar', text: 'What everyone else sees', icon: 'calendar' },
+    { href: '/', label: 'Calendar', text: 'What everyone else sees', icon: 'calendar' },
   ]
 
   $effect(() => {

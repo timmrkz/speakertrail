@@ -21,6 +21,10 @@
   let error = $state('')
   let reload = $state(0)
 
+  // Closed to visitors: nothing to load. Tim sees it before it opens.
+  let closed = $derived(!config.public_calendar && !config.owner)
+  let preview = $derived(!config.public_calendar && config.owner)
+
   let days = $derived(rangeDays(range))
   let cityOptions = $derived([{ value: '', label: 'All NRW' }, ...config.cities.map((c) => ({ value: c, label: c }))])
   const typeOptions = [{ value: '', label: 'All types' }, ...EVENT_TYPES.map((t) => ({ value: t, label: TYPE_LABEL[t] }))]
@@ -33,6 +37,10 @@
   $effect(() => {
     const q = { from: days.from, to: days.to, city, type }
     void reload
+    if (closed) {
+      loading = false
+      return
+    }
     const mine = ++seq
     loading = true
     error = ''
@@ -61,7 +69,7 @@
       <Brand href="/" sub="" />
       <div class="row">
         <ThemeButton />
-        <a class="btn quiet" href="/login"><Icon name="login" size={16} />Log in</a>
+        {#if config.owner}<a class="btn quiet" href="/app">Workspace</a>{/if}
       </div>
     </div>
   </header>
@@ -69,9 +77,15 @@
   <main id="main" class="view narrow">
     <div class="hero">
       <h1>Who's on stage in NRW</h1>
+      {#if preview}
+        <a class="pill warn preview" href="/app/settings" title="The calendar is not public yet. Open it in Settings.">Only you see this</a>
+      {/if}
       <p class="muted">Talks, pitches, panels and meetups across North Rhine-Westphalia, and the people on stage. Checked every night.</p>
     </div>
 
+    {#if closed}
+      <EmptyState title="Opening soon" text="The first events are being collected." />
+    {:else}
     <div class="filters">
       <Segmented label="When" options={RANGES.map((r) => ({ value: r.id, label: r.label }))} bind:value={range} />
       <Chips label="City" options={cityOptions} bind:value={city} />
@@ -108,10 +122,12 @@
         </DayList>
       </div>
     {/if}
+    {/if}
   </main>
 
   <footer class="foot">
     <p>Speaker Trail lists in-person events across North Rhine-Westphalia. Details come from the organisers' own pages, so check there before you go.</p>
+    {#if !config.owner}<p><a class="login" href="/login">Log in</a></p>{/if}
   </footer>
 </div>
 
@@ -130,7 +146,10 @@
   .summary { font-size: 13px; color: var(--ink-2); display: flex; gap: 10px; margin-bottom: -10px; }
   .stale { opacity: .6; transition: opacity .15s; }
   .foot { padding: 20px var(--gutter) 32px; text-align: center; font-size: 13px; color: var(--ink-3); }
+  .foot { display: grid; gap: 10px; }
   .foot p { max-width: 60ch; margin: 0 auto; }
+  .foot .login { color: var(--ink-3); }
+  .preview { justify-self: start; text-decoration: none; }
   @media (max-width: 760px) {
     main { padding-top: 16px; }
     .hero h1 { font-size: 24px; }

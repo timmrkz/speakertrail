@@ -65,7 +65,7 @@
         {/each}
       </nav>
       <div class="nav side-foot">
-        <a href="/"><Icon name="calendar" /><span>Public calendar</span></a>
+        <a href="/"><Icon name="calendar" /><span>Calendar</span></a>
         <button type="button" onclick={logout}><Icon name="logout" /><span>Log out</span></button>
         <ThemeButton withLabel />
       </div>

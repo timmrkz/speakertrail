@@ -4,14 +4,9 @@
   import Brand from '../lib/components/Brand.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
 
-  // `calendarOff` is set when the front page shows the login because the
-  // public calendar is switched off.
-  let { calendarOff = false }: { calendarOff?: boolean } = $props()
-
   let password = $state('')
   let error = $state('')
   let busy = $state(false)
-  let publicOn = $state(false)
   let field: HTMLInputElement | undefined = $state()
 
   let next = $derived.by(() => {
@@ -25,9 +20,6 @@
 
   // Already logged in? Go straight to the workspace.
   api.me().then((m) => m.logged_in && navigate(next, { replace: true })).catch(() => {})
-  $effect(() => {
-    if (!calendarOff) api.publicConfig().then((c) => (publicOn = c.public_calendar)).catch(() => {})
-  })
 
   $effect(() => {
     field?.focus()
@@ -57,16 +49,14 @@
 
 <div class="page">
   <header class="top">
-    <Brand href={calendarOff ? '/' : publicOn ? '/' : '/login'} />
+    <Brand href="/" />
     <ThemeButton />
   </header>
   <main id="main" class="center">
     <form class="card" onsubmit={submit} novalidate>
       <div class="intro">
         <h1>Log in</h1>
-        <p class="muted">
-          {calendarOff ? 'The public calendar is not open yet. This is the private workspace.' : 'The private workspace for people, sources and crawl runs.'}
-        </p>
+        <p class="muted">The workspace for people, sources and runs.</p>
       </div>
       <div class="field">
         <label for="password">Password</label>
@@ -84,7 +74,7 @@
       </div>
       <button class="btn primary wide" type="submit" disabled={busy}>{busy ? 'Logging in' : 'Log in'}</button>
     </form>
-    {#if publicOn}<a class="back" href="/">Back to the public calendar</a>{/if}
+    <a class="back" href="/">Back to the calendar</a>
   </main>
 </div>
 

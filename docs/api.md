@@ -4,12 +4,12 @@ The web interface talks to `speakertrail serve` through this JSON API. All times
 
 ## Public
 
-The public calendar is off until the setting `public_calendar` is true. While it is off, the public endpoints answer 404 and the interface shows the login.
+The front page is always the calendar. It is closed to visitors until the setting `public_calendar` is true. While it is closed, `config` answers with `public_calendar` false and no cities, `events` answers 404, and the page says the calendar opens soon. Tim, logged in, gets `owner` true and sees the calendar before it opens.
 
 `GET /api/public/config`
 
 ```json
-{ "public_calendar": true, "show_people": false, "cities": ["Köln", "Düsseldorf"] }
+{ "public_calendar": true, "owner": false, "show_people": false, "cities": ["Köln", "Düsseldorf"] }
 ```
 
 `cities` lists the cities with upcoming kept events, most events first.

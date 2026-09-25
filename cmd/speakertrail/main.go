@@ -185,7 +185,7 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 	defer cleanup()
 	if *work {
 		go func() {
-			if err := newWorker(p, 1).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			if err := newWorker(p, 4).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("background worker stopped", "error", err)
 			}
 		}()

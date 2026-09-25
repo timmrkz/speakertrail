@@ -23,6 +23,7 @@ import (
 // Pipeline is what the server needs to queue work.
 type Pipeline interface {
 	CheckNow(ctx context.Context, sourceID int64) (int64, error)
+	RunNow(ctx context.Context) (runID int64, started bool, err error)
 	EnqueueSeed(ctx context.Context, seedID int64) error
 }
 
@@ -82,6 +83,7 @@ func (s *Server) routes() {
 	p("PATCH /api/sources/{id}", s.patchSource)
 	p("POST /api/sources/{id}/check", s.checkSource)
 	p("GET /api/runs", s.runs)
+	p("POST /api/runs", s.startRun)
 	p("GET /api/runs/{id}", s.run)
 	p("GET /api/fetches/{id}/{part}", s.fetchPart)
 	p("GET /api/seeds", s.seeds)

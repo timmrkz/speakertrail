@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/queue"
@@ -90,9 +91,61 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	return len(ids), nil
 }
 
+// RunNow starts a run by hand: every due source, as the nightly run would
+// check them, worked on by the worker in serve. While a run is still going
+// it returns that one instead, so a second click starts nothing new.
+func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err error) {
+	// One caller at a time decides, so two clicks cannot start two runs.
+	// A caller waits without holding a connection, because the one that
+	// decides needs more of them than the one it holds.
+	var conn *pgxpool.Conn
+	for {
+		if conn, err = p.Pool.Acquire(ctx); err != nil {
+			return 0, false, err
+		}
+		var got bool
+		if err = conn.QueryRow(ctx, `SELECT pg_try_advisory_lock(hashtext('speakertrail:run-now'))`).Scan(&got); err != nil {
+			conn.Release()
+			return 0, false, err
+		}
+		if got {
+			break
+		}
+		conn.Release()
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-ctx.Done():
+			return 0, false, ctx.Err()
+		}
+	}
+	defer conn.Release()
+	defer conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtext('speakertrail:run-now'))`)
+
+	err = conn.QueryRow(ctx, `
+		SELECT r.id FROM runs r
+		WHERE r.kind IN ('nightly', 'manual') AND r.finished_at IS NULL AND EXISTS (
+			SELECT 1 FROM jobs j WHERE j.kind = $1 AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		ORDER BY r.id DESC LIMIT 1`, KindCheckSource).Scan(&runID)
+	if err == nil {
+		return runID, false, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, err
+	}
+	if runID, err = p.StartRun(ctx, "manual"); err != nil {
+		return 0, false, err
+	}
+	n, err := p.EnqueueDue(ctx, runID)
+	if err != nil {
+		return 0, false, err
+	}
+	p.log().Info("run started by hand", "run", runID, "sources", n)
+	return runID, true, nil
+}
+
 // CheckNow queues one source for an immediate check in its own run.
 func (p *Pipeline) CheckNow(ctx context.Context, sourceID int64) (int64, error) {
-	runID, err := p.StartRun(ctx, "manual")
+	runID, err := p.StartRun(ctx, "check")
 	if err != nil {
 		return 0, err
 	}

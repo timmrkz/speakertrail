@@ -142,7 +142,7 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name"}` answers the updated source.
 
-`POST /api/sources/{id}/check` queues a check now and answers 202.
+`POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 
 `GET /api/runs` answers the last 50 runs:
 
@@ -150,12 +150,16 @@ In private responses `people` always holds everyone named, each with their `id`.
 {
   "runs": [
     {
-      "id": 5, "started_at": "...", "finished_at": "...",
+      "id": 5, "kind": "nightly", "started_at": "...", "finished_at": "...",
       "sources_checked": 42, "events_found": 180, "events_new": 23, "people_new": 41, "errors": 3
     }
   ]
 }
 ```
+
+`kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
+
+`POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
 
 `GET /api/runs/{id}` answers `{"run": {...}, "checks": [...]}`, where each check is:
 

@@ -178,6 +178,8 @@ export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes'
 
 export interface Run {
   id: number
+  // nightly, manual for a run started by hand, check for Check now
+  kind: 'nightly' | 'manual' | 'check'
   started_at: string
   finished_at: string | null
   sources_checked: number
@@ -267,7 +269,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts: { 
     }
     throw new ApiError(res.status, message)
   }
-  if (res.status === 204 || res.status === 202) return undefined as T
+  if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
 }
@@ -296,6 +298,7 @@ export const api = {
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
+  startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
   seeds: () => request<{ seeds: Seed[] }>('GET', '/api/seeds').then((r) => r.seeds),
   addSeed: (input: string) => request<Seed>('POST', '/api/seeds', { input }),

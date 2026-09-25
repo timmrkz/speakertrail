@@ -273,7 +273,7 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
     }
     checks.set(id, list)
     runs.push({
-      id, started_at: started, finished_at: running ? null : hoursAgo(startH - 0.02 * list.length - 0.05),
+      id, kind: 'nightly', started_at: started, finished_at: running ? null : hoursAgo(startH - 0.02 * list.length - 0.05),
       sources_checked: list.length, events_found: list.reduce((a, c) => a + c.events_found, 0),
       events_new: Math.max(0, 9 - i + ((i * 5) % 7)), people_new: Math.max(0, 14 - i + ((i * 3) % 9)),
       errors: list.filter((c) => c.error).length,

@@ -347,6 +347,27 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
+  ['POST', /^\/api\/runs$/, (s) => {
+    const going = s.runs.find((r) => !r.finished_at && r.kind !== 'check')
+    if (going) return { status: 202, body: { run_id: going.id, started: false } }
+    const run = {
+      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
+      sources_checked: 0, events_found: 0, events_new: 0, people_new: 0, errors: 0,
+    }
+    s.runs.unshift(run)
+    s.checks.set(run.id, [])
+    // Pretend the run checks a few sources, then finishes.
+    const t = setInterval(() => {
+      run.sources_checked += 7
+      run.events_found += 11
+      run.events_new += 3
+    }, 3000)
+    setTimeout(() => {
+      clearInterval(t)
+      run.finished_at = new Date().toISOString()
+    }, 12000)
+    return { status: 202, body: { run_id: run.id, started: true } }
+  }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
     return run ? ok({ run, checks: s.checks.get(run.id) ?? [] }) : err(404, 'No such run')

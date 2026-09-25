@@ -325,6 +325,54 @@ func TestEnqueueDue(t *testing.T) {
 	}
 }
 
+// Two clicks on Start a run, or two people at once, start one run.
+func TestRunNowStartsOneRunAtATime(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	for i := range 3 {
+		e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+	}
+	const callers = 8
+	ids := make([]int64, callers)
+	started := make([]bool, callers)
+	var wg sync.WaitGroup
+	for i := range callers {
+		wg.Go(func() {
+			id, ok, err := e.p.RunNow(ctx)
+			if err != nil {
+				t.Error(err)
+			}
+			ids[i], started[i] = id, ok
+		})
+	}
+	wg.Wait()
+	n := 0
+	for i := range callers {
+		if started[i] {
+			n++
+		}
+		if ids[i] != ids[0] {
+			t.Errorf("caller %d got run %d, caller 0 got run %d", i, ids[i], ids[0])
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d runs started, want 1", n)
+	}
+	if c := e.count(t, "runs WHERE kind = 'manual'"); c != 1 {
+		t.Errorf("%d runs recorded", c)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND status = 'queued'"); c != 3 {
+		t.Errorf("%d checks queued, want 3", c)
+	}
+
+	// Once its checks are done, the next click starts a new run.
+	e.pool.Exec(ctx, `UPDATE jobs SET status = 'done' WHERE kind = 'check_source'`)
+	id, ok, err := e.p.RunNow(ctx)
+	if err != nil || !ok || id == ids[0] {
+		t.Errorf("after the first run: run %d, started %v, %v", id, ok, err)
+	}
+}
+
 func TestSeeds(t *testing.T) {
 	e := setup(t, "")
 	ctx := t.Context()

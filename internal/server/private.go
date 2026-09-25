@@ -16,9 +16,14 @@ import (
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
-// runJSON builds one run with its totals from the checks.
+// runJSON builds one run with its totals from the checks. A run started by
+// hand or by Check now is worked on by serve, which records no end. It is
+// finished once none of its checks wait any more.
 const runJSON = `json_build_object(
-	'id', r.id, 'kind', r.kind, 'started_at', r.started_at, 'finished_at', r.finished_at,
+	'id', r.id, 'kind', r.kind, 'started_at', r.started_at,
+	'finished_at', COALESCE(r.finished_at, CASE WHEN NOT EXISTS (
+		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		THEN (SELECT COALESCE(max(checked_at), r.started_at) FROM source_checks WHERE run_id = r.id) END),
 	'sources_checked', (SELECT count(DISTINCT source_id) FROM source_checks WHERE run_id = r.id),
 	'events_found', (SELECT COALESCE(sum(events_found), 0) FROM source_checks WHERE run_id = r.id),
 	'events_new', (SELECT COALESCE(sum(events_new), 0) FROM source_checks WHERE run_id = r.id),
@@ -408,6 +413,16 @@ func (s *Server) checkSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]int64{"run_id": run})
+}
+
+// startRun starts a run by hand, or answers with the one still going.
+func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
+	id, started, err := s.opts.Pipeline.RunNow(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "started": started})
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {

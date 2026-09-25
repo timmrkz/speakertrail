@@ -24,12 +24,21 @@ import (
 
 var now = time.Date(2026, 9, 25, 9, 0, 0, 0, extract.Berlin)
 
-type fakePipeline struct{ checks, seeds []int64 }
+type fakePipeline struct {
+	checks, seeds []int64
+	runs          int
+}
 
 func (f *fakePipeline) CheckNow(_ context.Context, id int64) (int64, error) {
 	f.checks = append(f.checks, id)
 	return 42, nil
 }
+
+func (f *fakePipeline) RunNow(_ context.Context) (int64, bool, error) {
+	f.runs++
+	return 42, true, nil
+}
+
 func (f *fakePipeline) EnqueueSeed(_ context.Context, id int64) error {
 	f.seeds = append(f.seeds, id)
 	return nil
@@ -112,6 +121,9 @@ func TestLoginGuardsThePrivateArea(t *testing.T) {
 			t.Errorf("GET %s without login: %d, want 401", p, code)
 		}
 	}
+	if code, _ := e.do(t, "POST", "/api/runs", `{}`); code != 401 || e.pipe.runs != 0 {
+		t.Errorf("start a run without login: %d", code)
+	}
 	if _, body := e.do(t, "GET", "/api/me", ""); !strings.Contains(body, `"logged_in":false`) {
 		t.Errorf("me: %s", body)
 	}
@@ -131,6 +143,27 @@ func TestLoginGuardsThePrivateArea(t *testing.T) {
 	e.do(t, "POST", "/api/logout", "")
 	if code, _ := e.do(t, "GET", "/api/stats", ""); code != 401 {
 		t.Errorf("stats after logout: %d", code)
+	}
+}
+
+// A run started by hand records no end. It is finished once none of its
+// checks wait any more.
+func TestRunsFinishWhenTheirChecksAreDone(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	var run int64
+	e.pool.QueryRow(ctx, `INSERT INTO runs (kind, started_at) VALUES ('manual', $1) RETURNING id`, now).Scan(&run)
+	if _, err := e.pool.Exec(ctx, `INSERT INTO jobs (kind, key, run_after, created_at, updated_at)
+		VALUES ('check_source', 'run:' || $1::bigint || ':source:1', $2, $2, $2)`, run, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, body := e.do(t, "GET", "/api/runs", ""); !strings.Contains(body, `"finished_at":null`) {
+		t.Errorf("a run with a waiting check must still be going: %s", body)
+	}
+	e.pool.Exec(ctx, `UPDATE jobs SET status = 'done'`)
+	if _, body := e.do(t, "GET", "/api/runs", ""); strings.Contains(body, `"finished_at":null`) {
+		t.Errorf("a run without waiting checks must be finished: %s", body)
 	}
 }
 
@@ -275,6 +308,9 @@ func TestPrivateAPI(t *testing.T) {
 	e.pool.QueryRow(t.Context(), `SELECT id FROM sources WHERE name = 'Startplatz events'`).Scan(&sid)
 	if code, _ := e.do(t, "POST", "/api/sources/"+itoa(sid)+"/check", `{}`); code != 202 || len(e.pipe.checks) != 1 {
 		t.Errorf("check now: %d %v", code, e.pipe.checks)
+	}
+	if code, body := e.do(t, "POST", "/api/runs", `{}`); code != 202 || e.pipe.runs != 1 || !strings.Contains(body, `"started":true`) {
+		t.Errorf("start a run: %d %s", code, body)
 	}
 	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(sid), `{"status":"paused"}`); code != 400 {
 		t.Errorf("bad status: %d %s", code, body)

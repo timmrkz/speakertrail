@@ -4,7 +4,7 @@
 
 import type {
   AppearanceRole, Check, EventFormat, EventType, Fit, FetchMode, Health, PersonFit, ProfilePlatform,
-  Review, Run, Seed, Setting, SourceKind, SourceStatus,
+  Review, Run, Setting, SourceKind, SourceStatus,
 } from '../src/lib/api.ts'
 
 // Berlin wall time to a UTC RFC 3339 string.
@@ -201,16 +201,16 @@ const SOURCE_ROWS: S[] = [
   [2, 'Rheinland Pitch', 'organiser_page', 'https://example.org/rheinland-pitch', 'Köln', 'active', 21, 2, 'ok', '', 'Imported from the brief'],
   [3, 'Meetup Köln tech groups', 'calendar_meetup', 'https://example.org/meetup/koeln-tech', 'Köln', 'active', 44, 12, 'ok', '', 'Imported from the brief'],
   [4, 'Eventbrite Köln business', 'calendar_eventbrite', 'https://example.org/eventbrite/koeln-business', 'Köln', 'active', 9, 3, 'warning', 'Found fewer events than usual', 'Imported from the brief'],
-  [5, 'CreativeMornings Düsseldorf', 'organiser_page', 'https://example.org/creativemornings/duesseldorf', 'Düsseldorf', 'active', 12, 1, 'ok', '', 'Seed: CreativeMornings'],
+  [5, 'CreativeMornings Düsseldorf', 'organiser_page', 'https://example.org/creativemornings/duesseldorf', 'Düsseldorf', 'active', 12, 1, 'ok', '', 'From the starting list: CreativeMornings'],
   [6, 'Gründerszene Düsseldorf calendar', 'listing', 'https://example.org/gruenderszene-dus', 'Düsseldorf', 'probation', 6, 2, 'ok', '', 'Web search: startup events Düsseldorf'],
   [7, 'aachen.digital events', 'listing', 'https://example.org/aachen-digital/events', 'Aachen', 'active', 17, 4, 'ok', '', 'Imported from the brief'],
   [8, 'Gateway Uni Köln', 'organiser_page', 'https://example.org/gateway-unikoeln/events', 'Köln', 'active', 8, 1, 'ok', '', 'Found on Startplatz events'],
   [9, 'REACH Münster', 'organiser_page', 'https://example.org/reach-muenster', 'Münster', 'probation', 5, 2, 'ok', '', 'Web search: Gründung Münster Events'],
   [10, 'startport Duisburg', 'listing', 'https://example.org/startport/events', 'Duisburg', 'probation', 3, 1, 'warning', 'Page needs JavaScript. Switched to the browser', 'Web search: logistics startup Duisburg'],
   [11, 'Gründungsnetz NRW', 'newsletter', 'https://example.org/gruendungsnetz/newsletter', '', 'active', 2, 5, 'ok', '', 'Imported from the brief'],
-  [12, 'Startup Initiative NRW', 'listing', 'https://example.org/startup-initiative-nrw', 'Münster', 'candidate', 0, null, 'never', '', 'Seed: Schüler Startup Gipfel'],
+  [12, 'Startup Initiative NRW', 'listing', 'https://example.org/startup-initiative-nrw', 'Münster', 'candidate', 0, null, 'never', '', 'From the starting list: Schüler Startup Gipfel'],
   [13, 'AI Tinkerers Cologne', 'calendar_luma', 'https://example.org/luma/ai-tinkerers-cologne', 'Köln', 'active', 15, 1, 'ok', '', 'Found on Meetup Köln tech groups'],
-  [14, 'Legal Tech Lab Cologne', 'organiser_page', 'https://example.org/legal-tech-lab', 'Köln', 'probation', 4, 1, 'ok', '', 'Seed: Legal Hackathon'],
+  [14, 'Legal Tech Lab Cologne', 'organiser_page', 'https://example.org/legal-tech-lab', 'Köln', 'probation', 4, 1, 'ok', '', 'From the starting list: Legal Hackathon'],
   [15, 'IHK Bonn/Rhein-Sieg events', 'listing', 'https://example.org/ihk-bonn/events', 'Bonn', 'probation', 2, 1, 'error', 'Timed out after 30 s', 'Web search: IHK Bonn Veranstaltungen'],
   [16, 'Literaturhaus Köln', 'listing', 'https://example.org/literaturhaus-koeln/programm', 'Köln', 'retired', 0, 0, 'warning', '4 empty checks in a row', 'Web search: Lesungen Köln'],
   [17, 'KölnBusiness events', 'listing', 'https://example.org/koelnbusiness/events', 'Köln', 'active', 7, 2, 'ok', '', 'Imported from the brief'],
@@ -218,7 +218,7 @@ const SOURCE_ROWS: S[] = [
   [19, 'machwerkhaus köln', 'organiser_page', 'https://example.org/machwerkhaus/programm', 'Köln', 'candidate', 0, null, 'never', '', 'Found on KölnBusiness events'],
   [20, 'Run clubs NRW', 'listing', 'https://example.org/runclubs-nrw', 'Dortmund', 'candidate', 0, 2, 'ok', '', 'Web search: Lauftreff Gründer NRW'],
   [21, 'Foodhub NRW news', 'organiser_page', 'https://example.org/foodhub-nrw/news', 'Neuss', 'candidate', 0, 1, 'ok', '', 'Web search: Food Startup NRW'],
-  [22, 'Makerspace Ruhr', 'calendar_ical', 'https://example.org/makerspace-ruhr/cal.ics', 'Bochum', 'probation', 3, 3, 'ok', '', 'Seed: maker events Ruhr'],
+  [22, 'Makerspace Ruhr', 'calendar_ical', 'https://example.org/makerspace-ruhr/cal.ics', 'Bochum', 'probation', 3, 3, 'ok', '', 'From the starting list: maker events Ruhr'],
   [23, 'Digital Hub Bonn', 'listing', 'https://example.org/digitalhub-bonn/events', 'Bonn', 'active', 11, 2, 'ok', '', 'Imported from the brief'],
   [24, 'Founders Foundation', 'listing', 'https://example.org/founders-foundation/events', 'Bielefeld', 'candidate', 0, null, 'error', 'HTTP 403. The site blocks the crawler', 'Web search: Gründer Events OWL'],
   [25, 'Old Köln startup blog', 'listing', 'https://example.org/old-blog/events', 'Köln', 'retired', 0, 0, 'error', 'HTTP 404. The page is gone', 'Imported from the brief'],
@@ -280,18 +280,6 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
     })
   }
   return { runs, checks }
-}
-
-export function buildSeeds(): Seed[] {
-  return [
-    { id: 17, input: 'https://example.org/linkedin-post/maker-events-ruhr', created_at: hoursAgo(3), processed_at: null, result: '' },
-    { id: 16, input: 'Rana Haddadi', created_at: hoursAgo(28), processed_at: hoursAgo(20), result: 'Matched person Rana Haddadi. Found 1 upcoming talk and 1 new source.' },
-    { id: 15, input: 'Schüler Startup Gipfel', created_at: hoursAgo(50), processed_at: hoursAgo(44), result: 'Found 1 event and the source Startup Initiative NRW.' },
-    { id: 14, input: 'https://example.org/legal-hackathon', created_at: hoursAgo(80), processed_at: hoursAgo(68), result: 'Added the source Legal Tech Lab Cologne and 5 people.' },
-    { id: 13, input: 'maker events Ruhr', created_at: hoursAgo(120), processed_at: hoursAgo(116), result: 'Added the source Makerspace Ruhr.' },
-    { id: 12, input: 'CreativeMornings', created_at: hoursAgo(200), processed_at: hoursAgo(190), result: 'Added the source CreativeMornings Düsseldorf.' },
-    { id: 11, input: 'https://example.org/not-an-event', created_at: hoursAgo(230), processed_at: hoursAgo(226), result: 'Nothing found. The page has no events or people.' },
-  ]
 }
 
 export function buildSettings(): Setting[] {

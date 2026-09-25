@@ -203,14 +203,6 @@ export interface Check {
   fetch_id: number | null
 }
 
-export interface Seed {
-  id: number
-  input: string
-  created_at: string
-  processed_at: string | null
-  result: string
-}
-
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 
 export interface Setting {
@@ -300,8 +292,6 @@ export const api = {
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
-  seeds: () => request<{ seeds: Seed[] }>('GET', '/api/seeds').then((r) => r.seeds),
-  addSeed: (input: string) => request<Seed>('POST', '/api/seeds', { input }),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
 }

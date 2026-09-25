@@ -10,8 +10,8 @@ From the top of the repository:
 make run
 ```
 
-This builds the app, starts its database, loads the starting sources and
-seeds, and starts the app on http://localhost:8080. Ctrl-C stops it. The
+This builds the app, starts its database, loads the starting sources,
+and starts the app on http://localhost:8080. Ctrl-C stops it. The
 first time, it writes `.env` with a login for this machine and prints the
 password. It stays in `.env` as `LOCAL_PASSWORD`.
 

@@ -83,9 +83,10 @@ messages, pull request text, code comments and chat replies.
 - Plain, direct language. Short sentences.
 - **One name per thing.** A **source** is a page the crawler checks again
   and again. A **check** is one look at one source. A **run** is one pass
-  over the due sources, nightly or started by hand. A **seed** is a link or
-  a name Tim pasted. An **event** is kept or dropped, never accepted or
-  rejected. A **profile** is confirmed or rejected. The public page is the
+  over the due sources, nightly or started by hand. A link to one event,
+  added as a source, becomes the calendar it belongs to. Seeds exist only
+  in the starting data, never in the interface. An **event** is kept or
+  dropped, never accepted or rejected. A **profile** is confirmed or rejected. The public page is the
   **calendar**, Tim's side is the **workspace**. Whatever a thing is called
   in the interface, it is called that in the docs and the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top, and
@@ -145,7 +146,7 @@ messages, pull request text, code comments and chat replies.
   numbers. Names stay out of the public calendar unless
   `public_show_people` is on. Real names never go into test fixtures, mock
   data or anything committed: invent them.
-- **Untrusted input.** Every crawled page, feed and pasted seed is
+- **Untrusted input.** Every crawled page, feed and pasted link is
   untrusted. Stored pages are served as sandboxed plain text, never as HTML.
 - **What runs on its own goroutine is tested from several at once.** Every
   Go test runs under the race detector, and anything asynchronous, the

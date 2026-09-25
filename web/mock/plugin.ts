@@ -5,11 +5,11 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent, Seed,
+  Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
   Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
-  addDays, berlin, buildRuns, buildSeeds, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
+  addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
   todayBerlin, type MockSource,
 } from './fixtures.ts'
 
@@ -108,9 +108,8 @@ function createState() {
     sources,
     runs,
     checks,
-    seeds: buildSeeds(),
     settings: buildSettings(),
-    nextId: { source: 100, seed: 100 },
+    nextId: { source: 100 },
   }
 }
 
@@ -377,18 +376,6 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const check = [...s.checks.values()].flat().find((c) => c.fetch_id === id)
     if (!check || id < 3130) return err(404, 'This fetch is older than 30 days and was deleted')
     return fetchBody(check, m[2])
-  }],
-  ['GET', /^\/api\/seeds$/, (s) => ok({ seeds: s.seeds })],
-  ['POST', /^\/api\/seeds$/, (s, _m, _q, b) => {
-    const input = typeof b.input === 'string' ? b.input.trim() : ''
-    if (!input) return err(400, 'Paste a link or a name')
-    const seed: Seed = { id: s.nextId.seed++, input, created_at: new Date().toISOString(), processed_at: null, result: '' }
-    s.seeds.unshift(seed)
-    setTimeout(() => {
-      seed.processed_at = new Date().toISOString()
-      seed.result = /^https?:/.test(input) ? 'Added 1 candidate source.' : 'No match yet. Will look again tomorrow.'
-    }, 8000)
-    return { status: 201, body: seed }
   }],
   ['GET', /^\/api\/settings$/, (s) => ok({ settings: s.settings })],
   ['PATCH', /^\/api\/settings\/([^/]+)$/, (s, m, _q, b) => {

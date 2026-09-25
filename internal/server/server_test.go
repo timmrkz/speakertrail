@@ -25,8 +25,8 @@ import (
 var now = time.Date(2026, 9, 25, 9, 0, 0, 0, extract.Berlin)
 
 type fakePipeline struct {
-	checks, seeds []int64
-	runs          int
+	checks []int64
+	runs   int
 }
 
 func (f *fakePipeline) CheckNow(_ context.Context, id int64) (int64, error) {
@@ -37,11 +37,6 @@ func (f *fakePipeline) CheckNow(_ context.Context, id int64) (int64, error) {
 func (f *fakePipeline) RunNow(_ context.Context) (int64, bool, error) {
 	f.runs++
 	return 42, true, nil
-}
-
-func (f *fakePipeline) EnqueueSeed(_ context.Context, id int64) error {
-	f.seeds = append(f.seeds, id)
-	return nil
 }
 
 type env struct {
@@ -116,7 +111,7 @@ func (e env) login(t *testing.T) {
 
 func TestLoginGuardsThePrivateArea(t *testing.T) {
 	e := setup(t)
-	for _, p := range []string{"/api/stats", "/api/events", "/api/people", "/api/sources", "/api/runs", "/api/seeds", "/api/settings"} {
+	for _, p := range []string{"/api/stats", "/api/events", "/api/people", "/api/sources", "/api/runs", "/api/settings"} {
 		if code, _ := e.do(t, "GET", p, ""); code != 401 {
 			t.Errorf("GET %s without login: %d, want 401", p, code)
 		}
@@ -316,8 +311,8 @@ func TestPrivateAPI(t *testing.T) {
 		t.Errorf("bad status: %d %s", code, body)
 	}
 
-	if code, _ := e.do(t, "POST", "/api/seeds", `{"input":"https://luma.com/beispiel"}`); code != 201 || len(e.pipe.seeds) != 1 {
-		t.Errorf("add seed: %d", code)
+	if code, body := e.do(t, "POST", "/api/sources", `{"url":"https://www.facebook.com/beispielgruppe/"}`); code != 400 || !strings.Contains(body, "Facebook") {
+		t.Errorf("a Facebook page as a source: %d %s", code, body)
 	}
 
 	if code, body := e.do(t, "PATCH", "/api/settings/collect_ahead_days", `{"value":"thirty"}`); code != 400 || !strings.Contains(body, "number") {

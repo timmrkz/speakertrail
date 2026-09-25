@@ -282,7 +282,7 @@ const sourceJSON = `json_build_object(
 			'Found ' || lc.events_found || ' events, usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
-		(SELECT 'Seed: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
+		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
 		(SELECT 'Linked from ' || name FROM sources x WHERE x.id = s.discovered_from_source_id),
 		NULLIF(s.discovered_note, '')))`
 
@@ -324,6 +324,11 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "LinkedIn and Instagram are never checked. Add the organiser's website or event page instead")
 		return
 	}
+	if host := strings.ToLower(u.Hostname()); host == "facebook.com" || strings.HasSuffix(host, ".facebook.com") {
+		fail(w, http.StatusBadRequest, "Facebook pages cannot be checked. Add the organiser's website or event page instead")
+		return
+	}
+	// A link to one event becomes the calendar it belongs to.
 	link := u.String()
 	if cal := pipeline.CalendarURL(link); cal != "" {
 		link = cal
@@ -478,40 +483,6 @@ func (s *Server) fetchPart(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Security-Policy", "sandbox")
 	w.Write(data)
-}
-
-func (s *Server) seeds(w http.ResponseWriter, r *http.Request) {
-	s.sendQuery(w, r, http.StatusOK, `
-		SELECT json_build_object('seeds', COALESCE(json_agg(json_build_object(
-			'id', id, 'input', input, 'created_at', created_at, 'processed_at', processed_at, 'result', result)
-			ORDER BY created_at DESC, id DESC), '[]'))
-		FROM (SELECT * FROM seeds ORDER BY created_at DESC LIMIT 200) s`)
-}
-
-func (s *Server) addSeed(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Input string `json:"input"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	input := strings.TrimSpace(body.Input)
-	if input == "" || len(input) > 2000 {
-		fail(w, http.StatusBadRequest, "Paste a link or a name")
-		return
-	}
-	var id int64
-	if err := s.opts.Pool.QueryRow(r.Context(), `INSERT INTO seeds (input) VALUES ($1) RETURNING id`, input).Scan(&id); err != nil {
-		s.internal(w, r, err)
-		return
-	}
-	if err := s.opts.Pipeline.EnqueueSeed(r.Context(), id); err != nil {
-		s.internal(w, r, err)
-		return
-	}
-	s.sendQuery(w, r, http.StatusCreated, `
-		SELECT json_build_object('id', id, 'input', input, 'created_at', created_at, 'processed_at', processed_at, 'result', result)
-		FROM seeds WHERE id = $1`, id)
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {

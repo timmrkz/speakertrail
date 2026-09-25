@@ -6,11 +6,11 @@ It is one Go binary with the web interface built in.
 
 | Command | What it does |
 | --- | --- |
-| `speakertrail serve` | Runs the web interface and its API, plus a small worker so "Check now" and pasted seeds run right away |
+| `speakertrail serve` | Runs the web interface and its API, plus a worker, so "Check now" and "Start a run" work right away |
 | `speakertrail nightly` | Checks every due source once, then exits. This is the scheduled job |
 | `speakertrail worker` | Works on queued jobs until stopped |
 | `speakertrail migrate` | Applies database migrations. Every other command does this too |
-| `speakertrail import` | Loads the sources and seeds from the brief. Safe to repeat |
+| `speakertrail import` | Loads the starting sources from the brief. Safe to repeat |
 | `speakertrail fetch <url>` | Shows what the engine finds on one page. `-browser` loads it with JavaScript, `-save file` keeps the page |
 | `speakertrail hash-password` | Prints the hash for `UI_PASSWORD_HASH` |
 
@@ -32,7 +32,7 @@ The source list, the fit rules and every number live in the Settings screen.
 | `cmd/speakertrail` | The command |
 | `internal/fetch` | HTTP, robots.txt, the headless browser and the filter that keeps it away from blocked sites |
 | `internal/extract` | Turns pages into events and people |
-| `internal/pipeline` | Source checks, resolving, the source lifecycle, the nightly run, seeds |
+| `internal/pipeline` | Source checks, resolving, the source lifecycle, the nightly run |
 | `internal/server` | The JSON API and the login, described in `docs/api.md` |
 | `internal/queue` | Job queue in Postgres with retries and the per-website limit |
 | `internal/importer` | The starting data from the brief |

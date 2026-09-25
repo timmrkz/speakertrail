@@ -116,7 +116,7 @@
           <input bind:value={newName} id="src-name" class="input" type="text" placeholder="Taken from the page if empty" autocomplete="off" />
         </div>
       </div>
-      {#if addError}<p id="src-err" class="field-error" role="alert">{addError}</p>{:else}<p id="src-hint" class="field-hint">It starts as a candidate and gets checked in the next run.</p>{/if}
+      {#if addError}<p id="src-err" class="field-error" role="alert">{addError}</p>{:else}<p id="src-hint" class="field-hint">A link to one event adds the calendar it belongs to. It gets checked in the next run.</p>{/if}
       <div class="row end">
         <button class="btn" type="button" onclick={() => ((adding = false), (addError = ''))}>Cancel</button>
         <button class="btn primary" type="submit" disabled={addBusy}>{addBusy ? 'Adding' : 'Add source'}</button>

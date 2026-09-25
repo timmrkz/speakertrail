@@ -10,7 +10,6 @@
   import People from './People.svelte'
   import Sources from './Sources.svelte'
   import Runs from './Runs.svelte'
-  import Seeds from './Seeds.svelte'
   import Settings from './Settings.svelte'
   import More from './More.svelte'
   import NotFound from './NotFound.svelte'
@@ -22,7 +21,6 @@
     { href: '/app/people', label: 'People', icon: 'people' },
     { href: '/app/sources', label: 'Sources', icon: 'sources' },
     { href: '/app/runs', label: 'Runs', icon: 'runs' },
-    { href: '/app/seeds', label: 'Seeds', icon: 'seeds' },
     { href: '/app/settings', label: 'Settings', icon: 'settings' },
   ]
   const TABS = NAV.slice(0, 4)
@@ -42,7 +40,7 @@
   function current(href: string): boolean {
     return href === '/app' ? router.path === '/app' : router.under(href)
   }
-  let moreActive = $derived(['/app/runs', '/app/seeds', '/app/settings', '/app/more'].some((h) => router.under(h)))
+  let moreActive = $derived(['/app/runs', '/app/settings', '/app/more'].some((h) => router.under(h)))
 
   async function logout() {
     try {
@@ -82,8 +80,6 @@
         <Sources />
       {:else if router.under('/app/runs')}
         <Runs />
-      {:else if router.path === '/app/seeds'}
-        <Seeds />
       {:else if router.path === '/app/settings'}
         <Settings />
       {:else if router.path === '/app/more'}

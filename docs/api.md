@@ -138,7 +138,7 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check.
 
-`POST /api/sources` with `{"url": "...", "name": "optional"}` adds a candidate source and answers it with 201.
+`POST /api/sources` with `{"url": "...", "name": "optional"}` adds a candidate source and answers it with 201. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
 
 `PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name"}` answers the updated source.
 
@@ -173,9 +173,6 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `GET /api/fetches/{id}/text`, `/html` and `/screenshot` answer the stored visible text, raw HTML and PNG screenshot of one fetch, or 404 once they are older than 30 days.
 
-`GET /api/seeds` answers `{"seeds": [{"id", "input", "created_at", "processed_at", "result"}]}`, newest first.
-
-`POST /api/seeds` with `{"input": "a link or a name"}` adds a seed, queues it and answers it with 201.
 
 `GET /api/settings` answers `{"settings": [{"key", "value", "description", "updated_at"}]}`.
 

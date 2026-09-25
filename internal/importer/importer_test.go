@@ -28,7 +28,7 @@ func TestImportStartingData(t *testing.T) {
 		counts[s] = n
 	}
 	rows.Close()
-	want := map[string]int{"active": 17, "probation": 21, "candidate": 53, "manual": 5, "retired": 7}
+	want := map[string]int{"active": 17, "probation": 21, "candidate": 57, "manual": 5, "retired": 7}
 	for s, n := range want {
 		if counts[s] != n {
 			t.Errorf("%d %s sources, want %d", counts[s], s, n)

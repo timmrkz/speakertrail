@@ -43,16 +43,17 @@ The source list, the fit rules and every number live in the Settings screen.
 
 ## Running it locally
 
-On a Mac with Homebrew:
+Everything runs in Docker, so the only thing to install is
+[Docker Desktop](https://www.docker.com/products/docker-desktop/). Then:
 
 ```sh
 make run
 ```
 
-It installs what is missing, builds the app, starts a local database, loads
-the starting sources and opens the app on http://localhost:8080. The first
-time it prints a password for this machine, which stays in `.env`. `make
-help` lists everything else, and [docs/BUILD.md](docs/BUILD.md) explains it.
+It builds the app, starts a local database, loads the starting sources and
+starts the app on http://localhost:8080. The first time it prints a password
+for this machine, which stays in `.env`. `make help` lists everything else,
+and [docs/BUILD.md](docs/BUILD.md) explains it.
 
 `make crawl` checks every due source once, like the nightly job, and `make
 test` runs all tests.

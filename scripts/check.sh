@@ -1,17 +1,18 @@
 #!/bin/sh
-# Says what this machine has for Speaker Trail and how to get what is
-# missing. It changes nothing.
+# Says what this machine has for working on Speaker Trail directly, without
+# Docker, and how to get what is missing. It changes nothing. make uses it on
+# build runners, in cloud sessions and in the toolbox. A laptop works in
+# Docker and needs none of this.
 #
 #   check.sh              everything
 #   check.sh --toolchain  only what building needs, stops on a problem
 MIN_GO_MINOR=27
 MIN_NODE=22
-SYSTEM=$(uname -s 2>/dev/null)
 missing=0
 
 ok() { [ "$QUIET" = 1 ] || printf '  ok       %s\n' "$1"; }
 bad() { missing=1; printf '  missing  %s\n           %s\n' "$1" "$2"; }
-hint() { if [ "$SYSTEM" = Darwin ]; then echo "$1"; else echo "$2"; fi; }
+hint() { echo "$2"; }
 
 toolchain() {
 	if command -v go >/dev/null 2>&1; then
@@ -69,7 +70,7 @@ case "$1" in
 --toolchain)
 	QUIET=1
 	toolchain
-	[ "$missing" = 0 ] || { echo "Install the above, then run make again."; exit 1; }
+	[ "$missing" = 0 ] || { echo "Install the above, or run make without DOCKER=0 to work in Docker."; exit 1; }
 	;;
 *)
 	echo "Building"

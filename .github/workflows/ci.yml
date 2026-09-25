@@ -61,6 +61,18 @@ jobs:
       - name: Test
         run: make unit
 
+  # What make test runs on a laptop: the toolbox from compose.yaml, with its
+  # own database and Chromium.
+  toolbox:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test in the toolbox
+        run: docker compose run --rm --build dev make test
+      - name: Stop
+        if: always()
+        run: docker compose --profile '*' down --volumes
+
   image:
     runs-on: ubuntu-24.04
     steps:

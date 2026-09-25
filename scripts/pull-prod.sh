@@ -5,7 +5,7 @@ set -e
 : "${PROD_DATABASE_URL:?Set PROD_DATABASE_URL to the production address, the GitHub secret DATABASE_URL}"
 URL=${DATABASE_URL:-postgres://speakertrail:speakertrail@localhost:5432/speakertrail?sslmode=disable}
 case "$URL" in
-*@localhost:*|*@127.0.0.1:*) ;;
+*@localhost:*|*@127.0.0.1:*|*@postgres:*) ;;
 *) echo "DATABASE_URL is not local. This only ever writes into a local database."; exit 1 ;;
 esac
 dump=$(mktemp)

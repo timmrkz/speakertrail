@@ -58,7 +58,12 @@ git checkout BRANCH-NAME
 make run
 ```
 
-## What stays on your Mac
+## What is on your Mac
+
+Docker Desktop, Git and this folder, nothing else. Everything make runs
+happens in containers, see [BUILD.md](BUILD.md).
+
+What you do locally:
 
 - Looking at the interface for real, although the phone works for that too
   once it is deployed.

@@ -1,10 +1,16 @@
-# Speaker Trail on one machine: Postgres, the web interface and the nightly
-# crawl. Used for local development and as plan B on a plain server.
+# Speaker Trail on one machine, all in Docker: Postgres, the app, the
+# nightly crawl, and the toolbox that builds and tests. make drives it, see
+# docs/BUILD.md. It is also plan B on a plain server:
 #
-#   docker compose up -d postgres web      start the database and the interface
-#   docker compose run --rm nightly        run one crawl now
+#   docker compose up -d web          start the database and the app
+#   docker compose run --rm nightly   run one crawl now
 #
-# Put UI_PASSWORD_HASH and SESSION_SECRET in a .env file next to this one.
+# .env next to this file holds UI_PASSWORD_HASH and SESSION_SECRET. make
+# run writes it the first time.
+
+name: speakertrail
+
+x-database: &database postgres://speakertrail:${POSTGRES_PASSWORD:-speakertrail}@postgres:5432/speakertrail?sslmode=disable
 
 services:
   postgres:
@@ -13,20 +19,20 @@ services:
       POSTGRES_USER: speakertrail
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-speakertrail}
       POSTGRES_DB: speakertrail
-    ports:
-      - "127.0.0.1:5432:5432"
     volumes:
       - postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "speakertrail"]
-      interval: 5s
-      retries: 10
+      interval: 2s
+      retries: 30
+    restart: unless-stopped
 
   web:
     build: .
+    image: speakertrail:local
     command: ["serve"]
     environment:
-      DATABASE_URL: postgres://speakertrail:${POSTGRES_PASSWORD:-speakertrail}@postgres:5432/speakertrail?sslmode=disable
+      DATABASE_URL: *database
       UI_PASSWORD_HASH: ${UI_PASSWORD_HASH:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
     ports:
@@ -38,13 +44,57 @@ services:
 
   nightly:
     build: .
+    image: speakertrail:local
     command: ["nightly"]
     environment:
-      DATABASE_URL: postgres://speakertrail:${POSTGRES_PASSWORD:-speakertrail}@postgres:5432/speakertrail?sslmode=disable
+      DATABASE_URL: *database
     depends_on:
       postgres:
         condition: service_healthy
     profiles: ["crawl"]
 
+  # Go, Node.js and Chromium for building and testing. The repository is
+  # mounted, the caches and the interface's packages stay in volumes, so
+  # nothing lands on the machine outside this folder.
+  dev:
+    build:
+      context: .
+      target: dev
+    image: speakertrail-dev:local
+    environment:
+      DATABASE_URL: *database
+      TEST_DATABASE_URL: *database
+      API_URL: http://web:8080
+    volumes:
+      - .:/src
+      - node_modules:/src/web/node_modules
+      - gomod:/go/pkg/mod
+      - gocache:/root/.cache/go-build
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
+  # Postgres' own tools in the same version as the database, for make
+  # pull-prod.
+  pgtools:
+    image: postgres:16
+    entrypoint: ["sh"]
+    working_dir: /src
+    environment:
+      DATABASE_URL: *database
+      PROD_DATABASE_URL: ${PROD_DATABASE_URL:-}
+    volumes:
+      - .:/src:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["tools"]
+
 volumes:
   postgres:
+  node_modules:
+  gomod:
+  gocache:

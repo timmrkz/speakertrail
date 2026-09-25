@@ -29,7 +29,7 @@ Start with [README.md](README.md). In short:
 | HTTP API and login | `internal/server/` | [docs/api.md](docs/api.md) |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | starting data from the brief | `internal/importer/` | |
-| build | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
+| build, Docker | `Makefile`, `compose.yaml`, `Dockerfile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md), `.claude/skills/docker/` |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
 
@@ -45,8 +45,9 @@ Start with [README.md](README.md). In short:
   the pull request straight away, without being asked, and keep pushing to
   it. The first commit does not have to be worth looking at. It exists so
   the pull request exists, because that is where Tim follows the work.
-- His machine is an M2 Max with 32 GB of memory, on the latest macOS, with
-  Homebrew. `make` installs what else is needed.
+- His machine is an M2 Max with 32 GB of memory, on the latest macOS. He
+  does not want apps and tools installed on it. Docker Desktop is the one
+  exception, everything else runs in containers.
 - He tests the interface himself on his phone and his Mac. After each change
   say exactly what to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
@@ -121,11 +122,17 @@ messages, pull request text, code comments and chat replies.
 
 - **Go, latest version.** One module, `go 1.27` in `go.mod`. Upgrade with Go
   releases.
-- **One command.** `make` installs what the machine is missing and builds.
-  `make run` also starts the database and the app. Nobody should have to
-  remember a second command to get from a fresh Mac to a running app. A
-  build runner never installs: `CI` in the environment turns that off. The
-  program itself never installs anything, not even Chromium.
+- **Nothing on Tim's Mac but Docker.** Every tool the project needs, Go,
+  Node.js, Postgres, Chromium and whatever comes later, lives in a container
+  from `compose.yaml` and the `Dockerfile`. A new tool goes into the `dev`
+  stage of the `Dockerfile`, never into instructions for his Mac. Never tell
+  him to `brew install` or `npm install -g` anything.
+- **One command.** `make run` goes from a fresh clone to a running app.
+  Nobody should have to remember a second command. On a laptop make drives
+  Docker. Build runners, cloud sessions and the toolbox run the same targets
+  directly, see `DOCKER` in the `Makefile`. Neither make nor the program
+  ever installs anything. A new target works both ways, and CI's `toolbox`
+  job proves the Docker way.
 - **No LinkedIn, no Instagram.** The engine never requests them, not even
   for robots.txt, and the headless browser goes through a filter that
   refuses them. `TestNeverRequestsLinkedInOrInstagram` and
@@ -164,9 +171,33 @@ Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
 `TEST_DATABASE_URL` in every session.
 
 - If `go version` does not show 1.27, run `bash scripts/cloud-setup.sh`.
-- `make test` and `make` before pushing anything that touches Go.
+- `make test` and `make` before pushing anything that touches Go. They run
+  directly here, because `CLAUDE_CODE_REMOTE` is set.
+- Docker works in a session, with limits. Before changing the Docker side,
+  read the skill in `.claude/skills/docker/`.
 - The network is limited to an allowlist set in the environment. Event sites
   that are not on it cannot be fetched from a session, and the deployed app
   has no such limit.
 - There is no screen. Interface work goes through the skill in
   `.claude/skills/interface/`. Read it before changing anything in `web/`.
+
+## Where guidance goes
+
+When Tim says how he wants something done, write it down in the right
+place, in the same pull request.
+
+- **This file** holds what every session needs before its first change:
+  who Tim is, how he works, the rules that are never broken, and the words
+  things are called. Keep it short, because it is read in full every time.
+  One line per rule, with the reason when it is not obvious.
+- **A skill**, in `.claude/skills/NAME/SKILL.md`, holds how to do one kind
+  of task: steps, tools, what to check, lessons learned the hard way. It is
+  loaded only when that task comes up, so it can be long. Its description
+  says when to use it. This file points to it.
+- **`docs/`** holds what a person reads: how to build, how to deploy, how
+  the API answers. Claude reads it too, when the task touches it.
+- **Code comments** hold why a piece of code is the way it is.
+
+A wish about how Tim works is a line here. A procedure is a skill. A fact
+about the system is a doc. When in doubt, a rule here and the details in a
+skill or a doc it names.

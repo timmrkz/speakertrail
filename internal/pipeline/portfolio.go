@@ -29,6 +29,10 @@ type LookUpPayload struct {
 // maxStartups caps what one portfolio check stores.
 const maxStartups = 300
 
+// maxPortfolioPages caps the pages of one portfolio a check loads. They are
+// on one website, one request every 5 seconds.
+const maxPortfolioPages = 6
+
 // finishPortfolio stores the startups a portfolio lists, one short
 // transaction, and queues lookups of the ones not looked up yet.
 func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64, cfg settings.Settings, page *fetch.Page, rec checkRecord) error {
@@ -36,7 +40,7 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 	if base == "" {
 		base = src.URL
 	}
-	startups := extract.StartupLinks(page.Body, base)
+	startups := p.portfolioStartups(ctx, page.Body, base)
 	if len(startups) > maxStartups {
 		startups = startups[:maxStartups]
 	}
@@ -48,9 +52,17 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 	for _, s := range startups {
 		var id int64
 		isNew := false
-		err := tx.QueryRow(ctx, `SELECT id FROM organisations WHERE website_domain = $1 ORDER BY id LIMIT 1`, domainOf(s.Website)).Scan(&id)
+		var err error
+		if s.Website != "" {
+			err = tx.QueryRow(ctx, `SELECT id FROM organisations WHERE website_domain = $1 ORDER BY id LIMIT 1`, domainOf(s.Website)).Scan(&id)
+		} else {
+			err = tx.QueryRow(ctx, `SELECT id FROM organisations WHERE portfolio_page = $1 ORDER BY id LIMIT 1`, s.Page).Scan(&id)
+		}
 		if errors.Is(err, pgx.ErrNoRows) {
 			id, isNew, err = upsertOrganisation(ctx, tx, s.Name, "company", s.Website, "")
+			if err == nil && s.Page != "" {
+				_, err = tx.Exec(ctx, `UPDATE organisations SET portfolio_page = $2 WHERE id = $1 AND portfolio_page = ''`, id, s.Page)
+			}
 		}
 		if err != nil {
 			return err
@@ -74,6 +86,41 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 		p.log().Warn("queueing lookups failed", "source", src.ID, "error", err)
 	}
 	return p.advancePortfolio(ctx, src, cfg, rec.startups, fetch.Mode(rec.mode))
+}
+
+// portfolioStartups reads a portfolio's first page and the pages after it,
+// like "/p2", up to maxPortfolioPages, and lists each startup once.
+func (p *Pipeline) portfolioStartups(ctx context.Context, body, base string) []extract.Startup {
+	var out []extract.Startup
+	seen := map[string]bool{base: true}
+	queue := []string{}
+	for pages := 1; ; pages++ {
+		pp := extract.Portfolio(body, base)
+		for _, s := range pp.Startups {
+			key := s.Website + " " + s.Page
+			if !seen[key] {
+				seen[key] = true
+				out = append(out, s)
+			}
+		}
+		for _, m := range pp.More {
+			if !seen[m] {
+				seen[m] = true
+				queue = append(queue, m)
+			}
+		}
+		if len(queue) == 0 || pages >= maxPortfolioPages {
+			return out
+		}
+		next := queue[0]
+		queue = queue[1:]
+		page, err := p.page(ctx, next)
+		if err != nil {
+			p.log().Info("a portfolio page failed", "url", next, "error", err)
+			return out
+		}
+		body, base = page.Body, next
+	}
 }
 
 // advancePortfolio moves a portfolio through its lifecycle. It is active
@@ -114,7 +161,7 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 // up yet. One that failed three times is given up.
 const unlookedStartups = `
 	SELECT o.id FROM organisations o
-	WHERE o.looked_up_at IS NULL AND o.website <> ''
+	WHERE o.looked_up_at IS NULL AND (o.website <> '' OR o.portfolio_page <> '')
 	  AND EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id
 		WHERE si.organisation_id = o.id AND s.kind = 'portfolio' AND ($2 = 0 OR s.id = $2))
 	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> '') < 3
@@ -156,6 +203,7 @@ func (p *Pipeline) handleLookUp(ctx context.Context, j *queue.Job) error {
 type lookUpRecord struct {
 	runID, orgID      int64
 	url, imprint      string
+	website           string
 	note, err         string
 	duration          time.Duration
 	at                time.Time
@@ -171,17 +219,36 @@ type lookUpRecord struct {
 func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 	rec := lookUpRecord{runID: runID, orgID: orgID, at: p.now()}
 	var lookedUp *time.Time
+	var portfolioPage string
 	err := p.Pool.QueryRow(ctx, `
-		SELECT o.name, o.website, o.looked_up_at, s.id, s.name
+		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name
 		FROM organisations o
 		JOIN LATERAL (SELECT s.id, s.name FROM sightings si JOIN sources s ON s.id = si.source_id
 			WHERE si.organisation_id = o.id AND s.kind = 'portfolio' ORDER BY si.id LIMIT 1) s ON true
-		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &lookedUp, &rec.sourceID, &rec.sourceName)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (lookedUp != nil || rec.url == "")) {
+		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName)
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (lookedUp != nil || rec.url == "" && portfolioPage == "")) {
 		return nil
 	}
 	if err != nil {
 		return err
+	}
+
+	// A startup known by its page on the portfolio's site gets its website
+	// from there.
+	if rec.url == "" {
+		rec.url = portfolioPage
+		about, err := p.page(ctx, portfolioPage)
+		if err != nil {
+			rec.err = err.Error()
+			rec.lookedUp = blocked(err, about)
+			return p.finishLookUp(ctx, rec, extract.Imprint{})
+		}
+		rec.website = extract.StartupWebsite(about.Body, portfolioPage)
+		if rec.website == "" {
+			rec.lookedUp, rec.note = true, "no website on its portfolio page"
+			return p.finishLookUp(ctx, rec, extract.Imprint{})
+		}
+		rec.url = rec.website
 	}
 
 	home, err := p.page(ctx, rec.url)
@@ -231,8 +298,10 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 				name = CASE WHEN $4 <> '' THEN $4 ELSE name END,
 				normalised_name = CASE WHEN $5 <> '' THEN $5 ELSE normalised_name END,
 				city = CASE WHEN city = '' THEN $6 ELSE city END,
+				website = CASE WHEN website = '' THEN $7 ELSE website END,
+				website_domain = CASE WHEN website_domain = '' THEN $8 ELSE website_domain END,
 				updated_at = $2
-			WHERE id = $1`, rec.orgID, rec.at, rec.imprint, im.Company, NormaliseOrg(im.Company), im.City); err != nil {
+			WHERE id = $1`, rec.orgID, rec.at, rec.imprint, im.Company, NormaliseOrg(im.Company), im.City, rec.website, domainOf(rec.website)); err != nil {
 			return err
 		}
 	}

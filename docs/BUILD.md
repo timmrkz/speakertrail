@@ -59,7 +59,9 @@ reachable from the Mac, and only from the Mac itself.
 A portfolio is a page that lists startups, like an accelerator's or a
 university's. Add one on Sources and set "The page lists" to Startups. A
 run checks each portfolio every 14 days and stores the startups it links
-to. Then it looks up at most 10 startups per run: it loads the startup's
+to, over up to six pages of the list. Many portfolios link to a page of
+their own about each startup, and the website is found there. Then it
+looks up at most 10 startups per run: it loads the startup's
 website, finds its imprint and takes the managing directors it names. They
 count as founders when the imprint reads like a young company, a GmbH, UG
 or sole trader with at most four managing directors. A bank, a stock

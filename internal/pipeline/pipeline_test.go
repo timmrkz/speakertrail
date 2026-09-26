@@ -993,3 +993,52 @@ func TestPortfolioLeadsToWhoRunsEachStartup(t *testing.T) {
 		t.Errorf("%d people after two runs", c)
 	}
 }
+
+// Many portfolios link to a page of their own about each startup, over
+// several pages. All names are invented.
+func TestPortfolioWithPagesAboutEachStartup(t *testing.T) {
+	e := setup(t, "")
+	e.site.set("/our-startups", `<main><a href="/startups/beispiel-robotics">Beispiel Robotics</a>
+<a href="/startups/probe-labs">Probe Labs</a><a href="/startups/stumm">Stumm</a><a href="/our-startups/p2">2</a></main>`)
+	e.site.set("/our-startups/p2", `<main><a href="/startups/muster-health">Muster Health</a><a href="/startups/probe-labs">Probe Labs</a>
+<a href="/startups/stumm">Stumm</a><a href="/our-startups">1</a></main>`)
+	e.site.set("/startups/beispiel-robotics", `<main><p>Robots for bakeries.</p><a href="http://beispiel-robotics.test/">Website</a></main>`)
+	e.site.set("/startups/probe-labs", `<main><a href="http://probe-labs.test/">Go to Probe Labs</a></main>`)
+	e.site.set("/startups/muster-health", `<main><a href="http://muster-health.test/de">Website</a></main>`)
+	e.site.set("/startups/stumm", `<main><p>No link to anywhere.</p></main>`)
+	e.site.set("http://beispiel-robotics.test/", `<footer><a href="/impressum">Impressum</a></footer>`)
+	e.site.set("http://beispiel-robotics.test/impressum", `<p>Beispiel Robotics GmbH</p><p>50667 Köln</p><p>Geschäftsführerin: Lena Musterfrau</p>`)
+	e.site.set("http://probe-labs.test/", `<h1>Probe</h1>`)
+	e.site.set("http://probe-labs.test/impressum", `<p>Probe Labs UG (haftungsbeschränkt)</p><p>Geschäftsführer: Tom Testmann</p>`)
+	e.site.set("http://muster-health.test/", `<a href="/legal">Imprint</a>`)
+	e.site.set("http://muster-health.test/legal", `<p>Muster Health GmbH, 40210 Düsseldorf</p><p>Managing Director: Mara Beispielfrau</p>`)
+	var src int64
+	if err := e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate') RETURNING id`,
+		e.site.srv.URL+"/our-startups").Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+	if got := e.one(t, `SELECT startups_found || ' found' FROM source_checks WHERE source_id = $1`, src); got != "4 found" {
+		t.Errorf("check over two pages: %v", got)
+	}
+	rows, err := e.pool.Query(t.Context(), `SELECT o.name || ', ' || o.website FROM organisations o ORDER BY o.name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orgs, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Beispiel Robotics GmbH, http://beispiel-robotics.test/",
+		"Muster Health GmbH, http://muster-health.test/",
+		"Probe Labs UG (haftungsbeschränkt), http://probe-labs.test/",
+		"Stumm, ",
+	}
+	if strings.Join(orgs, "\n") != strings.Join(want, "\n") {
+		t.Errorf("startups:\n%s", strings.Join(orgs, "\n"))
+	}
+	if c := e.count(t, "people WHERE fit = 'founder'"); c != 3 {
+		t.Errorf("%d founders, want 3", c)
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.name = 'Stumm'`); got != "no website on its portfolio page" {
+		t.Errorf("the startup without a website: %q", got)
+	}
+}

@@ -162,3 +162,43 @@ func TestStartupLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestPortfolioWithPagesAboutEachStartup(t *testing.T) {
+	body := `<html><body><header><nav>
+<a href="/en/program/incubator">Incubator</a><a href="/en/program/mentors">Mentors</a><a href="/en/program/prototyping">Prototyping</a>
+</nav></header><main>
+<a href="/en/startups/beispiel-robotics">Beispiel Robotics</a>
+<a href="/en/startups/probe-labs"><img alt="" src="p.png"></a>
+<a href="/en/startups/muster-health">Muster Health</a>
+<a href="/en/news/2026">News</a>
+<a href="/en/our-startups/p2">2</a>
+<a href="/en/our-startups/p2">Next</a>
+</main><footer><a href="/en/privacy">Privacy</a></footer></body></html>`
+	pp := Portfolio(body, "https://hub.example/en/our-startups")
+	var got []string
+	for _, s := range pp.Startups {
+		got = append(got, s.Name+" "+s.Page+" "+s.Website)
+	}
+	want := []string{
+		"Beispiel Robotics https://hub.example/en/startups/beispiel-robotics ",
+		"Probe Labs https://hub.example/en/startups/probe-labs ",
+		"Muster Health https://hub.example/en/startups/muster-health ",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("startups:\n%s", strings.Join(got, "\n"))
+	}
+	if strings.Join(pp.More, " ") != "https://hub.example/en/our-startups/p2" {
+		t.Errorf("more pages %q", pp.More)
+	}
+	// The second page links back to the first, which is not another page.
+	if more := Portfolio(`<a href="/en/our-startups">1</a><a href="/en/our-startups/p3">3</a>`, "https://hub.example/en/our-startups/p2").More; strings.Join(more, " ") != "https://hub.example/en/our-startups/p3" {
+		t.Errorf("more pages from page 2 %q", more)
+	}
+
+	about := `<header><a href="https://www.linkedin.com/company/hub">LinkedIn</a></header>
+<main><a href="https://www.instagram.com/probe">Instagram</a><a href="https://blog.example/probe">A story</a>
+<a href="https://probe-labs.example/de">Website</a></main>`
+	if got := StartupWebsite(about, "https://hub.example/en/startups/probe-labs"); got != "https://probe-labs.example/" {
+		t.Errorf("website %q", got)
+	}
+}

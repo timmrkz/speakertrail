@@ -143,7 +143,7 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
 
 `health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events. Its health counts `startups_found`.
 
-A check of a portfolio stores each startup its page links to, with its website. A lookup then loads the startup's website, finds its imprint and stores the managing directors it names as founders, when the imprint reads like a young company: a GmbH, UG or sole trader with at most four managing directors. A startup whose site does not answer is looked up again by a later run, three times at most. Only names are taken from an imprint.
+A check of a portfolio stores each startup its page links to, with its website, or with the portfolio's own page about it, and follows the list to its next pages, six pages at most. A lookup then finds the website on that page when needed, loads it, finds its imprint and stores the managing directors it names as founders, when the imprint reads like a young company: a GmbH, UG or sole trader with at most four managing directors. A startup whose site does not answer is looked up again by a later run, three times at most. Only names are taken from an imprint.
 
 `POST /api/sources` with `{"url": "...", "name": "optional", "portfolio": false}` adds a candidate source and answers it with 201. With `"portfolio": true` the page is a list of startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
 

@@ -461,3 +461,45 @@ func TestJavaScriptSourceSwitchesToBrowser(t *testing.T) {
 		t.Error("the browser fetch was not stored with a screenshot")
 	}
 }
+
+// make people without addresses takes its pages from what runs found.
+func TestEventPagesPicksOnePagePerSource(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	a := e.addSource(t, "/a", "active")
+	b := e.addSource(t, "/b", "active")
+	c := e.addSource(t, "/c", "active")
+	add := func(source int64, url, fit, format string, start time.Time) {
+		t.Helper()
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO events (title, starts_at, canonical_url, fit, format) VALUES ('Beispiel', $1, $2, $3, $4) RETURNING id`,
+			start, url, fit, format).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `INSERT INTO sightings (source_id, checked_at, event_id, is_new) VALUES ($1, $2, $3, true)`, source, now, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	day := 24 * time.Hour
+	add(a, "https://example.org/a/later", "kept", "in_person", now.Add(5*day))
+	add(a, "https://example.org/a/next", "kept", "in_person", now.Add(2*day))
+	add(a, "https://example.org/a/past", "kept", "in_person", now.Add(-2*day))
+	add(b, e.site.srv.URL+"/b", "kept", "in_person", now.Add(1*day))
+	add(b, "https://example.org/b/dropped", "dropped", "in_person", now.Add(1*day))
+	add(b, "https://example.org/b/event", "kept", "hybrid", now.Add(3*day))
+	add(c, "https://example.org/c/online", "kept", "online", now.Add(1*day))
+	add(c, "https://example.org/c/feed.ics", "kept", "in_person", now.Add(1*day))
+	add(c, "", "kept", "in_person", now.Add(1*day))
+
+	got, err := pipeline.EventPages(ctx, e.pool, 5, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://example.org/a/next https://example.org/b/event"
+	if strings.Join(got, " ") != want {
+		t.Errorf("pages %v, want %s", got, want)
+	}
+	if got, _ := pipeline.EventPages(ctx, e.pool, 1, now); len(got) != 1 {
+		t.Errorf("%d pages with a limit of 1", len(got))
+	}
+}

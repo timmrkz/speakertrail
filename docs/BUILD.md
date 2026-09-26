@@ -39,7 +39,7 @@ reachable from the Mac, and only from the Mac itself.
 | `make run` | builds and starts the app with its database, on http://localhost:8080 |
 | `make` | builds the app |
 | `make crawl` | checks every due source once, like the nightly job |
-| `make people URL="…"` | who is on stage on one or more event pages, by the engine's rules and by the local model, see below. Stores nothing |
+| `make people` | who is on stage on 5 event pages the runs found, by the engine's rules and by the local model, see below. `URL="…"` names the pages instead. Stores nothing |
 | `make ui` | the interface with live reload on http://localhost:5173, sending the API to a `make run` in another terminal |
 | `make mock` | the interface alone with invented data, on http://localhost:5173. The mock password is `speakertrail` |
 | `make test` | `unit` and `interface` |
@@ -70,8 +70,11 @@ The first `make people` downloads the model, `ai/gemma3:12b-q4_K_M`, about
 8 GB. After that it starts in seconds. To try another one, name it:
 
 ```
-make people MODEL=ai/gemma3:4b-q4_K_M URL="https://…"
+make people MODEL=ai/gemma3:4b-q4_K_M
 ```
+
+Without `URL`, `make people` takes the pages of single upcoming events that
+runs found, one per source. So start a run in the app first, on Runs.
 
 Each line the model gives comes with the passage from the page that puts
 the person on stage. A name the page does not contain is left out, and so is

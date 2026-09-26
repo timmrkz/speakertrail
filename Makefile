@@ -11,9 +11,9 @@
 #
 #   make            build the app
 #   make crawl      check every due source once, like the nightly job
-#   make people URL="https://… https://…"
-#                   who is on stage on these event pages, by the engine's
-#                   rules and by the local model. Stores nothing
+#   make people     who is on stage on 5 event pages the runs found, by the
+#                   engine's rules and by the local model. Stores nothing.
+#                   URL="https://… https://…" names the pages instead
 #   make ui         the interface with live reload on http://localhost:5173,
 #                   next to a running make run
 #   make mock       the interface alone, with invented data and no backend
@@ -41,7 +41,6 @@ DOCKER ?= $(if $(or $(CI),$(CLAUDE_CODE_REMOTE),$(SPEAKERTRAIL_IN_DOCKER)),0,1)
 # through Docker Model Runner. Any model on hub.docker.com/u/ai works, for
 # example MODEL=ai/gemma3:4b-q4_K_M for a faster, smaller one.
 MODEL ?= ai/gemma3:12b-q4_K_M
-NEED_URL = @test -n "$(URL)" || { echo 'Name one or more event pages: make people URL="https://…"'; exit 1; }
 
 .PHONY: all run crawl people model ui mock test unit interface shell check db pull-prod image stop clean help docker
 
@@ -72,8 +71,7 @@ crawl: all
 	@$(COMPOSE) run --rm nightly
 
 people: all model
-	$(NEED_URL)
-	@$(COMPOSE) run --rm --no-deps -e LLM_MODEL=$(MODEL) web people $(URL)
+	@$(COMPOSE) run --rm -e LLM_MODEL=$(MODEL) web people $(URL)
 
 # The model, downloaded once. The first time takes a while, it is several GB.
 model: docker
@@ -172,9 +170,8 @@ crawl: all db
 	@$(ENV) $(BIN)/speakertrail nightly
 
 # Directly, the model answers on http://localhost:12434, or at LLM_URL.
-people: all
-	$(NEED_URL)
-	@LLM_MODEL=$(MODEL) $(BIN)/speakertrail people $(URL)
+people: all db
+	@LLM_MODEL=$(MODEL) $(ENV) $(BIN)/speakertrail people $(URL)
 
 model:
 	@echo "Directly, start the model yourself and set LLM_URL if it is not on localhost:12434"

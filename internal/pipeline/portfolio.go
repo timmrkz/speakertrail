@@ -201,9 +201,12 @@ func (p *Pipeline) handleLookUp(ctx context.Context, j *queue.Job) error {
 }
 
 type lookUpRecord struct {
-	runID, orgID      int64
-	url, imprint      string
-	website           string
+	runID, orgID int64
+	url, imprint string
+	website      string
+	// profiles are links to people's own profiles found on the startup's
+	// site. Only those that carry a founder's name are kept.
+	profiles          []string
 	note, err         string
 	duration          time.Duration
 	at                time.Time
@@ -273,7 +276,18 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		rec.imprint = ""
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
-	return p.finishLookUp(ctx, rec, extract.ParseImprint(imp.Text))
+	im := extract.ParseImprint(imp.Text)
+	rec.profiles = append(extract.ProfileLinks(home.Body, base), extract.ProfileLinks(imp.Body, rec.imprint)...)
+	// The team page often links each founder's profile. It is only worth a
+	// request when the imprint named founders.
+	if team := extract.TeamLink(home.Body, base); im.Young() && team != "" && team != rec.imprint {
+		if tp, err := p.page(ctx, team); err == nil {
+			rec.profiles = append(rec.profiles, extract.ProfileLinks(tp.Body, team)...)
+		} else {
+			p.log().Info("a team page failed", "url", team, "error", err)
+		}
+	}
+	return p.finishLookUp(ctx, rec, im)
 }
 
 // page loads a page, with the browser when it is an empty JavaScript shell.
@@ -370,6 +384,25 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder') ON CONFLICT DO NOTHING`, id, rec.orgID); err != nil {
 		return false, err
+	}
+	// Profiles the startup's own site links under this person's name. The
+	// engine never opens them. Tim confirms or rejects each.
+	for _, l := range extract.ProfilesOf(rec.profiles, name) {
+		platform, clean := ProfileOf(l)
+		if clean == "" {
+			continue
+		}
+		// Xing and GitHub have no platform of their own in the data model.
+		if platform == "website" {
+			platform = "other"
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO profiles (person_id, platform, url, handle, found_via, source_id, first_seen_at, last_seen_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+			ON CONFLICT (platform, url) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at`,
+			id, platform, clean, handleOf(clean), "website of "+strings.TrimSuffix(domainOf(rec.url), "/"), rec.sourceID, rec.at); err != nil {
+			return false, err
+		}
 	}
 	return isNew, sight(ctx, tx, rec.sourceID, rec.at, "person_id", id, isNew)
 }

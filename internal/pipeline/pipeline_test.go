@@ -917,7 +917,11 @@ func portfolioSite(t *testing.T, e env) int64 {
 <a href="https://www.linkedin.com/company/beispiel">LinkedIn</a>
 </main>
 <footer><a href="http://sponsor.test/">Sponsor</a></footer></body></html>`)
-	e.site.set("http://beispiel-robotics.test/", `<html><body><h1>Robots</h1><footer><a href="/rechtliches">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-robotics.test/", `<html><body><h1>Robots</h1><header><a href="/team">Team</a></header>
+<footer><a href="/rechtliches">Impressum</a><a href="https://www.linkedin.com/company/beispiel-robotics">LinkedIn</a></footer></body></html>`)
+	// The team page links profiles. Only those with the founder's name count.
+	e.site.set("http://beispiel-robotics.test/team", `<main><h3>Lena Musterfrau</h3><a href="https://www.linkedin.com/in/lena-musterfrau-4b2a1/">in</a>
+<h3>Tom Testmann</h3><a href="https://de.linkedin.com/in/ACoAAB12xyz">in</a><h3>Karl Kontrolle</h3><a href="https://x.com/kkontrolle">x</a></main>`)
 	e.site.set("http://beispiel-robotics.test/rechtliches", `<html><body><h1>Impressum</h1>
 <p>Beispiel Robotics GmbH<br>Musterstraße 1<br>50667 Köln</p>
 <p>Geschäftsführer: Lena Musterfrau, Tom Testmann</p>
@@ -979,6 +983,9 @@ func TestPortfolioLeadsToWhoRunsEachStartup(t *testing.T) {
 	}
 	if c := e.count(t, "organisations WHERE website LIKE '%schweigen%' AND looked_up_at IS NULL"); c != 1 {
 		t.Error("a startup whose site did not answer is not left for a later run")
+	}
+	if got := e.one(t, `SELECT string_agg(p.full_name || ' ' || pr.url || ' ' || pr.review || ' ' || pr.found_via, ', ') FROM profiles pr JOIN people p ON p.id = pr.person_id`); got != "Lena Musterfrau https://www.linkedin.com/in/lena-musterfrau-4b2a1 open website of beispiel-robotics.test" {
+		t.Errorf("profiles: %v", got)
 	}
 	if c := e.count(t, "people WHERE headline LIKE '%@%' OR headline ~ '[0-9]{4}' OR full_name ~ '[0-9@]'"); c != 0 {
 		t.Error("contact details were stored")

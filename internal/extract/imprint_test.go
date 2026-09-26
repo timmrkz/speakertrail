@@ -202,3 +202,35 @@ func TestPortfolioWithPagesAboutEachStartup(t *testing.T) {
 		t.Errorf("website %q", got)
 	}
 }
+
+func TestTeamPageAndProfiles(t *testing.T) {
+	home := `<header><a href="/produkt">Produkt</a><a href="/ueber-uns">Über uns</a></header><footer><a href="/impressum">Impressum</a></footer>`
+	if got := TeamLink(home, "https://beispiel.example/"); got != "https://beispiel.example/ueber-uns" {
+		t.Errorf("team page %q", got)
+	}
+	if got := TeamLink(`<a href="/de/team/">Menschen</a>`, "https://beispiel.example/"); got != "https://beispiel.example/de/team/" {
+		t.Errorf("team page by path %q", got)
+	}
+	// All names are invented.
+	team := `<main>
+<div><h3>Lena Musterfrau</h3><a href="https://www.linkedin.com/in/lena-musterfrau-4b2a1/">LinkedIn</a></div>
+<div><h3>Tom Testmann</h3><a href="https://x.com/ttestmann">X</a><a href="https://de.linkedin.com/in/ACoAAB12xyz">LinkedIn</a></div>
+<div><h3>Jürgen Weß</h3><a href="https://www.xing.com/profile/Juergen_Wess">Xing</a></div>
+</main><footer><a href="https://www.linkedin.com/company/beispiel">Beispiel on LinkedIn</a>
+<a href="https://www.linkedin.com/posts/beispiel_news-123">A post</a></footer>`
+	links := ProfileLinks(team, "https://beispiel.example/ueber-uns")
+	if len(links) != 4 {
+		t.Fatalf("profile links %q", links)
+	}
+	for name, want := range map[string]string{
+		"Lena Musterfrau":  "https://www.linkedin.com/in/lena-musterfrau-4b2a1/",
+		"Dr. Tom Testmann": "https://x.com/ttestmann",
+		"Jürgen Weß":       "https://www.xing.com/profile/Juergen_Wess",
+		"Mara Beispiel":    "",
+		"Lena Testmann":    "",
+	} {
+		if got := strings.Join(ProfilesOf(links, name), " "); got != want {
+			t.Errorf("%s: %q, want %q", name, got, want)
+		}
+	}
+}

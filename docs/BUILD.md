@@ -66,6 +66,11 @@ website, finds its imprint and takes the managing directors it names. They
 count as founders when the imprint reads like a young company, a GmbH, UG
 or sole trader with at most four managing directors. A bank, a stock
 company or an association does not. This needs no language model.
+When the imprint names founders, the lookup also reads the startup's team
+page and keeps the profile links whose address carries a founder's name,
+like `linkedin.com/in/lena-musterfrau`. The engine never opens them. You
+confirm or reject each on the person's sheet, where Find on LinkedIn
+searches for anyone without one.
 
 Each of these founders says why on their sheet, like "Managing director of
 Beispiel GmbH, by its imprint. In the portfolio of Beispiel Hub". `make

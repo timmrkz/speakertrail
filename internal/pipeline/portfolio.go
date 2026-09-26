@@ -158,14 +158,21 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 }
 
 // unlookedStartups are startups from portfolios whose imprint was not looked
-// up yet. One that failed three times is given up.
+// up yet, then those looked up longest ago, before $3, to see whether they
+// are still active. One whose site failed three times since is given up.
 const unlookedStartups = `
 	SELECT o.id FROM organisations o
-	WHERE o.looked_up_at IS NULL AND (o.website <> '' OR o.portfolio_page <> '')
+	WHERE (o.looked_up_at IS NULL OR o.looked_up_at < $3) AND (o.website <> '' OR o.portfolio_page <> '')
 	  AND EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id
 		WHERE si.organisation_id = o.id AND s.kind = 'portfolio' AND ($2 = 0 OR s.id = $2))
-	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> '') < 3
-	ORDER BY o.id LIMIT $1`
+	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> ''
+		AND l.looked_up_at > COALESCE(o.looked_up_at, '-infinity')) < 3
+	ORDER BY o.looked_up_at NULLS FIRST, o.id LIMIT $1`
+
+// relookupBefore is when a startup's last lookup is old enough for another.
+func (p *Pipeline) relookupBefore(cfg settings.Settings) time.Time {
+	return p.now().Add(-cfg.Days("relookup_days", 90))
+}
 
 // enqueueLookUps queues lookups for a run. With a source it only takes
 // startups that portfolio lists.
@@ -173,7 +180,11 @@ func (p *Pipeline) enqueueLookUps(ctx context.Context, runID, sourceID int64, li
 	if limit <= 0 {
 		return 0, nil
 	}
-	rows, err := p.Pool.Query(ctx, unlookedStartups, limit, sourceID)
+	cfg, err := settings.Load(ctx, p.Pool)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := p.Pool.Query(ctx, unlookedStartups, limit, sourceID, p.relookupBefore(cfg))
 	if err != nil {
 		return 0, err
 	}
@@ -214,22 +225,33 @@ type lookUpRecord struct {
 	sourceID          int64
 	sourceName, name  string
 	lookedUp, renamed bool
+	// activity is what the signs of life say, see organisations.activity,
+	// with lastSign the newest date the website shows.
+	activity, activityNote string
+	lastSign               *time.Time
 }
 
 // LookUp loads a startup's website, finds its imprint and stores the
-// people it names as the ones who run the company. A site that cannot be
-// reached is tried again by a later run, three times at most.
+// people it names as the ones who run the company. It also looks for signs
+// of life: a parked domain, a company being wound up, and the newest date
+// the site shows. A site that cannot be reached is tried again by a later
+// run, and after three tries it counts as gone.
 func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
+	cfg, err := settings.Load(ctx, p.Pool)
+	if err != nil {
+		return err
+	}
 	rec := lookUpRecord{runID: runID, orgID: orgID, at: p.now()}
 	var lookedUp *time.Time
 	var portfolioPage string
-	err := p.Pool.QueryRow(ctx, `
+	err = p.Pool.QueryRow(ctx, `
 		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name
 		FROM organisations o
 		JOIN LATERAL (SELECT s.id, s.name FROM sightings si JOIN sources s ON s.id = si.source_id
 			WHERE si.organisation_id = o.id AND s.kind = 'portfolio' ORDER BY si.id LIMIT 1) s ON true
 		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (lookedUp != nil || rec.url == "" && portfolioPage == "")) {
+	recent := lookedUp != nil && !lookedUp.Before(p.relookupBefore(cfg))
+	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (recent || rec.url == "" && portfolioPage == "")) {
 		return nil
 	}
 	if err != nil {
@@ -259,12 +281,31 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		rec.err = err.Error()
 		// A site that refuses the bot is not asked again.
 		rec.lookedUp = blocked(err, home)
+		if !rec.lookedUp {
+			// The third time a site does not answer, the startup counts as
+			// gone, until a later lookup finds it again.
+			var failed int
+			if err := p.Pool.QueryRow(ctx, `
+				SELECT count(*) FROM startup_lookups WHERE organisation_id = $1 AND error <> '' AND looked_up_at > COALESCE($2::timestamptz, '-infinity')`,
+				orgID, lookedUp).Scan(&failed); err != nil {
+				return err
+			}
+			if failed+1 >= 3 {
+				rec.lookedUp, rec.activity, rec.activityNote = true, "gone", "the website did not answer three times"
+			}
+		}
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
 	base := home.FinalURL
 	if base == "" {
 		base = rec.url
 	}
+	if extract.Parked(home.Text) {
+		rec.lookedUp, rec.note = true, "the website is a parked domain"
+		rec.activity, rec.activityNote = "gone", "the website is a parked domain"
+		return p.finishLookUp(ctx, rec, extract.Imprint{})
+	}
+	p.signsOfLife(ctx, &rec, cfg, home, base, "")
 	rec.imprint = extract.ImprintLink(home.Body, base)
 	if rec.imprint == "" {
 		rec.imprint = strings.TrimSuffix(base, "/") + "/impressum"
@@ -277,6 +318,16 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
 	im := extract.ParseImprint(imp.Text)
+	if extract.InLiquidation(imp.Text) {
+		rec.activity, rec.activityNote = "dissolved", "the imprint says the company is being wound up"
+	}
+	// The sitemap says when the site last changed. It is only worth a
+	// request when the imprint named founders.
+	if im.Young() && rec.activity != "dissolved" {
+		if sm, err := p.Fetcher.HTTP(ctx, strings.TrimSuffix(base, "/")+"/sitemap.xml"); err == nil {
+			p.signsOfLife(ctx, &rec, cfg, home, base, sm.Body)
+		}
+	}
 	rec.profiles = append(extract.ProfileLinks(home.Body, base), extract.ProfileLinks(imp.Body, rec.imprint)...)
 	// The team page often links each founder's profile. It is only worth a
 	// request when the imprint named founders.
@@ -288,6 +339,41 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		}
 	}
 	return p.finishLookUp(ctx, rec, im)
+}
+
+// signsOfLife sets how active the startup looks from the newest date its
+// site shows: the sitemap's newest change or the copyright year. Without
+// any date it is unknown. Being wound up or gone is set elsewhere and wins.
+func (p *Pipeline) signsOfLife(_ context.Context, rec *lookUpRecord, cfg settings.Settings, home *fetch.Page, base, sitemap string) {
+	if rec.activity == "dissolved" || rec.activity == "gone" {
+		return
+	}
+	now := p.now()
+	var newest time.Time
+	var from string
+	if t := extract.SitemapNewest(sitemap, now); !t.IsZero() {
+		newest, from = t, "its sitemap"
+	}
+	if y := extract.CopyrightYear(home.Text); y > 0 {
+		// A copyright of this year is today, an older one the year's end.
+		t := time.Date(y, 12, 31, 0, 0, 0, 0, time.UTC)
+		if y >= now.Year() {
+			t = now
+		}
+		if t.After(newest) {
+			newest, from = t, "its copyright"
+		}
+	}
+	if newest.IsZero() {
+		rec.activity, rec.activityNote, rec.lastSign = "unknown", "the website shows no date", nil
+		return
+	}
+	rec.lastSign = &newest
+	rec.activity = "active"
+	if now.Sub(newest) > cfg.Days("quiet_after_days", 365) {
+		rec.activity = "quiet"
+	}
+	rec.activityNote = "the website changed " + newest.Format("January 2006") + ", by " + from
 }
 
 // page loads a page, with the browser when it is an empty JavaScript shell.
@@ -314,8 +400,12 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 				city = CASE WHEN city = '' THEN $6 ELSE city END,
 				website = CASE WHEN website = '' THEN $7 ELSE website END,
 				website_domain = CASE WHEN website_domain = '' THEN $8 ELSE website_domain END,
+				activity = CASE WHEN $9 <> '' THEN $9 ELSE activity END,
+				last_sign_at = CASE WHEN $9 <> '' THEN $10 ELSE last_sign_at END,
+				activity_note = CASE WHEN $9 <> '' THEN $11 ELSE activity_note END,
 				updated_at = $2
-			WHERE id = $1`, rec.orgID, rec.at, rec.imprint, im.Company, NormaliseOrg(im.Company), im.City, rec.website, domainOf(rec.website)); err != nil {
+			WHERE id = $1`, rec.orgID, rec.at, rec.imprint, im.Company, NormaliseOrg(im.Company), im.City, rec.website, domainOf(rec.website),
+			rec.activity, rec.lastSign, rec.activityNote); err != nil {
 			return err
 		}
 	}

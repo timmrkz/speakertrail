@@ -3,6 +3,7 @@ package extract
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 // All companies, people and addresses here are invented.
@@ -232,5 +233,28 @@ func TestTeamPageAndProfiles(t *testing.T) {
 		if got := strings.Join(ProfilesOf(links, name), " "); got != want {
 			t.Errorf("%s: %q, want %q", name, got, want)
 		}
+	}
+}
+
+func TestSignsOfLife(t *testing.T) {
+	if !Parked("Diese Domain kaufen. Die Domain beispiel.example steht zum Verkauf.") || !Parked("This domain may be for sale! sedo.com") {
+		t.Error("a parked domain was not seen")
+	}
+	if Parked("Beispiel Robotics builds robots for bakeries. Talk to our sales team about your domain knowledge.") {
+		t.Error("a working site was taken for parked")
+	}
+	if !InLiquidation("Beispiel Robotics GmbH i. L.\nGeschäftsführer: Lena Musterfrau") || !InLiquidation("Probe Labs UG (haftungsbeschränkt) in Liquidation") {
+		t.Error("a company being wound up was not seen")
+	}
+	if InLiquidation("Beispiel GmbH, Liquiditätsplanung für Startups") {
+		t.Error("liquidity planning is not a liquidation")
+	}
+	if y := CopyrightYear("© 2019 – 2024 Beispiel GmbH. Copyright 2021"); y != 2024 {
+		t.Errorf("copyright year %d", y)
+	}
+	now := time.Date(2026, 9, 26, 0, 0, 0, 0, time.UTC)
+	xml := `<urlset><url><lastmod>2025-03-01</lastmod></url><url><lastmod>2026-02-14T10:00:00+00:00</lastmod></url><url><lastmod>2031-01-01</lastmod></url></urlset>`
+	if got := SitemapNewest(xml, now); !got.Equal(time.Date(2026, 2, 14, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("sitemap newest %v", got)
 	}
 }

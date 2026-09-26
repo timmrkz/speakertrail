@@ -1049,3 +1049,63 @@ func TestPortfolioWithPagesAboutEachStartup(t *testing.T) {
 		t.Errorf("the startup without a website: %q", got)
 	}
 }
+
+// A lookup tells a working startup from one that went quiet or is gone.
+// All names are invented.
+func TestLookupsSeeWhetherAStartupIsStillActive(t *testing.T) {
+	e := setup(t, "")
+	e.site.set("/portfolio", `<main><a href="http://aktiv.test/">Aktiv</a><a href="http://still.test/">Still</a>
+<a href="http://abwicklung.test/">Abwicklung</a><a href="http://geparkt.test/">Geparkt</a><a href="http://stumm.test/">Stumm</a></main>`)
+	imprint := func(host, company, name string) {
+		e.site.set("http://"+host+"/impressum", `<p>`+company+`</p><p>50667 Köln</p><p>Geschäftsführer: `+name+`</p>`)
+	}
+	e.site.set("http://aktiv.test/", `<h1>Aktiv</h1><footer>© 2021 – 2026 Aktiv GmbH</footer>`)
+	imprint("aktiv.test", "Aktiv GmbH", "Lena Musterfrau")
+	e.site.set("http://still.test/", `<h1>Still</h1><footer>© 2023 Still GmbH</footer>`)
+	e.site.set("http://still.test/sitemap.xml", `<urlset><url><lastmod>2024-05-02</lastmod></url></urlset>`)
+	imprint("still.test", "Still GmbH", "Tom Testmann")
+	e.site.set("http://abwicklung.test/", `<h1>Abwicklung</h1><footer>© 2026</footer>`)
+	imprint("abwicklung.test", "Abwicklung GmbH i. L.", "Mara Beispielfrau")
+	e.site.set("http://geparkt.test/", `<p>Diese Domain kaufen. geparkt.test steht zum Verkauf.</p>`)
+	// stumm.test has no pages at all.
+	if _, err := e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate')`,
+		e.site.srv.URL+"/portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	activity := func() string {
+		t.Helper()
+		rows, err := e.pool.Query(t.Context(), `SELECT website_domain || ' ' || activity || ': ' || activity_note FROM organisations ORDER BY website_domain`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+		return strings.Join(got, "\n")
+	}
+	for range 3 {
+		runOnce(t, e)
+	}
+	want := `abwicklung.test dissolved: the imprint says the company is being wound up
+aktiv.test active: the website changed September 2026, by its copyright
+geparkt.test gone: the website is a parked domain
+still.test quiet: the website changed May 2024, by its sitemap
+stumm.test gone: the website did not answer three times`
+	if got := activity(); got != want {
+		t.Errorf("after three runs:\n%s", got)
+	}
+	if c := e.count(t, "startup_lookups"); c != 7 {
+		t.Errorf("%d lookups, want 4 and the silent site twice more", c)
+	}
+
+	// 90 days on, each startup is looked up again. The quiet one has a new
+	// sitemap entry and counts as active again.
+	later := now.Add(91 * 24 * time.Hour)
+	e.p.Now = func() time.Time { return later }
+	e.site.set("http://still.test/sitemap.xml", `<urlset><url><lastmod>2026-12-01</lastmod></url></urlset>`)
+	runOnce(t, e)
+	if got := e.one(t, `SELECT activity FROM organisations WHERE website_domain = 'still.test'`); got != "active" {
+		t.Errorf("the quiet startup after its new lookup: %v", got)
+	}
+	if c := e.count(t, "people"); c != 3 {
+		t.Errorf("%d people, want the three from imprints once each", c)
+	}
+}

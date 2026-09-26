@@ -14,7 +14,8 @@
   let q = $state('')
   let query = $state('')
   let sort = $state<PeopleSort>('next')
-  let filter = $state<PeopleFilter>('all')
+  // Tim looks for founders, so the list opens on them.
+  let filter = $state<PeopleFilter>('founder')
   let reload = $state(0)
 
   const people = new Load<Person[]>()
@@ -35,9 +36,10 @@
   })
 
   const filters: { value: PeopleFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
+    { value: 'founder', label: 'Founders' },
     { value: 'upcoming', label: 'Upcoming' },
     { value: 'profile', label: 'Profile found' },
+    { value: 'all', label: 'All' },
   ]
 
   // Keep the list in step with changes made in the sheet.

@@ -67,6 +67,9 @@
           <h2>{person.data.name}</h2>
           {#if person.data.known_as}<p class="faint small">Also known as {person.data.known_as}</p>{/if}
           <p class="muted">{person.data.headline || 'No headline yet'}</p>
+          {#if person.data.fit === 'founder'}
+            <p class="founder small"><span class="pill accent">Founder</span>{#if person.data.fit_evidence}<q>{person.data.fit_evidence}</q>{/if}</p>
+          {/if}
           <p class="faint small">{[person.data.city, `first seen ${fmtAgo(person.data.first_seen)}`].filter(Boolean).join(' · ')}</p>
         </div>
       </div>
@@ -200,6 +203,8 @@
   .apps .what a { font-weight: 600; overflow-wrap: anywhere; }
   .apps .what a :global(svg) { margin-left: 4px; vertical-align: -1px; }
   .apps .what .faint { font-size: 13px; }
+  .founder { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .founder q { font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
   .apps .evidence { margin-top: 4px; font-size: 13px; font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
   .profiles { display: grid; gap: 8px; }
   .profile {

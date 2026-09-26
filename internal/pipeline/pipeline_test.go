@@ -524,7 +524,11 @@ func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult
 	for _, line := range strings.Split(text, "\n") {
 		for _, name := range []string{"Lena Musterfrau", "Karl Kontrolle"} {
 			if strings.Contains(line, name) {
-				res.People = append(res.People, llm.Person{Name: name, Role: "speaker", Affiliation: "Beispiel GmbH", Evidence: strings.TrimSpace(line)})
+				p := llm.Person{Name: name, Role: "speaker", Affiliation: "Beispiel GmbH", Evidence: strings.TrimSpace(line)}
+				if name == "Lena Musterfrau" {
+					p.Founder, p.Builds, p.FounderEvidence = true, "Backstube Muster", "hat die Backstube Muster gegründet"
+				}
+				res.People = append(res.People, p)
 			}
 		}
 	}
@@ -588,6 +592,17 @@ func TestRunsReadEventPagesForPeople(t *testing.T) {
 	}
 	if c := e.count(t, "affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE o.name = 'Beispiel GmbH'"); c != 2 {
 		t.Errorf("%d affiliations with Beispiel GmbH", c)
+	}
+	// A founder is marked, with the passage and what they build. Someone
+	// else on stage is not.
+	if got := e.one(t, `SELECT fit || ': ' || fit_evidence FROM people WHERE full_name = 'Lena Musterfrau'`); got != "founder: hat die Backstube Muster gegründet" {
+		t.Errorf("Lena: %v", got)
+	}
+	if got := e.one(t, `SELECT fit FROM people WHERE full_name = 'Karl Kontrolle'`); got != "other" {
+		t.Errorf("Karl: %v", got)
+	}
+	if c := e.count(t, "affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE o.name = 'Backstube Muster' AND af.role = 'founder'"); c != 1 {
+		t.Errorf("%d founder affiliations with Backstube Muster", c)
 	}
 
 	// A page is read once. The next run checks the source again but reads

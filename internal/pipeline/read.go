@@ -175,6 +175,11 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 			pid, rec.eventID, person.Evidence); err != nil {
 			return err
 		}
+		if person.Founder {
+			if err := markFounder(ctx, tx, pid, person, city, rec.at); err != nil {
+				return err
+			}
+		}
 		if err := sight(ctx, tx, sourceID, rec.at, "person_id", pid, isNew); err != nil {
 			return err
 		}
@@ -190,6 +195,32 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// markFounder records that the page calls the person a founder, with the
+// passage, and links them to what they build.
+func markFounder(ctx context.Context, tx pgx.Tx, personID int64, person llm.Person, city string, at time.Time) error {
+	evidence := person.FounderEvidence
+	if evidence == "" {
+		evidence = "Founder of " + person.Builds
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE people SET fit = 'founder', updated_at = $3,
+			fit_evidence = CASE WHEN fit_evidence = '' THEN $2 ELSE fit_evidence END
+		WHERE id = $1`, personID, evidence, at); err != nil {
+		return err
+	}
+	if person.Builds == "" {
+		return nil
+	}
+	org, _, err := upsertOrganisation(ctx, tx, person.Builds, "company", "", city)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder')
+		ON CONFLICT DO NOTHING`, personID, org)
+	return err
 }
 
 type execer interface {

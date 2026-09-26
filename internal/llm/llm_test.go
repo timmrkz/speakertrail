@@ -280,3 +280,39 @@ func TestAFailingModelIsUnavailable(t *testing.T) {
 		t.Errorf("no answer in time gave %v, want ErrFailed", err)
 	}
 }
+
+// The model's word alone does not make someone a founder. The page has to
+// name what they build or contain the passage that says so.
+func TestFounderNeedsSupportFromThePage(t *testing.T) {
+	// All names are invented.
+	text := `Abend der Gründerinnen
+Diesmal erzählt Lena Musterfrau, wie sie die Backstube Muster gegründet hat.
+Mit dabei ist Jonas Beispielmann von der Musterbank AG.
+Außerdem spricht Karla Kontrolle über ihren Weg.`
+	srv, _ := fakeModel(t, func(string) []Person {
+		return []Person{
+			{Name: "Lena Musterfrau", Role: "speaker", Founder: true, Builds: "Backstube Muster",
+				FounderEvidence: "wie sie die Backstube Muster gegründet hat"},
+			{Name: "Jonas Beispielmann", Role: "speaker", Affiliation: "Musterbank AG"},
+			{Name: "Karla Kontrolle", Role: "speaker", Founder: true, Builds: "Kontrolle Robotics",
+				FounderEvidence: "Karla hat Kontrolle Robotics gegründet"},
+		}
+	})
+	res, err := client(srv).People(t.Context(), "", text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.People) != 3 {
+		t.Fatalf("people %+v", res.People)
+	}
+	lena, jonas, karla := res.People[0], res.People[1], res.People[2]
+	if !lena.Founder || lena.Builds != "Backstube Muster" || lena.FounderEvidence == "" {
+		t.Errorf("a founder the page supports: %+v", lena)
+	}
+	if jonas.Founder {
+		t.Errorf("not a founder: %+v", jonas)
+	}
+	if karla.Founder || karla.Builds != "" || karla.FounderEvidence != "" {
+		t.Errorf("the page says nothing of a company, the claim must go: %+v", karla)
+	}
+}

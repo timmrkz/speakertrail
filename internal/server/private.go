@@ -170,9 +170,10 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"all":      "true",
 		"upcoming": "next_start IS NOT NULL",
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
+		"founder":  "p.fit = 'founder'",
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, upcoming or profile")
+		fail(w, http.StatusBadRequest, "filter must be all, upcoming, profile or founder")
 		return
 	}
 	s.sendQuery(w, r, http.StatusOK, `
@@ -189,6 +190,7 @@ func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
 	s.sendQuery(w, r, http.StatusOK, `
 		SELECT (`+personJSON+`::jsonb || jsonb_build_object(
 			'notes', p.notes,
+			'fit_evidence', p.fit_evidence,
 			'appearances', (SELECT COALESCE(jsonb_agg(jsonb_build_object('role', a.role, 'evidence', a.evidence, 'event', jsonb_build_object(
 					'id', e.id, 'title', e.title, 'starts_at', e.starts_at, 'city', e.city, 'venue', COALESCE(v.name, ''),
 					'url', e.canonical_url)) ORDER BY e.starts_at DESC), '[]')

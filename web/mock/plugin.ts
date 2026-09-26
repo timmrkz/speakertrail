@@ -164,7 +164,8 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
       seen.set(src.id, { source_id: src.id, source: src.name, checked_at: hoursAgo(ms?.checked_hours_ago ?? 5) })
     }
   }
-  return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, affiliations: p.affiliations, sightings: [...seen.values()] }
+  const fit_evidence = p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
+  return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()] }
 }
 
 function sourceOut(m: MockSource): Source {
@@ -281,6 +282,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
+    if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || a.name.localeCompare(b.name))

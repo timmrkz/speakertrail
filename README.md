@@ -20,7 +20,7 @@ It is one Go binary with the web interface built in.
 1. **Schedule.** Each night the due sources are queued: active and probation sources, retired ones whose recheck is due, and up to 10 new candidates.
 2. **Fetch.** Plain HTTP first, with an honest User-Agent and robots.txt respected, at most 1 request every 5 seconds per website. When a page is an empty JavaScript shell, the headless browser loads it instead, and the source remembers that. LinkedIn and Instagram are never requested, not even by the browser.
 3. **Extract.** iCal feeds, schema.org Event data, then adapters for Luma, Meetup and Eventbrite. Names come only from clearly marked lines like "Speaker: ..." or "Jury: ...".
-4. **Read.** With the local language model, a run also reads each upcoming event's own page and finds who is on stage, with the passage that shows it. Without the model this step is left out.
+4. **Read.** With the local language model, a run also reads each upcoming event's own page and finds who is on stage, with the passage that shows it, and whether the page says they founded or run something. Without the model this step is left out.
 5. **Resolve.** Events, people and organisations are merged with what is known. Every one of them remembers which source showed it.
 6. **Fit.** Online events, events outside the region and titles with a drop word are dropped. Everything else in NRW is kept. Your own keep or drop always wins.
 7. **Learn.** Linked Meetup, Luma and Eventbrite calendars become new candidate sources. Sources move from candidate to probation to active, and retire when they stop producing.

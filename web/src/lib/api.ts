@@ -17,7 +17,7 @@ export type SourceKind =
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'next' | 'new' | 'name'
-export type PeopleFilter = 'all' | 'upcoming' | 'profile'
+export type PeopleFilter = 'all' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -138,6 +138,8 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   // The list gives a count. The detail replaces it with the list itself.
   appearances: Appearance[]
   notes: string
+  // Where an event page says the person founded or runs something.
+  fit_evidence: string
   affiliations: { organisation: string; role: string; current: boolean }[]
   sightings: { source_id: number; source: string; checked_at: string }[]
 }

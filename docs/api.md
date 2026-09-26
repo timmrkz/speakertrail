@@ -87,9 +87,9 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `PATCH /api/events/{id}` with `{"fit": "kept" | "dropped", "fit_reason": "optional"}` answers the updated event.
 
-`GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile`
+`GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile|founder`
 
-`sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected.
+`sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
 
 ```json
 {
@@ -109,6 +109,7 @@ In private responses `people` always holds everyone named, each with their `id`.
 ```json
 {
   "notes": "",
+  "fit_evidence": "hat die Backstube Muster gegründet",
   "appearances": [{ "role": "pitch", "evidence": "...", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
   "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true }],
   "sightings": [{ "source_id": 3, "source": "Startplatz events", "checked_at": "..." }]

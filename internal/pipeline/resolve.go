@@ -402,6 +402,11 @@ func (r *Resolver) resolvePerson(ctx context.Context, tx pgx.Tx, eventID int64, 
 		if _, err := tx.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, id, org, affRole); err != nil {
 			return 0, false, err
 		}
+		if affRole == "founder" {
+			if _, err := tx.Exec(ctx, `UPDATE people SET fit = 'founder' WHERE id = $1 AND fit = 'other'`, id); err != nil {
+				return 0, false, err
+			}
+		}
 	}
 	for _, l := range p.Links {
 		platform, clean := ProfileOf(l)

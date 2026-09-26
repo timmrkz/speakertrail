@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -160,7 +161,7 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		if blocked(fetchErr, page) {
 			return p.makeManual(ctx, src, fetchErr)
 		}
-		return fetchErr
+		return p.failed(ctx, src, cfg, page, fetchErr)
 	}
 
 	if src.Kind == "portfolio" {
@@ -187,6 +188,47 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		p.log().Warn("queueing event reads failed", "source", src.ID, "error", err)
 	}
 	return p.advance(ctx, src, cfg, stats, mode)
+}
+
+// failed moves a source on after a check that failed. It is not tried
+// again in the same run, which would keep the run waiting for the retry.
+// A page that is gone is retired for good. Any other failure counts like a
+// check that found nothing, so a site that keeps failing is retired too.
+func (p *Pipeline) failed(ctx context.Context, src Source, cfg settings.Settings, page *fetch.Page, cause error) error {
+	now := p.now()
+	gone := page != nil && (page.Status == 404 || page.Status == 410) || isNoSuchHost(cause)
+	empty := src.Empty + 1
+	status := src.Status
+	next := now.Add(cfg.Days("active_check_interval_days", 1) - 2*time.Hour)
+	switch {
+	case gone:
+		status, next = "retired", now.Add(10*365*24*time.Hour)
+	case src.Status == "candidate":
+		status = "probation"
+	case src.Status == "active" && empty >= cfg.Int("retire_after_empty_checks", 4):
+		status = "retired"
+	}
+	if status == "retired" && !gone {
+		next = now.Add(cfg.Days("retired_recheck_days", 28))
+	}
+	note := ""
+	if gone {
+		note = "The page is gone"
+	}
+	_, err := p.Pool.Exec(ctx, `
+		UPDATE sources SET
+			checks = checks + 1, empty_checks_in_row = $2, next_check_at = $3, status = $4,
+			status_changed_at = CASE WHEN status = $4 THEN status_changed_at ELSE $5 END,
+			notes = CASE WHEN $6 = '' OR notes LIKE '%' || $6 || '%' THEN notes WHEN notes = '' THEN $6 ELSE notes || '. ' || $6 END,
+			updated_at = $5
+		WHERE id = $1`, src.ID, empty, next, status, now, note)
+	return err
+}
+
+// isNoSuchHost says whether the website's name no longer exists.
+func isNoSuchHost(err error) bool {
+	var dns *net.DNSError
+	return errors.As(err, &dns) && dns.IsNotFound
 }
 
 // load fetches the page the source's mode asks for, follows feeds the page

@@ -151,8 +151,8 @@
         <p class="muted small">No profile found yet.</p>
       {/if}
       {#if !hasLinkedin}
-        <a class="btn sm find" href={linkedinSearch(p.name, company)} target="_blank" rel="noopener noreferrer"
-          title="Searches LinkedIn for {[p.name, company].filter(Boolean).join(', ')} in your own browser">
+        <a class="btn sm find" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
+          title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
           <Icon name="external" size={14} />Find on LinkedIn
         </a>
       {/if}

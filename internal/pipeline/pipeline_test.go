@@ -1109,3 +1109,94 @@ stumm.test gone: the website did not answer three times`
 		t.Errorf("%d people, want the three from imprints once each", c)
 	}
 }
+
+// A page that is gone is not tried again in the same run, which would keep
+// the run waiting for the retry, and it is retired instead of coming back
+// in every run. Tim saw meetup.com/lp checked twice in one run.
+func TestAPageThatIsGoneDoesNotHoldUpRuns(t *testing.T) {
+	e := setup(t, "")
+	src := e.addSource(t, "/gone", "probation")
+	run := runOnce(t, e)
+	if c := e.count(t, "jobs WHERE status = 'queued'"); c != 0 {
+		t.Errorf("%d jobs wait for a retry, the run cannot end", c)
+	}
+	if c := e.count(t, "source_checks WHERE run_id = $1", run); c != 1 {
+		t.Errorf("%d checks in the run, want 1", c)
+	}
+	if got := e.one(t, `SELECT status || ' ' || (next_check_at > $2::timestamptz + interval '1 year')::text FROM sources WHERE id = $1`, src, now); got != "retired true" {
+		t.Errorf("a page that is gone: %v", got)
+	}
+	runOnce(t, e)
+	if c := e.count(t, "source_checks"); c != 1 {
+		t.Errorf("%d checks after two runs, want the first only", c)
+	}
+}
+
+// A site that fails for a while waits for the next run, and after too many
+// failures in a row it is retired, like a source that finds nothing.
+func TestASiteThatFailsWaitsForTheNextRun(t *testing.T) {
+	e := setup(t, "")
+	e.site.set("/slow", "")
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/robots.txt" {
+			return
+		}
+		http.Error(w, "busy", http.StatusServiceUnavailable)
+	}))
+	defer failing.Close()
+	var src int64
+	e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Busy', 'listing', $1, 'active') RETURNING id`, failing.URL+"/events").Scan(&src)
+	runOnce(t, e)
+	if c := e.count(t, "jobs WHERE status = 'queued'"); c != 0 {
+		t.Errorf("%d jobs wait for a retry", c)
+	}
+	if got := e.one(t, `SELECT status || ' ' || empty_checks_in_row || ' ' || (next_check_at > $2::timestamptz)::text FROM sources WHERE id = $1`, src, now); got != "active 1 true" {
+		t.Errorf("after one failure: %v", got)
+	}
+	for range 3 {
+		e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = NULL WHERE id = $1`, src)
+		runOnce(t, e)
+	}
+	if got := e.one(t, `SELECT status FROM sources WHERE id = $1`, src); got != "retired" {
+		t.Errorf("after four failures in a row: %v", got)
+	}
+}
+
+// Portfolios are checked before other new candidates, so their startups
+// are looked up in the first runs, not after every old candidate.
+func TestPortfoliosComeFirstAmongCandidates(t *testing.T) {
+	e := setup(t, "")
+	for i := range 7 {
+		e.addSource(t, fmt.Sprintf("/candidate-%d", i), "candidate")
+	}
+	var hub int64
+	e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate') RETURNING id`,
+		e.site.srv.URL+"/hub").Scan(&hub)
+	run, _ := e.p.StartRun(t.Context(), "manual")
+	if _, err := e.p.EnqueueDue(t.Context(), run); err != nil {
+		t.Fatal(err)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND (payload->>'source_id')::bigint = $1", hub); c != 1 {
+		t.Error("the new portfolio waits behind older candidates")
+	}
+}
+
+// An event page that fails waits for a later run instead of holding this
+// one up with retries.
+func TestAnEventPageThatFailsDoesNotHoldUpTheRun(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{}
+	e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('S', 'listing', $1, 'active')`, e.site.srv.URL+"/none")
+	var ev, src int64
+	e.pool.QueryRow(t.Context(), `SELECT id FROM sources`).Scan(&src)
+	e.pool.QueryRow(t.Context(), `INSERT INTO events (title, starts_at, canonical_url, fit) VALUES ('Pitch Abend', $1, $2, 'kept') RETURNING id`,
+		now.Add(72*time.Hour), e.site.srv.URL+"/missing-event").Scan(&ev)
+	e.pool.Exec(t.Context(), `INSERT INTO sightings (source_id, checked_at, event_id, is_new) VALUES ($1, $2, $3, true)`, src, now, ev)
+	runOnce(t, e)
+	if c := e.count(t, "jobs WHERE status = 'queued'"); c != 0 {
+		t.Errorf("%d jobs wait for a retry", c)
+	}
+	if c := e.count(t, "event_reads WHERE event_id = $1 AND error <> ''", ev); c != 1 {
+		t.Errorf("%d failed reads recorded, want 1", c)
+	}
+}

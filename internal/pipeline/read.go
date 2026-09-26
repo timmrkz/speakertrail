@@ -113,13 +113,15 @@ func (p *Pipeline) ReadEvent(ctx context.Context, eventID, runID int64) error {
 		page, err = p.Fetcher.Browser(ctx, url)
 	}
 	if err != nil {
-		// A page that refuses the bot is not asked again. Anything else is
-		// retried by the queue.
-		if blocked(err, page) {
-			rec.err = err.Error()
+		rec.err = err.Error()
+		// A page that refuses the bot, or is gone, is not asked again.
+		if blocked(err, page) || page != nil && (page.Status == 404 || page.Status == 410) {
 			return p.finishRead(ctx, rec, nil, 0)
 		}
-		return err
+		// Anything else waits for a later run, three times at most, instead
+		// of holding this run up with retries.
+		rec.duration = p.now().Sub(start)
+		return p.recordRead(ctx, p.Pool, rec)
 	}
 
 	if until := p.modelPause(); !until.IsZero() {
@@ -138,7 +140,9 @@ func (p *Pipeline) ReadEvent(ctx context.Context, eventID, runID int64) error {
 		return p.recordRead(ctx, p.Pool, rec)
 	}
 	if err != nil {
-		return err
+		rec.err = err.Error()
+		rec.duration = p.now().Sub(start)
+		return p.recordRead(ctx, p.Pool, rec)
 	}
 	rec.duration = p.now().Sub(start)
 	return p.finishRead(ctx, rec, found.People, *sourceID)

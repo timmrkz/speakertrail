@@ -13,7 +13,7 @@
     probation: 'Being tried out for a few weeks',
     active: 'Checked in every run',
     manual: 'Kept by hand, never retired',
-    retired: 'Checked rarely, found nothing lately',
+    retired: 'Found nothing lately or is gone. Retired by hand, it is not checked again',
   }
 
   let notes = $state('')

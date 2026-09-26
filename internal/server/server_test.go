@@ -537,3 +537,23 @@ func TestPeopleShowWhetherTheirStartupIsActive(t *testing.T) {
 		t.Errorf("activity missing: %s", body)
 	}
 }
+
+// A source Tim retires by hand is not checked again until he sets it back.
+// Before, it kept its old next check and came back in the next run.
+func TestARetiredSourceStaysRetired(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	var id int64
+	e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status, next_check_at) VALUES ('Junk', 'listing', 'https://example.org/junk', 'probation', now() - interval '1 day') RETURNING id`).Scan(&id)
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(id), `{"status":"retired"}`); code != 200 {
+		t.Fatalf("retire: %d %s", code, body)
+	}
+	var far bool
+	e.pool.QueryRow(t.Context(), `SELECT next_check_at > now() + interval '1 year' FROM sources WHERE id = $1`, id).Scan(&far)
+	if !far {
+		t.Error("a source retired by hand is due again")
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(id), `{"status":"active"}`); code != 200 || !strings.Contains(body, `"next_check_at":null`) {
+		t.Errorf("set back to active: %d %s", code, body)
+	}
+}

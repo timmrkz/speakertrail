@@ -56,7 +56,8 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		UNION ALL
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status = 'candidate' AND (next_check_at IS NULL OR next_check_at <= $1)
-		 ORDER BY checks, created_at, id
+		 -- A new portfolio goes first, so its startups are looked up soon.
+		 ORDER BY kind = 'portfolio' DESC, checks, created_at, id
 		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
 		return 0, err
@@ -240,8 +241,10 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 // covers the 1 and 10 minute backoffs, not the hourly ones.
 const retryWait = 11 * time.Minute
 
-// workWithRetries works until idle, then waits for this run's checks that
-// retry soon, so a short outage of a site does not cost it a night.
+// workWithRetries works until idle, then waits for this run's jobs that
+// retry soon. A failed check or read is not retried within a run, it waits
+// for the next one, so what retries here are jobs that hit a passing
+// database error.
 func (p *Pipeline) workWithRetries(ctx context.Context, w Worker, runID int64) error {
 	for {
 		if err := w.RunUntilIdle(ctx); err != nil {

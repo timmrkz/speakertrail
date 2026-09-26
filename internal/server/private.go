@@ -501,9 +501,11 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 			status_changed_at = CASE WHEN $2::text IS NOT NULL AND $2 <> status THEN now() ELSE status_changed_at END,
 			empty_checks_in_row = CASE WHEN $2::text IS NOT NULL AND $2 <> status THEN 0 ELSE empty_checks_in_row END,
 			-- A source set going again, or that now lists something else, is
-			-- checked in the next run.
+			-- checked in the next run. One retired by hand is not checked
+			-- again until it is set back.
 			next_check_at = CASE WHEN ($2::text IN ('active', 'probation', 'candidate') AND $2 <> status)
-				OR ($6::text IS NOT NULL AND $6 <> kind) THEN NULL ELSE next_check_at END,
+				OR ($6::text IS NOT NULL AND $6 <> kind) THEN NULL
+				WHEN $2::text = 'retired' THEN now() + interval '10 years' ELSE next_check_at END,
 			fetch_mode = COALESCE($3, fetch_mode),
 			notes = COALESCE($4, notes),
 			name = COALESCE(NULLIF($5, ''), name),

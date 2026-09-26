@@ -243,3 +243,12 @@ export function fmtLeft(seconds: number): string {
   if (s < 3600) return `about ${Math.ceil(s / 60)} min left`
   return `about ${Math.floor(s / 3600)} h ${Math.ceil((s % 3600) / 60)} min left`
 }
+
+// A LinkedIn search for a person, by name and, when known, the company
+// without its legal form. It opens in Tim's own browser, where he is logged
+// in. The engine itself never requests LinkedIn.
+export function linkedinSearch(name: string, company = ''): string {
+  const org = company.replace(/\s*(GmbH\s*&\s*Co\.\s*KG|gGmbH|GmbH|UG\s*\(haftungsbeschränkt\)|UG|AG|SE|e\.\s?V\.|e\.\s?K\.|KG|OHG|GbR|Inc\.|Ltd\.)\s*$/i, '').trim()
+  const keywords = [name, org].filter(Boolean).join(' ')
+  return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`
+}

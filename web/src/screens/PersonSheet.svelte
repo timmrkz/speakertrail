@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { fmtAgo, fmtDateTime, initials, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
+  import { fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -25,6 +25,12 @@
 
   let now = new Date().toISOString()
   let upcoming = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at >= now))
+  // The company to search with: the one they founded, else any.
+  let company = $derived.by(() => {
+    const a = person.data?.affiliations ?? []
+    return (a.find((x) => x.role === 'founder') ?? a[0])?.organisation ?? ''
+  })
+  let hasLinkedin = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'linkedin' && x.review === 'confirmed'))
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 
   async function saveNotes() {
@@ -139,7 +145,13 @@
           {/each}
         </ul>
       {:else}
-        <p class="muted small">No profile found yet. The crawler looks again later.</p>
+        <p class="muted small">No profile found yet.</p>
+      {/if}
+      {#if !hasLinkedin}
+        <a class="btn sm find" href={linkedinSearch(p.name, company)} target="_blank" rel="noopener noreferrer"
+          title="Searches LinkedIn for {[p.name, company].filter(Boolean).join(', ')} in your own browser">
+          <Icon name="external" size={14} />Find on LinkedIn
+        </a>
       {/if}
     </section>
 
@@ -196,6 +208,7 @@
   .head-text h2 { font-size: 19px; }
   .head-text p { overflow-wrap: anywhere; }
   .apps { display: grid; gap: 8px; }
+  .find { justify-self: start; }
   .apps li { display: grid; gap: 1px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .apps li.past { background: var(--surface-2); border-color: transparent; }
   .apps .when { font-size: 12px; color: var(--ink-2); }

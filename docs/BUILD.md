@@ -72,6 +72,15 @@ like `linkedin.com/in/lena-musterfrau`. The engine never opens them. You
 confirm or reject each on the person's sheet, where Find on LinkedIn
 searches for anyone without one.
 
+A portfolio only says a startup existed once, so each lookup also looks for
+signs of life. A parked domain or a website that did not answer three
+times counts as gone, an imprint that says "i. L." or "in Liquidation" as
+being wound up. Otherwise the newest date the website shows, from its
+sitemap or its copyright, says whether it is active or quiet, quiet after
+a year without change. Every startup is looked up again after 90 days.
+People shows it for founders without an upcoming event, and lists the
+active ones first.
+
 Each of these founders says why on their sheet, like "Managing director of
 Beispiel GmbH, by its imprint. In the portfolio of Beispiel Hub". `make
 report` lists the lookups that found nobody, and why.

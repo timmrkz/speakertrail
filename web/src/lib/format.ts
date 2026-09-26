@@ -252,3 +252,23 @@ export function linkedinSearch(name: string, company = ''): string {
   const keywords = [name, org].filter(Boolean).join(' ')
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(keywords)}`
 }
+
+// How a founder's startup looked at its last lookup, in a few words.
+export function activityText(a: { state: string; since: string | null } | null): string {
+  if (!a) return ''
+  const since = a.since ? new Date(a.since).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' }) : ''
+  switch (a.state) {
+    case 'active':
+      return since ? `Startup active, website changed ${since}` : 'Startup active'
+    case 'quiet':
+      return since ? `Startup quiet since ${since}` : 'Startup quiet'
+    case 'dissolved':
+      return 'Startup being wound up'
+    case 'gone':
+      return 'Startup website gone'
+    default:
+      return 'Not sure the startup is active'
+  }
+}
+
+export const ACTIVITY_TONE: Record<string, string> = { active: 'good', unknown: '', quiet: 'warn', dissolved: 'bad', gone: 'bad' }

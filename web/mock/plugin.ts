@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  Activity, Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
   RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
@@ -72,6 +72,19 @@ function createState() {
     return p
   }
 
+  // Founders a lookup found in a startup's imprint, with no event yet.
+  // All names are invented.
+  function lookedUp(): PersonRow[] {
+    return [
+      ['Hanna Hellwig', 'Hellwig Robotics GmbH'], ['Jonas Probst', 'Probst Health UG (haftungsbeschränkt)'],
+      ['Ida Ingwersen', 'Ingwersen Labs GmbH'], ['Ole Osterkamp', 'Osterkamp Analytics GmbH'],
+    ].map(([name, company], i) => ({
+      id: 900 + i, name, headline: `Managing director, ${company}`, city: 'Köln', fit: 'founder' as const,
+      first_seen: hoursAgo(30 + i * 7), notes: '', profiles: [],
+      affiliations: [{ organisation: company, role: 'founder', current: true }],
+    }))
+  }
+
   const events: PrivateEvent[] = EVENT_SEEDS.map((e, i) => {
     const day = addDays(today, e.day)
     const firstSeen = hoursAgo(Math.max(5, (Math.min(e.day, 0) + 12 - (i % 9)) * 24 + 5))
@@ -104,7 +117,7 @@ function createState() {
   const { runs, checks } = buildRuns(sources)
   return {
     events,
-    people: [...people.values()],
+    people: [...people.values(), ...lookedUp()],
     sources,
     runs,
     checks,
@@ -152,8 +165,19 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
+    // Some founders come from lookups, with what the lookup saw.
+    activity: p.fit === 'founder' && !next
+      ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
+      : null,
   }
 }
+
+const MOCK_ACTIVITY: { state: Activity; since: string | null; note: string }[] = [
+  { state: 'active', since: '2026-08-14T00:00:00Z', note: 'the website changed August 2026, by its sitemap' },
+  { state: 'quiet', since: '2024-05-02T00:00:00Z', note: 'the website changed May 2024, by its sitemap' },
+  { state: 'gone', since: null, note: 'the website is a parked domain' },
+  { state: 'unknown', since: null, note: 'the website shows no date' },
+]
 
 function personDetail(s: State, p: PersonRow): PersonDetail {
   const seen = new Map<number, { source_id: number; source: string; checked_at: string }>()
@@ -164,7 +188,9 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
       seen.set(src.id, { source_id: src.id, source: src.name, checked_at: hoursAgo(ms?.checked_hours_ago ?? 5) })
     }
   }
-  const fit_evidence = p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
+  const fit_evidence = p.id >= 900
+    ? `Managing director of ${p.affiliations[0].organisation}, by its imprint. In the portfolio of Gateway startups`
+    : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
   return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()] }
 }
 
@@ -294,7 +320,11 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
-    else list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || a.name.localeCompare(b.name))
+    else {
+      // Like the server: next appearance, then founders of startups that look alive.
+      const rank = (p: Person) => ['active', 'unknown', 'quiet', 'dissolved', 'gone'].indexOf(p.activity?.state ?? 'unknown')
+      list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || rank(a) - rank(b) || a.name.localeCompare(b.name))
+    }
     return ok({ people: list, counts })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {

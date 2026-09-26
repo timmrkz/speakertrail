@@ -7,6 +7,9 @@ export type Fit = 'kept' | 'dropped'
 export type FitFilter = Fit | 'all'
 export type AppearanceRole = 'speaker' | 'panelist' | 'pitch' | 'host' | 'moderator'
 export type PersonFit = 'founder' | 'athlete' | 'maker' | 'creator' | 'other'
+// What a lookup saw of a startup: its website changed lately, it shows no
+// date, nothing changed for a year, it is being wound up, or it is gone.
+export type Activity = 'active' | 'unknown' | 'quiet' | 'dissolved' | 'gone'
 export type ProfilePlatform =
   | 'linkedin' | 'instagram' | 'youtube' | 'tiktok' | 'x' | 'website' | 'luma' | 'meetup' | 'podcast' | 'other'
 export type Review = 'open' | 'confirmed' | 'rejected'
@@ -124,6 +127,9 @@ export interface Person {
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]
+  // For a founder: how their startup looked at its last lookup, the most
+  // alive one when there are several. Null when nobody looked.
+  activity: { state: Activity; since: string | null; note: string; company: string } | null
 }
 
 export interface Appearance {

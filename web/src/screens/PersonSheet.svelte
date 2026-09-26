@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
+  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -75,6 +75,9 @@
           <p class="muted">{person.data.headline || 'No headline yet'}</p>
           {#if person.data.fit === 'founder'}
             <p class="founder small"><span class="pill accent">Founder</span>{#if person.data.fit_evidence}<q>{person.data.fit_evidence}</q>{/if}</p>
+          {/if}
+          {#if person.data.activity}
+            <p class="small"><span class="pill {ACTIVITY_TONE[person.data.activity.state]}" title="{person.data.activity.company}: {person.data.activity.note}">{activityText(person.data.activity)}</span></p>
           {/if}
           <p class="faint small">{[person.data.city, `first seen ${fmtAgo(person.data.first_seen)}`].filter(Boolean).join(' · ')}</p>
         </div>

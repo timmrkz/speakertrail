@@ -208,13 +208,21 @@ const personJSON = `json_build_object(
 		FROM appearances a JOIN events e ON e.id = a.event_id
 		WHERE a.person_id = p.id AND e.starts_at >= $1 ORDER BY e.starts_at LIMIT 1),
 	'profiles', (SELECT COALESCE(json_agg(json_build_object('id', pr.id, 'platform', pr.platform, 'url', pr.url, 'review', pr.review) ORDER BY pr.platform), '[]')
-		FROM profiles pr WHERE pr.person_id = p.id))`
+		FROM profiles pr WHERE pr.person_id = p.id),
+	'activity', (SELECT json_build_object('state', o.activity, 'since', o.last_sign_at, 'note', o.activity_note, 'company', o.name)
+		FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
+		WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''
+		ORDER BY ` + activityRank + `, o.last_sign_at DESC NULLS LAST LIMIT 1))`
+
+// activityRank orders what a lookup says about a startup, the most alive
+// first.
+const activityRank = `array_position(ARRAY['active', 'unknown', 'quiet', 'dissolved', 'gone'], o.activity)`
 
 func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	order := map[string]string{
-		"":     "next_start NULLS LAST, p.full_name",
-		"next": "next_start NULLS LAST, p.full_name",
+		"":     "next_start NULLS LAST, activity_rank, p.full_name",
+		"next": "next_start NULLS LAST, activity_rank, p.full_name",
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
 	}[q.Get("sort")]
@@ -238,7 +246,11 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 	s.sendQuery(w, r, http.StatusOK, `
 		WITH base AS (
 			SELECT p.*, (SELECT min(e.starts_at) FROM appearances a JOIN events e ON e.id = a.event_id
-					WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start
+					WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start,
+				-- Founders of startups that look alive come before those that
+				-- went quiet or are gone. Nothing known counts as unknown.
+				COALESCE((SELECT min(`+activityRank+`) FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
+					WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''), 2) AS activity_rank
 			FROM people p
 			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%'))
 		SELECT json_build_object(

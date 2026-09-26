@@ -47,6 +47,7 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			UNION ALL SELECT 'startups from portfolios', count(*)::text FROM organisations o
 				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'portfolio')
 			UNION ALL SELECT 'startups looked up', count(*)::text FROM organisations WHERE looked_up_at IS NOT NULL
+			UNION ALL (SELECT 'startups ' || activity, count(*)::text FROM organisations WHERE activity <> '' GROUP BY activity ORDER BY activity)
 			UNION ALL SELECT 'people', count(*)::text FROM people
 			UNION ALL SELECT 'people with a founder role', count(*)::text FROM people WHERE fit = 'founder'`},
 		{"Last runs", `

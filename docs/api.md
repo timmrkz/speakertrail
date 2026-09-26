@@ -151,6 +151,8 @@ A check of a portfolio stores each startup its page links to, with its website, 
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 
+A person in `GET /api/people` carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
+
 `GET /api/runs` answers the last 50 runs:
 
 ```json

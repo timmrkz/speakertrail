@@ -501,3 +501,39 @@ func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
 }
+
+// Founders of startups that look alive come first, and each says what the
+// lookup saw. All names are invented.
+func TestPeopleShowWhetherTheirStartupIsActive(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	ctx := t.Context()
+	for _, row := range []struct{ person, company, activity string }{
+		{"Anna Anfang", "Gone GmbH", "gone"},
+		{"Bea Beispiel", "Quiet GmbH", "quiet"},
+		{"Cem Current", "Active GmbH", "active"},
+	} {
+		var org, person int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO organisations (name, normalised_name, activity, activity_note, last_sign_at)
+			VALUES ($1, lower($1), $2, 'a note', '2026-08-01') RETURNING id`, row.company, row.activity).Scan(&org); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, fit) VALUES ($1, lower($1), 'founder') RETURNING id`, row.person).Scan(&person); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder')`, person, org); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, body := e.do(t, "GET", "/api/people?filter=founder", "")
+	if code != 200 {
+		t.Fatalf("people: %d %s", code, body)
+	}
+	cem, bea, anna := strings.Index(body, "Cem Current"), strings.Index(body, "Bea Beispiel"), strings.Index(body, "Anna Anfang")
+	if !(cem < bea && bea < anna) {
+		t.Errorf("order: active %d, quiet %d, gone %d", cem, bea, anna)
+	}
+	if !strings.Contains(body, `"state":"active"`) || !strings.Contains(body, `"company":"Active GmbH"`) || !strings.Contains(body, `"note":"a note"`) {
+		t.Errorf("activity missing: %s", body)
+	}
+}

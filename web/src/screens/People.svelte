@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
-  import { fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
+  import { ACTIVITY_TONE, activityText, fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import Chips from '../lib/components/Chips.svelte'
@@ -108,9 +108,11 @@
             <b class="ellipsis name">{p.name}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
-              <span class="next" class:none={!p.next_appearance}>
+              <span class="next" class:none={!p.next_appearance && !p.activity}>
                 {#if p.next_appearance}
                   <Icon name="calendar" size={13} /><span class="ellipsis">{fmtDay(p.next_appearance.starts_at)} · {p.next_appearance.title} · {ROLE_LABEL[p.next_appearance.role] ?? p.next_appearance.role}</span>
+                {:else if p.activity}
+                  <span class="dot-tone {ACTIVITY_TONE[p.activity.state]}" aria-hidden="true"></span><span class="ellipsis" title={p.activity.note}>{activityText(p.activity)}</span>
                 {:else}
                   No upcoming appearance
                 {/if}
@@ -138,6 +140,10 @@
   .sort { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
   .stale { opacity: .6; }
+  .dot-tone { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .dot-tone.good { background: var(--good); }
+  .dot-tone.warn { background: var(--warn); }
+  .dot-tone.bad { background: var(--bad); }
   .person {
     grid-template-columns: 36px minmax(0, 1fr) auto;
     grid-template-areas: "av name meta" "av who meta";

@@ -426,7 +426,7 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
 		for _, name := range im.Directors {
-			isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, im.Label+", "+company, evidence)
+			isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
 			if err != nil {
 				return err
 			}

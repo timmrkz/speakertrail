@@ -25,6 +25,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/importer"
+	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
 	"github.com/timmrkz/speakertrail/internal/server"
@@ -150,6 +151,11 @@ func engine(ctx context.Context, pool *pgxpool.Pool) (*pipeline.Pipeline, func()
 		opts.Browser = browser
 	}
 	p := &pipeline.Pipeline{Pool: pool, Fetcher: fetch.New(opts), Queue: queue.New(pool, queue.Options{})}
+	// The local model reads event pages for people, where one is set up.
+	if model := llm.FromEnvIfSet(); model != nil {
+		p.Reader = model
+		slog.Info("language model reads event pages", "model", model.Model, "url", model.URL)
+	}
 	cleanup := func() {
 		if browser != nil {
 			browser.Close()

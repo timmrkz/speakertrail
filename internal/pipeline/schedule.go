@@ -85,6 +85,10 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 			return 0, err
 		}
 	}
+	// Events whose page has not been read yet, from earlier runs too.
+	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 30)); err != nil {
+		return 0, err
+	}
 	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
 		return 0, err
 	}
@@ -124,8 +128,8 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	err = conn.QueryRow(ctx, `
 		SELECT r.id FROM runs r
 		WHERE r.kind IN ('nightly', 'manual') AND r.finished_at IS NULL AND EXISTS (
-			SELECT 1 FROM jobs j WHERE j.kind = $1 AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
-		ORDER BY r.id DESC LIMIT 1`, KindCheckSource).Scan(&runID)
+			SELECT 1 FROM jobs j WHERE j.kind IN ($1, $2) AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		ORDER BY r.id DESC LIMIT 1`, KindCheckSource, KindReadEvent).Scan(&runID)
 	if err == nil {
 		return runID, false, nil
 	}

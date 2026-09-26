@@ -45,7 +45,10 @@ type Pipeline struct {
 	Pool    *pgxpool.Pool
 	Fetcher Fetcher
 	Queue   *queue.Queue
-	Log     *slog.Logger
+	// Reader is the local language model that reads event pages for
+	// people. Without it events are not read.
+	Reader Reader
+	Log    *slog.Logger
 	// Now is the current time. Tests set it.
 	Now func() time.Time
 }
@@ -70,6 +73,7 @@ func (p *Pipeline) Handlers() map[string]queue.Handler {
 		KindCheckSource: p.handleCheck,
 		KindSeed:        p.handleSeed,
 		KindPrune:       p.handlePrune,
+		KindReadEvent:   p.handleRead,
 	}
 }
 
@@ -166,6 +170,10 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 	rec.duration = p.now().Sub(start)
 	if err := p.recordCheck(ctx, src, runID, rec); err != nil {
 		return err
+	}
+	// The new events' own pages are read in the same run.
+	if _, err := p.enqueueReads(ctx, runID, src.ID, p.readLimit(cfg, "event_pages_per_check", 5)); err != nil {
+		p.log().Warn("queueing event reads failed", "source", src.ID, "error", err)
 	}
 	return p.advance(ctx, src, cfg, stats, mode)
 }

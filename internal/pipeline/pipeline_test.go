@@ -15,6 +15,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/dbtest"
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
+	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
 )
@@ -501,5 +502,160 @@ func TestEventPagesPicksOnePagePerSource(t *testing.T) {
 	}
 	if got, _ := pipeline.EventPages(ctx, e.pool, 1, now); len(got) != 1 {
 		t.Errorf("%d pages with a limit of 1", len(got))
+	}
+}
+
+// fakeReader stands in for the local model. It names every invented person
+// whose name is on the page and quotes the line they are on.
+type fakeReader struct {
+	mu    sync.Mutex
+	calls int
+	err   error
+}
+
+func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	if f.err != nil {
+		return llm.PeopleResult{}, f.err
+	}
+	var res llm.PeopleResult
+	for _, line := range strings.Split(text, "\n") {
+		for _, name := range []string{"Lena Musterfrau", "Karl Kontrolle"} {
+			if strings.Contains(line, name) {
+				res.People = append(res.People, llm.Person{Name: name, Role: "speaker", Affiliation: "Beispiel GmbH", Evidence: strings.TrimSpace(line)})
+			}
+		}
+	}
+	return res, nil
+}
+
+func eventPageSite(t *testing.T, e env) {
+	t.Helper()
+	ld := func(name, path string) string {
+		return fmt.Sprintf(`{"@context":"https://schema.org","@type":"Event","name":%q,"startDate":"2026-10-02T18:30:00+02:00",
+			"url":%q,"location":{"@type":"Place","name":"Startplatz","address":{"@type":"PostalAddress","addressLocality":"Köln"}}}`,
+			name, e.site.srv.URL+path)
+	}
+	e.site.set("/events", ldPage(ld("Founders Talk Köln", "/e/talk"), ld("Pitch Abend Köln", "/e/pitch")))
+	e.site.set("/e/talk", `<html><body><h1>Founders Talk</h1><p>Diesmal erzählt Lena Musterfrau von der Beispiel GmbH.</p></body></html>`)
+	e.site.set("/e/pitch", `<html><body><h1>Pitch Abend</h1><p>Durch den Abend führt Karl Kontrolle.</p></body></html>`)
+}
+
+func runOnce(t *testing.T, e env) int64 {
+	t.Helper()
+	ctx := t.Context()
+	run, err := e.p.StartRun(ctx, "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.p.EnqueueDue(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	// Several workers at once, so reads and checks overlap.
+	w := &queue.Worker{Queue: e.p.Queue, Handlers: e.p.Handlers(), Concurrency: 4, PollInterval: 10 * time.Millisecond}
+	if err := w.RunUntilIdle(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return run
+}
+
+func TestRunsReadEventPagesForPeople(t *testing.T) {
+	e := setup(t, "")
+	reader := &fakeReader{}
+	e.p.Reader = reader
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+
+	run := runOnce(t, e)
+	if c := e.count(t, "events WHERE people_read_at IS NOT NULL"); c != 2 {
+		t.Fatalf("%d events read, want 2", c)
+	}
+	if c := e.count(t, "event_reads WHERE run_id = $1 AND error = ''", run); c != 2 {
+		t.Errorf("%d reads recorded for the run", c)
+	}
+	if got := e.one(t, `SELECT a.evidence FROM appearances a JOIN people p ON p.id = a.person_id WHERE p.full_name = 'Lena Musterfrau'`); got != "Diesmal erzählt Lena Musterfrau von der Beispiel GmbH." {
+		t.Errorf("evidence %q", got)
+	}
+	if c := e.count(t, "sightings WHERE person_id IS NOT NULL"); c != 2 {
+		t.Errorf("%d person sightings, want one per person with the source", c)
+	}
+	if c := e.count(t, "affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE o.name = 'Beispiel GmbH'"); c != 2 {
+		t.Errorf("%d affiliations with Beispiel GmbH", c)
+	}
+
+	// A page is read once. The next run checks the source again but reads
+	// nothing new.
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = NULL`)
+	runOnce(t, e)
+	if reader.calls != 2 {
+		t.Errorf("the model was asked %d times, want 2", reader.calls)
+	}
+	if c := e.count(t, "people"); c != 2 {
+		t.Errorf("%d people after two runs", c)
+	}
+}
+
+func TestReadsWaitWhenNoModelAnswers(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{err: fmt.Errorf("%w (dial tcp: refused)", llm.ErrUnreachable)}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	if c := e.count(t, "events WHERE people_read_at IS NULL"); c != 2 {
+		t.Errorf("%d events still unread, want 2 for a later run", c)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'failed'"); c != 0 {
+		t.Errorf("%d reads failed, a missing model is not a failure", c)
+	}
+}
+
+func TestNoReadsWithoutAModel(t *testing.T) {
+	e := setup(t, "")
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	if c := e.count(t, "jobs WHERE kind = 'read_event'"); c != 0 {
+		t.Errorf("%d reads queued without a model", c)
+	}
+	if c := e.count(t, "events WHERE people_read_at IS NULL"); c != 2 {
+		t.Errorf("%d unread events, want 2", c)
+	}
+
+	// With a model, the next run reads the events found before, although
+	// their source is not due.
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = $1`, now.Add(7*24*time.Hour))
+	e.p.Reader = &fakeReader{}
+	run := runOnce(t, e)
+	if c := e.count(t, "source_checks WHERE run_id = $1", run); c != 0 {
+		t.Errorf("%d checks in the second run, the source was not due", c)
+	}
+	if c := e.count(t, "event_reads WHERE run_id = $1", run); c != 2 {
+		t.Errorf("%d events read from earlier runs, want 2", c)
+	}
+}
+
+func TestAPageThatRefusesTheBotIsNotAskedAgain(t *testing.T) {
+	e := setup(t, "")
+	reader := &fakeReader{}
+	e.p.Reader = reader
+	forbidden := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer forbidden.Close()
+	e.site.set("/events", ldPage(fmt.Sprintf(`{"@context":"https://schema.org","@type":"Event","name":"Geschlossene Runde",
+		"startDate":"2026-10-02T18:30:00+02:00","url":%q,
+		"location":{"@type":"Place","name":"Startplatz","address":{"@type":"PostalAddress","addressLocality":"Köln"}}}`, forbidden.URL+"/e/closed")))
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	if c := e.count(t, "event_reads WHERE error <> ''"); c != 1 {
+		t.Errorf("%d reads with an error, want 1", c)
+	}
+	if c := e.count(t, "events WHERE people_read_at IS NOT NULL"); c != 1 {
+		t.Errorf("the refused page must count as read, %d are", c)
+	}
+	if reader.calls != 0 {
+		t.Errorf("the model was asked %d times about a page it never got", reader.calls)
 	}
 }

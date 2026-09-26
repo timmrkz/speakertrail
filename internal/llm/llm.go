@@ -43,6 +43,15 @@ func FromEnv() *Client {
 	return c
 }
 
+// FromEnvIfSet is FromEnv where LLM_URL is set, and nil elsewhere, so a
+// server without a model never waits for one.
+func FromEnvIfSet() *Client {
+	if os.Getenv("LLM_URL") == "" {
+		return nil
+	}
+	return FromEnv()
+}
+
 // ErrUnreachable means no model answered at the address.
 var ErrUnreachable = errors.New("no language model answers. Is Docker Model Runner on? Turn it on with: docker desktop enable model-runner")
 

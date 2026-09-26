@@ -16,18 +16,21 @@ import (
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
-// runJSON builds one run with its totals from the checks. A run started by
-// hand or by Check now is worked on by serve, which records no end. It is
-// finished once none of its checks wait any more.
+// runJSON builds one run with its totals from the checks and the reads of
+// event pages. A run started by hand or by Check now is worked on by serve,
+// which records no end. It is finished once none of its jobs wait any more.
 const runJSON = `json_build_object(
 	'id', r.id, 'kind', r.kind, 'started_at', r.started_at,
 	'finished_at', COALESCE(r.finished_at, CASE WHEN NOT EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
-		THEN (SELECT COALESCE(max(checked_at), r.started_at) FROM source_checks WHERE run_id = r.id) END),
+		THEN GREATEST(r.started_at, (SELECT max(checked_at) FROM source_checks WHERE run_id = r.id),
+			(SELECT max(read_at) FROM event_reads WHERE run_id = r.id)) END),
 	'sources_checked', (SELECT count(DISTINCT source_id) FROM source_checks WHERE run_id = r.id),
 	'events_found', (SELECT COALESCE(sum(events_found), 0) FROM source_checks WHERE run_id = r.id),
 	'events_new', (SELECT COALESCE(sum(events_new), 0) FROM source_checks WHERE run_id = r.id),
-	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id),
+	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id)
+		+ (SELECT COALESCE(sum(people_new), 0) FROM event_reads WHERE run_id = r.id),
+	'pages_read', (SELECT count(*) FROM event_reads WHERE run_id = r.id),
 	'errors', (SELECT count(*) FROM source_checks WHERE run_id = r.id AND error <> ''))`
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +189,7 @@ func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
 	s.sendQuery(w, r, http.StatusOK, `
 		SELECT (`+personJSON+`::jsonb || jsonb_build_object(
 			'notes', p.notes,
-			'appearances', (SELECT COALESCE(jsonb_agg(jsonb_build_object('role', a.role, 'event', jsonb_build_object(
+			'appearances', (SELECT COALESCE(jsonb_agg(jsonb_build_object('role', a.role, 'evidence', a.evidence, 'event', jsonb_build_object(
 					'id', e.id, 'title', e.title, 'starts_at', e.starts_at, 'city', e.city, 'venue', COALESCE(v.name, ''),
 					'url', e.canonical_url)) ORDER BY e.starts_at DESC), '[]')
 				FROM appearances a JOIN events e ON e.id = a.event_id LEFT JOIN organisations v ON v.id = e.venue_id

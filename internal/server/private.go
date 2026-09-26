@@ -433,6 +433,24 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "started": started})
 }
 
+// stopRun ends a run by hand. A run that already ended answers 409.
+func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	stopped, err := s.opts.Pipeline.StopRun(r.Context(), id)
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	if !stopped {
+		fail(w, http.StatusConflict, "This run has already ended")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {
 	s.sendQuery(w, r, http.StatusOK, `
 		SELECT json_build_object('runs', COALESCE(json_agg(`+runJSON+` ORDER BY r.started_at DESC), '[]'))

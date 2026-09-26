@@ -163,6 +163,8 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
 
+`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks and reads are dropped, and what is running finishes. A run that already ended answers 409.
+
 `GET /api/runs/{id}` answers `{"run": {...}, "checks": [...]}`, where each check is:
 
 ```json

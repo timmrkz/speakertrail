@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -49,6 +50,9 @@ type Pipeline struct {
 	// people. Without it events are not read.
 	Reader Reader
 	Log    *slog.Logger
+
+	mu             sync.Mutex
+	modelDownUntil time.Time
 	// Now is the current time. Tests set it.
 	Now func() time.Time
 }

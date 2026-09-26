@@ -147,6 +147,23 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	return runID, true, nil
 }
 
+// StopRun ends a run by hand. Its queued checks and reads are dropped, and
+// what is running finishes by itself. Events not read yet wait for the next
+// run.
+func (p *Pipeline) StopRun(ctx context.Context, runID int64) (bool, error) {
+	now := p.now()
+	if _, err := p.Pool.Exec(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = 'stopped by hand', locked_until = NULL, updated_at = $2
+		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, now); err != nil {
+		return false, err
+	}
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1 AND finished_at IS NULL`, runID, now)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
 // CheckNow queues one source for an immediate check in its own run.
 func (p *Pipeline) CheckNow(ctx context.Context, sourceID int64) (int64, error) {
 	runID, err := p.StartRun(ctx, "check")

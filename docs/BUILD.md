@@ -39,6 +39,7 @@ reachable from the Mac, and only from the Mac itself.
 | `make run` | builds and starts the app with its database, on http://localhost:8080 |
 | `make` | builds the app |
 | `make crawl` | checks every due source once, like the nightly job |
+| `make report` | writes `report.md`: the last runs, what failed and what waits, without anyone's name. Attach it to a chat with Claude when something looks wrong |
 | `make people` | who is on stage on 5 event pages the runs found, by the engine's rules and by the local model, see below. `URL="…"` names the pages instead. Stores nothing |
 | `make ui` | the interface with live reload on http://localhost:5173, sending the API to a `make run` in another terminal |
 | `make mock` | the interface alone with invented data, on http://localhost:5173. The mock password is `speakertrail` |
@@ -78,6 +79,11 @@ make people MODEL=ai/gemma3:4b-q4_K_M
 
 Without `URL`, `make people` takes the pages of single upcoming events that
 runs found, one per source. So start a run in the app first, on Runs.
+
+The model answers one question at a time. When it fails, for example
+because the Mac runs short of memory with two models loaded, the run leaves
+the remaining event pages for a later run instead of retrying them, and
+`make report` lists the failure.
 
 Each line the model gives comes with the passage from the page that puts
 the person on stage. A name the page does not contain is left out, and so is

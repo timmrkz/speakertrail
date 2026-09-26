@@ -296,6 +296,7 @@ export const api = {
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
+  stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
   run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),

@@ -47,6 +47,7 @@ Commands:
   fetch <url>     show what the engine finds on one page
   people [url]... who is on stage, by the rules and by the local model.
                   Without addresses it takes event pages the runs found
+  report          what the engine did lately, as Markdown without names, to share
   hash-password   print the hash for UI_PASSWORD_HASH, reading the password from stdin
 
 Run "speakertrail <command> -h" for the flags of a command.
@@ -106,6 +107,8 @@ func run(ctx context.Context, args []string) error {
 		return runFetch(ctx, args[1:])
 	case "people":
 		return runPeople(ctx, cfg, args[1:])
+	case "report":
+		return runReport(ctx, cfg)
 	case "hash-password":
 		return runHashPassword()
 	case "help", "-h", "--help":

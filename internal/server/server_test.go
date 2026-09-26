@@ -25,13 +25,19 @@ import (
 var now = time.Date(2026, 9, 25, 9, 0, 0, 0, extract.Berlin)
 
 type fakePipeline struct {
-	checks []int64
-	runs   int
+	checks  []int64
+	stopped []int64
+	runs    int
 }
 
 func (f *fakePipeline) CheckNow(_ context.Context, id int64) (int64, error) {
 	f.checks = append(f.checks, id)
 	return 42, nil
+}
+
+func (f *fakePipeline) StopRun(_ context.Context, id int64) (bool, error) {
+	f.stopped = append(f.stopped, id)
+	return id == 42, nil
 }
 
 func (f *fakePipeline) RunNow(_ context.Context) (int64, bool, error) {
@@ -306,6 +312,12 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	if code, body := e.do(t, "POST", "/api/runs", `{}`); code != 202 || e.pipe.runs != 1 || !strings.Contains(body, `"started":true`) {
 		t.Errorf("start a run: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/runs/42/stop", `{}`); code != 204 {
+		t.Errorf("stop a run: %d", code)
+	}
+	if code, _ := e.do(t, "POST", "/api/runs/7/stop", `{}`); code != 409 {
+		t.Errorf("stop a run that ended: %d", code)
 	}
 	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(sid), `{"status":"paused"}`); code != 400 {
 		t.Errorf("bad status: %d %s", code, body)

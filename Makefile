@@ -11,6 +11,8 @@
 #
 #   make            build the app
 #   make crawl      check every due source once, like the nightly job
+#   make report     write report.md: what the engine did lately, without
+#                   names, to attach to a chat with Claude
 #   make people     who is on stage on 5 event pages the runs found, by the
 #                   engine's rules and by the local model. Stores nothing.
 #                   URL="https://… https://…" names the pages instead
@@ -42,10 +44,10 @@ DOCKER ?= $(if $(or $(CI),$(CLAUDE_CODE_REMOTE),$(SPEAKERTRAIL_IN_DOCKER)),0,1)
 # example MODEL=ai/gemma3:4b-q4_K_M for a faster, smaller one.
 MODEL ?= ai/gemma3:12b-q4_K_M
 
-.PHONY: all run crawl people model model-if-on ui mock test unit interface shell check db pull-prod image stop clean help docker
+.PHONY: all run crawl report people model model-if-on ui mock test unit interface shell check db pull-prod image stop clean help docker
 
 help:
-	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
 
 ifeq ($(DOCKER),1)
 
@@ -72,6 +74,10 @@ crawl: all model-if-on
 
 people: all model
 	@$(COMPOSE) run --rm -e LLM_MODEL=$(MODEL) web people $(URL)
+
+report: all
+	@err=$$($(COMPOSE) run --rm -T -e LLM_MODEL=$(MODEL) web report 2>&1 >report.md) || { echo "$$err"; exit 1; }
+	@echo "Wrote report.md. Attach it to a chat with Claude."
 
 # The model, downloaded once. The first time takes a while, it is several GB.
 model: docker
@@ -179,6 +185,10 @@ crawl: all db
 # Directly, the model answers on http://localhost:12434, or at LLM_URL.
 people: all db
 	@LLM_MODEL=$(MODEL) $(ENV) $(BIN)/speakertrail people $(URL)
+
+report: all db
+	@$(ENV) $(BIN)/speakertrail report >report.md
+	@echo "Wrote report.md. Attach it to a chat with Claude."
 
 model:
 	@echo "Directly, start the model yourself and set LLM_URL if it is not on localhost:12434"

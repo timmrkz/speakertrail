@@ -23,26 +23,34 @@
 
   // A run that is still going refreshes the list every few seconds, so its
   // numbers grow while you watch.
-  let going = $derived(runs.data?.some((r) => !r.finished_at && r.kind !== 'check') ?? false)
+  let going = $derived(runs.data?.find((r) => !r.finished_at && r.kind !== 'check') ?? null)
   $effect(() => {
     if (!runs.data?.some((r) => !r.finished_at)) return
     const t = setInterval(() => runs.run(api.runs), 5000)
     return () => clearInterval(t)
   })
 
-  let starting = $state(false)
-  async function start() {
-    starting = true
+  // One button starts a run and, while it is going, stops it.
+  let busy = $state<'' | 'starting' | 'stopping'>('')
+  async function startOrStop() {
+    const run = going
+    busy = run ? 'stopping' : 'starting'
     try {
-      const r = await api.startRun()
-      if (!r.started) toast.show('A run is already going')
+      if (run) {
+        await api.stopRun(run.id)
+        toast.show('Run stopped. Unread event pages wait for the next run')
+      } else {
+        const r = await api.startRun()
+        if (!r.started) toast.show('A run is already going')
+      }
       await runs.run(api.runs)
     } catch (e) {
-      toast.show(e instanceof Error ? e.message : 'Could not start the run')
+      toast.show(e instanceof Error ? e.message : run ? 'Could not stop the run' : 'Could not start the run')
     } finally {
-      starting = false
+      busy = ''
     }
   }
+  let label = $derived(busy === 'starting' ? 'Starting' : busy === 'stopping' ? 'Stopping' : going ? 'Stop the run' : 'Start a run')
 
   const KIND: Record<Run['kind'], string> = { nightly: 'nightly', manual: 'started by hand', check: 'Check now' }
 
@@ -58,9 +66,9 @@
       <h1>Runs</h1>
       <p>Each run, what it checked and what it found.</p>
     </div>
-    <button class="btn primary start" type="button" onclick={start} disabled={starting || going}
-      title="Check every due source now, like the nightly run">
-      <Icon name="refresh" />{starting ? 'Starting' : going ? 'Running' : 'Start a run'}
+    <button class="btn start" class:primary={!going} type="button" onclick={startOrStop} disabled={busy !== ''}
+      title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Check every due source now, like the nightly run'}>
+      <Icon name={going ? 'close' : 'refresh'} />{label}
     </button>
   </div>
 
@@ -104,7 +112,7 @@
 
 <style>
   /* Room for the longest label, so the button keeps its width. */
-  .start { min-width: 10.5em; justify-content: center; }
+  .start { min-width: 11.2em; justify-content: center; }
   .run { grid-template-columns: minmax(0, 1fr) auto; }
   .when { display: grid; gap: 1px; min-width: 0; }
   .nums { grid-column: 1; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); }

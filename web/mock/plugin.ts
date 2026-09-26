@@ -348,6 +348,13 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
+  ['POST', /^\/api\/runs\/(\d+)\/stop$/, (s, m) => {
+    const run = s.runs.find((r) => r.id === Number(m[1]))
+    if (!run) return err(404, 'No such run')
+    if (run.finished_at) return err(409, 'This run has already ended')
+    run.finished_at = new Date().toISOString()
+    return { status: 204 }
+  }],
   ['POST', /^\/api\/runs$/, (s) => {
     const going = s.runs.find((r) => !r.finished_at && r.kind !== 'check')
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
@@ -359,6 +366,8 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     s.checks.set(run.id, [])
     // Pretend the run checks a few sources, then finishes.
     const t = setInterval(() => {
+      // Stopped by hand.
+      if (run.finished_at) return clearInterval(t)
       run.sources_checked += 7
       run.pages_read += 2
       run.events_found += 11
@@ -366,7 +375,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     }, 3000)
     setTimeout(() => {
       clearInterval(t)
-      run.finished_at = new Date().toISOString()
+      run.finished_at ??= new Date().toISOString()
     }, 12000)
     return { status: 202, body: { run_id: run.id, started: true } }
   }],
@@ -454,7 +463,7 @@ export function mockApi(): Plugin {
         const send = (out: Out) => {
           res.statusCode = out.status
           if (out.cookie) res.setHeader('Set-Cookie', out.cookie)
-          if (out.status === 204 || out.status === 202) return res.end()
+          if (out.status === 204 || out.body === undefined) return res.end()
           res.setHeader('Content-Type', out.type ?? 'application/json; charset=utf-8')
           res.end(typeof out.body === 'string' && out.type ? out.body : JSON.stringify(out.body))
         }

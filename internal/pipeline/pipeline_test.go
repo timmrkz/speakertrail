@@ -545,6 +545,11 @@ func eventPageSite(t *testing.T, e env) {
 
 func runOnce(t *testing.T, e env) int64 {
 	t.Helper()
+	return runWith(t, e, 4)
+}
+
+func runWith(t *testing.T, e env, workers int) int64 {
+	t.Helper()
 	ctx := t.Context()
 	run, err := e.p.StartRun(ctx, "manual")
 	if err != nil {
@@ -554,7 +559,7 @@ func runOnce(t *testing.T, e env) int64 {
 		t.Fatal(err)
 	}
 	// Several workers at once, so reads and checks overlap.
-	w := &queue.Worker{Queue: e.p.Queue, Handlers: e.p.Handlers(), Concurrency: 4, PollInterval: 10 * time.Millisecond}
+	w := &queue.Worker{Queue: e.p.Queue, Handlers: e.p.Handlers(), Concurrency: workers, PollInterval: 10 * time.Millisecond}
 	if err := w.RunUntilIdle(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -609,6 +614,29 @@ func TestReadsWaitWhenNoModelAnswers(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'failed'"); c != 0 {
 		t.Errorf("%d reads failed, a missing model is not a failure", c)
 	}
+	if c := e.count(t, "event_reads WHERE error <> ''"); c == 0 {
+		t.Error("the failed read is not recorded")
+	}
+}
+
+// After the model fails, the run stops asking it, instead of failing page
+// by page and retrying each.
+func TestReadsPauseAfterTheModelFails(t *testing.T) {
+	e := setup(t, "")
+	reader := &fakeReader{err: fmt.Errorf("%w, it answered 500: Compute error.", llm.ErrFailed)}
+	e.p.Reader = reader
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runWith(t, e, 1)
+	if reader.calls != 1 {
+		t.Errorf("the model was asked %d times after it failed, want 1", reader.calls)
+	}
+	if c := e.count(t, "events WHERE people_read_at IS NULL"); c != 2 {
+		t.Errorf("%d events wait for a later run, want 2", c)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'failed'"); c != 0 {
+		t.Errorf("%d reads failed, want none retried", c)
+	}
 }
 
 func TestNoReadsWithoutAModel(t *testing.T) {
@@ -657,5 +685,31 @@ func TestAPageThatRefusesTheBotIsNotAskedAgain(t *testing.T) {
 	}
 	if reader.calls != 0 {
 		t.Errorf("the model was asked %d times about a page it never got", reader.calls)
+	}
+}
+
+func TestStopRunDropsWhatIsQueued(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	for i := range 3 {
+		e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+	}
+	run, _, err := e.p.RunNow(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := e.p.StopRun(ctx, run)
+	if err != nil || !stopped {
+		t.Fatalf("stop: %v %v", stopped, err)
+	}
+	if c := e.count(t, "jobs WHERE status = 'queued' AND key LIKE $1", fmt.Sprintf("run:%d:%%", run)); c != 0 {
+		t.Errorf("%d jobs of the stopped run still queued", c)
+	}
+	if again, _ := e.p.StopRun(ctx, run); again {
+		t.Error("a run can only be stopped once")
+	}
+	// A new run can start right away.
+	if _, started, err := e.p.RunNow(ctx); err != nil || !started {
+		t.Errorf("a run after the stopped one: started %v, %v", started, err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,9 +74,17 @@ func NewEmpty(t testing.TB) *pgxpool.Pool {
 			return
 		}
 		defer admin.Close(ctx)
-		if _, err := admin.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)"); err != nil {
-			t.Errorf("drop database: %v", err)
+		// Postgres' own autovacuum may still be working on a database that
+		// saw a lot of changes, and a normal user cannot end it. It finishes
+		// within moments, so the drop is tried again for a few seconds.
+		var err2 error
+		for range 50 {
+			if _, err2 = admin.Exec(ctx, "DROP DATABASE "+name+" WITH (FORCE)"); err2 == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
+		t.Errorf("drop database: %v", err2)
 	})
 	return pool
 }

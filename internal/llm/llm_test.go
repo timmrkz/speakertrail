@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/timmrkz/speakertrail/internal/extract"
 )
@@ -221,5 +222,61 @@ func TestPeopleFromSeveralGoroutines(t *testing.T) {
 	wg.Wait()
 	if calls.Load() != 8 {
 		t.Errorf("%d calls", calls.Load())
+	}
+}
+
+// Several readers at once still ask the model one question at a time.
+func TestOneQuestionAtATime(t *testing.T) {
+	var now, most atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := now.Add(1)
+		for {
+			m := most.Load()
+			if n <= m || most.CompareAndSwap(m, n) {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+		now.Add(-1)
+		json.NewEncoder(w).Encode(map[string]any{"choices": []any{map[string]any{"message": map[string]any{"content": `{"people":[]}`}}}})
+	}))
+	defer srv.Close()
+	c := client(srv)
+	var wg sync.WaitGroup
+	for range 6 {
+		wg.Go(func() {
+			if _, err := c.People(context.Background(), "", page); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if most.Load() != 1 {
+		t.Errorf("%d questions at once, want 1", most.Load())
+	}
+}
+
+func TestAFailingModelIsUnavailable(t *testing.T) {
+	failing := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":{"code":500,"message":"Compute error."}}`, http.StatusInternalServerError)
+	}))
+	defer failing.Close()
+	_, err := client(failing).People(t.Context(), "", page)
+	if !errors.Is(err, ErrFailed) || !Unavailable(err) {
+		t.Errorf("a 500 gave %v, want ErrFailed", err)
+	}
+
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Second):
+		}
+	}))
+	defer slow.Close()
+	c := client(slow)
+	c.Timeout = 50 * time.Millisecond
+	_, err = c.People(t.Context(), "", page)
+	if !errors.Is(err, ErrFailed) {
+		t.Errorf("no answer in time gave %v, want ErrFailed", err)
 	}
 }

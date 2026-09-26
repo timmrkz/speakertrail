@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,11 +25,18 @@ const DefaultModel = "ai/gemma3:12b-q4_K_M"
 // compose.yaml sets.
 const DefaultURL = "http://localhost:12434/engines/v1"
 
-// Client talks to one model.
+// Client talks to one model. It asks one question at a time: several at
+// once only share the same graphics chip and need more memory, which made
+// the model fail on Tim's Mac.
 type Client struct {
 	URL   string
 	Model string
 	HTTP  *http.Client
+	// Timeout caps one question. Default 3 minutes.
+	Timeout time.Duration
+
+	once  sync.Once
+	slots chan struct{}
 }
 
 // FromEnv reads LLM_URL and LLM_MODEL, with the defaults above.
@@ -50,6 +58,16 @@ func FromEnvIfSet() *Client {
 		return nil
 	}
 	return FromEnv()
+}
+
+// ErrFailed means the model answered with an error of its own or took too
+// long, as it does when the machine runs short of memory.
+var ErrFailed = errors.New("the language model failed")
+
+// Unavailable reports whether an error means the model cannot answer now,
+// so the work waits for a later run instead of being retried at once.
+func Unavailable(err error) bool {
+	return errors.Is(err, ErrUnreachable) || errors.Is(err, ErrFailed)
 }
 
 // ErrUnreachable means no model answered at the address.
@@ -80,6 +98,21 @@ type response struct {
 // chatJSON sends one conversation and decodes the answer, which the schema
 // forces into shape, into out.
 func (c *Client) chatJSON(ctx context.Context, system, user, name string, schema, out any) (tokens int, err error) {
+	c.once.Do(func() { c.slots = make(chan struct{}, 1) })
+	select {
+	case c.slots <- struct{}{}:
+		defer func() { <-c.slots }()
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+	timeout := c.Timeout
+	if timeout <= 0 {
+		timeout = 3 * time.Minute
+	}
+	parent := ctx
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	body, err := json.Marshal(request{
 		Model:       c.Model,
 		Temperature: 0,
@@ -99,13 +132,15 @@ func (c *Client) chatJSON(ctx context.Context, system, user, name string, schema
 	req.Header.Set("Content-Type", "application/json")
 	hc := c.HTTP
 	if hc == nil {
-		// A large model loads for a while on its first question.
-		hc = &http.Client{Timeout: 10 * time.Minute}
+		hc = http.DefaultClient
 	}
 	res, err := hc.Do(req)
 	if err != nil {
+		if parent.Err() != nil {
+			return 0, parent.Err()
+		}
 		if ctx.Err() != nil {
-			return 0, ctx.Err()
+			return 0, fmt.Errorf("%w: no answer within %s", ErrFailed, timeout)
 		}
 		return 0, fmt.Errorf("%w (%v)", ErrUnreachable, err)
 	}
@@ -121,6 +156,9 @@ func (c *Client) chatJSON(ctx context.Context, system, user, name string, schema
 		}
 		if res.StatusCode == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "model") {
 			return 0, fmt.Errorf("the model %s is not on this machine yet. Get it with: docker model pull %s", c.Model, c.Model)
+		}
+		if res.StatusCode >= 500 {
+			return 0, fmt.Errorf("%w, it answered %d: %s", ErrFailed, res.StatusCode, msg)
 		}
 		return 0, fmt.Errorf("the model answered %d: %s", res.StatusCode, msg)
 	}

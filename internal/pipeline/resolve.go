@@ -31,6 +31,7 @@ type ResolveStats struct {
 type Source struct {
 	ID       int64
 	Name     string
+	Kind     string
 	URL      string
 	City     string
 	Status   string

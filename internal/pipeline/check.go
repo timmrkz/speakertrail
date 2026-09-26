@@ -78,6 +78,7 @@ func (p *Pipeline) Handlers() map[string]queue.Handler {
 		KindSeed:        p.handleSeed,
 		KindPrune:       p.handlePrune,
 		KindReadEvent:   p.handleRead,
+		KindLookUp:      p.handleLookUp,
 	}
 }
 
@@ -93,9 +94,9 @@ func loadSource(ctx context.Context, pool *pgxpool.Pool, id int64) (Source, erro
 	var s Source
 	var u *string
 	err := pool.QueryRow(ctx, `
-		SELECT id, name, url, city, status, fetch_mode, checks, empty_checks_in_row, status_changed_at, category
+		SELECT id, name, kind, url, city, status, fetch_mode, checks, empty_checks_in_row, status_changed_at, category
 		FROM sources WHERE id = $1`, id).
-		Scan(&s.ID, &s.Name, &u, &s.City, &s.Status, &s.Mode, &s.Checks, &s.Empty, &s.Changed, &s.Category)
+		Scan(&s.ID, &s.Name, &s.Kind, &u, &s.City, &s.Status, &s.Mode, &s.Checks, &s.Empty, &s.Changed, &s.Category)
 	if u != nil {
 		s.URL = *u
 	}
@@ -109,6 +110,8 @@ type checkRecord struct {
 	fetchID   *int64
 	stats     ResolveStats
 	links     int
+	startups  int
+	startupsN int
 	err       string
 	duration  time.Duration
 	checkedAt time.Time
@@ -158,6 +161,10 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 			return p.makeManual(ctx, src, fetchErr)
 		}
 		return fetchErr
+	}
+
+	if src.Kind == "portfolio" {
+		return p.finishPortfolio(ctx, src, runID, cfg, page, rec)
 	}
 
 	r := &Resolver{Pool: p.Pool, Rules: RulesFrom(cfg), Now: p.now}
@@ -297,9 +304,9 @@ func (p *Pipeline) recordCheck(ctx context.Context, src Source, runID int64, rec
 	}
 	_, err := p.Pool.Exec(ctx, `
 		INSERT INTO source_checks (run_id, source_id, fetch_id, mode, http_status, events_found, events_kept, events_new,
-			people_found, people_new, links_found, error, duration_ms, checked_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+			people_found, people_new, links_found, startups_found, startups_new, error, duration_ms, checked_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
 		run, src.ID, rec.fetchID, rec.mode, rec.status, rec.stats.EventsFound, rec.stats.EventsKept, rec.stats.EventsNew,
-		rec.stats.PeopleFound, rec.stats.PeopleNew, rec.links, rec.err, rec.duration.Milliseconds(), rec.checkedAt)
+		rec.stats.PeopleFound, rec.stats.PeopleNew, rec.links, rec.startups, rec.startupsN, rec.err, rec.duration.Milliseconds(), rec.checkedAt)
 	return err
 }

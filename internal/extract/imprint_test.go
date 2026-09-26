@@ -134,3 +134,31 @@ func TestLinksMarksChromeAndReadsLogos(t *testing.T) {
 		t.Errorf("links %+v", links)
 	}
 }
+
+func TestStartupLinks(t *testing.T) {
+	body := `<header><nav><a href="https://partner.example/">Partner</a></nav></header>
+<main>
+<h2>Our startups</h2>
+<a href="https://www.beispiel-robotics.example/?utm_source=hub"><img alt="Beispiel Robotics" src="a.png"></a>
+<a href="https://probe.example/en/">Website</a>
+<a href="https://probe.example/team">Probe Labs team</a>
+<a href="https://blog.hub.example/story">Our story</a>
+<a href="/startups/probe-labs">Probe Labs</a>
+<a href="https://www.linkedin.com/company/beispiel">LinkedIn</a>
+<a href="https://muster.example/news/2026/award">An award</a>
+</main>
+<footer><a href="https://bank.example/">Sponsored by a bank</a></footer>`
+	got := StartupLinks(body, "https://hub.example/portfolio")
+	want := []Startup{
+		{Name: "Beispiel Robotics", Website: "https://www.beispiel-robotics.example/"},
+		{Name: "Probe", Website: "https://probe.example/"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("startups %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("startup %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/timmrkz/speakertrail/internal/dbtest"
@@ -38,6 +39,9 @@ func newSite(t *testing.T, robots string) *site {
 		}
 		s.mu.Lock()
 		body, ok := s.pages[r.URL.Path]
+		if strings.HasSuffix(r.Host, ".test") {
+			body, ok = s.pages["http://"+r.Host+r.URL.Path]
+		}
 		s.mu.Unlock()
 		if !ok {
 			http.NotFound(w, r)
@@ -81,7 +85,7 @@ func setup(t *testing.T, robots string) env {
 	s := newSite(t, robots)
 	q := queue.New(pool, queue.Options{Now: func() time.Time { return now }})
 	// Tests never touch a live website. Any other host fails the test.
-	lo := &localOnly{}
+	lo := &localOnly{local: s.srv.Listener.Addr().String()}
 	t.Cleanup(func() {
 		if hosts := lo.tried(); len(hosts) > 0 {
 			t.Errorf("the test tried to reach live websites: %v", hosts)
@@ -93,15 +97,28 @@ func setup(t *testing.T, robots string) env {
 }
 
 // localOnly lets requests reach the test's own server and refuses and
-// records every other host.
+// records every other host. Invented hosts ending in .test go to the
+// test's server too, which answers them from pages set as
+// "http://host.test/path".
 type localOnly struct {
 	mu    sync.Mutex
 	hosts []string
+	local string
 }
 
 func (l *localOnly) RoundTrip(r *http.Request) (*http.Response, error) {
 	if h := r.URL.Hostname(); h == "127.0.0.1" || h == "localhost" || h == "::1" {
 		return http.DefaultTransport.RoundTrip(r)
+	}
+	if strings.HasSuffix(r.URL.Hostname(), ".test") {
+		local := r.Clone(r.Context())
+		local.Host = r.URL.Host
+		local.URL.Host = l.local
+		resp, err := http.DefaultTransport.RoundTrip(local)
+		if resp != nil {
+			resp.Request = r
+		}
+		return resp, err
 	}
 	l.mu.Lock()
 	l.hosts = append(l.hosts, r.URL.Host)
@@ -883,5 +900,96 @@ func TestCalendarURL(t *testing.T) {
 		if got := pipeline.CalendarURL(link); got != want {
 			t.Errorf("%s: %q, want %q", link, got, want)
 		}
+	}
+}
+
+// portfolioSite is an invented hub's portfolio of four startups, each with
+// its own website and imprint. All names are invented.
+func portfolioSite(t *testing.T, e env) int64 {
+	t.Helper()
+	e.site.set("/portfolio", `<html><body>
+<header><a href="https://partner.test/">Partner</a></header>
+<main><h1>Our startups</h1>
+<a href="http://beispiel-robotics.test/"><img alt="Beispiel Robotics" src="a.png"></a>
+<a href="http://probe-labs.test/">Probe Labs</a>
+<a href="http://musterbank.test/">Musterbank</a>
+<a href="http://schweigen.test/">Schweigen</a>
+<a href="https://www.linkedin.com/company/beispiel">LinkedIn</a>
+</main>
+<footer><a href="http://sponsor.test/">Sponsor</a></footer></body></html>`)
+	e.site.set("http://beispiel-robotics.test/", `<html><body><h1>Robots</h1><footer><a href="/rechtliches">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-robotics.test/rechtliches", `<html><body><h1>Impressum</h1>
+<p>Beispiel Robotics GmbH<br>Musterstraße 1<br>50667 Köln</p>
+<p>Geschäftsführer: Lena Musterfrau, Tom Testmann</p>
+<p>E-Mail: hallo@beispiel-robotics.test, Telefon: +49 221 000000</p></body></html>`)
+	// No link to the imprint. It sits where most imprints sit.
+	e.site.set("http://probe-labs.test/", `<html><body><h1>Probe Labs</h1></body></html>`)
+	e.site.set("http://probe-labs.test/impressum", `<html><body>
+<p>Probe Labs UG (haftungsbeschränkt), 44137 Dortmund</p>
+<p>Vertreten durch die Geschäftsführerin Mara Beispielfrau</p></body></html>`)
+	e.site.set("http://musterbank.test/", `<html><body><a href="/impressum">Impressum</a></body></html>`)
+	e.site.set("http://musterbank.test/impressum", `<html><body><p>Musterbank AG</p><p>Vorstand: Erika Erfunden, Max Mustermann</p></body></html>`)
+	// schweigen.test has no pages at all.
+	var id int64
+	if err := e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate') RETURNING id`,
+		e.site.srv.URL+"/portfolio").Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func TestPortfolioLeadsToWhoRunsEachStartup(t *testing.T) {
+	e := setup(t, "")
+	src := portfolioSite(t, e)
+	run := runOnce(t, e)
+
+	if got := e.one(t, `SELECT status || ' ' || next_check_at::date::text FROM sources WHERE id = $1`, src); got != "active 2026-10-09" {
+		t.Errorf("portfolio after its check: %v", got)
+	}
+	if got := e.one(t, `SELECT startups_found || ' found, ' || startups_new || ' new' FROM source_checks WHERE source_id = $1`, src); got != "4 found, 4 new" {
+		t.Errorf("check: %v", got)
+	}
+	if c := e.count(t, "startup_lookups WHERE run_id = $1", run); c != 4 {
+		t.Errorf("%d lookups in the run, want 4", c)
+	}
+	// The managing directors of the two young companies are founders, with
+	// the imprint as the reason.
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT p.full_name || ', ' || p.city || ': ' || p.fit_evidence FROM people p
+		JOIN affiliations af ON af.person_id = p.id AND af.role = 'founder' WHERE p.fit = 'founder' ORDER BY p.full_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Lena Musterfrau, Köln: Managing director of Beispiel Robotics GmbH, by its imprint. In the portfolio of Beispiel Hub",
+		"Mara Beispielfrau, Dortmund: Managing director of Probe Labs UG (haftungsbeschränkt), by its imprint. In the portfolio of Beispiel Hub",
+		"Tom Testmann, Köln: Managing director of Beispiel Robotics GmbH, by its imprint. In the portfolio of Beispiel Hub",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("founders:\n%s", strings.Join(got, "\n"))
+	}
+	// A bank's board is nobody Tim looks for, and a site that does not
+	// answer is tried again by a later run.
+	if c := e.count(t, "people"); c != 3 {
+		t.Errorf("%d people, want 3", c)
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.website LIKE '%musterbank%'`); got != "not a young company (AG)" {
+		t.Errorf("the bank's lookup says %q", got)
+	}
+	if c := e.count(t, "organisations WHERE website LIKE '%schweigen%' AND looked_up_at IS NULL"); c != 1 {
+		t.Error("a startup whose site did not answer is not left for a later run")
+	}
+	if c := e.count(t, "people WHERE headline LIKE '%@%' OR headline ~ '[0-9]{4}' OR full_name ~ '[0-9@]'"); c != 0 {
+		t.Error("contact details were stored")
+	}
+
+	// The next run looks up nothing twice, and only the silent site again.
+	runOnce(t, e)
+	if c := e.count(t, "startup_lookups"); c != 5 {
+		t.Errorf("%d lookups after two runs, want 5", c)
+	}
+	if c := e.count(t, "people"); c != 3 {
+		t.Errorf("%d people after two runs", c)
 	}
 }

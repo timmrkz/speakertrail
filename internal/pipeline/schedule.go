@@ -39,12 +39,12 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		return 0, err
 	}
 	now := p.now()
-	// Checks and reads left over from an earlier run are replaced by this
-	// one. Unread pages come back through this run's own reads.
+	// Checks, reads and lookups left over from an earlier run are replaced
+	// by this one. What they left undone comes back through this run.
 	if _, err := p.Pool.Exec(ctx, `
 		UPDATE jobs SET status = 'failed', last_error = 'replaced by run ' || $1, locked_until = NULL, updated_at = $2
-		WHERE kind IN ($3, $4) AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
-		fmt.Sprint(runID), now, KindCheckSource, KindReadEvent); err != nil {
+		WHERE kind IN ($3, $4, $5) AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
+		fmt.Sprint(runID), now, KindCheckSource, KindReadEvent, KindLookUp); err != nil {
 		return 0, err
 	}
 	rows, err := p.Pool.Query(ctx, `
@@ -91,6 +91,10 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 10)); err != nil {
 		return 0, err
 	}
+	// Startups from portfolios whose imprint was not looked up yet.
+	if _, err := p.enqueueLookUps(ctx, runID, 0, cfg.Int("startups_per_run", 10)); err != nil {
+		return 0, err
+	}
 	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
 		return 0, err
 	}
@@ -130,8 +134,8 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	err = conn.QueryRow(ctx, `
 		SELECT r.id FROM runs r
 		WHERE r.kind IN ('nightly', 'manual') AND r.finished_at IS NULL AND EXISTS (
-			SELECT 1 FROM jobs j WHERE j.kind IN ($1, $2) AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
-		ORDER BY r.id DESC LIMIT 1`, KindCheckSource, KindReadEvent).Scan(&runID)
+			SELECT 1 FROM jobs j WHERE j.kind IN ($1, $2, $3) AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		ORDER BY r.id DESC LIMIT 1`, KindCheckSource, KindReadEvent, KindLookUp).Scan(&runID)
 	if err == nil {
 		return runID, false, nil
 	}
@@ -151,15 +155,15 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 
 // EndInterrupted ends the runs the app was working on when it stopped, so
 // their work does not come back by itself after a restart: their queued
-// and running checks and reads are dropped, and the runs end now. Unread
+// and running checks, reads and lookups are dropped, and the runs end now. Unread
 // event pages wait for the next run. Only serve calls it, as it starts,
 // before its own worker takes any job.
 func (p *Pipeline) EndInterrupted(ctx context.Context) (int, error) {
 	now := p.now()
 	rows, err := p.Pool.Query(ctx, `
 		UPDATE jobs SET status = 'failed', last_error = 'the app stopped while this waited or ran', locked_until = NULL, updated_at = $1
-		WHERE kind IN ($2, $3) AND status IN ('queued', 'running') AND key LIKE 'run:%'
-		RETURNING split_part(key, ':', 2)::bigint`, now, KindCheckSource, KindReadEvent)
+		WHERE kind IN ($2, $3, $4) AND status IN ('queued', 'running') AND key LIKE 'run:%'
+		RETURNING split_part(key, ':', 2)::bigint`, now, KindCheckSource, KindReadEvent, KindLookUp)
 	if err != nil {
 		return 0, err
 	}

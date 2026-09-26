@@ -50,9 +50,15 @@ const progressJSON = `WITH j AS (
 		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done FROM j),
 	speed AS (SELECT
 		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM source_checks ORDER BY id DESC LIMIT 200) x) AS check_ms,
-		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM event_reads WHERE error = '' ORDER BY id DESC LIMIT 100) x) AS read_ms)
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM event_reads WHERE error = '' ORDER BY id DESC LIMIT 100) x) AS read_ms,
+		-- Each check queues reads of its new events, so the run expects as
+		-- many per check as checks brought lately, up to the setting.
+		LEAST(COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'event_pages_per_check'), 3),
+			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > now() - interval '14 days')::numeric
+				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > now() - interval '14 days'), 0), 0)) AS reads_per_check),
+	expect AS (SELECT GREATEST(c.reads, c.reads + round((c.checks - c.checks_done) * speed.reads_per_check)) AS reads FROM c, speed)
 	SELECT json_build_object(
-		'checks', c.checks, 'checks_done', c.checks_done, 'reads', c.reads, 'reads_done', c.reads_done,
+		'checks', c.checks, 'checks_done', c.checks_done, 'reads', c.reads, 'reads_done', c.reads_done, 'reads_expected', expect.reads,
 		'now', (SELECT COALESCE(json_agg(json_build_object(
 				'kind', CASE jr.kind WHEN 'check_source' THEN 'check' ELSE 'read' END,
 				'label', CASE jr.kind
@@ -60,11 +66,11 @@ const progressJSON = `WITH j AS (
 					ELSE (SELECT title FROM events WHERE id = (jr.payload->>'event_id')::bigint) END,
 				'since', jr.updated_at) ORDER BY jr.updated_at), '[]')
 			FROM jobs jr WHERE jr.status = 'running' AND jr.key LIKE 'run:' || r.id || ':%' AND jr.kind IN ('check_source', 'read_event')),
-		'seconds_left', CASE WHEN (c.checks > c.checks_done AND speed.check_ms IS NULL) OR (c.reads > c.reads_done AND speed.read_ms IS NULL)
+		'seconds_left', CASE WHEN (c.checks > c.checks_done AND speed.check_ms IS NULL) OR (expect.reads > c.reads_done AND speed.read_ms IS NULL)
 			THEN NULL ELSE round(GREATEST(
 				(c.checks - c.checks_done) * COALESCE(speed.check_ms, 0) / 4,
-				(c.reads - c.reads_done) * COALESCE(speed.read_ms, 0)) / 1000) END)
-	FROM c, speed`
+				(expect.reads - c.reads_done) * COALESCE(speed.read_ms, 0)) / 1000) END)
+	FROM c, speed, expect`
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	now := s.opts.Now()

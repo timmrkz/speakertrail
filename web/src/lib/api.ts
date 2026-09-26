@@ -181,12 +181,29 @@ export interface Source {
 
 export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>>
 
+export interface RunProgress {
+  checks: number
+  checks_done: number
+  reads: number
+  reads_done: number
+  // The reads the run should end with: those queued, and as many more as
+  // checks brought lately for the checks still to come.
+  reads_expected: number
+  // What runs at this moment: a check of a source or a read of an event page.
+  now: { kind: 'check' | 'read'; label: string; since: string }[]
+  // Measured from how long earlier checks and reads took. Null until there
+  // is anything to measure against.
+  seconds_left: number | null
+}
+
 export interface Run {
   id: number
   // nightly, manual for a run started by hand, check for Check now
   kind: 'nightly' | 'manual' | 'check'
   // Event pages the language model read in this run.
   pages_read: number
+  // How far a going run is. Null once it has ended.
+  progress: RunProgress | null
   started_at: string
   finished_at: string | null
   sources_checked: number
@@ -298,6 +315,7 @@ export const api = {
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
+  currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
   run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),

@@ -115,6 +115,14 @@ messages, pull request text, code comments and chat replies.
   something new.
 - **A click shows at once.** A control that starts work says what it is
   doing and takes no second click.
+- **Work never runs silently.** Anything that takes more than a moment
+  says what it does now, how far it is, how long it has run and about how
+  long is left, measured from earlier work rather than guessed, and it can
+  be stopped. It looks the same everywhere: the fill, the shuttle and the
+  pulsing dot in `app.css`, and `RunProgress.svelte` for a run. See the
+  interface skill.
+- **Short runs, often.** Tim runs the engine by hand on his Mac. A run
+  stays short enough to watch, and what does not fit waits for the next.
 - **Consistency over novelty.** A visual treatment used in one place is used
   for every equivalent element, or not at all. Two things of the same kind
   are the same size, in the same colour, in the same place.

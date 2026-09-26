@@ -7,6 +7,7 @@
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
+  import RunProgress from '../lib/components/RunProgress.svelte'
   import RunSheet from './RunSheet.svelte'
 
   const runs = new Load<Run[]>()
@@ -26,7 +27,7 @@
   let going = $derived(runs.data?.find((r) => !r.finished_at && r.kind !== 'check') ?? null)
   $effect(() => {
     if (!runs.data?.some((r) => !r.finished_at)) return
-    const t = setInterval(() => runs.run(api.runs), 5000)
+    const t = setInterval(() => runs.run(api.runs), 2000)
     return () => clearInterval(t)
   })
 
@@ -98,6 +99,7 @@
             </span>
             <span class="go" aria-hidden="true"><Icon name="chevron" /></span>
           </a>
+          {#if r.progress}<div class="going"><RunProgress run={r} /></div>{/if}
         </li>
       {/each}
     </ul>
@@ -111,6 +113,7 @@
 {/if}
 
 <style>
+  .going { padding: 0 16px 14px; }
   /* Room for the longest label, so the button keeps its width. */
   .start { min-width: 11.2em; justify-content: center; }
   .run { grid-template-columns: minmax(0, 1fr) auto; }

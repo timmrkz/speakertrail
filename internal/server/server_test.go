@@ -231,15 +231,16 @@ func TestRunProgress(t *testing.T) {
 		t.Errorf("no history, no estimate, got %v", *pr.SecondsLeft)
 	}
 
-	// With history: a check took 4 s, a read 20 s. One check left runs
-	// beside others, the read runs alone: about 20 s.
+	// With history: a check took 4 s, a read 20 s, and one read for every
+	// check. One check left runs beside others and brings one more read.
+	// Reads run alone: two of them, about 40 s.
 	exec(`DELETE FROM source_checks`)
 	exec(`DELETE FROM event_reads`)
 	exec(`INSERT INTO source_checks (source_id, duration_ms, checked_at) VALUES ($1, 4000, $2)`, a, now)
 	exec(`INSERT INTO event_reads (event_id, url, duration_ms, read_at) VALUES ($1, 'https://example.org/e/1', 20000, $2)`, ev, now)
 	current()
-	if s := got.Run.Progress.SecondsLeft; s == nil || *s != 20 {
-		t.Errorf("seconds left %v, want 20", s)
+	if s := got.Run.Progress.SecondsLeft; s == nil || *s != 40 {
+		t.Errorf("seconds left %v, want 40", s)
 	}
 
 	// A finished run is not current.

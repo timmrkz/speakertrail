@@ -5,6 +5,7 @@
   import Chips from '../lib/components/Chips.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import RunProgress from '../lib/components/RunProgress.svelte'
   import Sheet from '../lib/components/Sheet.svelte'
 
   let { id, onclose }: { id: number; onclose: () => void } = $props()
@@ -12,6 +13,13 @@
   const data = new Load<{ run: Run; checks: Check[] }>()
   const load = () => data.run(() => api.run(id))
   load()
+  // A going run is read again every two seconds, so its checks come in
+  // while you watch.
+  $effect(() => {
+    if (!data.data?.run.progress) return
+    const t = setInterval(load, 2000)
+    return () => clearInterval(t)
+  })
 
   let show = $state<'all' | 'errors' | 'found'>('all')
   let checks = $derived(data.data?.checks ?? [])
@@ -35,6 +43,7 @@
           {fmtNum(data.data.run.events_new)} new, {fmtNum(data.data.run.pages_read)} event pages read, {fmtNum(data.data.run.people_new)} new people,
           {fmtNum(data.data.run.errors)} errors
         </p>
+        {#if data.data.run.progress}<RunProgress run={data.data.run} />{/if}
       </div>
     {:else}
       <div class="head"><span class="skel" style:width="70%" style:height="20px"></span><span class="skel" style:width="90%" style:height="12px"></span></div>

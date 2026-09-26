@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite'
 import type {
   Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  Setting, Source, SourceStatus, Stats,
+  RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -356,11 +356,13 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
+  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.progress && r.kind !== 'check') ?? null })],
   ['POST', /^\/api\/runs\/(\d+)\/stop$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
     if (!run) return err(404, 'No such run')
     if (run.finished_at) return err(409, 'This run has already ended')
     run.finished_at = new Date().toISOString()
+    run.progress = null
     return { status: 204 }
   }],
   ['POST', /^\/api\/runs$/, (s) => {
@@ -369,22 +371,43 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const run = {
       id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
       sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, people_new: 0, errors: 0,
+      // Like the server: 8 checks four at a time, then the reads they bring,
+      // one at a time, measured at about 3 s a check and 5 s a read.
+      progress: { checks: 8, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 6, now: [] as RunProgress['now'], seconds_left: 36 } as RunProgress | null,
     }
     s.runs.unshift(run)
     s.checks.set(run.id, [])
     // Pretend the run checks a few sources, then finishes.
+    const names = s.sources.slice(0, 8).map((x) => x.name)
+    const titles = s.events.slice(0, 6).map((e) => e.title)
     const t = setInterval(() => {
-      // Stopped by hand.
-      if (run.finished_at) return clearInterval(t)
-      run.sources_checked += 7
-      run.pages_read += 2
-      run.events_found += 11
-      run.events_new += 3
-    }, 3000)
-    setTimeout(() => {
-      clearInterval(t)
-      run.finished_at ??= new Date().toISOString()
-    }, 12000)
+      const p = run.progress
+      // Stopped by hand, or done.
+      if (run.finished_at || !p) {
+        run.progress = null
+        return clearInterval(t)
+      }
+      const since = new Date().toISOString()
+      if (p.checks_done < p.checks) {
+        p.checks_done = Math.min(p.checks, p.checks_done + 2)
+        run.sources_checked = p.checks_done
+        run.events_found += 5
+        run.events_new += 1
+        p.reads = Math.min(6, p.checks_done - 1)
+        p.now = p.checks_done < p.checks ? names.slice(p.checks_done, p.checks_done + 2).map((label) => ({ kind: 'check' as const, label, since })) : []
+      } else if (p.reads_done < p.reads) {
+        p.reads_done++
+        run.pages_read = p.reads_done
+        run.people_new += 2
+        p.now = p.reads_done < p.reads ? [{ kind: 'read' as const, label: titles[p.reads_done % titles.length], since }] : []
+      } else {
+        run.finished_at = new Date().toISOString()
+        run.progress = null
+        return clearInterval(t)
+      }
+      p.reads_expected = Math.max(p.reads, 6)
+      p.seconds_left = ((p.checks - p.checks_done) * 3) / 4 + (p.reads_expected - p.reads_done) * 5
+    }, 2000)
     return { status: 202, body: { run_id: run.id, started: true } }
   }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {

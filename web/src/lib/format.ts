@@ -225,3 +225,20 @@ export function groupByDay<T extends { starts_at: string }>(items: T[]): { key: 
   }
   return groups
 }
+
+// How long work has run, like "42 s" or "3 min 5 s".
+export function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s} s`
+  if (s < 3600) return `${Math.floor(s / 60)} min ${s % 60} s`
+  return `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min`
+}
+
+// About how long is left, in steps of five seconds so it does not flicker,
+// and in whole minutes from a minute on, rounded up.
+export function fmtLeft(seconds: number): string {
+  const s = Math.max(5, Math.ceil(seconds / 5) * 5)
+  if (s < 60) return `about ${s} s left`
+  if (s < 3600) return `about ${Math.ceil(s / 60)} min left`
+  return `about ${Math.floor(s / 3600)} h ${Math.ceil((s % 3600) / 60)} min left`
+}

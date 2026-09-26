@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -47,7 +48,9 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			UNION ALL SELECT 'people with a founder role', count(*)::text FROM people WHERE fit = 'founder'`},
 		{"Last runs", `
 			SELECT r.id || ' ' || r.kind || ', ' || to_char(r.started_at, 'YYYY-MM-DD HH24:MI'),
-				COALESCE(to_char(r.finished_at - r.started_at, 'HH24:MI:SS'), 'not finished') || ', ' ||
+				CASE WHEN r.finished_at IS NOT NULL THEN 'took ' || to_char(r.finished_at - r.started_at, 'HH24:MI:SS')
+					WHEN EXISTS (SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%') THEN 'still going'
+					ELSE 'ended' END || ', ' ||
 				(SELECT count(*) FROM source_checks c WHERE c.run_id = r.id) || ' checks, ' ||
 				(SELECT count(*) FROM source_checks c WHERE c.run_id = r.id AND c.error <> '') || ' failed, ' ||
 				(SELECT count(*) FROM event_reads er WHERE er.run_id = r.id) || ' reads, ' ||
@@ -67,10 +70,15 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 		{"Failed reads in the last 3 days", `
 			SELECT url, left(error, 200) FROM event_reads WHERE error <> '' AND read_at > now() - interval '3 days'
 			ORDER BY read_at DESC LIMIT 30`},
+		{"Sources added in the last 3 days", `
+			SELECT s.status || ': ' || s.name || ' (' || COALESCE(s.url, '') || ')',
+				COALESCE((SELECT 'linked from ' || x.name FROM sources x WHERE x.id = s.discovered_from_source_id), NULLIF(s.discovered_note, ''), 'added')
+			FROM sources s WHERE s.created_at > now() - interval '3 days' ORDER BY s.created_at DESC LIMIT 30`},
 		{"Slowest reads in the last 3 days", `
 			SELECT url, (duration_ms / 1000) || ' s, ' || people_found || ' people' FROM event_reads
 			WHERE error = '' AND read_at > now() - interval '3 days' ORDER BY duration_ms DESC LIMIT 10`},
 	}
+	defer writeFounders(ctx, pool, w)
 	for _, sec := range sections {
 		rows, err := pool.Query(ctx, sec.sql)
 		if err != nil {
@@ -101,4 +109,53 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 
 func oneLine(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// writeFounders says why each founder counts as one, with their name masked,
+// so a wrong one can be traced to the passage or the title that made it.
+func writeFounders(ctx context.Context, pool *pgxpool.Pool, w io.Writer) {
+	fmt.Fprint(w, "## Why each founder counts as one\n\nNames are masked as …\n\n")
+	rows, err := pool.Query(ctx, `
+		SELECT full_name, fit_evidence, headline,
+			(SELECT string_agg(o.name, ', ') FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
+				WHERE af.person_id = p.id AND af.role = 'founder')
+		FROM people p WHERE fit = 'founder' ORDER BY id`)
+	if err != nil {
+		fmt.Fprintf(w, "- could not read them: %v\n", err)
+		return
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var name, evidence, headline string
+		var builds *string
+		if err := rows.Scan(&name, &evidence, &headline, &builds); err != nil {
+			fmt.Fprintf(w, "- could not read them: %v\n", err)
+			return
+		}
+		n++
+		line := "from the title: " + mask(headline, name)
+		if evidence != "" {
+			line = "from an event page: \"" + mask(evidence, name) + "\""
+		}
+		if builds != nil && *builds != "" {
+			line += ", builds " + *builds
+		}
+		fmt.Fprintf(w, "- %s\n", oneLine(line))
+	}
+	if n == 0 {
+		fmt.Fprintln(w, "- none")
+	}
+	fmt.Fprintln(w)
+}
+
+// mask replaces every part of a person's name in s.
+func mask(s, name string) string {
+	for _, part := range strings.Fields(name) {
+		if len([]rune(part)) < 2 {
+			continue
+		}
+		s = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(part)).ReplaceAllString(s, "…")
+	}
+	return s
 }

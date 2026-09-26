@@ -57,10 +57,12 @@ reachable from the Mac, and only from the Mac itself.
 ## The language model
 
 The engine reads people better with a language model. Every run reads the
-own pages of upcoming events with it, up to 30 per run, and stores who is
+own pages of upcoming events with it, up to 10 per run, and stores who is
 on stage with the passage that shows it. When the page says someone founded
 or runs something, they count as a founder, and People shows founders
-first. It runs on this Mac,
+first. A title counts too, when its role says founder, Gründerin or owner:
+"Projektleiter, Gründerzentrum" does not, and neither does a CEO alone.
+`make report` says for each founder which passage or title made them one. It runs on this Mac,
 not with a paid service: Docker Desktop's Model Runner runs it on the Mac's
 graphics chip, and the app's container asks it.
 

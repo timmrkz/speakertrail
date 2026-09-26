@@ -80,8 +80,39 @@ func setup(t *testing.T, robots string) env {
 	pool := dbtest.New(t)
 	s := newSite(t, robots)
 	q := queue.New(pool, queue.Options{Now: func() time.Time { return now }})
-	p := &pipeline.Pipeline{Pool: pool, Fetcher: fetch.New(fetch.Options{}), Queue: q, Now: func() time.Time { return now }}
+	// Tests never touch a live website. Any other host fails the test.
+	lo := &localOnly{}
+	t.Cleanup(func() {
+		if hosts := lo.tried(); len(hosts) > 0 {
+			t.Errorf("the test tried to reach live websites: %v", hosts)
+		}
+	})
+	p := &pipeline.Pipeline{Pool: pool, Fetcher: fetch.New(fetch.Options{Client: &http.Client{Transport: lo, Timeout: 10 * time.Second}}),
+		Queue: q, Now: func() time.Time { return now }}
 	return env{pool: pool, p: p, site: s}
+}
+
+// localOnly lets requests reach the test's own server and refuses and
+// records every other host.
+type localOnly struct {
+	mu    sync.Mutex
+	hosts []string
+}
+
+func (l *localOnly) RoundTrip(r *http.Request) (*http.Response, error) {
+	if h := r.URL.Hostname(); h == "127.0.0.1" || h == "localhost" || h == "::1" {
+		return http.DefaultTransport.RoundTrip(r)
+	}
+	l.mu.Lock()
+	l.hosts = append(l.hosts, r.URL.Host)
+	l.mu.Unlock()
+	return nil, fmt.Errorf("tests never touch a live website: %s", r.URL.Host)
+}
+
+func (l *localOnly) tried() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.hosts...)
 }
 
 func (e env) addSource(t *testing.T, path, status string) int64 {
@@ -542,7 +573,10 @@ func eventPageSite(t *testing.T, e env) {
 			"url":%q,"location":{"@type":"Place","name":"Startplatz","address":{"@type":"PostalAddress","addressLocality":"Köln"}}}`,
 			name, e.site.srv.URL+path)
 	}
-	e.site.set("/events", ldPage(ld("Founders Talk Köln", "/e/talk"), ld("Pitch Abend Köln", "/e/pitch")))
+	// A page of its own, without the Meetup link ldPage carries: a run
+	// would add that as a source and check it on the live website.
+	e.site.set("/events", `<html><head><script type="application/ld+json">[`+ld("Founders Talk Köln", "/e/talk")+`,`+
+		ld("Pitch Abend Köln", "/e/pitch")+`]</script></head><body><h1>Events</h1></body></html>`)
 	e.site.set("/e/talk", `<html><body><h1>Founders Talk</h1><p>Diesmal erzählt Lena Musterfrau von der Beispiel GmbH.</p></body></html>`)
 	e.site.set("/e/pitch", `<html><body><h1>Pitch Abend</h1><p>Durch den Abend führt Karl Kontrolle.</p></body></html>`)
 }
@@ -806,5 +840,48 @@ func TestAPageThatKeepsFailingIsGivenUp(t *testing.T) {
 	}
 	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'queued'"); c != 1 {
 		t.Errorf("%d reads queued, want the other page", c)
+	}
+}
+
+// A title makes a founder only when its role says so, never an
+// organisation's name, and a CEO or managing director alone is not one.
+// All organisations are invented.
+func TestFounderFromTitle(t *testing.T) {
+	for aff, want := range map[string][2]string{
+		"Co-founder and CEO, Beispiel Robotics":     {"Beispiel Robotics", "founder"},
+		"Gründerin, Backstube Muster":               {"Backstube Muster", "founder"},
+		"Mitgründerin von Beispielwerk":             {"Beispielwerk", "founder"},
+		"Inhaberin, Café Beispiel":                  {"Café Beispiel", "founder"},
+		"CEO, Musterbank AG":                        {"Musterbank AG", "employee"},
+		"Geschäftsführer, Beispielverband e.V.":     {"Beispielverband e.V", "employee"},
+		"Projektleiter, Gründerzentrum Musterstadt": {"Gründerzentrum Musterstadt", "employee"},
+		"Gründer-Stammtisch Musterstadt":            {"Gründer-Stammtisch Musterstadt", "employee"},
+		"Founders Foundation Musterstadt":           {"Founders Foundation Musterstadt", "employee"},
+		"Team Lead at Beispiel Founders Club":       {"Beispiel Founders Club", "employee"},
+	} {
+		org, role := pipeline.ParseAffiliation(aff)
+		if org != want[0] || role != want[1] {
+			t.Errorf("%q: %q, %q, want %q, %q", aff, org, role, want[0], want[1])
+		}
+	}
+}
+
+// A link becomes the organiser's calendar, never one of a platform's own
+// pages or a single event. The organisers are invented.
+func TestCalendarURL(t *testing.T) {
+	for link, want := range map[string]string{
+		"https://www.meetup.com/beispiel-founders-koeln/events/316565851/":    "https://www.meetup.com/beispiel-founders-koeln/",
+		"https://www.meetup.com/de-DE/beispiel-founders-koeln/":               "https://www.meetup.com/beispiel-founders-koeln/",
+		"https://www.meetup.com/lp/":                                          "",
+		"https://www.meetup.com/find/?location=de--Koeln":                     "",
+		"https://www.meetup.com/apps/":                                        "",
+		"https://www.meetup.com/login/":                                       "",
+		"https://www.tickettailor.com/events/beispielnightskoeln/2432028":     "https://www.tickettailor.com/events/beispielnightskoeln",
+		"https://www.tickettailor.com/events/beispielnightskoeln/2432028/r/x": "https://www.tickettailor.com/events/beispielnightskoeln",
+		"https://www.tickettailor.com/events/beispielnightskoeln":             "https://www.tickettailor.com/events/beispielnightskoeln",
+	} {
+		if got := pipeline.CalendarURL(link); got != want {
+			t.Errorf("%s: %q, want %q", link, got, want)
+		}
 	}
 }

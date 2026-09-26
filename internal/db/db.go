@@ -48,6 +48,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	})
 }
 
+// MigrateTo applies migrations up to and including version. Only tests use
+// it, to put data in before a migration that changes data.
+func MigrateTo(ctx context.Context, pool *pgxpool.Pool, version int64) error {
+	return withProvider(pool, func(p *goose.Provider) error {
+		_, err := p.UpTo(ctx, version)
+		return err
+	})
+}
+
 // Reset rolls back every migration. Only tests use it.
 func Reset(ctx context.Context, pool *pgxpool.Pool) error {
 	return withProvider(pool, func(p *goose.Provider) error {

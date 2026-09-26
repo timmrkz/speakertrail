@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/timmrkz/speakertrail/internal/extract"
@@ -124,10 +125,47 @@ func (c *Client) People(ctx context.Context, title, text string) (PeopleResult, 
 	return res, nil
 }
 
-// fullName wants at least two words and nothing that belongs in contact
-// details.
+// fullName wants a first and a last name, not an initial, not an
+// organisation, and nothing that belongs in contact details. Every word is
+// capitalised, except particles like "von" or "de".
 func fullName(raw, norm string) bool {
-	return !strings.ContainsAny(raw, "@0123456789") && len(strings.Fields(norm)) >= 2
+	if strings.ContainsAny(raw, "@0123456789") || len(strings.Fields(norm)) < 2 {
+		return false
+	}
+	words := strings.Fields(raw)
+	for len(words) > 0 && titles[strings.ToLower(words[0])] {
+		words = words[1:]
+	}
+	if len(words) < 2 {
+		return false
+	}
+	for _, w := range words {
+		lw := strings.ToLower(strings.Trim(w, ",;"))
+		if orgWords[lw] {
+			return false
+		}
+		if particles[lw] {
+			continue
+		}
+		if r, _ := utf8.DecodeRuneInString(w); !unicode.IsUpper(r) {
+			return false
+		}
+	}
+	// "Anna M." is a first name and an initial.
+	last := strings.TrimSuffix(words[len(words)-1], ".")
+	return utf8.RuneCountInString(last) > 1
+}
+
+var titles = map[string]bool{"dr.": true, "dr": true, "prof.": true, "prof": true}
+
+var particles = map[string]bool{
+	"von": true, "van": true, "de": true, "der": true, "den": true, "zu": true, "da": true, "di": true, "del": true,
+	"la": true, "le": true, "ten": true, "vom": true, "y": true, "bin": true, "al": true, "du": true, "dos": true,
+}
+
+var orgWords = map[string]bool{
+	"gmbh": true, "mbh": true, "e.v.": true, "e.v": true, "ev": true, "ag": true, "ug": true, "kg": true, "se": true,
+	"gbr": true, "inc": true, "inc.": true, "ltd": true, "ltd.": true, "llc": true, "team": true, "dj": true,
 }
 
 // split cuts text into parts of at most size bytes, at line breaks where

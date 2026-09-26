@@ -10,6 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/timmrkz/speakertrail/internal/extract"
 )
 
 // fakeModel answers like Docker Model Runner. answer gets the user message
@@ -99,6 +101,31 @@ func TestPeopleKeepsOnlyNamesThePageContains(t *testing.T) {
 	}
 	if res.Parts != 1 || res.Tokens != 120 || res.Unread != 0 {
 		t.Errorf("parts %d, tokens %d, unread %d", res.Parts, res.Tokens, res.Unread)
+	}
+}
+
+func TestFullName(t *testing.T) {
+	// All names are invented.
+	for name, want := range map[string]bool{
+		"Lena Musterfrau":        true,
+		"Dr. Lena Musterfrau":    true,
+		"Anna-Lena von Beispiel": true,
+		"Kofi AB Probemann":      true,
+		"Jürgen Weß":             true,
+		"Lena":                   false,
+		"Dr. Lena":               false,
+		"Lena M.":                false,
+		"Lena M":                 false,
+		"Beispiel digital":       false,
+		"Musterfirma GmbH":       false,
+		"Foodclub NRW e.V.":      false,
+		"Gare du Beispiel GmbH":  false,
+		"Lena 2":                 false,
+		"lena@example.org":       false,
+	} {
+		if got := fullName(name, extract.NormaliseName(name)); got != want {
+			t.Errorf("fullName(%q) = %v, want %v", name, got, want)
+		}
 	}
 }
 

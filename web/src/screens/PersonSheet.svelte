@@ -102,6 +102,7 @@
                     <b>{a.event.title}</b>
                   {/if}
                   <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
+                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
                 </span>
               </li>
             {/each}
@@ -199,6 +200,7 @@
   .apps .what a { font-weight: 600; overflow-wrap: anywhere; }
   .apps .what a :global(svg) { margin-left: 4px; vertical-align: -1px; }
   .apps .what .faint { font-size: 13px; }
+  .apps .evidence { margin-top: 4px; font-size: 13px; font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
   .profiles { display: grid; gap: 8px; }
   .profile {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px;

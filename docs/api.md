@@ -109,11 +109,13 @@ In private responses `people` always holds everyone named, each with their `id`.
 ```json
 {
   "notes": "",
-  "appearances": [{ "role": "pitch", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
+  "appearances": [{ "role": "pitch", "evidence": "...", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
   "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true }],
   "sightings": [{ "source_id": 3, "source": "Startplatz events", "checked_at": "..." }]
 }
 ```
+
+`evidence` is the passage from the event page that puts the person on stage, when the local model found them. It is empty when the rules found them.
 
 `PATCH /api/people/{id}` with `{"notes": "..."}` answers the updated person.
 
@@ -151,13 +153,13 @@ In private responses `people` always holds everyone named, each with their `id`.
   "runs": [
     {
       "id": 5, "kind": "nightly", "started_at": "...", "finished_at": "...",
-      "sources_checked": 42, "events_found": 180, "events_new": 23, "people_new": 41, "errors": 3
+      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "people_new": 41, "errors": 3
     }
   ]
 }
 ```
 
-`kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
+`pages_read` counts the event pages the local model read in the run, and `people_new` includes the people it found there. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
 

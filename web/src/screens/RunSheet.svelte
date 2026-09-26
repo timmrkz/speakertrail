@@ -32,7 +32,8 @@
         <h2>Run of {fmtDateTime(data.data.run.started_at)}</h2>
         <p class="muted small">
           {fmtNum(data.data.run.sources_checked)} sources checked, {fmtNum(data.data.run.events_found)} events found,
-          {fmtNum(data.data.run.events_new)} new, {fmtNum(data.data.run.people_new)} new people, {fmtNum(data.data.run.errors)} errors
+          {fmtNum(data.data.run.events_new)} new, {fmtNum(data.data.run.pages_read)} event pages read, {fmtNum(data.data.run.people_new)} new people,
+          {fmtNum(data.data.run.errors)} errors
         </p>
       </div>
     {:else}

@@ -55,12 +55,15 @@ reachable from the Mac, and only from the Mac itself.
 
 ## The language model
 
-The engine reads people better with a language model. It runs on this Mac,
+The engine reads people better with a language model. Every run reads the
+own pages of upcoming events with it, up to 30 per run, and stores who is
+on stage with the passage that shows it. It runs on this Mac,
 not with a paid service: Docker Desktop's Model Runner runs it on the Mac's
 graphics chip, and the app's container asks it.
 
-Model Runner is on by default in Docker Desktop on Apple silicon. If `make
-people` says it is off:
+`make run` and `make crawl` get the model when Model Runner is on. Without
+it the app works the same and only reads no event pages. Model Runner is on
+by default in Docker Desktop on Apple silicon. If make says it is off:
 
 ```
 docker desktop enable model-runner

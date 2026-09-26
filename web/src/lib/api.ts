@@ -128,6 +128,9 @@ export interface Person {
 
 export interface Appearance {
   role: string
+  // The passage from the event page that puts the person on stage, when
+  // the language model found them. Empty when the rules found them.
+  evidence: string
   event: { id: number; title: string; starts_at: string; city: string; venue: string; url: string }
 }
 
@@ -180,6 +183,8 @@ export interface Run {
   id: number
   // nightly, manual for a run started by hand, check for Check now
   kind: 'nightly' | 'manual' | 'check'
+  // Event pages the language model read in this run.
+  pages_read: number
   started_at: string
   finished_at: string | null
   sources_checked: number

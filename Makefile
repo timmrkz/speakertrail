@@ -42,7 +42,7 @@ DOCKER ?= $(if $(or $(CI),$(CLAUDE_CODE_REMOTE),$(SPEAKERTRAIL_IN_DOCKER)),0,1)
 # example MODEL=ai/gemma3:4b-q4_K_M for a faster, smaller one.
 MODEL ?= ai/gemma3:12b-q4_K_M
 
-.PHONY: all run crawl people model ui mock test unit interface shell check db pull-prod image stop clean help docker
+.PHONY: all run crawl people model model-if-on ui mock test unit interface shell check db pull-prod image stop clean help docker
 
 help:
 	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
@@ -59,16 +59,16 @@ all: docker
 	@$(COMPOSE) build web
 	@echo "Ready: the app is built"
 
-run: all .env
+run: all .env model-if-on
 	@$(COMPOSE) run --rm web import 2>&1 | $(STARTING_DATA) || true
 	@echo "Open http://localhost:8080 and log in with the password in .env"
-	@$(COMPOSE) up --attach web --no-log-prefix web
+	@LLM_MODEL=$(MODEL) $(COMPOSE) up --attach web --no-log-prefix web
 
 .env:
 	@sh scripts/env.sh $(COMPOSE) run --rm --no-deps -T web
 
-crawl: all
-	@$(COMPOSE) run --rm nightly
+crawl: all model-if-on
+	@LLM_MODEL=$(MODEL) $(COMPOSE) run --rm nightly
 
 people: all model
 	@$(COMPOSE) run --rm -e LLM_MODEL=$(MODEL) web people $(URL)
@@ -78,6 +78,13 @@ model: docker
 	@docker model version >/dev/null 2>&1 || { \
 		echo "Docker Model Runner is off. Turn it on with: docker desktop enable model-runner"; exit 1; }
 	@docker model pull $(MODEL)
+
+# Runs read event pages with the model when Model Runner is on. Without it
+# the app works the same and only reads no pages.
+model-if-on: docker
+	@if docker model version >/dev/null 2>&1; then docker model pull $(MODEL); else \
+		echo "Docker Model Runner is off, so runs read no event pages for people."; \
+		echo "Turn it on with: docker desktop enable model-runner"; fi
 
 # The toolbox runs this same Makefile, which then works directly.
 test unit interface: docker

@@ -82,13 +82,15 @@ messages, pull request text, code comments and chat replies.
   syntax are fine, in prose and comments they are not.
 - Plain, direct language. Short sentences.
 - **One name per thing.** A **source** is a page the crawler checks again
-  and again. A **check** is one look at one source. A **run** is one pass
-  over the due sources, nightly or started by hand. A link to one event,
-  added as a source, becomes the calendar it belongs to. Seeds exist only
-  in the starting data, never in the interface. An **event** is kept or
-  dropped, never accepted or rejected. A **profile** is confirmed or rejected. The public page is the
-  **calendar**, Tim's side is the **workspace**. Whatever a thing is called
-  in the interface, it is called that in the docs and the code comments too.
+  and again. A **check** is one look at one source. A **read** is the
+  language model's look at one event's own page, for the people on stage.
+  A **run** is one pass over the due sources, nightly or started by hand. A
+  link to one event, added as a source, becomes the calendar it belongs to.
+  Seeds exist only in the starting data, never in the interface. An
+  **event** is kept or dropped, never accepted or rejected. A **profile** is
+  confirmed or rejected. The public page is the **calendar**, Tim's side is
+  the **workspace**. Whatever a thing is called in the interface, it is
+  called that in the docs and the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top, and
   the deployment guide sits beside what it deploys, in `deploy/`.
 - When behaviour changes, update the matching doc in the same change.

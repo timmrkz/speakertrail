@@ -241,6 +241,11 @@ func chromium(t *testing.T) string {
 	return p
 }
 
+// browserBudget covers what the browser allows itself: up to 60 seconds for
+// Chromium to start cold, then 30 seconds for the page. A busy build runner
+// can take most of the first.
+const browserBudget = 2 * time.Minute
+
 func TestBrowserRendersJavaScriptPage(t *testing.T) {
 	exec := chromium(t)
 	site := newSite(t, "", map[string]string{"/shell": jsShell, "/app.js": "// app"})
@@ -248,7 +253,7 @@ func TestBrowserRendersJavaScriptPage(t *testing.T) {
 	defer b.Close()
 	f := fetch.New(fetch.Options{Browser: b})
 
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), browserBudget)
 	defer cancel()
 	p, err := f.Browser(ctx, site.URL+"/shell")
 	if err != nil {
@@ -319,7 +324,7 @@ func TestBrowserNeverReachesBlockedHosts(t *testing.T) {
 	b := fetch.NewBrowser(fetch.BrowserOptions{ExecPath: exec, UpstreamProxy: upstream})
 	defer b.Close()
 	f := fetch.New(fetch.Options{Browser: b})
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), browserBudget)
 	defer cancel()
 	if _, err := f.Browser(ctx, site.URL+"/page"); err != nil {
 		t.Fatal(err)

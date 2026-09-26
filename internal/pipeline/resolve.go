@@ -31,6 +31,7 @@ type ResolveStats struct {
 type Source struct {
 	ID       int64
 	Name     string
+	Kind     string
 	URL      string
 	City     string
 	Status   string
@@ -402,6 +403,11 @@ func (r *Resolver) resolvePerson(ctx context.Context, tx pgx.Tx, eventID int64, 
 		if _, err := tx.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, id, org, affRole); err != nil {
 			return 0, false, err
 		}
+		if affRole == "founder" {
+			if _, err := tx.Exec(ctx, `UPDATE people SET fit = 'founder' WHERE id = $1 AND fit = 'other'`, id); err != nil {
+				return 0, false, err
+			}
+		}
 	}
 	for _, l := range p.Links {
 		platform, clean := ProfileOf(l)
@@ -420,34 +426,46 @@ func (r *Resolver) resolvePerson(ctx context.Context, tx pgx.Tx, eventID int64, 
 }
 
 var (
-	affAt      = regexp.MustCompile(`(?i)^(.*?)\s+(?:at|bei|@|von)\s+(.+)$`)
-	founderish = regexp.MustCompile(`(?i)(?:founder|gründer|inhaber|owner|geschäftsführ|ceo)`)
+	affAt = regexp.MustCompile(`(?i)^(.*?)\s+(?:at|bei|@|von)\s+(.+)$`)
+	// founderish reads the role only, as whole words, so "Gründerzentrum"
+	// or "Founders Foundation" in an organisation's name makes nobody a
+	// founder. A CEO or managing director can run a bank, so they are not
+	// founders by title alone.
+	founderish = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:co-?founder|founder|founding partner|mitgründer(?:in)?|co-?gründer(?:in)?|gründer(?:in)?|inhaber(?:in)?|owner)(?:[^\p{L}]|$)`)
 	roleish    = regexp.MustCompile(`(?i)(?:founder|gründer|ceo|cto|coo|cfo|head|lead|director|manager|leiter|partner|inhaber|owner|geschäftsführ|professor|student|designer|developer|engineer|consultant|berater|coach|author|autorin|autor|chair|vorstand|keramik|ceramicist|moderator|host)`)
 )
 
 // ParseAffiliation splits "Co-founder and CEO, JUPUS" or "Head of Product
-// at Beispiel" into the organisation and a role for the affiliation.
+// at Beispiel" into the organisation and a role for the affiliation. The
+// role is founder only when the role part says so.
 func ParseAffiliation(aff string) (org, role string) {
 	aff = strings.TrimSpace(aff)
 	if aff == "" {
 		return "", ""
 	}
-	role = "employee"
-	if founderish.MatchString(aff) {
-		role = "founder"
+	roleOf := func(part string) string {
+		if founderish.MatchString(part) {
+			return "founder"
+		}
+		return "employee"
 	}
 	if before, after, ok := strings.Cut(aff, ","); ok && roleish.MatchString(before) {
-		return firstOrg(after), role
+		return firstOrg(after), roleOf(before)
 	}
 	if m := affAt.FindStringSubmatch(aff); m != nil && roleish.MatchString(m[1]) {
-		return firstOrg(m[2]), role
+		return firstOrg(m[2]), roleOf(m[1])
 	}
-	if roleish.MatchString(aff) {
+	if roleish.MatchString(aff) && !orgLike.MatchString(aff) {
 		// Only a role, like "Author".
-		return "", role
+		return "", roleOf(aff)
 	}
-	return firstOrg(aff), role
+	// Only an organisation's name.
+	return firstOrg(aff), "employee"
 }
+
+// orgLike tells an organisation's name from a bare role, for names that
+// contain a role word, like "Founders Foundation" or "Gründer-Stammtisch".
+var orgLike = regexp.MustCompile(`(?i)(?:foundation|stiftung|stammtisch|zentrum|center|centre|club|verband|verein|e\.v\.|gmbh|\bug\b|\bag\b|network|netzwerk|allianz|campus|hub|lab)`)
 
 func firstOrg(s string) string {
 	s = strings.TrimSpace(s)

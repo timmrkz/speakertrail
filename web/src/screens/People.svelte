@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
-  import { fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
+  import { ACTIVITY_TONE, activityText, fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import Chips from '../lib/components/Chips.svelte'
@@ -14,10 +14,13 @@
   let q = $state('')
   let query = $state('')
   let sort = $state<PeopleSort>('next')
-  let filter = $state<PeopleFilter>('all')
+  // Tim looks for founders, so the list opens on them.
+  let filter = $state<PeopleFilter>('founder')
   let reload = $state(0)
 
   const people = new Load<Person[]>()
+  // How many each filter shows, so an empty filter never hides the rest.
+  let counts = $state<Record<PeopleFilter, number> | null>(null)
 
   $effect(() => {
     document.title = 'People · Speaker Trail'
@@ -26,7 +29,11 @@
   $effect(() => {
     const params = { q: query, sort, filter }
     void reload
-    people.run(() => api.people(params))
+    people.run(async () => {
+      const r = await api.people(params)
+      counts = r.counts
+      return r.people
+    })
   })
 
   let openId = $derived.by(() => {
@@ -34,11 +41,15 @@
     return m ? Number(m.id) : null
   })
 
-  const filters: { value: PeopleFilter; label: string }[] = [
-    { value: 'all', label: 'All' },
-    { value: 'upcoming', label: 'Upcoming' },
-    { value: 'profile', label: 'Profile found' },
-  ]
+  let filters = $derived(
+    ([
+      { value: 'founder', label: 'Founders' },
+      { value: 'upcoming', label: 'Upcoming' },
+      { value: 'profile', label: 'Profile found' },
+      { value: 'all', label: 'All' },
+    ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
+  )
+  let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
   function updated(p: PersonDetail) {
@@ -77,7 +88,12 @@
   {:else if !people.data}
     <Skeleton count={7} />
   {:else if !people.data.length}
-    <EmptyState icon="people" title="Nobody here yet" text={query || filter !== 'all' ? 'Nobody matches this search or filter.' : 'People show up once the crawler finds them on event pages.'}>
+    <EmptyState
+      icon="people"
+      title={filter === 'founder' && !query ? 'No founders yet' : 'Nobody here yet'}
+      text={filter !== 'all' && others > 0
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : 'in this filter'}.`
+        : query ? 'Nobody matches this search.' : 'People show up once the crawler finds them on event pages.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
       {/if}
@@ -92,9 +108,11 @@
             <b class="ellipsis name">{p.name}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
-              <span class="next" class:none={!p.next_appearance}>
+              <span class="next" class:none={!p.next_appearance && !p.activity}>
                 {#if p.next_appearance}
                   <Icon name="calendar" size={13} /><span class="ellipsis">{fmtDay(p.next_appearance.starts_at)} · {p.next_appearance.title} · {ROLE_LABEL[p.next_appearance.role] ?? p.next_appearance.role}</span>
+                {:else if p.activity}
+                  <span class="dot-tone {ACTIVITY_TONE[p.activity.state]}" aria-hidden="true"></span><span class="ellipsis" title={p.activity.note}>{activityText(p.activity)}</span>
                 {:else}
                   No upcoming appearance
                 {/if}
@@ -122,6 +140,10 @@
   .sort { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
   .stale { opacity: .6; }
+  .dot-tone { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+  .dot-tone.good { background: var(--good); }
+  .dot-tone.warn { background: var(--warn); }
+  .dot-tone.bad { background: var(--bad); }
   .person {
     grid-template-columns: 36px minmax(0, 1fr) auto;
     grid-template-areas: "av name meta" "av who meta";

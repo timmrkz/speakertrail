@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -25,13 +26,19 @@ import (
 var now = time.Date(2026, 9, 25, 9, 0, 0, 0, extract.Berlin)
 
 type fakePipeline struct {
-	checks []int64
-	runs   int
+	checks  []int64
+	stopped []int64
+	runs    int
 }
 
 func (f *fakePipeline) CheckNow(_ context.Context, id int64) (int64, error) {
 	f.checks = append(f.checks, id)
 	return 42, nil
+}
+
+func (f *fakePipeline) StopRun(_ context.Context, id int64) (bool, error) {
+	f.stopped = append(f.stopped, id)
+	return id == 42, nil
 }
 
 func (f *fakePipeline) RunNow(_ context.Context) (int64, bool, error) {
@@ -162,6 +169,105 @@ func TestRunsFinishWhenTheirChecksAreDone(t *testing.T) {
 	}
 }
 
+// A going run says how far it is, what runs now and about how long is left,
+// measured from earlier checks and reads.
+func TestRunProgress(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	exec(`INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Events', 'listing', 'https://example.org/a', 'active'), ('Muster Meetups', 'listing', 'https://example.org/b', 'active')`)
+	exec(`INSERT INTO events (title, starts_at, canonical_url, fit) VALUES ('Pitch Abend', $1, 'https://example.org/e/1', 'kept')`, now.Add(72*time.Hour))
+	exec(`INSERT INTO runs (kind, started_at) VALUES ('manual', $1)`, now)
+	job := func(kind, key, status, payload string) {
+		exec(`INSERT INTO jobs (kind, key, status, payload, run_after, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5, $5)`,
+			kind, key, status, payload, now)
+	}
+	var a, b, ev, run int64
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Beispiel Events'`).Scan(&a)
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Muster Meetups'`).Scan(&b)
+	e.pool.QueryRow(ctx, `SELECT id FROM events WHERE title = 'Pitch Abend'`).Scan(&ev)
+	e.pool.QueryRow(ctx, `SELECT max(id) FROM runs`).Scan(&run)
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, a), "done", fmt.Sprintf(`{"source_id": %d}`, a))
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, b), "running", fmt.Sprintf(`{"source_id": %d}`, b))
+	job("read_event", fmt.Sprintf("run:%d:read:%d", run, ev), "queued", fmt.Sprintf(`{"event_id": %d}`, ev))
+
+	var got struct {
+		Run *struct {
+			Progress *struct {
+				Checks, ChecksDone, Reads, ReadsDone int
+				Now                                  []struct{ Kind, Label string }
+				SecondsLeft                          *float64 `json:"seconds_left"`
+			}
+		}
+	}
+	current := func() {
+		t.Helper()
+		code, body := e.do(t, "GET", "/api/runs/current", "")
+		if code != 200 {
+			t.Fatalf("current run: %d %s", code, body)
+		}
+		// The API writes snake case, the struct reads it through lower case.
+		body = strings.NewReplacer(`"checks_done"`, `"checksdone"`, `"reads_done"`, `"readsdone"`).Replace(body)
+		got.Run = nil
+		if err := json.Unmarshal([]byte(body), &got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current()
+	pr := got.Run.Progress
+	if pr == nil || pr.Checks != 2 || pr.ChecksDone != 1 || pr.Reads != 1 || pr.ReadsDone != 0 {
+		t.Fatalf("progress %+v", pr)
+	}
+	if len(pr.Now) != 1 || pr.Now[0].Kind != "check" || pr.Now[0].Label != "Muster Meetups" {
+		t.Errorf("running now %+v", pr.Now)
+	}
+	if pr.SecondsLeft != nil {
+		t.Errorf("no history, no estimate, got %v", *pr.SecondsLeft)
+	}
+
+	// With history: a check took 4 s, a read 20 s, and one read for every
+	// check. One check left runs beside others and brings one more read.
+	// Reads run alone: two of them, about 40 s.
+	exec(`DELETE FROM source_checks`)
+	exec(`DELETE FROM event_reads`)
+	exec(`INSERT INTO source_checks (source_id, duration_ms, checked_at) VALUES ($1, 4000, $2)`, a, now)
+	exec(`INSERT INTO event_reads (event_id, url, duration_ms, read_at) VALUES ($1, 'https://example.org/e/1', 20000, $2)`, ev, now)
+	current()
+	if s := got.Run.Progress.SecondsLeft; s == nil || *s != 40 {
+		t.Errorf("seconds left %v, want 40", s)
+	}
+
+	// A portfolio check still to come brings up to 10 lookups. Lookups run
+	// four at a time, beside the checks: two checks of 4 s and eleven
+	// lookups of 32 s, about 90 s, more than the reads.
+	exec(`INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', 'https://example.org/hub', 'active')`)
+	exec(`INSERT INTO organisations (name, normalised_name, website) VALUES ('Probe Labs', 'probe labs', 'https://probe.example/')`)
+	var hub, org int64
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Beispiel Hub'`).Scan(&hub)
+	e.pool.QueryRow(ctx, `SELECT id FROM organisations WHERE name = 'Probe Labs'`).Scan(&org)
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, hub), "queued", fmt.Sprintf(`{"source_id": %d}`, hub))
+	job("look_up_startup", fmt.Sprintf("run:%d:lookup:%d", run, org), "running", fmt.Sprintf(`{"organisation_id": %d}`, org))
+	exec(`INSERT INTO startup_lookups (organisation_id, url, duration_ms, looked_up_at) VALUES ($1, 'https://probe.example/', 32000, $2)`, org, now)
+	code, body := e.do(t, "GET", "/api/runs/current", "")
+	if code != 200 || !strings.Contains(body, `"lookups":1`) || !strings.Contains(body, `"lookups_expected":11`) ||
+		!strings.Contains(body, `"kind":"lookup","label":"Probe Labs"`) || !strings.Contains(body, `"seconds_left":90`) {
+		t.Errorf("progress with lookups: %s", body)
+	}
+
+	// A finished run is not current.
+	exec(`UPDATE jobs SET status = 'done'`)
+	current()
+	if got.Run != nil {
+		t.Errorf("a finished run is still current: %+v", got.Run)
+	}
+}
+
 func TestLoginIsRateLimited(t *testing.T) {
 	e := setup(t)
 	for range 5 {
@@ -274,6 +380,11 @@ func TestPrivateAPI(t *testing.T) {
 	if !strings.Contains(body, `"headline":"Founder, Beispiel Robotics"`) || !strings.Contains(body, `"next_appearance":{`) {
 		t.Errorf("people: %s", body)
 	}
+	// A title that says founder makes a founder, and the counts show every
+	// filter, so an empty one never hides the rest.
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+		t.Errorf("founders: %s", body)
+	}
 	var pid, prof int64
 	e.pool.QueryRow(t.Context(), `SELECT id FROM people`).Scan(&pid)
 	e.pool.QueryRow(t.Context(), `SELECT id FROM profiles`).Scan(&prof)
@@ -307,8 +418,34 @@ func TestPrivateAPI(t *testing.T) {
 	if code, body := e.do(t, "POST", "/api/runs", `{}`); code != 202 || e.pipe.runs != 1 || !strings.Contains(body, `"started":true`) {
 		t.Errorf("start a run: %d %s", code, body)
 	}
+	if code, _ := e.do(t, "POST", "/api/runs/42/stop", `{}`); code != 204 {
+		t.Errorf("stop a run: %d", code)
+	}
+	if code, _ := e.do(t, "POST", "/api/runs/7/stop", `{}`); code != 409 {
+		t.Errorf("stop a run that ended: %d", code)
+	}
 	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(sid), `{"status":"paused"}`); code != 400 {
 		t.Errorf("bad status: %d %s", code, body)
+	}
+
+	// A portfolio lists startups. It is added as it is, and switches back
+	// to a page of events with one change.
+	code, body = e.do(t, "POST", "/api/sources", `{"url":"https://hub.example/portfolio","portfolio":true}`)
+	if code != 201 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("add a portfolio: %d %s", code, body)
+	}
+	var hub int64
+	e.pool.QueryRow(t.Context(), `SELECT id FROM sources WHERE url = 'https://hub.example/portfolio'`).Scan(&hub)
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = now() + interval '9 days' WHERE id = $1`, hub)
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(hub), `{"portfolio":false}`); code != 200 || !strings.Contains(body, `"kind":"listing"`) || !strings.Contains(body, `"next_check_at":null`) {
+		t.Errorf("a portfolio back to a listing: %d %s", code, body)
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(hub), `{"portfolio":true}`); code != 200 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("a listing to a portfolio: %d %s", code, body)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, startups_found, checked_at) VALUES ($1, 0, now())`, hub)
+	if code, body := e.do(t, "GET", "/api/sources?q=hub.example", ""); code != 200 || !strings.Contains(body, "The last check found no startups") {
+		t.Errorf("an empty portfolio: %d %s", code, body)
 	}
 
 	if code, body := e.do(t, "POST", "/api/sources", `{"url":"https://www.facebook.com/beispielgruppe/"}`); code != 400 || !strings.Contains(body, "Facebook") {
@@ -363,4 +500,60 @@ func TestInterfaceFallsBackToIndex(t *testing.T) {
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+// Founders of startups that look alive come first, and each says what the
+// lookup saw. All names are invented.
+func TestPeopleShowWhetherTheirStartupIsActive(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	ctx := t.Context()
+	for _, row := range []struct{ person, company, activity string }{
+		{"Anna Anfang", "Gone GmbH", "gone"},
+		{"Bea Beispiel", "Quiet GmbH", "quiet"},
+		{"Cem Current", "Active GmbH", "active"},
+	} {
+		var org, person int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO organisations (name, normalised_name, activity, activity_note, last_sign_at)
+			VALUES ($1, lower($1), $2, 'a note', '2026-08-01') RETURNING id`, row.company, row.activity).Scan(&org); err != nil {
+			t.Fatal(err)
+		}
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, fit) VALUES ($1, lower($1), 'founder') RETURNING id`, row.person).Scan(&person); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder')`, person, org); err != nil {
+			t.Fatal(err)
+		}
+	}
+	code, body := e.do(t, "GET", "/api/people?filter=founder", "")
+	if code != 200 {
+		t.Fatalf("people: %d %s", code, body)
+	}
+	cem, bea, anna := strings.Index(body, "Cem Current"), strings.Index(body, "Bea Beispiel"), strings.Index(body, "Anna Anfang")
+	if !(cem < bea && bea < anna) {
+		t.Errorf("order: active %d, quiet %d, gone %d", cem, bea, anna)
+	}
+	if !strings.Contains(body, `"state":"active"`) || !strings.Contains(body, `"company":"Active GmbH"`) || !strings.Contains(body, `"note":"a note"`) {
+		t.Errorf("activity missing: %s", body)
+	}
+}
+
+// A source Tim retires by hand is not checked again until he sets it back.
+// Before, it kept its old next check and came back in the next run.
+func TestARetiredSourceStaysRetired(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	var id int64
+	e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status, next_check_at) VALUES ('Junk', 'listing', 'https://example.org/junk', 'probation', now() - interval '1 day') RETURNING id`).Scan(&id)
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(id), `{"status":"retired"}`); code != 200 {
+		t.Fatalf("retire: %d %s", code, body)
+	}
+	var far bool
+	e.pool.QueryRow(t.Context(), `SELECT next_check_at > now() + interval '1 year' FROM sources WHERE id = $1`, id).Scan(&far)
+	if !far {
+		t.Error("a source retired by hand is due again")
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(id), `{"status":"active"}`); code != 200 || !strings.Contains(body, `"next_check_at":null`) {
+		t.Errorf("set back to active: %d %s", code, body)
+	}
 }

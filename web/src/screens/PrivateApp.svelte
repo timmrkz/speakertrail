@@ -37,6 +37,21 @@
       ready = true
     })
 
+  // A run going out of sight shows as a pulsing dot on Runs, and on More
+  // on a phone, where Runs sits.
+  let going = $state(false)
+  $effect(() => {
+    if (!ready) return
+    const check = () =>
+      api
+        .currentRun()
+        .then((r) => (going = r !== null))
+        .catch(() => {})
+    check()
+    const t = setInterval(check, 5000)
+    return () => clearInterval(t)
+  })
+
   function current(href: string): boolean {
     return href === '/app' ? router.path === '/app' : router.under(href)
   }
@@ -59,7 +74,10 @@
       <Brand href="/app" sub="Workspace" />
       <nav class="nav" aria-label="Main">
         {#each NAV as item (item.href)}
-          <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}><Icon name={item.icon} /><span>{item.label}</span></a>
+          <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
+            <Icon name={item.icon} /><span>{item.label}</span>
+            {#if item.href === '/app/runs' && going}<span class="dot busy" title="A run is going"></span>{/if}
+          </a>
         {/each}
       </nav>
       <div class="nav side-foot">
@@ -83,7 +101,7 @@
       {:else if router.path === '/app/settings'}
         <Settings />
       {:else if router.path === '/app/more'}
-        <More {logout} />
+        <More {logout} {going} />
       {:else}
         <NotFound embedded />
       {/if}
@@ -93,7 +111,9 @@
       {#each TABS as item (item.href)}
         <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}><Icon name={item.icon} size={22} /><span>{item.label}</span></a>
       {/each}
-      <a href="/app/more" aria-current={moreActive ? 'page' : undefined}><Icon name="more" size={22} /><span>More</span></a>
+      <a href="/app/more" aria-current={moreActive ? 'page' : undefined}>
+        <span class="tab-icon"><Icon name="more" size={22} />{#if going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>More</span>
+      </a>
     </nav>
   </div>
 {/if}
@@ -116,6 +136,9 @@
   .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
   .main { padding: 28px var(--gutter) 64px; min-width: 0; }
   .tabbar { display: none; }
+  .nav a .dot { margin-left: auto; }
+  .tab-icon { position: relative; display: inline-grid; }
+  .tab-icon .dot { position: absolute; top: 0; right: -3px; }
 
   @media (max-width: 760px) {
     .app { grid-template-columns: minmax(0, 1fr); }

@@ -82,13 +82,17 @@ messages, pull request text, code comments and chat replies.
   syntax are fine, in prose and comments they are not.
 - Plain, direct language. Short sentences.
 - **One name per thing.** A **source** is a page the crawler checks again
-  and again. A **check** is one look at one source. A **run** is one pass
-  over the due sources, nightly or started by hand. A link to one event,
-  added as a source, becomes the calendar it belongs to. Seeds exist only
-  in the starting data, never in the interface. An **event** is kept or
-  dropped, never accepted or rejected. A **profile** is confirmed or rejected. The public page is the
-  **calendar**, Tim's side is the **workspace**. Whatever a thing is called
-  in the interface, it is called that in the docs and the code comments too.
+  and again. A **check** is one look at one source. A **read** is the
+  language model's look at one event's own page, for the people on stage.
+  A **portfolio** is a source that lists startups, and a **lookup** is one
+  look at one startup's website and its imprint, for who runs it.
+  A **run** is one pass over the due sources, nightly or started by hand. A
+  link to one event, added as a source, becomes the calendar it belongs to.
+  Seeds exist only in the starting data, never in the interface. An
+  **event** is kept or dropped, never accepted or rejected. A **profile** is
+  confirmed or rejected. The public page is the **calendar**, Tim's side is
+  the **workspace**. Whatever a thing is called in the interface, it is
+  called that in the docs and the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top, and
   the deployment guide sits beside what it deploys, in `deploy/`.
 - When behaviour changes, update the matching doc in the same change.
@@ -113,6 +117,14 @@ messages, pull request text, code comments and chat replies.
   something new.
 - **A click shows at once.** A control that starts work says what it is
   doing and takes no second click.
+- **Work never runs silently.** Anything that takes more than a moment
+  says what it does now, how far it is, how long it has run and about how
+  long is left, measured from earlier work rather than guessed, and it can
+  be stopped. It looks the same everywhere: the fill, the shuttle and the
+  pulsing dot in `app.css`, and `RunProgress.svelte` for a run. See the
+  interface skill.
+- **Short runs, often.** Tim runs the engine by hand on his Mac. A run
+  stays short enough to watch, and what does not fit waits for the next.
 - **Consistency over novelty.** A visual treatment used in one place is used
   for every equivalent element, or not at all. Two things of the same kind
   are the same size, in the same colour, in the same place.
@@ -161,6 +173,9 @@ messages, pull request text, code comments and chat replies.
 - The interface is built by make into `web/dist/`, which Go embeds. Only
   `web/dist/.keep` is in the repository. Never commit build output or
   `.env`.
+- **The language model runs locally.** It runs on Tim's Mac through Docker
+  Model Runner, with no paid model API, no key and no credit card. The
+  engine works without it and only reads people better with it.
 - Every paid API gets a monthly budget in Settings, and the engine stops
   calling it once the budget is reached.
 

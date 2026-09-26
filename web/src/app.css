@@ -279,6 +279,38 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 @keyframes shimmer { to { transform: translateX(100%); } }
 
+/* Work in hand looks the same wherever it is: the fill for how far work
+   has come, the shuttle for work that cannot say, and the pulse on a dot
+   for work running out of sight. Taken from Frame Fairy, without its
+   magic. With reduced motion nothing moves, the fill still says how far. */
+.progress {
+  position: relative; height: 8px; border-radius: 4px; overflow: hidden;
+  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line);
+}
+.progress > i {
+  display: block; position: relative; height: 100%; border-radius: 4px; background: var(--accent);
+  transition: width .4s cubic-bezier(.4, 0, .2, 1);
+}
+/* A light travels over what is done, so the bar lives while the number
+   stands still. */
+.progress > i::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 45%, transparent), transparent);
+  animation: sheen 2.2s cubic-bezier(.45, 0, .2, 1) infinite;
+}
+@keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.progress.unknown > i { width: 35% !important; animation: shuttle 1.6s cubic-bezier(.65, 0, .35, 1) infinite; transition: none; }
+.progress.unknown > i::after { display: none; }
+@keyframes shuttle { from { transform: translateX(-105%); } to { transform: translateX(290%); } }
+
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.dot.busy { position: relative; background: var(--accent); }
+.dot.busy::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent);
+  animation: pulse 1.9s cubic-bezier(.25, 0, .3, 1) infinite;
+}
+@keyframes pulse { from { transform: scale(1); opacity: .8; } to { transform: scale(2.8); opacity: 0; } }
+
 /* Section inside sheets */
 .section { display: grid; gap: 10px; min-width: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }

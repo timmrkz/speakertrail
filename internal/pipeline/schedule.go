@@ -39,23 +39,26 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		return 0, err
 	}
 	now := p.now()
-	// Checks left over from an earlier run are replaced by this one.
+	// Checks, reads and lookups left over from an earlier run are replaced
+	// by this one. What they left undone comes back through this run.
 	if _, err := p.Pool.Exec(ctx, `
 		UPDATE jobs SET status = 'failed', last_error = 'replaced by run ' || $1, locked_until = NULL, updated_at = $2
-		WHERE kind = $3 AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
-		fmt.Sprint(runID), now, KindCheckSource); err != nil {
+		WHERE kind IN ($3, $4, $5) AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
+		fmt.Sprint(runID), now, KindCheckSource, KindReadEvent, KindLookUp); err != nil {
 		return 0, err
 	}
 	rows, err := p.Pool.Query(ctx, `
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status IN ('active', 'probation', 'retired')
 		   AND (next_check_at IS NULL OR next_check_at <= $1)
-		 ORDER BY points DESC, id)
+		 ORDER BY next_check_at NULLS FIRST, points DESC, id
+		 LIMIT $3)
 		UNION ALL
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status = 'candidate' AND (next_check_at IS NULL OR next_check_at <= $1)
-		 ORDER BY checks, created_at, id
-		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 10))
+		 -- A new portfolio goes first, so its startups are looked up soon.
+		 ORDER BY kind = 'portfolio' DESC, checks, created_at, id
+		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
 		return 0, err
 	}
@@ -84,6 +87,14 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		if err := p.EnqueueSeed(ctx, id); err != nil {
 			return 0, err
 		}
+	}
+	// Events whose page has not been read yet, from earlier runs too.
+	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 10)); err != nil {
+		return 0, err
+	}
+	// Startups from portfolios whose imprint was not looked up yet.
+	if _, err := p.enqueueLookUps(ctx, runID, 0, cfg.Int("startups_per_run", 10)); err != nil {
+		return 0, err
 	}
 	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
 		return 0, err
@@ -124,8 +135,8 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	err = conn.QueryRow(ctx, `
 		SELECT r.id FROM runs r
 		WHERE r.kind IN ('nightly', 'manual') AND r.finished_at IS NULL AND EXISTS (
-			SELECT 1 FROM jobs j WHERE j.kind = $1 AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
-		ORDER BY r.id DESC LIMIT 1`, KindCheckSource).Scan(&runID)
+			SELECT 1 FROM jobs j WHERE j.kind IN ($1, $2, $3) AND j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		ORDER BY r.id DESC LIMIT 1`, KindCheckSource, KindReadEvent, KindLookUp).Scan(&runID)
 	if err == nil {
 		return runID, false, nil
 	}
@@ -141,6 +152,48 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	}
 	p.log().Info("run started by hand", "run", runID, "sources", n)
 	return runID, true, nil
+}
+
+// EndInterrupted ends the runs the app was working on when it stopped, so
+// their work does not come back by itself after a restart: their queued
+// and running checks, reads and lookups are dropped, and the runs end now. Unread
+// event pages wait for the next run. Only serve calls it, as it starts,
+// before its own worker takes any job.
+func (p *Pipeline) EndInterrupted(ctx context.Context) (int, error) {
+	now := p.now()
+	rows, err := p.Pool.Query(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = 'the app stopped while this waited or ran', locked_until = NULL, updated_at = $1
+		WHERE kind IN ($2, $3, $4) AND status IN ('queued', 'running') AND key LIKE 'run:%'
+		RETURNING split_part(key, ':', 2)::bigint`, now, KindCheckSource, KindReadEvent, KindLookUp)
+	if err != nil {
+		return 0, err
+	}
+	runs, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return 0, err
+	}
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}
+
+// StopRun ends a run by hand. Its queued checks and reads are dropped, and
+// what is running finishes by itself. Events not read yet wait for the next
+// run.
+func (p *Pipeline) StopRun(ctx context.Context, runID int64) (bool, error) {
+	now := p.now()
+	if _, err := p.Pool.Exec(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = 'stopped by hand', locked_until = NULL, updated_at = $2
+		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, now); err != nil {
+		return false, err
+	}
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1 AND finished_at IS NULL`, runID, now)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }
 
 // CheckNow queues one source for an immediate check in its own run.
@@ -188,8 +241,10 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 // covers the 1 and 10 minute backoffs, not the hourly ones.
 const retryWait = 11 * time.Minute
 
-// workWithRetries works until idle, then waits for this run's checks that
-// retry soon, so a short outage of a site does not cost it a night.
+// workWithRetries works until idle, then waits for this run's jobs that
+// retry soon. A failed check or read is not retried within a run, it waits
+// for the next one, so what retries here are jobs that hit a passing
+// database error.
 func (p *Pipeline) workWithRetries(ctx context.Context, w Worker, runID int64) error {
 	for {
 		if err := w.RunUntilIdle(ctx); err != nil {

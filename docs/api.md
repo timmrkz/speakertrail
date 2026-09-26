@@ -87,9 +87,11 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `PATCH /api/events/{id}` with `{"fit": "kept" | "dropped", "fit_reason": "optional"}` answers the updated event.
 
-`GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile`
+`GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile|founder`
 
-`sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected.
+The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
+
+`sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
 
 ```json
 {
@@ -109,11 +111,14 @@ In private responses `people` always holds everyone named, each with their `id`.
 ```json
 {
   "notes": "",
-  "appearances": [{ "role": "pitch", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
+  "fit_evidence": "hat die Backstube Muster gegründet",
+  "appearances": [{ "role": "pitch", "evidence": "...", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
   "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true }],
   "sightings": [{ "source_id": 3, "source": "Startplatz events", "checked_at": "..." }]
 }
 ```
+
+`evidence` is the passage from the event page that puts the person on stage, when the local model found them. It is empty when the rules found them.
 
 `PATCH /api/people/{id}` with `{"notes": "..."}` answers the updated person.
 
@@ -128,7 +133,7 @@ In private responses `people` always holds everyone named, each with their `id`.
       "id": 3, "name": "Startplatz events", "kind": "listing", "url": "https://www.startplatz.de/events", "query": null,
       "category": "Venue and organiser", "city": "Köln", "status": "active", "fetch_mode": "auto", "notes": "",
       "last_checked_at": "...", "next_check_at": "...", "checks": 4, "empty_checks_in_row": 0, "points": 0,
-      "last_check": { "events_found": 7, "http_status": 200, "mode": "http", "error": "" },
+      "last_check": { "events_found": 7, "startups_found": 0, "http_status": 200, "mode": "http", "error": "" },
       "health": "ok", "health_note": "",
       "discovered_from": "Imported from the brief"
     }
@@ -136,13 +141,17 @@ In private responses `people` always holds everyone named, each with their `id`.
 }
 ```
 
-`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check.
+`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events. Its health counts `startups_found`.
 
-`POST /api/sources` with `{"url": "...", "name": "optional"}` adds a candidate source and answers it with 201. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+A check of a portfolio stores each startup its page links to, with its website, or with the portfolio's own page about it, and follows the list to its next pages, six pages at most. A lookup then finds the website on that page when needed, loads it, finds its imprint and stores the managing directors it names as founders, when the imprint reads like a young company: a GmbH, UG or sole trader with at most four managing directors. A startup whose site does not answer is looked up again by a later run, three times at most. Only names are taken from an imprint.
 
-`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name"}` answers the updated source.
+`POST /api/sources` with `{"url": "...", "name": "optional", "portfolio": false}` adds a candidate source and answers it with 201. With `"portfolio": true` the page is a list of startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+
+`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "portfolio"}` answers the updated source. `portfolio` switches between a list of startups and a list of events, and the source is checked in the next run.
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
+
+A person in `GET /api/people` carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
 
 `GET /api/runs` answers the last 50 runs:
 
@@ -151,15 +160,32 @@ In private responses `people` always holds everyone named, each with their `id`.
   "runs": [
     {
       "id": 5, "kind": "nightly", "started_at": "...", "finished_at": "...",
-      "sources_checked": 42, "events_found": 180, "events_new": 23, "people_new": 41, "errors": 3
+      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "startups_looked_up": 10, "people_new": 41, "errors": 3
     }
   ]
 }
 ```
 
-`kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
+`pages_read` counts the event pages the local model read in the run, `startups_looked_up` the startups whose imprint it looked up, and `people_new` includes the people both found. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
+
+While a run is going, it carries `progress`, and is null otherwise:
+
+```json
+{ "checks": 12, "checks_done": 7, "reads": 6, "reads_done": 1, "reads_expected": 8,
+  "lookups": 10, "lookups_done": 4, "lookups_expected": 10,
+  "now": [{ "kind": "read", "label": "Pitch Abend Köln", "since": "..." }],
+  "seconds_left": 140 }
+```
+
+`now` lists what runs at this moment, a `check`, a `read` or a `lookup`. `reads_expected` and `lookups_expected` count what checks still to come will bring. `seconds_left` is measured from how long the last 200 checks, 100 reads and 100 lookups took, checks and lookups four at a time and reads one at a time. It is null until there is anything to measure against.
+
+`GET /api/runs/current` answers `{"run": {...}}` with the run that is going, or `{"run": null}`.
+
+When the app starts, runs it was working on when it stopped end, and their work does not come back by itself. A run drops checks, reads and lookups left over from earlier runs. An event page whose read failed three times is not read again.
+
+`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks, reads and lookups are dropped, and what is running finishes. A run that already ended answers 409.
 
 `GET /api/runs/{id}` answers `{"run": {...}, "checks": [...]}`, where each check is:
 

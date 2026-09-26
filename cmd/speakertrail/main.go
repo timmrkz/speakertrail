@@ -25,6 +25,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/importer"
+	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
 	"github.com/timmrkz/speakertrail/internal/server"
@@ -44,6 +45,9 @@ Commands:
   migrate         apply database migrations
   import          load the sources and seeds from the brief
   fetch <url>     show what the engine finds on one page
+  people [url]... who is on stage, by the rules and by the local model.
+                  Without addresses it takes event pages the runs found
+  report          what the engine did lately, as Markdown without names, to share
   hash-password   print the hash for UI_PASSWORD_HASH, reading the password from stdin
 
 Run "speakertrail <command> -h" for the flags of a command.
@@ -101,6 +105,10 @@ func run(ctx context.Context, args []string) error {
 		})
 	case "fetch":
 		return runFetch(ctx, args[1:])
+	case "people":
+		return runPeople(ctx, cfg, args[1:])
+	case "report":
+		return runReport(ctx, cfg)
 	case "hash-password":
 		return runHashPassword()
 	case "help", "-h", "--help":
@@ -146,6 +154,11 @@ func engine(ctx context.Context, pool *pgxpool.Pool) (*pipeline.Pipeline, func()
 		opts.Browser = browser
 	}
 	p := &pipeline.Pipeline{Pool: pool, Fetcher: fetch.New(opts), Queue: queue.New(pool, queue.Options{})}
+	// The local model reads event pages for people, where one is set up.
+	if model := llm.FromEnvIfSet(); model != nil {
+		p.Reader = model
+		slog.Info("language model reads event pages", "model", model.Model, "url", model.URL)
+	}
 	cleanup := func() {
 		if browser != nil {
 			browser.Close()
@@ -184,6 +197,13 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 	}
 	defer cleanup()
 	if *work {
+		// Work left over from before the app stopped does not come back by
+		// itself. Its runs end, and unread pages wait for the next run.
+		if n, err := p.EndInterrupted(ctx); err != nil {
+			return err
+		} else if n > 0 {
+			slog.Info("ended runs the app was working on when it stopped", "runs", n)
+		}
 		go func() {
 			if err := newWorker(p, 4).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("background worker stopped", "error", err)

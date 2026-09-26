@@ -5,8 +5,8 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  Setting, Source, SourceStatus, Stats,
+  Activity, Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -72,6 +72,19 @@ function createState() {
     return p
   }
 
+  // Founders a lookup found in a startup's imprint, with no event yet.
+  // All names are invented.
+  function lookedUp(): PersonRow[] {
+    return [
+      ['Hanna Hellwig', 'Hellwig Robotics GmbH'], ['Jonas Probst', 'Probst Health UG (haftungsbeschränkt)'],
+      ['Ida Ingwersen', 'Ingwersen Labs GmbH'], ['Ole Osterkamp', 'Osterkamp Analytics GmbH'],
+    ].map(([name, company], i) => ({
+      id: 900 + i, name, headline: `Managing director, ${company}`, city: 'Köln', fit: 'founder' as const,
+      first_seen: hoursAgo(30 + i * 7), notes: '', profiles: [],
+      affiliations: [{ organisation: company, role: 'founder', current: true }],
+    }))
+  }
+
   const events: PrivateEvent[] = EVENT_SEEDS.map((e, i) => {
     const day = addDays(today, e.day)
     const firstSeen = hoursAgo(Math.max(5, (Math.min(e.day, 0) + 12 - (i % 9)) * 24 + 5))
@@ -104,7 +117,7 @@ function createState() {
   const { runs, checks } = buildRuns(sources)
   return {
     events,
-    people: [...people.values()],
+    people: [...people.values(), ...lookedUp()],
     sources,
     runs,
     checks,
@@ -133,8 +146,10 @@ function appearancesOf(s: State, id: number): Appearance[] {
   return s.events
     .filter((e) => e.fit === 'kept' && e.people.some((p) => p.id === id))
     .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-    .map((e) => ({
+    .map((e, i) => ({
       role: e.people.find((p) => p.id === id)!.role,
+      // Every third one came from the rules, which quote nothing.
+      evidence: i % 3 === 2 ? '' : `Auf der Bühne: ${e.people.find((p) => p.id === id)!.name}, mit einer Geschichte über den Anfang.`,
       event: { id: e.id, title: e.title, starts_at: e.starts_at, city: e.city, venue: e.venue, url: e.url },
     }))
 }
@@ -150,8 +165,19 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
+    // Some founders come from lookups, with what the lookup saw.
+    activity: p.fit === 'founder' && !next
+      ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
+      : null,
   }
 }
+
+const MOCK_ACTIVITY: { state: Activity; since: string | null; note: string }[] = [
+  { state: 'active', since: '2026-08-14T00:00:00Z', note: 'the website changed August 2026, by its sitemap' },
+  { state: 'quiet', since: '2024-05-02T00:00:00Z', note: 'the website changed May 2024, by its sitemap' },
+  { state: 'gone', since: null, note: 'the website is a parked domain' },
+  { state: 'unknown', since: null, note: 'the website shows no date' },
+]
 
 function personDetail(s: State, p: PersonRow): PersonDetail {
   const seen = new Map<number, { source_id: number; source: string; checked_at: string }>()
@@ -162,7 +188,10 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
       seen.set(src.id, { source_id: src.id, source: src.name, checked_at: hoursAgo(ms?.checked_hours_ago ?? 5) })
     }
   }
-  return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, affiliations: p.affiliations, sightings: [...seen.values()] }
+  const fit_evidence = p.id >= 900
+    ? `Managing director of ${p.affiliations[0].organisation}, by its imprint. In the portfolio of Gateway startups`
+    : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
+  return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()] }
 }
 
 function sourceOut(m: MockSource): Source {
@@ -173,7 +202,10 @@ function sourceOut(m: MockSource): Source {
     ...rest,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
-    last_check: last_found === null ? null : { events_found: last_found, http_status: last_http, mode: last_mode, error: last_error },
+    last_check: last_found === null ? null : {
+      events_found: m.kind === 'portfolio' ? 0 : last_found, startups_found: m.kind === 'portfolio' ? last_found : 0,
+      http_status: last_http, mode: last_mode, error: last_error,
+    },
   }
 }
 
@@ -277,12 +309,23 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const filter = q.get('filter') || 'all'
     let list = s.people.map((p) => personList(s, p))
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
+    const counts = {
+      all: list.length,
+      founder: list.filter((p) => p.fit === 'founder').length,
+      upcoming: list.filter((p) => p.next_appearance).length,
+      profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
+    }
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
+    if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
-    else list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || a.name.localeCompare(b.name))
-    return ok({ people: list })
+    else {
+      // Like the server: next appearance, then founders of startups that look alive.
+      const rank = (p: Person) => ['active', 'unknown', 'quiet', 'dissolved', 'gone'].indexOf(p.activity?.state ?? 'unknown')
+      list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || rank(a) - rank(b) || a.name.localeCompare(b.name))
+    }
+    return ok({ people: list, counts })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -317,7 +360,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (s.sources.some((x) => x.url === url)) return err(409, 'This source is already on the list')
     const host = new URL(url).hostname.replace(/^www\./, '')
     const m: MockSource = {
-      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: 'listing', url, query: null,
+      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.portfolio === true ? 'portfolio' : 'listing', url, query: null,
       category: '', city: '', status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
       health: 'never', health_note: '', discovered_from: 'Added by hand', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
     }
@@ -331,6 +374,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
     if (typeof b.notes === 'string') src.notes = b.notes
     if (typeof b.name === 'string') src.name = b.name
+    if (typeof b.portfolio === 'boolean') src.kind = b.portfolio ? 'portfolio' : 'listing'
     return ok(sourceOut(src))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {
@@ -346,25 +390,70 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
+  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.progress && r.kind !== 'check') ?? null })],
+  ['POST', /^\/api\/runs\/(\d+)\/stop$/, (s, m) => {
+    const run = s.runs.find((r) => r.id === Number(m[1]))
+    if (!run) return err(404, 'No such run')
+    if (run.finished_at) return err(409, 'This run has already ended')
+    run.finished_at = new Date().toISOString()
+    run.progress = null
+    return { status: 204 }
+  }],
   ['POST', /^\/api\/runs$/, (s) => {
     const going = s.runs.find((r) => !r.finished_at && r.kind !== 'check')
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
     const run = {
       id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
-      sources_checked: 0, events_found: 0, events_new: 0, people_new: 0, errors: 0,
+      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, startups_looked_up: 0, people_new: 0, errors: 0,
+      // Like the server: 8 checks four at a time, then the reads they bring,
+      // one at a time, and 4 lookups of startups from a portfolio among the
+      // checks, measured at about 3 s a check, 5 s a read and 4 s a lookup.
+      progress: {
+        checks: 8, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 6, lookups: 0, lookups_done: 0, lookups_expected: 4,
+        now: [] as RunProgress['now'], seconds_left: 40,
+      } as RunProgress | null,
     }
     s.runs.unshift(run)
     s.checks.set(run.id, [])
     // Pretend the run checks a few sources, then finishes.
+    const names = s.sources.slice(0, 8).map((x) => x.name)
+    const titles = s.events.slice(0, 6).map((e) => e.title)
+    const startups = ['Beispiel Robotics', 'Probe Labs', 'Muster Health', 'Kontrolle Analytics']
     const t = setInterval(() => {
-      run.sources_checked += 7
-      run.events_found += 11
-      run.events_new += 3
-    }, 3000)
-    setTimeout(() => {
-      clearInterval(t)
-      run.finished_at = new Date().toISOString()
-    }, 12000)
+      const p = run.progress
+      // Stopped by hand, or done.
+      if (run.finished_at || !p) {
+        run.progress = null
+        return clearInterval(t)
+      }
+      const since = new Date().toISOString()
+      if (p.checks_done < p.checks) {
+        p.checks_done = Math.min(p.checks, p.checks_done + 2)
+        run.sources_checked = p.checks_done
+        run.events_found += 5
+        run.events_new += 1
+        p.reads = Math.min(6, p.checks_done - 1)
+        p.now = p.checks_done < p.checks ? names.slice(p.checks_done, p.checks_done + 2).map((label) => ({ kind: 'check' as const, label, since })) : []
+      } else if (p.lookups_done < 4) {
+        // The portfolio among the checks brought its lookups.
+        p.lookups = 4
+        p.lookups_done = Math.min(4, p.lookups_done + 2)
+        run.startups_looked_up = p.lookups_done
+        run.people_new += 1
+        p.now = p.lookups_done < 4 ? startups.slice(p.lookups_done, p.lookups_done + 2).map((label) => ({ kind: 'lookup' as const, label, since })) : []
+      } else if (p.reads_done < p.reads) {
+        p.reads_done++
+        run.pages_read = p.reads_done
+        run.people_new += 2
+        p.now = p.reads_done < p.reads ? [{ kind: 'read' as const, label: titles[p.reads_done % titles.length], since }] : []
+      } else {
+        run.finished_at = new Date().toISOString()
+        run.progress = null
+        return clearInterval(t)
+      }
+      p.reads_expected = Math.max(p.reads, 6)
+      p.seconds_left = ((p.checks - p.checks_done) * 3 + (p.lookups_expected - p.lookups_done) * 4) / 4 + (p.reads_expected - p.reads_done) * 5
+    }, 2000)
     return { status: 202, body: { run_id: run.id, started: true } }
   }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {
@@ -451,7 +540,7 @@ export function mockApi(): Plugin {
         const send = (out: Out) => {
           res.statusCode = out.status
           if (out.cookie) res.setHeader('Set-Cookie', out.cookie)
-          if (out.status === 204 || out.status === 202) return res.end()
+          if (out.status === 204 || out.body === undefined) return res.end()
           res.setHeader('Content-Type', out.type ?? 'application/json; charset=utf-8')
           res.end(typeof out.body === 'string' && out.type ? out.body : JSON.stringify(out.body))
         }

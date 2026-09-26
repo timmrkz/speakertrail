@@ -57,3 +57,54 @@ func TestSchemaRules(t *testing.T) {
 		t.Error("the same search query was stored twice")
 	}
 }
+
+// Migration 10 looks again at founders the old title rule marked, keeps
+// founders a page supports, and retires sources that are not an
+// organiser's calendar. All names are invented.
+func TestFounderRuleMigration(t *testing.T) {
+	pool := dbtest.NewEmpty(t)
+	ctx := t.Context()
+	if err := db.MigrateTo(ctx, pool, 9); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`INSERT INTO people (full_name, normalised_name, headline, fit) VALUES
+			('Anna Probe', 'anna probe', 'Projektleiterin, Gründerzentrum Musterstadt', 'founder'),
+			('Bernd Probe', 'bernd probe', 'CEO, Musterbank AG', 'founder'),
+			('Clara Probe', 'clara probe', 'Gründerin, Backstube Muster', 'founder'),
+			('Dora Probe', 'dora probe', 'Speaker', 'other')`,
+		`INSERT INTO people (full_name, normalised_name, headline, fit, fit_evidence) VALUES
+			('Emil Probe', 'emil probe', 'Engineer', 'founder', 'hat Beispielwerk gegründet')`,
+		`INSERT INTO sources (name, kind, url, status) VALUES
+			('meetup.com/lp', 'listing', 'https://www.meetup.com/lp/', 'probation'),
+			('One night', 'listing', 'https://www.tickettailor.com/events/beispielnights/2432028', 'candidate'),
+			('Beispiel Founders', 'listing', 'https://www.meetup.com/beispiel-founders/', 'active')`,
+	} {
+		if _, err := pool.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	fits := map[string]string{}
+	rows, _ := pool.Query(ctx, `SELECT full_name, fit FROM people`)
+	for rows.Next() {
+		var n, f string
+		rows.Scan(&n, &f)
+		fits[n] = f
+	}
+	rows.Close()
+	for name, want := range map[string]string{
+		"Anna Probe": "other", "Bernd Probe": "other", "Clara Probe": "founder", "Dora Probe": "other", "Emil Probe": "founder",
+	} {
+		if fits[name] != want {
+			t.Errorf("%s: %s, want %s", name, fits[name], want)
+		}
+	}
+	var retired, active int
+	pool.QueryRow(ctx, `SELECT count(*) FILTER (WHERE status = 'retired'), count(*) FILTER (WHERE status = 'active') FROM sources`).Scan(&retired, &active)
+	if retired != 2 || active != 1 {
+		t.Errorf("%d retired and %d active sources, want 2 and 1", retired, active)
+	}
+}

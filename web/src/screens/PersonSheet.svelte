@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { fmtAgo, fmtDateTime, initials, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
+  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -25,6 +25,12 @@
 
   let now = new Date().toISOString()
   let upcoming = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at >= now))
+  // The company to search with: the one they founded, else any.
+  let company = $derived.by(() => {
+    const a = person.data?.affiliations ?? []
+    return (a.find((x) => x.role === 'founder') ?? a[0])?.organisation ?? ''
+  })
+  let hasLinkedin = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'linkedin' && x.review === 'confirmed'))
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 
   async function saveNotes() {
@@ -67,6 +73,12 @@
           <h2>{person.data.name}</h2>
           {#if person.data.known_as}<p class="faint small">Also known as {person.data.known_as}</p>{/if}
           <p class="muted">{person.data.headline || 'No headline yet'}</p>
+          {#if person.data.fit === 'founder'}
+            <p class="founder small"><span class="pill accent">Founder</span>{#if person.data.fit_evidence}<q>{person.data.fit_evidence}</q>{/if}</p>
+          {/if}
+          {#if person.data.activity}
+            <p class="small"><span class="pill {ACTIVITY_TONE[person.data.activity.state]}" title="{person.data.activity.company}: {person.data.activity.note}">{activityText(person.data.activity)}</span></p>
+          {/if}
           <p class="faint small">{[person.data.city, `first seen ${fmtAgo(person.data.first_seen)}`].filter(Boolean).join(' · ')}</p>
         </div>
       </div>
@@ -102,6 +114,7 @@
                     <b>{a.event.title}</b>
                   {/if}
                   <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
+                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
                 </span>
               </li>
             {/each}
@@ -135,7 +148,13 @@
           {/each}
         </ul>
       {:else}
-        <p class="muted small">No profile found yet. The crawler looks again later.</p>
+        <p class="muted small">No profile found yet.</p>
+      {/if}
+      {#if !hasLinkedin}
+        <a class="btn sm find" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
+          title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
+          <Icon name="external" size={14} />Find on LinkedIn
+        </a>
       {/if}
     </section>
 
@@ -192,6 +211,7 @@
   .head-text h2 { font-size: 19px; }
   .head-text p { overflow-wrap: anywhere; }
   .apps { display: grid; gap: 8px; }
+  .find { justify-self: start; }
   .apps li { display: grid; gap: 1px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
   .apps li.past { background: var(--surface-2); border-color: transparent; }
   .apps .when { font-size: 12px; color: var(--ink-2); }
@@ -199,6 +219,9 @@
   .apps .what a { font-weight: 600; overflow-wrap: anywhere; }
   .apps .what a :global(svg) { margin-left: 4px; vertical-align: -1px; }
   .apps .what .faint { font-size: 13px; }
+  .founder { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-top: 2px; }
+  .founder q { font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
+  .apps .evidence { margin-top: 4px; font-size: 13px; font-style: italic; color: var(--ink-2); overflow-wrap: anywhere; }
   .profiles { display: grid; gap: 8px; }
   .profile {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px;

@@ -7,17 +7,20 @@ export type Fit = 'kept' | 'dropped'
 export type FitFilter = Fit | 'all'
 export type AppearanceRole = 'speaker' | 'panelist' | 'pitch' | 'host' | 'moderator'
 export type PersonFit = 'founder' | 'athlete' | 'maker' | 'creator' | 'other'
+// What a lookup saw of a startup: its website changed lately, it shows no
+// date, nothing changed for a year, it is being wound up, or it is gone.
+export type Activity = 'active' | 'unknown' | 'quiet' | 'dissolved' | 'gone'
 export type ProfilePlatform =
   | 'linkedin' | 'instagram' | 'youtube' | 'tiktok' | 'x' | 'website' | 'luma' | 'meetup' | 'podcast' | 'other'
 export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'next' | 'new' | 'name'
-export type PeopleFilter = 'all' | 'upcoming' | 'profile'
+export type PeopleFilter = 'all' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -124,10 +127,16 @@ export interface Person {
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]
+  // For a founder: how their startup looked at its last lookup, the most
+  // alive one when there are several. Null when nobody looked.
+  activity: { state: Activity; since: string | null; note: string; company: string } | null
 }
 
 export interface Appearance {
   role: string
+  // The passage from the event page that puts the person on stage, when
+  // the language model found them. Empty when the rules found them.
+  evidence: string
   event: { id: number; title: string; starts_at: string; city: string; venue: string; url: string }
 }
 
@@ -135,6 +144,8 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   // The list gives a count. The detail replaces it with the list itself.
   appearances: Appearance[]
   notes: string
+  // Where an event page says the person founded or runs something.
+  fit_evidence: string
   affiliations: { organisation: string; role: string; current: boolean }[]
   sightings: { source_id: number; source: string; checked_at: string }[]
 }
@@ -147,6 +158,8 @@ export interface PeopleQuery {
 
 export interface LastCheck {
   events_found: number
+  // For a portfolio: the startups its page lists.
+  startups_found: number
   http_status: number
   mode: string
   error: string
@@ -174,12 +187,40 @@ export interface Source {
   discovered_from: string
 }
 
-export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>>
+// portfolio switches a source between a page of startups and a page of events.
+export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { portfolio?: boolean }
+
+export interface RunProgress {
+  checks: number
+  checks_done: number
+  reads: number
+  reads_done: number
+  // The reads the run should end with: those queued, and as many more as
+  // checks brought lately for the checks still to come.
+  reads_expected: number
+  // Lookups of startups from portfolios, and the ones the run should end
+  // with, counting those its portfolio checks still to come will bring.
+  lookups: number
+  lookups_done: number
+  lookups_expected: number
+  // What runs at this moment: a check of a source, a read of an event page
+  // or a lookup of a startup.
+  now: { kind: 'check' | 'read' | 'lookup'; label: string; since: string }[]
+  // Measured from how long earlier checks and reads took. Null until there
+  // is anything to measure against.
+  seconds_left: number | null
+}
 
 export interface Run {
   id: number
   // nightly, manual for a run started by hand, check for Check now
   kind: 'nightly' | 'manual' | 'check'
+  // Event pages the language model read in this run.
+  pages_read: number
+  // Startups whose imprint this run looked up.
+  startups_looked_up: number
+  // How far a going run is. Null once it has ended.
+  progress: RunProgress | null
   started_at: string
   finished_at: string | null
   sources_checked: number
@@ -281,16 +322,19 @@ export const api = {
   stats: () => request<Stats>('GET', '/api/stats'),
   events: (q: PrivateEventQuery) => request<{ events: PrivateEvent[] }>('GET', `/api/events${qs(q)}`).then((r) => r.events),
   patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
-  people: (q: PeopleQuery) => request<{ people: Person[] }>('GET', `/api/people${qs(q)}`).then((r) => r.people),
+  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
-  addSource: (url: string, name?: string) => request<Source>('POST', '/api/sources', name ? { url, name } : { url }),
+  addSource: (url: string, name?: string, portfolio = false) =>
+    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), ...(portfolio ? { portfolio } : {}) }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
+  currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
+  stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
   run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),

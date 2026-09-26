@@ -39,23 +39,25 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		return 0, err
 	}
 	now := p.now()
-	// Checks left over from an earlier run are replaced by this one.
+	// Checks and reads left over from an earlier run are replaced by this
+	// one. Unread pages come back through this run's own reads.
 	if _, err := p.Pool.Exec(ctx, `
 		UPDATE jobs SET status = 'failed', last_error = 'replaced by run ' || $1, locked_until = NULL, updated_at = $2
-		WHERE kind = $3 AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
-		fmt.Sprint(runID), now, KindCheckSource); err != nil {
+		WHERE kind IN ($3, $4) AND status = 'queued' AND key NOT LIKE 'run:' || $1 || ':%'`,
+		fmt.Sprint(runID), now, KindCheckSource, KindReadEvent); err != nil {
 		return 0, err
 	}
 	rows, err := p.Pool.Query(ctx, `
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status IN ('active', 'probation', 'retired')
 		   AND (next_check_at IS NULL OR next_check_at <= $1)
-		 ORDER BY points DESC, id)
+		 ORDER BY next_check_at NULLS FIRST, points DESC, id
+		 LIMIT $3)
 		UNION ALL
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status = 'candidate' AND (next_check_at IS NULL OR next_check_at <= $1)
 		 ORDER BY checks, created_at, id
-		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 10))
+		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
 		return 0, err
 	}
@@ -86,7 +88,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		}
 	}
 	// Events whose page has not been read yet, from earlier runs too.
-	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 30)); err != nil {
+	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 10)); err != nil {
 		return 0, err
 	}
 	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
@@ -145,6 +147,31 @@ func (p *Pipeline) RunNow(ctx context.Context) (runID int64, started bool, err e
 	}
 	p.log().Info("run started by hand", "run", runID, "sources", n)
 	return runID, true, nil
+}
+
+// EndInterrupted ends the runs the app was working on when it stopped, so
+// their work does not come back by itself after a restart: their queued
+// and running checks and reads are dropped, and the runs end now. Unread
+// event pages wait for the next run. Only serve calls it, as it starts,
+// before its own worker takes any job.
+func (p *Pipeline) EndInterrupted(ctx context.Context) (int, error) {
+	now := p.now()
+	rows, err := p.Pool.Query(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = 'the app stopped while this waited or ran', locked_until = NULL, updated_at = $1
+		WHERE kind IN ($2, $3) AND status IN ('queued', 'running') AND key LIKE 'run:%'
+		RETURNING split_part(key, ':', 2)::bigint`, now, KindCheckSource, KindReadEvent)
+	if err != nil {
+		return 0, err
+	}
+	runs, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+	if err != nil {
+		return 0, err
+	}
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 // StopRun ends a run by hand. Its queued checks and reads are dropped, and

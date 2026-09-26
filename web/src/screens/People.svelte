@@ -19,6 +19,8 @@
   let reload = $state(0)
 
   const people = new Load<Person[]>()
+  // How many each filter shows, so an empty filter never hides the rest.
+  let counts = $state<Record<PeopleFilter, number> | null>(null)
 
   $effect(() => {
     document.title = 'People · Speaker Trail'
@@ -27,7 +29,11 @@
   $effect(() => {
     const params = { q: query, sort, filter }
     void reload
-    people.run(() => api.people(params))
+    people.run(async () => {
+      const r = await api.people(params)
+      counts = r.counts
+      return r.people
+    })
   })
 
   let openId = $derived.by(() => {
@@ -35,12 +41,15 @@
     return m ? Number(m.id) : null
   })
 
-  const filters: { value: PeopleFilter; label: string }[] = [
-    { value: 'founder', label: 'Founders' },
-    { value: 'upcoming', label: 'Upcoming' },
-    { value: 'profile', label: 'Profile found' },
-    { value: 'all', label: 'All' },
-  ]
+  let filters = $derived(
+    ([
+      { value: 'founder', label: 'Founders' },
+      { value: 'upcoming', label: 'Upcoming' },
+      { value: 'profile', label: 'Profile found' },
+      { value: 'all', label: 'All' },
+    ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
+  )
+  let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
   function updated(p: PersonDetail) {
@@ -79,7 +88,12 @@
   {:else if !people.data}
     <Skeleton count={7} />
   {:else if !people.data.length}
-    <EmptyState icon="people" title="Nobody here yet" text={query || filter !== 'all' ? 'Nobody matches this search or filter.' : 'People show up once the crawler finds them on event pages.'}>
+    <EmptyState
+      icon="people"
+      title={filter === 'founder' && !query ? 'No founders yet' : 'Nobody here yet'}
+      text={filter !== 'all' && others > 0
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : 'in this filter'}.`
+        : query ? 'Nobody matches this search.' : 'People show up once the crawler finds them on event pages.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
       {/if}

@@ -83,6 +83,7 @@ func (s *Server) routes() {
 	p("PATCH /api/sources/{id}", s.patchSource)
 	p("POST /api/sources/{id}/check", s.checkSource)
 	p("GET /api/runs", s.runs)
+	p("GET /api/runs/current", s.currentRun)
 	p("POST /api/runs", s.startRun)
 	p("POST /api/runs/{id}/stop", s.stopRun)
 	p("GET /api/runs/{id}", s.run)

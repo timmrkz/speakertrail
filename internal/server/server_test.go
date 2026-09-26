@@ -3,6 +3,7 @@ package server_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -168,6 +169,87 @@ func TestRunsFinishWhenTheirChecksAreDone(t *testing.T) {
 	}
 }
 
+// A going run says how far it is, what runs now and about how long is left,
+// measured from earlier checks and reads.
+func TestRunProgress(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	exec(`INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Events', 'listing', 'https://example.org/a', 'active'), ('Muster Meetups', 'listing', 'https://example.org/b', 'active')`)
+	exec(`INSERT INTO events (title, starts_at, canonical_url, fit) VALUES ('Pitch Abend', $1, 'https://example.org/e/1', 'kept')`, now.Add(72*time.Hour))
+	exec(`INSERT INTO runs (kind, started_at) VALUES ('manual', $1)`, now)
+	job := func(kind, key, status, payload string) {
+		exec(`INSERT INTO jobs (kind, key, status, payload, run_after, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $5, $5)`,
+			kind, key, status, payload, now)
+	}
+	var a, b, ev, run int64
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Beispiel Events'`).Scan(&a)
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Muster Meetups'`).Scan(&b)
+	e.pool.QueryRow(ctx, `SELECT id FROM events WHERE title = 'Pitch Abend'`).Scan(&ev)
+	e.pool.QueryRow(ctx, `SELECT max(id) FROM runs`).Scan(&run)
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, a), "done", fmt.Sprintf(`{"source_id": %d}`, a))
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, b), "running", fmt.Sprintf(`{"source_id": %d}`, b))
+	job("read_event", fmt.Sprintf("run:%d:read:%d", run, ev), "queued", fmt.Sprintf(`{"event_id": %d}`, ev))
+
+	var got struct {
+		Run *struct {
+			Progress *struct {
+				Checks, ChecksDone, Reads, ReadsDone int
+				Now                                  []struct{ Kind, Label string }
+				SecondsLeft                          *float64 `json:"seconds_left"`
+			}
+		}
+	}
+	current := func() {
+		t.Helper()
+		code, body := e.do(t, "GET", "/api/runs/current", "")
+		if code != 200 {
+			t.Fatalf("current run: %d %s", code, body)
+		}
+		// The API writes snake case, the struct reads it through lower case.
+		body = strings.NewReplacer(`"checks_done"`, `"checksdone"`, `"reads_done"`, `"readsdone"`).Replace(body)
+		got.Run = nil
+		if err := json.Unmarshal([]byte(body), &got); err != nil {
+			t.Fatal(err)
+		}
+	}
+	current()
+	pr := got.Run.Progress
+	if pr == nil || pr.Checks != 2 || pr.ChecksDone != 1 || pr.Reads != 1 || pr.ReadsDone != 0 {
+		t.Fatalf("progress %+v", pr)
+	}
+	if len(pr.Now) != 1 || pr.Now[0].Kind != "check" || pr.Now[0].Label != "Muster Meetups" {
+		t.Errorf("running now %+v", pr.Now)
+	}
+	if pr.SecondsLeft != nil {
+		t.Errorf("no history, no estimate, got %v", *pr.SecondsLeft)
+	}
+
+	// With history: a check took 4 s, a read 20 s. One check left runs
+	// beside others, the read runs alone: about 20 s.
+	exec(`DELETE FROM source_checks`)
+	exec(`DELETE FROM event_reads`)
+	exec(`INSERT INTO source_checks (source_id, duration_ms, checked_at) VALUES ($1, 4000, $2)`, a, now)
+	exec(`INSERT INTO event_reads (event_id, url, duration_ms, read_at) VALUES ($1, 'https://example.org/e/1', 20000, $2)`, ev, now)
+	current()
+	if s := got.Run.Progress.SecondsLeft; s == nil || *s != 20 {
+		t.Errorf("seconds left %v, want 20", s)
+	}
+
+	// A finished run is not current.
+	exec(`UPDATE jobs SET status = 'done'`)
+	current()
+	if got.Run != nil {
+		t.Errorf("a finished run is still current: %+v", got.Run)
+	}
+}
+
 func TestLoginIsRateLimited(t *testing.T) {
 	e := setup(t)
 	for range 5 {
@@ -279,6 +361,11 @@ func TestPrivateAPI(t *testing.T) {
 	_, body = e.do(t, "GET", "/api/people?q=beispiel", "")
 	if !strings.Contains(body, `"headline":"Founder, Beispiel Robotics"`) || !strings.Contains(body, `"next_appearance":{`) {
 		t.Errorf("people: %s", body)
+	}
+	// A title that says founder makes a founder, and the counts show every
+	// filter, so an empty one never hides the rest.
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+		t.Errorf("founders: %s", body)
 	}
 	var pid, prof int64
 	e.pool.QueryRow(t.Context(), `SELECT id FROM people`).Scan(&pid)

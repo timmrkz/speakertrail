@@ -197,6 +197,13 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 	}
 	defer cleanup()
 	if *work {
+		// Work left over from before the app stopped does not come back by
+		// itself. Its runs end, and unread pages wait for the next run.
+		if n, err := p.EndInterrupted(ctx); err != nil {
+			return err
+		} else if n > 0 {
+			slog.Info("ended runs the app was working on when it stopped", "runs", n)
+		}
 		go func() {
 			if err := newWorker(p, 4).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("background worker stopped", "error", err)

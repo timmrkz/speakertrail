@@ -176,7 +176,7 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		return err
 	}
 	// The new events' own pages are read in the same run.
-	if _, err := p.enqueueReads(ctx, runID, src.ID, p.readLimit(cfg, "event_pages_per_check", 5)); err != nil {
+	if _, err := p.enqueueReads(ctx, runID, src.ID, p.readLimit(cfg, "event_pages_per_check", 3)); err != nil {
 		p.log().Warn("queueing event reads failed", "source", src.ID, "error", err)
 	}
 	return p.advance(ctx, src, cfg, stats, mode)

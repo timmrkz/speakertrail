@@ -280,13 +280,19 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const filter = q.get('filter') || 'all'
     let list = s.people.map((p) => personList(s, p))
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
+    const counts = {
+      all: list.length,
+      founder: list.filter((p) => p.fit === 'founder').length,
+      upcoming: list.filter((p) => p.next_appearance).length,
+      profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
+    }
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || a.name.localeCompare(b.name))
-    return ok({ people: list })
+    return ok({ people: list, counts })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))

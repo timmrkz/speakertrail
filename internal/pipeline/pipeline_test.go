@@ -298,9 +298,9 @@ func TestEnqueueDue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Active and probation that are due, plus 10 new candidates.
-	if n != 12 {
-		t.Errorf("%d sources queued, want 12", n)
+	// Active and probation that are due, plus 5 new candidates.
+	if n != 7 {
+		t.Errorf("%d sources queued, want 7", n)
 	}
 	if c := e.count(t, "jobs WHERE kind = 'process_seed'"); c != 1 {
 		t.Errorf("%d seed jobs", c)
@@ -312,7 +312,7 @@ func TestEnqueueDue(t *testing.T) {
 	if _, err := e.p.EnqueueDue(ctx, run); err != nil {
 		t.Fatal(err)
 	}
-	if c := e.count(t, "jobs WHERE kind = 'check_source'"); c != 12 {
+	if c := e.count(t, "jobs WHERE kind = 'check_source'"); c != 7 {
 		t.Errorf("%d check jobs after queueing twice", c)
 	}
 
@@ -726,5 +726,85 @@ func TestStopRunDropsWhatIsQueued(t *testing.T) {
 	// A new run can start right away.
 	if _, started, err := e.p.RunNow(ctx); err != nil || !started {
 		t.Errorf("a run after the stopped one: started %v, %v", started, err)
+	}
+}
+
+// A run checks at most sources_per_run due sources, the longest overdue
+// first, so runs stay short and the rest wait for the next one.
+func TestRunsStayShort(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	var ids []int64
+	for i := range 4 {
+		id := e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+		e.pool.Exec(ctx, `UPDATE sources SET next_check_at = $2 WHERE id = $1`, id, now.Add(-time.Duration(i+1)*time.Hour))
+		ids = append(ids, id)
+	}
+	e.pool.Exec(ctx, `UPDATE settings SET value = '2' WHERE key = 'sources_per_run'`)
+	run, _ := e.p.StartRun(ctx, "manual")
+	if n, err := e.p.EnqueueDue(ctx, run); err != nil || n != 2 {
+		t.Fatalf("%d sources queued, %v, want 2", n, err)
+	}
+	// The two overdue the longest are s3 and s2.
+	for _, id := range ids[2:] {
+		if c := e.count(t, "jobs WHERE key = $1", fmt.Sprintf("run:%d:source:%d", run, id)); c != 1 {
+			t.Errorf("source %d, among the longest overdue, is not queued", id)
+		}
+	}
+}
+
+// After the app stopped in the middle of a run, the run's work does not come
+// back by itself when the app starts again.
+func TestInterruptedRunsEndWhenTheAppStarts(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	for i := range 3 {
+		e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+	}
+	run, _, err := e.p.RunNow(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The app died while one check ran.
+	e.pool.Exec(ctx, `UPDATE jobs SET status = 'running', locked_until = $1 WHERE id = (SELECT min(id) FROM jobs WHERE kind = 'check_source')`, now.Add(10*time.Minute))
+	n, err := e.p.EndInterrupted(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("ended %d runs, %v, want 1", n, err)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND status IN ('queued', 'running')"); c != 0 {
+		t.Errorf("%d checks would come back", c)
+	}
+	if c := e.count(t, "runs WHERE id = $1 AND finished_at IS NOT NULL", run); c != 1 {
+		t.Error("the interrupted run did not end")
+	}
+	if c := e.count(t, "jobs WHERE kind = 'prune' AND status = 'queued'"); c != 1 {
+		t.Error("housekeeping outside a run must stay")
+	}
+}
+
+// A page whose read keeps failing is given up after three tries, so it does
+// not come back in every run.
+func TestAPageThatKeepsFailingIsGivenUp(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	e.pool.Exec(ctx, `UPDATE events SET people_read_at = NULL`)
+	var ev int64
+	e.pool.QueryRow(ctx, `SELECT id FROM events WHERE canonical_url LIKE '%/e/talk'`).Scan(&ev)
+	for range 3 {
+		e.pool.Exec(ctx, `INSERT INTO event_reads (event_id, url, error, read_at) VALUES ($1, 'x', 'the language model failed', $2)`, ev, now)
+	}
+	run, _ := e.p.StartRun(ctx, "manual")
+	if _, err := e.p.EnqueueDue(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'queued' AND payload->>'event_id' = $1", fmt.Sprint(ev)); c != 0 {
+		t.Error("a page that failed three times is read again")
+	}
+	if c := e.count(t, "jobs WHERE kind = 'read_event' AND status = 'queued'"); c != 1 {
+		t.Errorf("%d reads queued, want the other page", c)
 	}
 }

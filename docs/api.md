@@ -89,6 +89,8 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile|founder`
 
+The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
+
 `sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
 
 ```json
@@ -163,6 +165,20 @@ In private responses `people` always holds everyone named, each with their `id`.
 `pages_read` counts the event pages the local model read in the run, and `people_new` includes the people it found there. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
+
+While a run is going, it carries `progress`, and is null otherwise:
+
+```json
+{ "checks": 12, "checks_done": 7, "reads": 6, "reads_done": 1,
+  "now": [{ "kind": "read", "label": "Pitch Abend Köln", "since": "..." }],
+  "seconds_left": 140 }
+```
+
+`now` lists what runs at this moment. `seconds_left` is measured from how long the last 200 checks and 100 reads took, checks four at a time and reads one at a time. It is null until there is anything to measure against.
+
+`GET /api/runs/current` answers `{"run": {...}}` with the run that is going, or `{"run": null}`.
+
+When the app starts, runs it was working on when it stopped end, and their work does not come back by itself. A run drops checks and reads left over from earlier runs. An event page whose read failed three times is not read again.
 
 `POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks and reads are dropped, and what is running finishes. A run that already ended answers 409.
 

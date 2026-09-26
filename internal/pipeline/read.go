@@ -34,12 +34,13 @@ type Reader interface {
 
 // unreadEvents are upcoming kept events with a page of their own that the
 // model has not read yet. A page that is a source itself is a listing, not
-// one event's page.
+// one event's page. A page whose read failed three times is given up.
 const unreadEvents = `
 	SELECT e.id FROM events e
 	WHERE e.people_read_at IS NULL AND e.fit = 'kept' AND e.format <> 'online'
 	  AND e.starts_at >= $1 AND e.canonical_url <> '' AND e.canonical_url NOT LIKE '%.ics'
-	  AND NOT EXISTS (SELECT 1 FROM sources s WHERE s.url = e.canonical_url)`
+	  AND NOT EXISTS (SELECT 1 FROM sources s WHERE s.url = e.canonical_url)
+	  AND (SELECT count(*) FROM event_reads er WHERE er.event_id = e.id AND er.error <> '') < 3`
 
 // enqueueReads queues reads of unread events for a run, soonest first. With
 // a source it only takes events that source showed.

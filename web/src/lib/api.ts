@@ -288,7 +288,7 @@ export const api = {
   stats: () => request<Stats>('GET', '/api/stats'),
   events: (q: PrivateEventQuery) => request<{ events: PrivateEvent[] }>('GET', `/api/events${qs(q)}`).then((r) => r.events),
   patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
-  people: (q: PeopleQuery) => request<{ people: Person[] }>('GET', `/api/people${qs(q)}`).then((r) => r.people),
+  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),

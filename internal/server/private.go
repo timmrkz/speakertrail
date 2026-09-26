@@ -31,7 +31,40 @@ const runJSON = `json_build_object(
 	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id)
 		+ (SELECT COALESCE(sum(people_new), 0) FROM event_reads WHERE run_id = r.id),
 	'pages_read', (SELECT count(*) FROM event_reads WHERE run_id = r.id),
+	'progress', CASE WHEN r.finished_at IS NULL AND EXISTS (
+		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		THEN (` + progressJSON + `) END,
 	'errors', (SELECT count(*) FROM source_checks WHERE run_id = r.id AND error <> ''))`
+
+// progressJSON says how far a going run is: its checks and reads, done and
+// in all, what is running now, and about how long is left. The time left
+// is measured, from how long the last 200 checks and 100 reads took. Checks
+// run four at a time, reads one at a time, because the model answers one
+// question at a time. Without any history there is no estimate.
+const progressJSON = `WITH j AS (
+		SELECT kind, status FROM jobs WHERE key LIKE 'run:' || r.id || ':%' AND kind IN ('check_source', 'read_event')),
+	c AS (SELECT
+		count(*) FILTER (WHERE kind = 'check_source') AS checks,
+		count(*) FILTER (WHERE kind = 'check_source' AND status IN ('done', 'failed')) AS checks_done,
+		count(*) FILTER (WHERE kind = 'read_event') AS reads,
+		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done FROM j),
+	speed AS (SELECT
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM source_checks ORDER BY id DESC LIMIT 200) x) AS check_ms,
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM event_reads WHERE error = '' ORDER BY id DESC LIMIT 100) x) AS read_ms)
+	SELECT json_build_object(
+		'checks', c.checks, 'checks_done', c.checks_done, 'reads', c.reads, 'reads_done', c.reads_done,
+		'now', (SELECT COALESCE(json_agg(json_build_object(
+				'kind', CASE jr.kind WHEN 'check_source' THEN 'check' ELSE 'read' END,
+				'label', CASE jr.kind
+					WHEN 'check_source' THEN (SELECT name FROM sources WHERE id = (jr.payload->>'source_id')::bigint)
+					ELSE (SELECT title FROM events WHERE id = (jr.payload->>'event_id')::bigint) END,
+				'since', jr.updated_at) ORDER BY jr.updated_at), '[]')
+			FROM jobs jr WHERE jr.status = 'running' AND jr.key LIKE 'run:' || r.id || ':%' AND jr.kind IN ('check_source', 'read_event')),
+		'seconds_left', CASE WHEN (c.checks > c.checks_done AND speed.check_ms IS NULL) OR (c.reads > c.reads_done AND speed.read_ms IS NULL)
+			THEN NULL ELSE round(GREATEST(
+				(c.checks - c.checks_done) * COALESCE(speed.check_ms, 0) / 4,
+				(c.reads - c.reads_done) * COALESCE(speed.read_ms, 0)) / 1000) END)
+	FROM c, speed`
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	now := s.opts.Now()
@@ -176,13 +209,22 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "filter must be all, upcoming, profile or founder")
 		return
 	}
+	// counts says how many people each filter shows for the same search, so
+	// a filter that shows nobody never hides that others were found.
 	s.sendQuery(w, r, http.StatusOK, `
-		SELECT json_build_object('people', COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]'))
-		FROM (SELECT p.*, (SELECT min(e.starts_at) FROM appearances a JOIN events e ON e.id = a.event_id
-				WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start
-			FROM people p) p
-		WHERE `+filter+`
-		  AND ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')`,
+		WITH base AS (
+			SELECT p.*, (SELECT min(e.starts_at) FROM appearances a JOIN events e ON e.id = a.event_id
+					WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start
+			FROM people p
+			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%'))
+		SELECT json_build_object(
+			'people', (SELECT COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]') FROM base p WHERE `+filter+`),
+			'counts', (SELECT json_build_object(
+				'all', count(*),
+				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
+				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
+				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
+				FROM base p))`,
 		s.opts.Now().Add(-12*time.Hour), likeSafe(q.Get("q")))
 }
 
@@ -433,6 +475,15 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "started": started})
+}
+
+// currentRun answers the run that is going, or null, for the dot on Runs.
+func (s *Server) currentRun(w http.ResponseWriter, r *http.Request) {
+	s.sendQuery(w, r, http.StatusOK, `
+		SELECT json_build_object('run', (SELECT `+runJSON+` FROM runs r
+			WHERE r.kind <> 'check' AND r.finished_at IS NULL AND EXISTS (
+				SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+			ORDER BY r.id DESC LIMIT 1))`)
 }
 
 // stopRun ends a run by hand. A run that already ended answers 409.

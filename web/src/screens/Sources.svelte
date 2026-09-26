@@ -9,6 +9,7 @@
   import HealthPill from '../lib/components/HealthPill.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
+  import Segmented from '../lib/components/Segmented.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import SourceSheet from './SourceSheet.svelte'
 
@@ -19,6 +20,8 @@
   let adding = $state(false)
   let newUrl = $state('')
   let newName = $state('')
+  // What the page lists: events, or startups for a portfolio.
+  let newLists = $state<'events' | 'startups'>('events')
   let addError = $state('')
   let addBusy = $state(false)
   let urlField: HTMLInputElement | undefined = $state()
@@ -76,10 +79,11 @@
     addBusy = true
     addError = ''
     try {
-      const s = await api.addSource(url, newName.trim() || undefined)
+      const s = await api.addSource(url, newName.trim() || undefined, newLists === 'startups')
       sources.data = [s, ...(sources.data ?? [])]
       newUrl = ''
       newName = ''
+      newLists = 'events'
       adding = false
       toast.show(`Added ${s.name} as a candidate`)
       navigate(`/app/sources/${s.id}`)
@@ -114,6 +118,12 @@
         <div class="field">
           <label for="src-name">Name <span class="faint">(optional)</span></label>
           <input bind:value={newName} id="src-name" class="input" type="text" placeholder="Taken from the page if empty" autocomplete="off" />
+        </div>
+        <div class="field">
+          <span class="field-label">The page lists</span>
+          <span title="A page of startups, like an accelerator's portfolio, leads to the people who run each one, through its imprint">
+            <Segmented label="The page lists" options={[{ value: 'events', label: 'Events' }, { value: 'startups', label: 'Startups' }]} bind:value={newLists} />
+          </span>
         </div>
       </div>
       {#if addError}<p id="src-err" class="field-error" role="alert">{addError}</p>{:else}<p id="src-hint" class="field-hint">A link to one event adds the calendar it belongs to. It gets checked in the next run.</p>{/if}

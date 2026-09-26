@@ -13,7 +13,7 @@ export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'next' | 'new' | 'name'
@@ -152,6 +152,8 @@ export interface PeopleQuery {
 
 export interface LastCheck {
   events_found: number
+  // For a portfolio: the startups its page lists.
+  startups_found: number
   http_status: number
   mode: string
   error: string
@@ -179,7 +181,8 @@ export interface Source {
   discovered_from: string
 }
 
-export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>>
+// portfolio switches a source between a page of startups and a page of events.
+export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { portfolio?: boolean }
 
 export interface RunProgress {
   checks: number
@@ -189,8 +192,14 @@ export interface RunProgress {
   // The reads the run should end with: those queued, and as many more as
   // checks brought lately for the checks still to come.
   reads_expected: number
-  // What runs at this moment: a check of a source or a read of an event page.
-  now: { kind: 'check' | 'read'; label: string; since: string }[]
+  // Lookups of startups from portfolios, and the ones the run should end
+  // with, counting those its portfolio checks still to come will bring.
+  lookups: number
+  lookups_done: number
+  lookups_expected: number
+  // What runs at this moment: a check of a source, a read of an event page
+  // or a lookup of a startup.
+  now: { kind: 'check' | 'read' | 'lookup'; label: string; since: string }[]
   // Measured from how long earlier checks and reads took. Null until there
   // is anything to measure against.
   seconds_left: number | null
@@ -202,6 +211,8 @@ export interface Run {
   kind: 'nightly' | 'manual' | 'check'
   // Event pages the language model read in this run.
   pages_read: number
+  // Startups whose imprint this run looked up.
+  startups_looked_up: number
   // How far a going run is. Null once it has ended.
   progress: RunProgress | null
   started_at: string
@@ -310,7 +321,8 @@ export const api = {
   patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
-  addSource: (url: string, name?: string) => request<Source>('POST', '/api/sources', name ? { url, name } : { url }),
+  addSource: (url: string, name?: string, portfolio = false) =>
+    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), ...(portfolio ? { portfolio } : {}) }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),

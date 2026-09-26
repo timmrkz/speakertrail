@@ -94,6 +94,7 @@
               <span><span class="num">{fmtNum(r.sources_checked)}</span> checked</span>
               <span><span class="num">{fmtNum(r.events_new)}</span> new events</span>
               <span><span class="num">{fmtNum(r.pages_read)}</span> pages read</span>
+              <span><span class="num">{fmtNum(r.startups_looked_up)}</span> startups looked up</span>
               <span><span class="num">{fmtNum(r.people_new)}</span> new people</span>
               <span class:err={r.errors > 0}><span class="num">{fmtNum(r.errors)}</span> {r.errors === 1 ? 'error' : 'errors'}</span>
             </span>

@@ -243,6 +243,23 @@ func TestRunProgress(t *testing.T) {
 		t.Errorf("seconds left %v, want 40", s)
 	}
 
+	// A portfolio check still to come brings up to 10 lookups. Lookups run
+	// four at a time, beside the checks: two checks of 4 s and eleven
+	// lookups of 32 s, about 90 s, more than the reads.
+	exec(`INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', 'https://example.org/hub', 'active')`)
+	exec(`INSERT INTO organisations (name, normalised_name, website) VALUES ('Probe Labs', 'probe labs', 'https://probe.example/')`)
+	var hub, org int64
+	e.pool.QueryRow(ctx, `SELECT id FROM sources WHERE name = 'Beispiel Hub'`).Scan(&hub)
+	e.pool.QueryRow(ctx, `SELECT id FROM organisations WHERE name = 'Probe Labs'`).Scan(&org)
+	job("check_source", fmt.Sprintf("run:%d:source:%d", run, hub), "queued", fmt.Sprintf(`{"source_id": %d}`, hub))
+	job("look_up_startup", fmt.Sprintf("run:%d:lookup:%d", run, org), "running", fmt.Sprintf(`{"organisation_id": %d}`, org))
+	exec(`INSERT INTO startup_lookups (organisation_id, url, duration_ms, looked_up_at) VALUES ($1, 'https://probe.example/', 32000, $2)`, org, now)
+	code, body := e.do(t, "GET", "/api/runs/current", "")
+	if code != 200 || !strings.Contains(body, `"lookups":1`) || !strings.Contains(body, `"lookups_expected":11`) ||
+		!strings.Contains(body, `"kind":"lookup","label":"Probe Labs"`) || !strings.Contains(body, `"seconds_left":90`) {
+		t.Errorf("progress with lookups: %s", body)
+	}
+
 	// A finished run is not current.
 	exec(`UPDATE jobs SET status = 'done'`)
 	current()
@@ -409,6 +426,26 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(sid), `{"status":"paused"}`); code != 400 {
 		t.Errorf("bad status: %d %s", code, body)
+	}
+
+	// A portfolio lists startups. It is added as it is, and switches back
+	// to a page of events with one change.
+	code, body = e.do(t, "POST", "/api/sources", `{"url":"https://hub.example/portfolio","portfolio":true}`)
+	if code != 201 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("add a portfolio: %d %s", code, body)
+	}
+	var hub int64
+	e.pool.QueryRow(t.Context(), `SELECT id FROM sources WHERE url = 'https://hub.example/portfolio'`).Scan(&hub)
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = now() + interval '9 days' WHERE id = $1`, hub)
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(hub), `{"portfolio":false}`); code != 200 || !strings.Contains(body, `"kind":"listing"`) || !strings.Contains(body, `"next_check_at":null`) {
+		t.Errorf("a portfolio back to a listing: %d %s", code, body)
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(hub), `{"portfolio":true}`); code != 200 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("a listing to a portfolio: %d %s", code, body)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, startups_found, checked_at) VALUES ($1, 0, now())`, hub)
+	if code, body := e.do(t, "GET", "/api/sources?q=hub.example", ""); code != 200 || !strings.Contains(body, "The last check found no startups") {
+		t.Errorf("an empty portfolio: %d %s", code, body)
 	}
 
 	if code, body := e.do(t, "POST", "/api/sources", `{"url":"https://www.facebook.com/beispielgruppe/"}`); code != 400 || !strings.Contains(body, "Facebook") {

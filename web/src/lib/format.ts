@@ -156,6 +156,7 @@ export const KIND_LABEL: Record<string, string> = {
   profile_page: 'Profile page',
   newsletter: 'Newsletter',
   search_query: 'Web search',
+  portfolio: 'Portfolio',
 }
 
 export const MODE_LABEL: Record<string, string> = {

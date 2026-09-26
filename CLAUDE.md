@@ -84,6 +84,8 @@ messages, pull request text, code comments and chat replies.
 - **One name per thing.** A **source** is a page the crawler checks again
   and again. A **check** is one look at one source. A **read** is the
   language model's look at one event's own page, for the people on stage.
+  A **portfolio** is a source that lists startups, and a **lookup** is one
+  look at one startup's website and its imprint, for who runs it.
   A **run** is one pass over the due sources, nightly or started by hand. A
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An

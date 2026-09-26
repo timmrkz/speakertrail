@@ -21,21 +21,28 @@
   })
 
   let p = $derived(run.progress)
-  // The total counts the reads the run expects, so the fill does not jump
-  // back each time a check queues new reads.
-  let total = $derived(p ? p.checks + Math.max(p.reads, p.reads_expected) : 0)
-  let done = $derived(p ? p.checks_done + p.reads_done : 0)
+  // The total counts the reads and lookups the run expects, so the fill
+  // does not jump back each time a check queues new ones.
+  let total = $derived(p ? p.checks + Math.max(p.reads, p.reads_expected) + Math.max(p.lookups, p.lookups_expected) : 0)
+  let done = $derived(p ? p.checks_done + p.reads_done + p.lookups_done : 0)
   let share = $derived(total ? Math.min(1, done / total) : 0)
   let step = $derived.by(() => {
     const first = p?.now[0]
     if (!first) return done === 0 ? 'Starting' : done >= total ? 'Finishing' : 'Waiting for the next website to allow a request'
-    const what = first.kind === 'check' ? `Checking ${first.label}` : `Reading the page of ${first.label}`
+    const what =
+      first.kind === 'check' ? `Checking ${first.label}` : first.kind === 'lookup' ? `Looking up ${first.label}` : `Reading the page of ${first.label}`
     const more = (p?.now.length ?? 1) - 1
     return more > 0 ? `${what} and ${more} more` : what
   })
   let left = $derived(p?.seconds_left == null ? 'measuring the time left' : fmtLeft(p.seconds_left - (now - answeredAt) / 1000))
   let counts = $derived(
-    p ? [`${p.checks_done} of ${plural(p.checks, 'check')}`, p.reads ? `${p.reads_done} of ${plural(p.reads, 'read')}` : ''].filter(Boolean).join(' · ') : '',
+    p
+      ? [
+          `${p.checks_done} of ${plural(p.checks, 'check')}`,
+          p.reads ? `${p.reads_done} of ${plural(p.reads, 'read')}` : '',
+          p.lookups ? `${p.lookups_done} of ${plural(p.lookups, 'lookup')}` : '',
+        ].filter(Boolean).join(' · ')
+      : '',
   )
 </script>
 

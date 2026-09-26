@@ -54,6 +54,21 @@ reachable from the Mac, and only from the Mac itself.
 | `make clean` | removes the built app, the images and the caches. The database stays |
 | `make help` | this list |
 
+## Startups from portfolios
+
+A portfolio is a page that lists startups, like an accelerator's or a
+university's. Add one on Sources and set "The page lists" to Startups. A
+run checks each portfolio every 14 days and stores the startups it links
+to. Then it looks up at most 10 startups per run: it loads the startup's
+website, finds its imprint and takes the managing directors it names. They
+count as founders when the imprint reads like a young company, a GmbH, UG
+or sole trader with at most four managing directors. A bank, a stock
+company or an association does not. This needs no language model.
+
+Each of these founders says why on their sheet, like "Managing director of
+Beispiel GmbH, by its imprint. In the portfolio of Beispiel Hub". `make
+report` lists the lookups that found nobody, and why.
+
 ## The language model
 
 The engine reads people better with a language model. Every run reads the

@@ -40,7 +40,8 @@
         <h2>Run of {fmtDateTime(data.data.run.started_at)}</h2>
         <p class="muted small">
           {fmtNum(data.data.run.sources_checked)} sources checked, {fmtNum(data.data.run.events_found)} events found,
-          {fmtNum(data.data.run.events_new)} new, {fmtNum(data.data.run.pages_read)} event pages read, {fmtNum(data.data.run.people_new)} new people,
+          {fmtNum(data.data.run.events_new)} new, {fmtNum(data.data.run.pages_read)} event pages read, {fmtNum(data.data.run.startups_looked_up)} startups looked up,
+          {fmtNum(data.data.run.people_new)} new people,
           {fmtNum(data.data.run.errors)} errors
         </p>
         {#if data.data.run.progress}<RunProgress run={data.data.run} />{/if}

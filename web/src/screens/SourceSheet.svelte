@@ -101,7 +101,7 @@
         <dt>Last check</dt>
         <dd>{source.last_checked_at ? `${fmtDateTime(source.last_checked_at)}, ${fmtAgo(source.last_checked_at)}` : 'Never'}</dd>
         {#if source.last_check}
-          <dt>Found</dt><dd>{plural(source.last_check.events_found, 'event')}</dd>
+          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : plural(source.last_check.events_found, 'event')}</dd>
           <dt>Fetched with</dt><dd>{source.last_check.mode}{source.last_check.http_status ? `, HTTP ${source.last_check.http_status}` : ''}</dd>
           {#if source.last_check.error}<dt>Error</dt><dd class="err">{source.last_check.error}</dd>{/if}
         {/if}
@@ -138,6 +138,20 @@
           </select>
           <span class="field-hint">{source.fetch_mode === 'browser' ? 'Opens the page in a browser first. Slower.' : source.fetch_mode === 'http' ? 'Reads the raw page. Fast.' : 'Tries the raw page, then a browser if needed'}</span>
         </div>
+        {#if source.url}
+          <div class="field">
+            <label for="src-lists">The page lists</label>
+            <select id="src-lists" class="select" value={source.kind === 'portfolio' ? 'startups' : 'events'} disabled={saving}
+              onchange={(e) => {
+                const startups = (e.currentTarget as HTMLSelectElement).value === 'startups'
+                patch({ portfolio: startups }, startups ? 'Now read as a list of startups' : 'Now read as a list of events')
+              }}>
+              <option value="events">Events</option>
+              <option value="startups">Startups</option>
+            </select>
+            <span class="field-hint">{source.kind === 'portfolio' ? 'Each startup is followed to its imprint, for who runs it' : 'Events and the people on stage'}</span>
+          </div>
+        {/if}
       </div>
     </section>
 

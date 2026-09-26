@@ -176,7 +176,10 @@ function sourceOut(m: MockSource): Source {
     ...rest,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
-    last_check: last_found === null ? null : { events_found: last_found, http_status: last_http, mode: last_mode, error: last_error },
+    last_check: last_found === null ? null : {
+      events_found: m.kind === 'portfolio' ? 0 : last_found, startups_found: m.kind === 'portfolio' ? last_found : 0,
+      http_status: last_http, mode: last_mode, error: last_error,
+    },
   }
 }
 
@@ -327,7 +330,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (s.sources.some((x) => x.url === url)) return err(409, 'This source is already on the list')
     const host = new URL(url).hostname.replace(/^www\./, '')
     const m: MockSource = {
-      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: 'listing', url, query: null,
+      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.portfolio === true ? 'portfolio' : 'listing', url, query: null,
       category: '', city: '', status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
       health: 'never', health_note: '', discovered_from: 'Added by hand', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
     }
@@ -341,6 +344,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
     if (typeof b.notes === 'string') src.notes = b.notes
     if (typeof b.name === 'string') src.name = b.name
+    if (typeof b.portfolio === 'boolean') src.kind = b.portfolio ? 'portfolio' : 'listing'
     return ok(sourceOut(src))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {
@@ -370,16 +374,21 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
     const run = {
       id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
-      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, people_new: 0, errors: 0,
+      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, startups_looked_up: 0, people_new: 0, errors: 0,
       // Like the server: 8 checks four at a time, then the reads they bring,
-      // one at a time, measured at about 3 s a check and 5 s a read.
-      progress: { checks: 8, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 6, now: [] as RunProgress['now'], seconds_left: 36 } as RunProgress | null,
+      // one at a time, and 4 lookups of startups from a portfolio among the
+      // checks, measured at about 3 s a check, 5 s a read and 4 s a lookup.
+      progress: {
+        checks: 8, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 6, lookups: 0, lookups_done: 0, lookups_expected: 4,
+        now: [] as RunProgress['now'], seconds_left: 40,
+      } as RunProgress | null,
     }
     s.runs.unshift(run)
     s.checks.set(run.id, [])
     // Pretend the run checks a few sources, then finishes.
     const names = s.sources.slice(0, 8).map((x) => x.name)
     const titles = s.events.slice(0, 6).map((e) => e.title)
+    const startups = ['Beispiel Robotics', 'Probe Labs', 'Muster Health', 'Kontrolle Analytics']
     const t = setInterval(() => {
       const p = run.progress
       // Stopped by hand, or done.
@@ -395,6 +404,13 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
         run.events_new += 1
         p.reads = Math.min(6, p.checks_done - 1)
         p.now = p.checks_done < p.checks ? names.slice(p.checks_done, p.checks_done + 2).map((label) => ({ kind: 'check' as const, label, since })) : []
+      } else if (p.lookups_done < 4) {
+        // The portfolio among the checks brought its lookups.
+        p.lookups = 4
+        p.lookups_done = Math.min(4, p.lookups_done + 2)
+        run.startups_looked_up = p.lookups_done
+        run.people_new += 1
+        p.now = p.lookups_done < 4 ? startups.slice(p.lookups_done, p.lookups_done + 2).map((label) => ({ kind: 'lookup' as const, label, since })) : []
       } else if (p.reads_done < p.reads) {
         p.reads_done++
         run.pages_read = p.reads_done
@@ -406,7 +422,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
         return clearInterval(t)
       }
       p.reads_expected = Math.max(p.reads, 6)
-      p.seconds_left = ((p.checks - p.checks_done) * 3) / 4 + (p.reads_expected - p.reads_done) * 5
+      p.seconds_left = ((p.checks - p.checks_done) * 3 + (p.lookups_expected - p.lookups_done) * 4) / 4 + (p.reads_expected - p.reads_done) * 5
     }, 2000)
     return { status: 202, body: { run_id: run.id, started: true } }
   }],

@@ -44,6 +44,9 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			UNION ALL SELECT 'events kept, upcoming', count(*)::text FROM events WHERE fit = 'kept' AND starts_at >= now()
 			UNION ALL SELECT 'events waiting for a read', count(*)::text FROM events
 				WHERE fit = 'kept' AND starts_at >= now() AND people_read_at IS NULL AND canonical_url <> ''
+			UNION ALL SELECT 'startups from portfolios', count(*)::text FROM organisations o
+				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'portfolio')
+			UNION ALL SELECT 'startups looked up', count(*)::text FROM organisations WHERE looked_up_at IS NOT NULL
 			UNION ALL SELECT 'people', count(*)::text FROM people
 			UNION ALL SELECT 'people with a founder role', count(*)::text FROM people WHERE fit = 'founder'`},
 		{"Last runs", `
@@ -55,7 +58,9 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 				(SELECT count(*) FROM source_checks c WHERE c.run_id = r.id AND c.error <> '') || ' failed, ' ||
 				(SELECT count(*) FROM event_reads er WHERE er.run_id = r.id) || ' reads, ' ||
 				(SELECT count(*) FROM event_reads er WHERE er.run_id = r.id AND er.error <> '') || ' failed, ' ||
-				(SELECT COALESCE(sum(people_new), 0) FROM event_reads er WHERE er.run_id = r.id) || ' new people from reads'
+				(SELECT COALESCE(sum(people_new), 0) FROM event_reads er WHERE er.run_id = r.id) || ' new people from reads, ' ||
+				(SELECT count(*) FROM startup_lookups l WHERE l.run_id = r.id) || ' lookups, ' ||
+				(SELECT COALESCE(sum(people_new), 0) FROM startup_lookups l WHERE l.run_id = r.id) || ' new people from lookups'
 			FROM runs r ORDER BY r.id DESC LIMIT 8`},
 		{"Jobs waiting or running", `
 			SELECT kind || ' ' || status, count(*)::text FROM jobs WHERE status IN ('queued', 'running')
@@ -70,6 +75,11 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 		{"Failed reads in the last 3 days", `
 			SELECT url, left(error, 200) FROM event_reads WHERE error <> '' AND read_at > now() - interval '3 days'
 			ORDER BY read_at DESC LIMIT 30`},
+		{"Lookups that took nobody in the last 3 days", `
+			SELECT l.url, COALESCE(NULLIF(left(l.error, 200), ''), NULLIF(l.note, ''), 'no names') ||
+				CASE WHEN l.imprint_url <> '' THEN ', imprint ' || l.imprint_url ELSE '' END
+			FROM startup_lookups l WHERE l.people_found = 0 AND l.looked_up_at > now() - interval '3 days'
+			ORDER BY l.looked_up_at DESC LIMIT 30`},
 		{"Sources added in the last 3 days", `
 			SELECT s.status || ': ' || s.name || ' (' || COALESCE(s.url, '') || ')',
 				COALESCE((SELECT 'linked from ' || x.name FROM sources x WHERE x.id = s.discovered_from_source_id), NULLIF(s.discovered_note, ''), 'added')

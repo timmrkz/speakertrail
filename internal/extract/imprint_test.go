@@ -11,8 +11,8 @@ func TestImprintLink(t *testing.T) {
 	for name, tc := range map[string]struct{ body, want string }{
 		"by text": {`<footer><a href="/datenschutz">Datenschutz</a><a href="/rechtliches/angaben">Impressum</a></footer>`,
 			"https://beispiel.example/rechtliches/angaben"},
-		"by path": {`<a href="https://www.beispiel.example/de/impressum/">§</a>`, "https://www.beispiel.example/de/impressum/"},
-		"english": {`<a href="/about">About</a><a href="/notice">Legal notice</a>`, "https://beispiel.example/notice"},
+		"by path":   {`<a href="https://www.beispiel.example/de/impressum/">§</a>`, "https://www.beispiel.example/de/impressum/"},
+		"english":   {`<a href="/about">About</a><a href="/notice">Legal notice</a>`, "https://beispiel.example/notice"},
 		"elsewhere": {`<a href="https://baukasten.example/impressum">Impressum</a>`, ""},
 		"none":      {`<a href="/team">Team</a>`, ""},
 	} {

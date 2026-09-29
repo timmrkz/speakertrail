@@ -68,6 +68,8 @@ All parameters are optional. `from` defaults to today, `to` to `from` plus the s
 }
 ```
 
+`fit` says what the keeps and skips teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how often a person who had it was `kept` or `skipped`, and `top` how the top 20 by fit were decided, `{"size": 20, "kept": 6, "skipped": 3, "open": 11}`.
+
 `weekly` holds the last 8 weeks, oldest first, counting new rows by their creation week. `last_run` is a run object as in `GET /api/runs`, or null.
 
 `GET /api/events?from=&to=&city=&type=&fit=kept|dropped|all&q=`
@@ -161,6 +163,8 @@ A person in `GET /api/people` carries the fit rubric's verdict, see [search-stra
   { "key": "owner_operator", "label": "Runs it themselves", "for": true, "passage": "Inhaberin des Studios", "found_in": "model" },
   { "key": "backed", "label": "Backed by a startup programme", "for": false, "passage": "In the portfolio of Beispiel Hub", "found_in": "portfolio" } ] }
 ```
+
+`decision` is `kept`, `skipped`, or empty when Tim has not decided. `PATCH /api/people/{id}` with `{"decision": "kept"}` keeps a person, `"skipped"` skips them and `""` undoes either. Each decision is recorded with the signals the person had then, and still counts after a skipped person is deleted. Skipped people come last in `fit` order and are not among the good fits.
 
 `sort` is `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
 

@@ -780,3 +780,82 @@ func TestSourcesSayWhatTheyList(t *testing.T) {
 		t.Errorf("an unknown list: %d, want 400", code)
 	}
 }
+
+// Keeping or skipping a person is one click and undone by another. Each
+// decision remembers the person's signals, so the counts per signal
+// survive when a skipped person is deleted later. The stats say how often
+// each signal was kept or skipped, and how the top 20 by fit were decided.
+func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	ids := map[string]int64{}
+	for _, p := range []struct{ name, headline string }{
+		{"Mia Beispiel", "Yoga-Lehrerin und Inhaberin, Studio Beispiel"},
+		{"Ole Muster", "Head of Innovation, Beispiel Versicherung"},
+		{"Ida Probe", "Life Coach"},
+	} {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, headline) VALUES ($1, lower($1), $2) RETURNING id`, p.name, p.headline).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[p.name] = id
+	}
+	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+		t.Fatal(err)
+	}
+	decide := func(name, decision string) string {
+		t.Helper()
+		code, body := e.do(t, "PATCH", "/api/people/"+itoa(ids[name]), `{"decision":"`+decision+`"}`)
+		if code != 200 {
+			t.Fatalf("%s %s: %d %s", decision, name, code, body)
+		}
+		return body
+	}
+	if body := decide("Mia Beispiel", "kept"); !strings.Contains(body, `"decision":"kept"`) {
+		t.Errorf("kept: %s", body)
+	}
+	decide("Ole Muster", "skipped")
+	decide("Ida Probe", "kept")
+	if body := decide("Ida Probe", ""); !strings.Contains(body, `"decision":""`) {
+		t.Errorf("undone: %s", body)
+	}
+	if code, _ := e.do(t, "PATCH", "/api/people/"+itoa(ids["Ida Probe"]), `{"decision":"maybe"}`); code != 400 {
+		t.Errorf("an unknown decision: %d, want 400", code)
+	}
+	// Skipped people are deleted after a while. Their decision still counts.
+	e.pool.Exec(ctx, `DELETE FROM people WHERE id = $1`, ids["Ole Muster"])
+
+	code, body := e.do(t, "GET", "/api/stats", "")
+	if code != 200 {
+		t.Fatalf("stats: %d %s", code, body)
+	}
+	var got struct {
+		Fit struct {
+			Signals []struct {
+				Key           string
+				Label         string
+				Kept, Skipped int
+			} `json:"signals"`
+			Top struct{ Size, Kept, Skipped, Open int } `json:"top"`
+		} `json:"fit"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]string{}
+	for _, s := range got.Fit.Signals {
+		counts[s.Key] = fmt.Sprintf("%d/%d", s.Kept, s.Skipped)
+	}
+	for key, want := range map[string]string{"works_with_people": "1/0", "owner_operator": "1/0", "corporate": "0/1", "author": "0/0"} {
+		if counts[key] != want {
+			t.Errorf("%s kept/skipped %s, want %s", key, counts[key], want)
+		}
+	}
+	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Works with people" {
+		t.Errorf("every signal of the rubric, in its order: %+v", got.Fit.Signals)
+	}
+	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {
+		t.Errorf("top by fit %+v, want Mia kept, Ida and Lea open", top)
+	}
+}

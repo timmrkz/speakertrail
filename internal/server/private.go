@@ -134,7 +134,8 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 			'cities', (SELECT COALESCE(json_agg(json_build_object('city', city, 'events', n) ORDER BY n DESC, city), '[]') FROM (
 				SELECT city, count(*) AS n FROM events WHERE starts_at >= $2 AND fit = 'kept' AND city <> ''
 				GROUP BY city ORDER BY n DESC, city LIMIT 12) c),
-			'last_run', (SELECT `+runJSON+` FROM runs r ORDER BY r.started_at DESC LIMIT 1))`,
+			'last_run', (SELECT `+runJSON+` FROM runs r ORDER BY r.started_at DESC LIMIT 1),
+			'fit', `+fitJSON+`)`,
 		now, now.Add(-12*time.Hour), now.Add(-7*24*time.Hour))
 }
 
@@ -217,6 +218,8 @@ var personJSON = `json_build_object(
 	-- The fit rubric: its signals for first, each with the passage that
 	-- shows it, and the score they add up to.
 	'fit_score', p.fit_score,
+	-- Kept to contact, skipped, or not decided yet.
+	'decision', CASE p.podcast_status WHEN 'new' THEN '' WHEN 'known' THEN '' WHEN 'skipped' THEN 'skipped' ELSE 'kept' END,
 	'signals', (SELECT COALESCE(json_agg(json_build_object('key', s.signal, 'label', s.label, 'for', s.is_for,
 			'passage', s.passage, 'found_in', s.found_in) ORDER BY s.is_for DESC, ` + signalRank + `), '[]')
 		FROM person_signals s WHERE s.person_id = p.id),
@@ -252,8 +255,8 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
 		// The best fits first: most signals for, fewest against. Among the
-		// same, the newest.
-		"fit": "p.fit_score DESC, p.created_at DESC, p.id DESC",
+		// same, the newest. The skipped come last.
+		"fit": "p.podcast_status = 'skipped', p.fit_score DESC, p.created_at DESC, p.id DESC",
 	}[q.Get("sort")]
 	if order == "" {
 		fail(w, http.StatusBadRequest, "sort must be next, new, name or fit")
@@ -265,7 +268,7 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"upcoming": "next_start IS NOT NULL",
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
 		"founder":  "p.fit = 'founder'",
-		"fits":     "p.fit_score > 0",
+		"fits":     "p.fit_score > 0 AND p.podcast_status <> 'skipped'",
 	}[q.Get("filter")]
 	if filter == "" {
 		fail(w, http.StatusBadRequest, "filter must be all, fits, upcoming, profile or founder")
@@ -288,7 +291,7 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 			'counts', (SELECT json_build_object(
 				'all', count(*),
 				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
-				'fits', count(*) FILTER (WHERE p.fit_score > 0),
+				'fits', count(*) FILTER (WHERE p.fit_score > 0 AND p.podcast_status <> 'skipped'),
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,
@@ -327,9 +330,26 @@ func (s *Server) patchPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Notes *string `json:"notes"`
+		// Decision is kept, skipped, or empty to undo either.
+		Decision *string `json:"decision"`
 	}
 	if !decode(w, r, &body) {
 		return
+	}
+	if body.Decision != nil {
+		if *body.Decision != "" && *body.Decision != "kept" && *body.Decision != "skipped" {
+			fail(w, http.StatusBadRequest, "decision must be kept, skipped or empty")
+			return
+		}
+		found, err := s.decide(r.Context(), id, *body.Decision)
+		if err != nil {
+			s.internal(w, r, err)
+			return
+		}
+		if !found {
+			fail(w, http.StatusNotFound, "Not found")
+			return
+		}
 	}
 	if body.Notes != nil {
 		tag, err := s.opts.Pool.Exec(r.Context(), `UPDATE people SET notes = $2, updated_at = now() WHERE id = $1`, id, *body.Notes)

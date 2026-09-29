@@ -29,6 +29,9 @@
     ]
   })
 
+  let fit = $derived(stats.data?.fit ?? null)
+  let decided = $derived((fit?.signals ?? []).some((s) => s.kept + s.skipped > 0))
+
   let topCities = $derived((stats.data?.cities ?? []).slice(0, 6))
   let cityMax = $derived(Math.max(1, ...topCities.map((c) => c.events)))
   $effect(() => runWatch.watch())
@@ -104,6 +107,32 @@
       {/if}
     </section>
 
+    {#if fit}
+      <section class="panel" aria-labelledby="fit-h">
+        <div class="panel-head">
+          <h2 id="fit-h" title="Keep or skip people on their sheet. Each decision counts for the signals the person had, so a signal that misleads shows up">Keeps and skips</h2>
+          <a class="small" href="/app/people">People</a>
+        </div>
+        <p class="top">
+          Of the top {fit.top.size} by fit, <b class="good">{fit.top.kept} kept</b>, <b class="bad">{fit.top.skipped} skipped</b>,
+          {fit.top.open} not decided yet.
+        </p>
+        {#if decided}
+          <ul class="fit-signals">
+            {#each fit.signals as s (s.key)}
+              <li class:none={s.kept + s.skipped === 0}>
+                <span class="ellipsis" class:for={s.for} class:against={!s.for}>{s.for ? '+' : '−'}&thinsp;{s.label}</span>
+                <span class="num good" title="Kept">{s.kept}</span>
+                <span class="num bad" title="Skipped">{s.skipped}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted small">No one kept or skipped yet. Each decision shows here, by the signals the person had.</p>
+        {/if}
+      </section>
+    {/if}
+
     <div class="grid-2">
       <section class="panel" aria-labelledby="weekly-h">
         <div class="panel-head">
@@ -150,6 +179,17 @@
   .delta b { color: var(--good); font-weight: 600; }
   .delta b.zero { color: var(--ink-3); }
   .note { font-size: 12px; color: var(--ink-3); }
+  .top { font-size: 14px; color: var(--ink-2); }
+  .top .good, .fit-signals .good { color: var(--good); }
+  .top .bad, .fit-signals .bad { color: var(--bad); }
+  .fit-signals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; }
+  .fit-signals li { display: grid; grid-template-columns: minmax(0, 1fr) 28px 28px; gap: 8px; font-size: 13px; align-items: center; }
+  .fit-signals li .num { text-align: right; }
+  .fit-signals li.none { color: var(--ink-3); }
+  .fit-signals li.none .num { color: var(--ink-3); }
+  .fit-signals .for { color: var(--ink); }
+  .fit-signals .against { color: var(--ink-2); }
+  @media (max-width: 760px) { .fit-signals { grid-template-columns: minmax(0, 1fr); } }
   .cities { display: grid; gap: 10px; }
   .cities li { display: grid; grid-template-columns: 110px minmax(0, 1fr) 32px; gap: 12px; align-items: center; font-size: 14px; }
   .bar { height: 20px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }

@@ -85,6 +85,15 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			SELECT s.status || ': ' || s.name || ' (' || COALESCE(s.url, '') || ')',
 				COALESCE((SELECT 'linked from ' || x.name FROM sources x WHERE x.id = s.discovered_from_source_id), NULLIF(s.discovered_note, ''), 'added')
 			FROM sources s WHERE s.created_at > now() - interval '3 days' ORDER BY s.created_at DESC LIMIT 30`},
+		{"Fit: people by score", `
+			SELECT 'score ' || fit_score, count(*)::text FROM people GROUP BY fit_score ORDER BY fit_score DESC`},
+		{"Fit: the top 20 by score", `
+			SELECT 'kept, skipped, not decided', count(*) FILTER (WHERE podcast_status NOT IN ('new', 'known', 'skipped')) || ', ' ||
+				count(*) FILTER (WHERE podcast_status = 'skipped') || ', ' || count(*) FILTER (WHERE podcast_status IN ('new', 'known'))
+			FROM (SELECT podcast_status FROM people ORDER BY fit_score DESC, created_at DESC, id DESC LIMIT 20) t`},
+		{"Fit: keeps and skips per signal", `
+			SELECT s, count(*) FILTER (WHERE decision = 'kept') || ' kept, ' || count(*) FILTER (WHERE decision = 'skipped') || ' skipped'
+			FROM fit_decisions, unnest(signals) s GROUP BY s ORDER BY count(*) DESC, s`},
 		{"Slowest reads in the last 3 days", `
 			SELECT url, (duration_ms / 1000) || ' s, ' || people_found || ' people' FROM event_reads
 			WHERE error = '' AND read_at > now() - interval '3 days' ORDER BY duration_ms DESC LIMIT 10`},

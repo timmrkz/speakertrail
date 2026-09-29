@@ -100,7 +100,7 @@
   // Keep the list in step with changes made in the sheet.
   function updated(p: PersonDetail) {
     if (!people.data) return
-    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline } : x))
+    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, decision: p.decision } : x))
   }
 </script>
 
@@ -160,9 +160,10 @@
     <ul class="list" class:stale={people.loading}>
       {#each people.data as p (p.id)}
         <li>
-          <a class="row-btn person" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
-            <span class="avatar" aria-hidden="true">{initials(p.name)}</span>
-            <b class="ellipsis name">{p.name}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
+          <a class="row-btn person" class:skipped={p.decision === 'skipped'} href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}
+            title={p.decision === 'kept' ? 'Kept' : p.decision === 'skipped' ? 'Skipped' : undefined}>
+            <span class="avatar" class:kept={p.decision === 'kept'} aria-hidden="true">{initials(p.name)}</span>
+            <b class="ellipsis name">{p.name}{#if p.decision}<span class="sr-only">, {p.decision}</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
               <span class="next" class:none={!p.next_appearance && !p.activity}>
@@ -226,6 +227,9 @@
   .next :global(svg) { flex: none; }
   .next.none { color: var(--ink-3); }
   .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
+  /* A kept person's initials turn green, a skipped person steps back. */
+  .avatar.kept { background: var(--good-soft); color: var(--good); }
+  .person.skipped { opacity: .55; }
   .signals { font-size: 12px; font-weight: 500; }
   .signals .for { color: var(--good); }
   .signals .against { color: var(--bad); }

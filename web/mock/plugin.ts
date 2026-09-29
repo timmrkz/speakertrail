@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  Activity, Appearance, Check, Decision, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
@@ -44,6 +44,7 @@ interface PersonRow {
   notes: string
   profiles: Profile[]
   affiliations: PersonDetail['affiliations']
+  decision?: Decision
 }
 
 function createState() {
@@ -204,6 +205,24 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   return out.sort((a, b) => Number(b.for) - Number(a.for))
 }
 
+// Like the server: keeps and skips per signal, and the top 20 by fit.
+function fitStats(s: State): Stats['fit'] {
+  const list = s.people.map((p) => personList(s, p))
+  const labels = new Map<string, [string, boolean]>()
+  for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
+  labels.set('backed', ['Backed by a startup programme', false])
+  const signals = [...labels].map(([key, [label, isFor]]) => ({
+    key, label, for: isFor,
+    kept: list.filter((p) => p.decision === 'kept' && p.signals.some((x) => x.key === key)).length,
+    skipped: list.filter((p) => p.decision === 'skipped' && p.signals.some((x) => x.key === key)).length,
+  }))
+  const top = [...list].sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen)).slice(0, 20)
+  return {
+    signals,
+    top: { size: top.length, kept: top.filter((p) => p.decision === 'kept').length, skipped: top.filter((p) => p.decision === 'skipped').length, open: top.filter((p) => !p.decision).length },
+  }
+}
+
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
   const now = new Date().toISOString()
@@ -211,7 +230,7 @@ function personList(s: State, p: PersonRow): Person {
   const signals = signalsOf(p, apps)
   return {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
-    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals,
+    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, decision: p.decision ?? '',
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -283,6 +302,7 @@ function stats(s: State): Stats {
     weekly,
     cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
     last_run: s.runs[0] ?? null,
+    fit: fitStats(s),
   }
 }
 
@@ -363,7 +383,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
-      fits: list.filter((p) => p.fit_score > 0).length,
+      fits: list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped').length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
@@ -371,9 +391,9 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
-    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0)
+    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    else if (sort === 'fit') list.sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
+    else if (sort === 'fit') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.
@@ -390,6 +410,8 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
+    if (b.decision === '' || b.decision === 'kept' || b.decision === 'skipped') p.decision = b.decision as Decision
+    else if (b.decision !== undefined) return err(400, 'decision must be kept, skipped or empty')
     return ok(personDetail(s, p))
   }],
   ['PATCH', /^\/api\/profiles\/(\d+)$/, (s, m, _q, b) => {

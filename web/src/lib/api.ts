@@ -22,6 +22,7 @@ export type SourceKind =
 export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
+export type Decision = '' | 'kept' | 'skipped'
 export type PeopleSort = 'new' | 'fit' | 'next' | 'name'
 export type PeopleFilter = 'all' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
@@ -102,6 +103,13 @@ export interface Stats {
   weekly: { week_start: string; people: number; events: number; sources: number }[]
   cities: { city: string; events: number }[]
   last_run: Run | null
+  // What Tim's keeps and skips teach the fit rubric: for every signal, how
+  // often a person with it was kept or skipped, and how the top 20 by fit
+  // were decided.
+  fit: {
+    signals: { key: string; label: string; for: boolean; kept: number; skipped: number }[]
+    top: { size: number; kept: number; skipped: number; open: number }
+  }
 }
 
 export interface Profile {
@@ -141,6 +149,8 @@ export interface Person {
   // The signals for less those against. The signals are the reasons.
   fit_score: number
   signals: FitSignal[]
+  // Kept to contact, skipped, or not decided yet.
+  decision: Decision
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]
@@ -363,7 +373,7 @@ export const api = {
   patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
-  patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
+  patchPerson: (id: number, patch: { notes?: string; decision?: Decision }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
   addSource: (url: string, name?: string, lists: SourceLists = 'events') =>

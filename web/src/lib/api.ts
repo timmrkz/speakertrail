@@ -19,8 +19,8 @@ export type SourceKind =
   | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
-export type PeopleSort = 'next' | 'new' | 'name'
-export type PeopleFilter = 'all' | 'upcoming' | 'profile' | 'founder'
+export type PeopleSort = 'new' | 'fit' | 'next' | 'name'
+export type PeopleFilter = 'all' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -116,6 +116,17 @@ export interface NextAppearance {
   role: string
 }
 
+// One reason for or against a fit, by the fit rubric, with the passage
+// that shows it. found_in: title, event page, event, imprint, lookup,
+// portfolio or model.
+export interface FitSignal {
+  key: string
+  label: string
+  for: boolean
+  passage: string
+  found_in: string
+}
+
 export interface Person {
   id: number
   name: string
@@ -124,6 +135,9 @@ export interface Person {
   city: string
   fit: PersonFit
   first_seen: string
+  // The signals for less those against. The signals are the reasons.
+  fit_score: number
+  signals: FitSignal[]
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]

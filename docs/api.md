@@ -151,7 +151,18 @@ A check of a portfolio stores each startup its page links to, with its website, 
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 
-A person in `GET /api/people` carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
+A person in `GET /api/people` carries the fit rubric's verdict, see [search-strategy.md](search-strategy.md). `signals` lists what speaks for and against a fit, those for first, each with the passage that shows it and where the passage comes from: `title`, `event page`, `event`, `imprint`, `lookup`, `portfolio` or `model`. `fit_score` is the number of signals for, less those against. A claim without a passage does not count.
+
+```json
+{ "fit_score": 1, "signals": [
+  { "key": "works_with_people", "label": "Works with people", "for": true, "passage": "Yoga-Lehrerin, Studio Beispiel", "found_in": "title" },
+  { "key": "owner_operator", "label": "Runs it themselves", "for": true, "passage": "Inhaberin des Studios", "found_in": "model" },
+  { "key": "backed", "label": "Backed by a startup programme", "for": false, "passage": "In the portfolio of Beispiel Hub", "found_in": "portfolio" } ] }
+```
+
+`sort` is `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
+
+A person also carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
 
 `GET /api/runs` answers the last 50 runs:
 

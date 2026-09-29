@@ -31,6 +31,11 @@
     return (a.find((x) => x.role === 'founder') ?? a[0])?.organisation ?? ''
   })
   let hasLinkedin = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'linkedin' && x.review === 'confirmed'))
+  // Where a passage comes from, in words.
+  const FOUND_IN: Record<string, string> = {
+    title: 'from their title', 'event page': 'from an event page', event: 'from an event they host', imprint: 'from the imprint',
+    lookup: 'from a lookup of their website', portfolio: 'from a startup portfolio', model: 'read by the language model',
+  }
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 
   async function saveNotes() {
@@ -96,6 +101,25 @@
     </EmptyState>
   {:else if person.data}
     {@const p = person.data}
+    <section class="section" aria-labelledby="fit-h">
+      <h3 id="fit-h" class="label" title="What speaks for and against a guest, each with the passage that shows it. The score is the signals for, less those against">
+        Fit{#if p.signals.length}, {p.fit_score > 0 ? '+' : p.fit_score < 0 ? '−' : ''}{Math.abs(p.fit_score)}{/if}
+      </h3>
+      {#if p.signals.length}
+        <ul class="signals">
+          {#each p.signals as sig (sig.key)}
+            <li class:for={sig.for} class:against={!sig.for}>
+              <b><span aria-hidden="true">{sig.for ? '+' : '−'}</span><span class="sr-only">{sig.for ? 'For: ' : 'Against: '}</span>{sig.label}</b>
+              <q>{sig.passage}</q>
+              <span class="faint small">{FOUND_IN[sig.found_in] ?? sig.found_in}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="muted small">Nothing known yet that speaks for or against.</p>
+      {/if}
+    </section>
+
     <section class="section" aria-labelledby="apps-h">
       <h3 id="apps-h" class="label">On stage</h3>
       {#if !p.appearances.length}
@@ -240,4 +264,12 @@
   @media (max-width: 420px) {
     .profile { grid-template-columns: minmax(0, 1fr); }
   }
+  .signals { display: grid; gap: 8px; }
+  .signals li { display: grid; gap: 2px; padding-left: 10px; border-left: 3px solid var(--line); }
+  .signals li.for { border-left-color: var(--good); }
+  .signals li.against { border-left-color: var(--bad); }
+  .signals li.for b { color: var(--good); }
+  .signals li.against b { color: var(--bad); }
+  .signals b span[aria-hidden] { display: inline-block; width: 1em; }
+  .signals q { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 </style>

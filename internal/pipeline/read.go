@@ -173,6 +173,7 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 		return err
 	}
 	r := &Resolver{Pool: p.Pool, Now: p.now, RunID: rec.runID}
+	var ids []int64
 	for _, person := range people {
 		pid, isNew, err := r.resolvePerson(ctx, tx, rec.eventID, city,
 			extract.Person{Name: person.Name, Role: person.Role, Affiliation: person.Affiliation}, rec.url, rec.at)
@@ -188,6 +189,15 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 				return err
 			}
 		}
+		// What the model says about the person, for the rubric.
+		for _, s := range person.Signals {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO model_signals (person_id, signal, passage, found_at) VALUES ($1, $2, $3, $4)
+				ON CONFLICT DO NOTHING`, pid, s.Signal, s.Passage, rec.at); err != nil {
+				return err
+			}
+		}
+		ids = append(ids, pid)
 		if err := sight(ctx, tx, sourceID, rec.at, "person_id", pid, isNew); err != nil {
 			return err
 		}
@@ -202,7 +212,11 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 	if err := p.recordRead(ctx, tx, rec); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	p.score(ctx, ids)
+	return nil
 }
 
 // markFounder records that the page calls the person a founder, with the

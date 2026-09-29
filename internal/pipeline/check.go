@@ -175,6 +175,7 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		return err
 	}
 	rec.stats = stats
+	p.score(ctx, stats.People)
 	rec.links = len(result.Links)
 	if _, err := p.discover(ctx, src, result.Links); err != nil {
 		p.log().Warn("discovery failed", "source", src.ID, "error", err)

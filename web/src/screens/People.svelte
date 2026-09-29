@@ -18,9 +18,26 @@
   let q = $state('')
   let query = $state('')
   // A new person is what Tim looks at first, so the list opens on everyone,
-  // newest on top.
-  let sort = $state<PeopleSort>('new')
+  // newest on top, unless he chose another order on this device.
+  const SORTS: PeopleSort[] = ['new', 'fit', 'next', 'name']
+  let sort = $state<PeopleSort>(savedSort())
   let filter = $state<PeopleFilter>('all')
+
+  function savedSort(): PeopleSort {
+    try {
+      const v = localStorage.getItem('people-sort') as PeopleSort | null
+      return v && SORTS.includes(v) ? v : 'new'
+    } catch {
+      return 'new'
+    }
+  }
+  $effect(() => {
+    try {
+      localStorage.setItem('people-sort', sort)
+    } catch {
+      // Private mode. The order is forgotten, which is fine.
+    }
+  })
   let reload = $state(0)
 
   const people = new Load<Person[]>()
@@ -72,6 +89,7 @@
   let filters = $derived(
     ([
       { value: 'all', label: 'All' },
+      { value: 'fits', label: 'Good fits' },
       { value: 'founder', label: 'Founders' },
       { value: 'upcoming', label: 'Upcoming' },
       { value: 'profile', label: 'Profile found' },
@@ -111,6 +129,7 @@
         <span class="sr-only">Sort by</span>
         <select class="select" bind:value={sort}>
           <option value="new">Newest</option>
+          <option value="fit">Best fit</option>
           <option value="next">Next appearance</option>
           <option value="name">Name</option>
         </select>
@@ -128,9 +147,9 @@
   {:else if !people.data.length}
     <EmptyState
       icon="people"
-      title={filter === 'founder' && !query ? 'No founders yet' : 'Nobody here yet'}
+      title={filter === 'founder' && !query ? 'No founders yet' : filter === 'fits' && !query ? 'No good fits yet' : 'Nobody here yet'}
       text={filter !== 'all' && others > 0
-        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : 'in this filter'}.`
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : filter === 'fits' ? 'with more signals for a fit than against yet' : 'in this filter'}.`
         : query ? 'Nobody matches this search.' : 'People show up once the crawler finds them on event pages.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
@@ -155,6 +174,11 @@
                   No upcoming appearance
                 {/if}
               </span>
+              {#if p.signals.length}
+                <span class="signals ellipsis" title={p.signals.map((s) => `${s.for ? 'For' : 'Against'}: ${s.label}`).join('\n')}>
+                  {#each p.signals as s, i (s.key)}{#if i}<span class="sep" aria-hidden="true">·</span>{/if}<span class:for={s.for} class:against={!s.for}><span class="sr-only">{s.for ? 'For: ' : 'Against: '}</span>{s.label}</span>{/each}
+                </span>
+              {/if}
             </span>
             <span class="meta">
               <ProfileBadges profiles={p.profiles} />
@@ -202,6 +226,13 @@
   .next :global(svg) { flex: none; }
   .next.none { color: var(--ink-3); }
   .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
+  .signals { font-size: 12px; font-weight: 500; }
+  .signals .for { color: var(--good); }
+  .signals .against { color: var(--bad); }
+  /* The sign says it without colour. Screen readers get the words instead. */
+  .signals .for::before { content: "+\2009" / ""; }
+  .signals .against::before { content: "\2212\2009" / ""; }
+  .signals .sep { color: var(--ink-3); margin: 0 5px; }
   .count {
     min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2);
     font-size: 12px; display: inline-grid; place-items: center;

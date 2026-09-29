@@ -576,6 +576,9 @@ func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult
 				if name == "Lena Musterfrau" {
 					p.Founder, p.Builds, p.FounderEvidence = true, "Backstube Muster", "hat die Backstube Muster gegründet"
 				}
+				if name == "Karl Kontrolle" {
+					p.Signals = []llm.Signal{{Signal: "runs_events", Passage: "Durch den Abend führt Karl Kontrolle."}}
+				}
 				res.People = append(res.People, p)
 			}
 		}
@@ -1300,5 +1303,57 @@ func TestANightlyRunEndsAsFinished(t *testing.T) {
 	}
 	if got := e.one(t, `SELECT ended FROM runs`); got != "finished" {
 		t.Errorf("the nightly run ended as %q", got)
+	}
+}
+
+// People are scored by the fit rubric as the run finds them: here the
+// model says Karl runs the evening. Everyone the rubric has not scored
+// yet is scored when the next run starts.
+func TestPeopleAreScoredByTheRubric(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	if got := e.one(t, `SELECT p.fit_score || ' ' || s.signal || ': ' || s.passage || ' (' || s.found_in || ')'
+		FROM people p JOIN person_signals s ON s.person_id = p.id WHERE p.full_name = 'Karl Kontrolle'`); got != "1 runs_events: Durch den Abend führt Karl Kontrolle. (model)" {
+		t.Errorf("Karl: %v", got)
+	}
+	if c := e.count(t, "people WHERE rubric = 0"); c != 0 {
+		t.Errorf("%d people found by the run are not scored", c)
+	}
+
+	var id int64
+	e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, headline) VALUES ('Mia Beispiel', 'mia beispiel', 'Yoga-Lehrerin, Studio Beispiel') RETURNING id`).Scan(&id)
+	run, _ := e.p.StartRun(ctx, "manual")
+	if _, err := e.p.EnqueueDue(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT fit_score || ' ' || (SELECT string_agg(signal, ',') FROM person_signals WHERE person_id = $1) FROM people WHERE id = $1`, id); got != "1 works_with_people" {
+		t.Errorf("Mia after the next run started: %v", got)
+	}
+}
+
+// Founders from a portfolio's imprints run their company, and are backed
+// by the programme that lists it, so they come out even.
+func TestPortfolioFoundersAreScored(t *testing.T) {
+	e := setup(t, "")
+	portfolioSite(t, e)
+	runOnce(t, e)
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT p.full_name || ' ' || p.fit_score || ' ' || string_agg(CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal, ',' ORDER BY s.is_for DESC, s.signal)
+		FROM people p JOIN person_signals s ON s.person_id = p.id GROUP BY p.id ORDER BY p.full_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Lena Musterfrau 0 +owner_operator,-backed",
+		"Mara Beispielfrau 0 +owner_operator,-backed",
+		"Tom Testmann 0 +owner_operator,-backed",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("scores:\n%s", strings.Join(got, "\n"))
 	}
 }

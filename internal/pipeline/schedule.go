@@ -53,6 +53,13 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Everyone the current rubric has not scored yet, like all people
+	// after the rubric changed.
+	if n, err := ScoreStale(ctx, p.Pool); err != nil {
+		return 0, err
+	} else if n > 0 {
+		p.log().Info("people scored by the fit rubric", "people", n)
+	}
 	now := p.now()
 	// Checks, reads and lookups left over from an earlier run are replaced
 	// by this one. What they left undone comes back through this run.

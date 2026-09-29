@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  Activity, Appearance, Check, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
@@ -177,12 +177,41 @@ function appearancesOf(s: State, id: number): Appearance[] {
     }))
 }
 
+// A small copy of the fit rubric (internal/rubric) for the invented
+// people: their title, the events they host and where lookups found them.
+const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
+  [/coach|trainer|lehrer|teacher|yoga|kampfsport|bjj|psychologist|run club/i, 'works_with_people', 'Works with people', true],
+  [/inhaber|owner|runs the/i, 'owner_operator', 'Runs it themselves', true],
+  [/organiser|host at|runs the/i, 'runs_events', 'Runs their own events', true],
+  [/autor|author/i, 'author', 'Author', true],
+  [/athlete|athlet/i, 'athlete', 'Athlete', true],
+  [/head of|\bvp\b|director of/i, 'corporate', 'Corporate title', false],
+  [/researcher|data lead/i, 'large_company', 'Large company', false],
+]
+
+function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
+  const out: FitSignal[] = []
+  const add = (key: string, label: string, isFor: boolean, passage: string, found_in: string) => {
+    if (!out.some((x) => x.key === key)) out.push({ key, label, for: isFor, passage, found_in })
+  }
+  for (const [re, key, label, isFor] of MOCK_RUBRIC) if (re.test(p.headline)) add(key, label, isFor, p.headline, 'title')
+  const hosted = apps.find((a) => a.role === 'host' || a.role === 'moderator')
+  if (hosted) add('runs_events', 'Runs their own events', true, `Hosts "${hosted.event.title}"`, 'event')
+  if (p.id >= 900) {
+    add('owner_operator', 'Runs it themselves', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
+    add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
+  }
+  return out.sort((a, b) => Number(b.for) - Number(a.for))
+}
+
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
   const now = new Date().toISOString()
   const next = apps.find((a) => a.event.starts_at >= now)
+  const signals = signalsOf(p, apps)
   return {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
+    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals,
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -334,6 +363,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
+      fits: list.filter((p) => p.fit_score > 0).length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
@@ -341,7 +371,9 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
+    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0)
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    else if (sort === 'fit') list.sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.

@@ -30,7 +30,7 @@ Start with [README.md](README.md). In short:
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | starting data from the brief | `internal/importer/` | |
 | build, Docker | `Makefile`, `compose.yaml`, `Dockerfile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md), `.claude/skills/docker/` |
-| who to look for, and where | | [docs/search-strategy.md](docs/search-strategy.md) |
+| who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
 

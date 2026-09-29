@@ -204,6 +204,13 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 		} else if n > 0 {
 			slog.Info("ended runs the app was working on when it stopped", "runs", n)
 		}
+		// People the current fit rubric has not scored yet, like everyone
+		// after the rubric changed, are scored before anyone looks.
+		if n, err := pipeline.ScoreStale(ctx, pool); err != nil {
+			return err
+		} else if n > 0 {
+			slog.Info("people scored by the fit rubric", "people", n)
+		}
 		go func() {
 			if err := newWorker(p, 4).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("background worker stopped", "error", err)

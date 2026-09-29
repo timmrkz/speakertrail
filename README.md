@@ -22,7 +22,7 @@ It is one Go binary with the web interface built in.
 3. **Extract.** iCal feeds, schema.org Event data, then adapters for Luma, Meetup and Eventbrite. Names come only from clearly marked lines like "Speaker: ..." or "Jury: ...".
 4. **Read.** With the local language model, a run also reads each upcoming event's own page and finds who is on stage, with the passage that shows it, and whether the page says they founded or run something. Without the model this step is left out.
 5. **Resolve.** Events, people and organisations are merged with what is known. Every one of them remembers which source showed it.
-6. **Fit.** Online events, events outside the region and titles with a drop word are dropped. Everything else in NRW is kept. Your own keep or drop always wins.
+6. **Fit.** Online events, events outside the region and titles with a drop word are dropped. Everything else in NRW is kept. Your own keep or drop always wins. People are scored by the fit rubric from [docs/search-strategy.md](docs/search-strategy.md): signals for and against, each with the passage that shows it, from what pages, imprints, lookups and the model say about them.
 7. **Learn.** Linked Meetup, Luma and Eventbrite calendars become new candidate sources. Sources move from candidate to probation to active, and retire when they stop producing.
 
 The source list, the fit rules and every number live in the Settings screen.
@@ -35,6 +35,7 @@ The source list, the fit rules and every number live in the Settings screen.
 | `internal/fetch` | HTTP, robots.txt, the headless browser and the filter that keeps it away from blocked sites |
 | `internal/extract` | Turns pages into events and people |
 | `internal/pipeline` | Source checks, resolving, the source lifecycle, the nightly run |
+| `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/server` | The JSON API and the login, described in `docs/api.md` |
 | `internal/queue` | Job queue in Postgres with retries and the per-website limit |
 | `internal/importer` | The starting data from the brief |

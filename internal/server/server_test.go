@@ -382,7 +382,7 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	// A title that says founder makes a founder, and the counts show every
 	// filter, so an empty one never hides the rest.
-	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
 		t.Errorf("founders: %s", body)
 	}
 	var pid, prof int64
@@ -699,5 +699,59 @@ func TestRunFailuresInPlainWords(t *testing.T) {
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// People sort by fit, with the rubric's signals and their passages, and
+// the good fits have a filter of their own.
+func TestPeopleByFit(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	for _, p := range []struct{ name, headline string }{
+		{"Mia Beispiel", "Yoga-Lehrerin und Inhaberin, Studio Beispiel"},
+		{"Ole Muster", "Head of Innovation, Beispiel Versicherung"},
+		{"Ida Probe", "Life Coach"},
+	} {
+		if _, err := e.pool.Exec(ctx, `INSERT INTO people (full_name, normalised_name, headline, created_at) VALUES ($1, lower($1), $2, $3)`, p.name, p.headline, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+		t.Fatal(err)
+	}
+	code, body := e.do(t, "GET", "/api/people?sort=fit", "")
+	if code != 200 {
+		t.Fatalf("people by fit: %d %s", code, body)
+	}
+	var got struct {
+		People []struct {
+			Name     string `json:"name"`
+			FitScore int    `json:"fit_score"`
+			Signals  []struct {
+				Key, Label, Passage string
+				For                 bool `json:"for"`
+			} `json:"signals"`
+		} `json:"people"`
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, p := range got.People {
+		order = append(order, fmt.Sprintf("%s %d", p.Name, p.FitScore))
+	}
+	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 0, Ole Muster -1" {
+		t.Errorf("order: %s", strings.Join(order, ", "))
+	}
+	if s := got.People[0].Signals; len(s) != 2 || s[0].Label != "Works with people" || !s[0].For || s[0].Passage != "Yoga-Lehrerin und Inhaberin, Studio Beispiel" {
+		t.Errorf("Mia's signals %+v", s)
+	}
+	if got.Counts["fits"] != 2 {
+		t.Errorf("%d good fits, want 2", got.Counts["fits"])
+	}
+	if _, body := e.do(t, "GET", "/api/people?filter=fits", ""); strings.Contains(body, "Ole Muster") || !strings.Contains(body, "Ida Probe") {
+		t.Errorf("good fits: %s", body)
 	}
 }

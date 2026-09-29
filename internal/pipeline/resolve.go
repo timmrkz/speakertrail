@@ -25,6 +25,8 @@ type ResolveStats struct {
 	KeptWithPeople int
 	PeopleFound    int
 	PeopleNew      int
+	// People are the ones the check found, for the rubric to score.
+	People []int64
 }
 
 // Source is the part of a source row the pipeline needs.
@@ -74,9 +76,10 @@ func (r *Resolver) Resolve(ctx context.Context, src Source, events []extract.Eve
 		st.EventsFound++
 		var kept, isNew bool
 		var people, newPeople int
+		var ids []int64
 		err := pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
 			var err error
-			kept, isNew, people, newPeople, err = r.resolveEvent(ctx, tx, src, e, now)
+			kept, isNew, people, newPeople, ids, err = r.resolveEvent(ctx, tx, src, e, now)
 			return err
 		})
 		if err != nil {
@@ -93,6 +96,7 @@ func (r *Resolver) Resolve(ctx context.Context, src Source, events []extract.Eve
 		}
 		st.PeopleFound += people
 		st.PeopleNew += newPeople
+		st.People = append(st.People, ids...)
 	}
 	return st, nil
 }
@@ -104,7 +108,7 @@ func NormaliseTitle(t string) string {
 	return strings.Trim(nonAlnum.ReplaceAllString(strings.ToLower(t), " "), " ")
 }
 
-func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e extract.Event, now time.Time) (kept, isNew bool, people, newPeople int, err error) {
+func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e extract.Event, now time.Time) (kept, isNew bool, people, newPeople int, ids []int64, err error) {
 	norm := NormaliseTitle(e.Title)
 	kept, reason := r.Rules.Fit(e)
 	fit := "dropped"
@@ -198,6 +202,7 @@ func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e ex
 			return
 		}
 		people++
+		ids = append(ids, pid)
 		if pNew {
 			newPeople++
 		}

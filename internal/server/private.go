@@ -13,6 +13,7 @@ import (
 
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -210,9 +211,15 @@ func (s *Server) patchEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 // personJSON builds the list fields of a person.
-const personJSON = `json_build_object(
+var personJSON = `json_build_object(
 	'id', p.id, 'name', p.full_name, 'known_as', p.known_as, 'headline', p.headline, 'city', p.city, 'fit', p.fit,
 	'first_seen', p.created_at,
+	-- The fit rubric: its signals for first, each with the passage that
+	-- shows it, and the score they add up to.
+	'fit_score', p.fit_score,
+	'signals', (SELECT COALESCE(json_agg(json_build_object('key', s.signal, 'label', s.label, 'for', s.is_for,
+			'passage', s.passage, 'found_in', s.found_in) ORDER BY s.is_for DESC, ` + signalRank + `), '[]')
+		FROM person_signals s WHERE s.person_id = p.id),
 	'appearances', (SELECT count(*) FROM appearances WHERE person_id = p.id),
 	'next_appearance', (SELECT json_build_object('event_id', e.id, 'title', e.title, 'starts_at', e.starts_at, 'city', e.city, 'role', a.role)
 		FROM appearances a JOIN events e ON e.id = a.event_id
@@ -223,6 +230,15 @@ const personJSON = `json_build_object(
 		FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
 		WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''
 		ORDER BY ` + activityRank + `, o.last_sign_at DESC NULLS LAST LIMIT 1))`
+
+// signalRank keeps the rubric's own order of signals.
+var signalRank = func() string {
+	keys := make([]string, len(rubric.Defs))
+	for i, d := range rubric.Defs {
+		keys[i] = "'" + d.Key + "'"
+	}
+	return "array_position(ARRAY[" + strings.Join(keys, ", ") + "], s.signal)"
+}()
 
 // activityRank orders what a lookup says about a startup, the most alive
 // first.
@@ -235,9 +251,12 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"next": "next_start NULLS LAST, activity_rank, p.full_name",
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
+		// The best fits first: most signals for, fewest against. Among the
+		// same, the newest.
+		"fit": "p.fit_score DESC, p.created_at DESC, p.id DESC",
 	}[q.Get("sort")]
 	if order == "" {
-		fail(w, http.StatusBadRequest, "sort must be next, new or name")
+		fail(w, http.StatusBadRequest, "sort must be next, new, name or fit")
 		return
 	}
 	filter := map[string]string{
@@ -246,9 +265,10 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"upcoming": "next_start IS NOT NULL",
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
 		"founder":  "p.fit = 'founder'",
+		"fits":     "p.fit_score > 0",
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, upcoming, profile or founder")
+		fail(w, http.StatusBadRequest, "filter must be all, fits, upcoming, profile or founder")
 		return
 	}
 	// counts says how many people each filter shows for the same search, so
@@ -268,6 +288,7 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 			'counts', (SELECT json_build_object(
 				'all', count(*),
 				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
+				'fits', count(*) FILTER (WHERE p.fit_score > 0),
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,

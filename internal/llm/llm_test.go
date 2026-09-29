@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -89,7 +90,7 @@ func TestPeopleKeepsOnlyNamesThePageContains(t *testing.T) {
 		t.Fatalf("people %+v", res.People)
 	}
 	for i := range want {
-		if res.People[i] != want[i] {
+		if !reflect.DeepEqual(res.People[i], want[i]) {
 			t.Errorf("person %d: %+v, want %+v", i, res.People[i], want[i])
 		}
 	}
@@ -314,5 +315,43 @@ Außerdem spricht Karla Kontrolle über ihren Weg.`
 	}
 	if karla.Founder || karla.Builds != "" || karla.FounderEvidence != "" {
 		t.Errorf("the page says nothing of a company, the claim must go: %+v", karla)
+	}
+}
+
+// The model's signals of the fit rubric count only with a passage the page
+// contains, once per signal, and only signals the rubric knows.
+func TestPeopleKeepsSignalsThePageShows(t *testing.T) {
+	srv, _ := fakeModel(t, func(string) []Person {
+		return []Person{{Name: "Lena Musterfrau", Role: "speaker", Affiliation: "Beispiel GmbH", Signals: []Signal{
+			{Signal: "owner_operator", Passage: "Gründerin der Beispiel GmbH"},
+			{Signal: "owner_operator", Passage: "wie aus ihrer Backstube eine Kette wurde"},
+			{Signal: "author", Passage: "hat drei Bücher geschrieben"},
+			{Signal: "made_up", Passage: "Gründerin der Beispiel GmbH"},
+			{Signal: "funded", Passage: ""},
+		}}}
+	})
+	res, err := client(srv).People(t.Context(), "Founders Breakfast", page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.People) != 1 {
+		t.Fatalf("people %+v", res.People)
+	}
+	want := []Signal{{Signal: "owner_operator", Passage: "Gründerin der Beispiel GmbH"}}
+	if !reflect.DeepEqual(res.People[0].Signals, want) {
+		t.Errorf("signals %+v, want %+v", res.People[0].Signals, want)
+	}
+}
+
+// The prompt explains every signal a page can show, and the answer's shape
+// allows only those.
+func TestThePromptCarriesTheRubric(t *testing.T) {
+	for _, key := range []string{"works_with_people", "owner_operator", "runs_events", "funded", "therapist"} {
+		if !strings.Contains(peopleSystem, "  - "+key+": ") {
+			t.Errorf("the prompt does not explain %s", key)
+		}
+	}
+	if strings.Contains(peopleSystem, "still_active") {
+		t.Error("whether a company is active comes from lookups, not from the page")
 	}
 }

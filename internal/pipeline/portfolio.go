@@ -416,6 +416,7 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 	if company == "" {
 		company = rec.name
 	}
+	var ids []int64
 	switch {
 	case rec.err != "" || rec.note != "":
 	case len(im.Directors) == 0:
@@ -429,10 +430,11 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
 		for _, name := range im.Directors {
-			isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
+			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
 			if err != nil {
 				return err
 			}
+			ids = append(ids, id)
 			rec.found++
 			if isNew {
 				rec.isNew++
@@ -446,19 +448,23 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 		nullID(rec.runID), rec.orgID, rec.url, rec.imprint, rec.found, rec.isNew, rec.note, rec.err, rec.duration.Milliseconds(), rec.at); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	p.score(ctx, ids)
+	return nil
 }
 
 // resolveFounder finds the person among those who run this startup, or
 // adds them, and marks them a founder with the imprint as evidence.
-func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string) (bool, error) {
+func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string) (int64, bool, error) {
 	norm := extract.NormaliseName(name)
 	var id int64
 	err := tx.QueryRow(ctx, `
 		SELECT p.id FROM people p JOIN affiliations af ON af.person_id = p.id
 		WHERE p.normalised_name = $1 AND af.organisation_id = $2 ORDER BY p.id LIMIT 1`, norm, rec.orgID).Scan(&id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return false, err
+		return 0, false, err
 	}
 	isNew := id == 0
 	if isNew {
@@ -473,10 +479,10 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 			WHERE id = $1`, id, evidence, rec.at)
 	}
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder') ON CONFLICT DO NOTHING`, id, rec.orgID); err != nil {
-		return false, err
+		return 0, false, err
 	}
 	// Profiles the startup's own site links under this person's name. The
 	// engine never opens them. Tim confirms or rejects each.
@@ -494,10 +500,10 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 			ON CONFLICT (platform, url) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at`,
 			id, platform, clean, handleOf(clean), "website of "+strings.TrimSuffix(domainOf(rec.url), "/"), rec.sourceID, rec.at); err != nil {
-			return false, err
+			return 0, false, err
 		}
 	}
-	return isNew, sight(ctx, tx, rec.sourceID, rec.at, "person_id", id, isNew)
+	return id, isNew, sight(ctx, tx, rec.sourceID, rec.at, "person_id", id, isNew)
 }
 
 func nullID(id int64) *int64 {

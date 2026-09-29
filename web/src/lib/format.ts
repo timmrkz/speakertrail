@@ -253,6 +253,14 @@ export function linkedinSearch(name: string): string {
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name)}`
 }
 
+// A search on Instagram in Tim's own browser, where coaches and athletes
+// often are rather than on LinkedIn. It is Instagram's keyword search, the
+// address its own search box opens. The engine itself never requests
+// Instagram.
+export function instagramSearch(name: string): string {
+  return `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`
+}
+
 // How a founder's startup looked at its last lookup, in a few words.
 export function activityText(a: { state: string; since: string | null } | null): string {
   if (!a) return ''

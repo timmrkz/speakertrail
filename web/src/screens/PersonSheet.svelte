@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
+  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, instagramSearch, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -31,6 +31,7 @@
     return (a.find((x) => x.role === 'founder') ?? a[0])?.organisation ?? ''
   })
   let hasLinkedin = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'linkedin' && x.review === 'confirmed'))
+  let hasInstagram = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'instagram' && x.review === 'confirmed'))
   // Where a passage comes from, in words.
   const FOUND_IN: Record<string, string> = {
     title: 'from their title', 'event page': 'from an event page', event: 'from an event they host', imprint: 'from the imprint',
@@ -175,11 +176,21 @@
       {:else}
         <p class="muted small">No profile found yet.</p>
       {/if}
-      {#if !hasLinkedin}
-        <a class="btn sm find" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
-          title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
-          <Icon name="external" size={14} />Find on LinkedIn
-        </a>
+      {#if !hasLinkedin || !hasInstagram}
+        <div class="row find">
+          {#if !hasLinkedin}
+            <a class="btn sm" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
+              title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
+              <Icon name="external" size={14} />Find on LinkedIn
+            </a>
+          {/if}
+          {#if !hasInstagram}
+            <a class="btn sm" href={instagramSearch(p.name)} target="_blank" rel="noopener noreferrer"
+              title="Searches Instagram for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
+              <Icon name="external" size={14} />Find on Instagram
+            </a>
+          {/if}
+        </div>
       {/if}
     </section>
 

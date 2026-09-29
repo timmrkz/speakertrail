@@ -12,7 +12,9 @@ import (
 
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
+	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -232,6 +234,15 @@ type lookUpRecord struct {
 	// with lastSign the newest date the website shows.
 	activity, activityNote string
 	lastSign               *time.Time
+	// about holds what the website's about page says about each person
+	// its imprint names, by the fit rubric.
+	about map[string][]rubric.Signal
+}
+
+// AboutReader reads a website's about page for the people its imprint
+// names. *llm.Client is one.
+type AboutReader interface {
+	About(ctx context.Context, company string, names []string, text string) (map[string][]llm.Signal, error)
 }
 
 // LookUp loads a startup's website, finds its imprint and stores the
@@ -332,16 +343,47 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		}
 	}
 	rec.profiles = append(extract.ProfileLinks(home.Body, base), extract.ProfileLinks(imp.Body, rec.imprint)...)
-	// The team page often links each founder's profile. It is only worth a
+	// The about or team page says who is behind the company, for the fit
+	// rubric, and often links each founder's profile. It is only worth a
 	// request when the imprint named founders.
-	if team := extract.TeamLink(home.Body, base); im.Young() && team != "" && team != rec.imprint {
-		if tp, err := p.page(ctx, team); err == nil {
-			rec.profiles = append(rec.profiles, extract.ProfileLinks(tp.Body, team)...)
+	if about := extract.AboutLink(home.Body, base); im.Young() && about != "" && about != rec.imprint {
+		if ap, err := p.page(ctx, about); err == nil {
+			rec.profiles = append(rec.profiles, extract.ProfileLinks(ap.Body, about)...)
+			rec.about = p.readAbout(ctx, im, ap.Text)
 		} else {
-			p.log().Info("a team page failed", "url", team, "error", err)
+			p.log().Info("an about page failed", "url", about, "error", err)
 		}
 	}
 	return p.finishLookUp(ctx, rec, im)
+}
+
+// readAbout finds what an about page says about each person the imprint
+// names: by the rubric's rules, and by the model where there is one. A
+// model that fails leaves the rules' signals.
+func (p *Pipeline) readAbout(ctx context.Context, im extract.Imprint, text string) map[string][]rubric.Signal {
+	out := map[string][]rubric.Signal{}
+	alone := len(im.Directors) == 1
+	for _, name := range im.Directors {
+		out[name] = rubric.About(text, name, alone)
+	}
+	ar, ok := p.Reader.(AboutReader)
+	if !ok || !p.modelPause().IsZero() {
+		return out
+	}
+	found, err := ar.About(ctx, im.Company, im.Directors, text)
+	if llm.Unavailable(err) {
+		p.pauseModel()
+	}
+	if err != nil {
+		p.log().Warn("the language model could not read an about page", "company", im.Company, "error", err)
+		return out
+	}
+	for name, signals := range found {
+		for _, s := range signals {
+			out[name] = append(out[name], rubric.Signal{Key: s.Signal, Passage: s.Passage, Where: rubric.FromModel})
+		}
+	}
+	return out
 }
 
 // signsOfLife sets how active the startup looks from the newest date its
@@ -435,6 +477,11 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 				return err
 			}
 			ids = append(ids, id)
+			for _, s := range rec.about[name] {
+				if err := pageSignal(ctx, tx, id, s.Key, s.Passage, s.Where, rec.at); err != nil {
+					return err
+				}
+			}
 			rec.found++
 			if isNew {
 				rec.isNew++

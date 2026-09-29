@@ -27,6 +27,7 @@ const (
 	FromImprint   = "imprint"
 	FromLookup    = "lookup"
 	FromPortfolio = "portfolio"
+	FromAbout     = "about page"
 	FromModel     = "model"
 )
 
@@ -146,9 +147,10 @@ type Person struct {
 	FitEvidence string
 	Appearances []Appearance
 	Companies   []Company
-	// Model holds the signals the language model found, with passages it
-	// quoted from pages. Unknown keys and empty passages are left out.
-	Model []Signal
+	// Found holds signals found on pages that are not kept, like an about
+	// page, by the rules or by the language model, with where they come
+	// from. Unknown keys and empty passages are left out.
+	Found []Signal
 }
 
 type text struct{ where, s string }
@@ -178,7 +180,7 @@ func Signals(p Person) []Signal {
 	found := map[string]Signal{}
 	add := func(key, passage, where string) {
 		d := byKey[key]
-		if d == nil || passage == "" {
+		if d == nil || passage == "" || contact.MatchString(passage) {
 			return
 		}
 		if _, ok := found[key]; !ok {
@@ -232,8 +234,12 @@ func Signals(p Person) []Signal {
 		}
 	}
 
-	for _, s := range p.Model {
-		add(s.Key, strings.TrimSpace(s.Passage), FromModel)
+	for _, s := range p.Found {
+		where := s.Where
+		if where == "" {
+			where = FromModel
+		}
+		add(s.Key, strings.TrimSpace(s.Passage), where)
 	}
 
 	var out []Signal
@@ -256,6 +262,90 @@ func Score(signals []Signal) int {
 		}
 	}
 	return n
+}
+
+// contact finds an email address or a phone number. A passage with one is
+// never kept, because contact details are never stored.
+var contact = regexp.MustCompile(`@|\+?\d[\d /().-]{6,}\d`)
+
+// firstPerson finds a page speaking as "ich", like a sole trader's.
+var firstPerson = words(`ich|mich|mir|mein\w*|i|my|me`)
+
+// About finds the rubric's signals on a website's about page for one of
+// the people its imprint names: in the sentences that name them, and when
+// they run it alone, in those that speak as "ich" too, which also says
+// they run it themselves. It reads what the page says, not what the rubric
+// already knows, and each signal comes once.
+func About(text, name string, alone bool) []Signal {
+	var parts []string
+	for _, w := range strings.Fields(name) {
+		if len([]rune(w)) > 2 {
+			parts = append(parts, regexp.QuoteMeta(w))
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	named := words(strings.Join(parts, "|"))
+	var texts []string
+	for _, s := range sentences(text) {
+		if contact.MatchString(s) {
+			continue
+		}
+		if named.MatchString(s) || alone && firstPerson.MatchString(s) {
+			texts = append(texts, s)
+		}
+	}
+	var out []Signal
+	have := map[string]bool{}
+	for _, d := range Defs {
+		if d.pattern == nil {
+			continue
+		}
+		for _, t := range texts {
+			if d.unless != nil && d.unless.MatchString(t) {
+				continue
+			}
+			if loc := d.pattern.FindStringIndex(t); loc != nil {
+				out = append(out, Signal{Key: d.Key, For: d.For, Passage: passage(t, loc[0], loc[1]), Where: FromAbout})
+				have[d.Key] = true
+				break
+			}
+		}
+	}
+	if alone && !have["owner_operator"] {
+		for _, t := range texts {
+			// A heading like "Über mich" is not the page speaking.
+			if len(strings.Fields(t)) < 4 {
+				continue
+			}
+			if loc := firstPerson.FindStringIndex(t); loc != nil {
+				out = append(out, Signal{Key: "owner_operator", For: true, Passage: passage(t, loc[0], loc[1]), Where: FromAbout})
+				break
+			}
+		}
+	}
+	return out
+}
+
+// sentences splits a page's text into sentences and lines.
+func sentences(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		start := 0
+		for i := 0; i < len(line); i++ {
+			if (line[i] == '.' || line[i] == '!' || line[i] == '?') && (i+1 == len(line) || line[i+1] == ' ') {
+				if s := strings.TrimSpace(line[start : i+1]); s != "" {
+					out = append(out, s)
+				}
+				start = i + 1
+			}
+		}
+		if s := strings.TrimSpace(line[start:]); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // maxPassage is how long a passage may be, in characters.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -13,8 +14,8 @@ import (
 
 // scoreInput loads what the rubric reads about each person: their title,
 // the founder passage, their appearances with the passages that put them
-// on stage, what they founded as lookups saw it, and what the language
-// model said about them.
+// on stage, what they founded as lookups saw it, and what pages that are
+// not kept said about them, like an about page or the model's read.
 const scoreInput = `
 	SELECT p.id, p.headline, p.fit_evidence,
 		(SELECT COALESCE(json_agg(json_build_object('Role', a.role, 'Event', e.title, 'Evidence', a.evidence) ORDER BY e.starts_at, e.id), '[]')
@@ -26,8 +27,8 @@ const scoreInput = `
 				'Note', COALESCE((SELECT l.note FROM startup_lookups l WHERE l.organisation_id = o.id ORDER BY l.id DESC LIMIT 1), ''))
 				ORDER BY o.id), '[]')
 			FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id AND af.role = 'founder'),
-		(SELECT COALESCE(json_agg(json_build_object('Key', m.signal, 'Passage', m.passage) ORDER BY m.found_at, m.signal), '[]')
-			FROM model_signals m WHERE m.person_id = p.id)
+		(SELECT COALESCE(json_agg(json_build_object('Key', m.signal, 'Passage', m.passage, 'Where', m.found_in) ORDER BY m.found_at, m.signal), '[]')
+			FROM page_signals m WHERE m.person_id = p.id)
 	FROM people p WHERE p.id = ANY($1)`
 
 // ScorePeople runs the rubric over the given people and stores their
@@ -48,8 +49,8 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 	for rows.Next() {
 		var id int64
 		var in rubric.Person
-		var apps, companies, model []byte
-		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &model); err != nil {
+		var apps, companies, found []byte
+		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found); err != nil {
 			rows.Close()
 			return err
 		}
@@ -61,9 +62,9 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 			rows.Close()
 			return fmt.Errorf("companies of %d: %w", id, err)
 		}
-		if err := json.Unmarshal(model, &in.Model); err != nil {
+		if err := json.Unmarshal(found, &in.Found); err != nil {
 			rows.Close()
-			return fmt.Errorf("model signals of %d: %w", id, err)
+			return fmt.Errorf("page signals of %d: %w", id, err)
 		}
 		all = append(all, scored{id, rubric.Signals(in)})
 	}
@@ -88,6 +89,15 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 		}
 		return nil
 	})
+}
+
+// pageSignal keeps a signal found on a page that is not kept, for the
+// rubric, once per passage.
+func pageSignal(ctx context.Context, db execer, personID int64, signal, passage, where string, at time.Time) error {
+	_, err := db.Exec(ctx, `
+		INSERT INTO page_signals (person_id, signal, passage, found_in, found_at) VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT DO NOTHING`, personID, signal, passage, where, at)
+	return err
 }
 
 // scoreBatch is how many people one transaction scores.

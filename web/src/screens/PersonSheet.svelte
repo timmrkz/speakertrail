@@ -34,7 +34,8 @@
   // Where a passage comes from, in words.
   const FOUND_IN: Record<string, string> = {
     title: 'from their title', 'event page': 'from an event page', event: 'from an event they host', imprint: 'from the imprint',
-    lookup: 'from a lookup of their website', portfolio: 'from a startup portfolio', model: 'read by the language model',
+    lookup: 'from a lookup of their website', portfolio: 'from a startup portfolio', 'about page': "from their website's about page",
+    model: 'read by the language model',
   }
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 

@@ -151,7 +151,7 @@ A check of a portfolio stores each startup its page links to, with its website, 
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 
-A person in `GET /api/people` carries the fit rubric's verdict, see [search-strategy.md](search-strategy.md). `signals` lists what speaks for and against a fit, those for first, each with the passage that shows it and where the passage comes from: `title`, `event page`, `event`, `imprint`, `lookup`, `portfolio` or `model`. `fit_score` is the number of signals for, less those against. A claim without a passage does not count.
+A person in `GET /api/people` carries the fit rubric's verdict, see [search-strategy.md](search-strategy.md). `signals` lists what speaks for and against a fit, those for first, each with the passage that shows it and where the passage comes from: `title`, `event page`, `event`, `imprint`, `lookup`, `portfolio`, `about page` or `model`. A lookup reads the website's about page, "Über mich" or "Über uns", for what it says about the people the imprint names. A passage with an email address or a phone number is never kept. `fit_score` is the number of signals for, less those against. A claim without a passage does not count.
 
 ```json
 { "fit_score": 1, "signals": [

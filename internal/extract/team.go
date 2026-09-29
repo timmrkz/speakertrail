@@ -34,6 +34,38 @@ func TeamLink(body, base string) string {
 	return byPath
 }
 
+var (
+	aboutText = regexp.MustCompile(`(?i)^(?:über mich|ueber mich|uber mich|about me|wer ich bin|mein weg|meine geschichte|vita|profil|über uns|ueber uns|uber uns|about|about us|wer wir sind|who we are)$`)
+	aboutPath = regexp.MustCompile(`(?i)/(?:[a-z]{2}/)?(?:ueber-mich|uber-mich|über-mich|about-me|vita|profil|ueber-uns|uber-uns|über-uns|about|about-us)(?:\.html?|\.php|/)?$`)
+)
+
+// AboutLink finds the page where a website says who is behind it, like
+// "Über mich" or "Über uns", else its team page. It returns "" when there
+// is none.
+func AboutLink(body, base string) string {
+	home := hostOf(base)
+	var byPath string
+	for _, l := range Links(body, base) {
+		if hostOf(l.URL) != home {
+			continue
+		}
+		u, err := url.Parse(l.URL)
+		if err != nil {
+			continue
+		}
+		if aboutText.MatchString(strings.TrimSpace(l.Text)) {
+			return l.URL
+		}
+		if byPath == "" && aboutPath.MatchString(u.Path) {
+			byPath = l.URL
+		}
+	}
+	if byPath != "" {
+		return byPath
+	}
+	return TeamLink(body, base)
+}
+
 // personalProfile matches a profile of one person on a platform, not a
 // company page or a post: linkedin.com/in/…, xing.com/profile/…, x.com/….
 var personalProfile = regexp.MustCompile(`(?i)^https?://(?:[a-z]+\.)?(?:linkedin\.com/in/|xing\.com/profile/|(?:x|twitter)\.com/|instagram\.com/|github\.com/)([^/?#]+)/?$`)

@@ -118,7 +118,7 @@ export interface NextAppearance {
 
 // One reason for or against a fit, by the fit rubric, with the passage
 // that shows it. found_in: title, event page, event, imprint, lookup,
-// portfolio or model.
+// portfolio, about page or model.
 export interface FitSignal {
   key: string
   label: string

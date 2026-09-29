@@ -101,7 +101,7 @@ func TestSignals(t *testing.T) {
 		name: "the model's signals count when their passage is there, once per signal",
 		person: rubric.Person{
 			Headline: "Coach",
-			Model: []rubric.Signal{
+			Found: []rubric.Signal{
 				{Key: "works_with_people", Passage: "begleitet Menschen durch Umbrüche", Where: rubric.FromModel},
 				{Key: "author", Passage: "ihr erstes Buch erschien 2024", Where: rubric.FromModel},
 				{Key: "no_such_signal", Passage: "irgendwas", Where: rubric.FromModel},
@@ -152,5 +152,41 @@ func TestPassagesStayShortQuotes(t *testing.T) {
 	p := strings.Trim(s[0].Passage, "…")
 	if len([]rune(s[0].Passage)) > 170 || !strings.Contains(text, p) || !strings.Contains(p, "Autorin") {
 		t.Errorf("passage %q", s[0].Passage)
+	}
+}
+
+// An about page says what the named person does. When they run it alone,
+// a page speaking as "ich" is theirs, and says they run it themselves.
+// Sentences with contact details are never read. All invented.
+func TestAbout(t *testing.T) {
+	page := `Über mich
+Ich bin Mara Beispielfrau. Seit 2015 gebe ich Yoga-Kurse in Dortmund.
+Unser Team: Tom Testmann ist Head of Sales.
+Schreib mir an mara@studio-beispiel.test, ich bin Autorin.`
+	var got []string
+	for _, s := range rubric.About(page, "Mara Beispielfrau", true) {
+		got = append(got, s.Key+" ("+s.Where+"): "+s.Passage)
+	}
+	want := []string{
+		"works_with_people (about page): Seit 2015 gebe ich Yoga-Kurse in Dortmund.",
+		"owner_operator (about page): Ich bin Mara Beispielfrau.",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("about Mara:\n%s", strings.Join(got, "\n"))
+	}
+	// Not alone, only the sentences that name him count.
+	got = nil
+	for _, s := range rubric.About(page, "Tom Testmann", false) {
+		got = append(got, s.Key+": "+s.Passage)
+	}
+	if strings.Join(got, "\n") != "corporate: Unser Team: Tom Testmann ist Head of Sales." {
+		t.Errorf("about Tom: %v", got)
+	}
+}
+
+func TestNoContactDetailsInPassages(t *testing.T) {
+	s := rubric.Signals(rubric.Person{Headline: "Coach, Telefon 0221 1234567", Found: []rubric.Signal{{Key: "author", Passage: "Buch bestellen: buch@example.test"}}})
+	if len(s) != 0 {
+		t.Errorf("signals with contact details: %+v", s)
 	}
 }

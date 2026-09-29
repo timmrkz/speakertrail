@@ -14,6 +14,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -191,9 +192,7 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 		}
 		// What the model says about the person, for the rubric.
 		for _, s := range person.Signals {
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO model_signals (person_id, signal, passage, found_at) VALUES ($1, $2, $3, $4)
-				ON CONFLICT DO NOTHING`, pid, s.Signal, s.Passage, rec.at); err != nil {
+			if err := pageSignal(ctx, tx, pid, s.Signal, s.Passage, rubric.FromModel, rec.at); err != nil {
 				return err
 			}
 		}

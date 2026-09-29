@@ -561,6 +561,19 @@ type fakeReader struct {
 	err   error
 }
 
+// About finds that a person wrote a book, where the page says so.
+func (f *fakeReader) About(_ context.Context, _ string, names []string, text string) (map[string][]llm.Signal, error) {
+	out := map[string][]llm.Signal{}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Buch") {
+			for _, n := range names {
+				out[n] = append(out[n], llm.Signal{Signal: "author", Passage: strings.TrimSpace(line)})
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult, error) {
 	f.mu.Lock()
 	f.calls++
@@ -1355,5 +1368,50 @@ func TestPortfolioFoundersAreScored(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("scores:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// A lookup reads the startup's about page for the fit rubric: what it says
+// about the people the imprint names, and, when one person runs it and the
+// page speaks as "ich", that they run it themselves. The model reads the
+// page too. A sentence with a phone number is never kept. All invented.
+func TestLookupsReadTheAboutPage(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{}
+	e.site.set("/portfolio", `<main><h1>Our startups</h1><a href="http://studio-beispiel.test/">Studio Beispiel</a></main>`)
+	e.site.set("http://studio-beispiel.test/", `<html><body><h1>Studio Beispiel</h1>
+<nav><a href="/ueber-mich">Über mich</a></nav><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://studio-beispiel.test/ueber-mich", `<html><body><h1>Über mich</h1>
+<p>Ich bin Mara Beispielfrau und gebe seit zehn Jahren Yoga-Kurse in Dortmund.</p>
+<p>Das Studio habe ich ohne Investoren aufgebaut.</p>
+<p>Ihr Buch über den Atem erschien 2025.</p>
+<p>Ruf mich an, ich berate dich gern: 0231 1234567.</p></body></html>`)
+	e.site.set("http://studio-beispiel.test/impressum", `<html><body><p>Studio Beispiel UG (haftungsbeschränkt), 44137 Dortmund</p>
+<p>Geschäftsführerin: Mara Beispielfrau</p></body></html>`)
+	if _, err := e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate')`,
+		e.site.srv.URL+"/portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal || ' (' || s.found_in || '): ' || s.passage
+		FROM person_signals s JOIN people p ON p.id = s.person_id WHERE p.full_name = 'Mara Beispielfrau'
+		ORDER BY s.is_for DESC, s.signal`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"+author (model): Ihr Buch über den Atem erschien 2025.",
+		"+bootstrapped (about page): Das Studio habe ich ohne Investoren aufgebaut.",
+		"+owner_operator (imprint): Managing director of Studio Beispiel UG (haftungsbeschränkt), by its imprint. In the portfolio of Beispiel Hub",
+		"+works_with_people (about page): Ich bin Mara Beispielfrau und gebe seit zehn Jahren Yoga-Kurse in Dortmund.",
+		"-backed (portfolio): In the portfolio of Beispiel Hub",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("signals:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if c := e.count(t, "person_signals WHERE passage ~ '[0-9]{4} ?[0-9]{5,}'"); c != 0 {
+		t.Error("a phone number was kept")
 	}
 }

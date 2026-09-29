@@ -355,3 +355,29 @@ func TestThePromptCarriesTheRubric(t *testing.T) {
 		t.Error("whether a company is active comes from lookups, not from the page")
 	}
 }
+
+// The model's reading of an about page keeps only the people asked about,
+// and only passages the page contains.
+func TestAboutKeepsWhatThePageSays(t *testing.T) {
+	about := "Über mich\nIch bin Mara Beispielfrau und gebe Yoga-Kurse in Dortmund.\nMein Buch erschien 2025."
+	srv, _ := fakeModel(t, func(user string) []Person {
+		if !strings.Contains(user, "The people: Mara Beispielfrau") {
+			t.Errorf("the question does not name the people: %q", user)
+		}
+		return []Person{
+			{Name: "Mara Beispielfrau", Signals: []Signal{
+				{Signal: "works_with_people", Passage: "gebe Yoga-Kurse in Dortmund"},
+				{Signal: "author", Passage: "Mein Buch erschien 2024"},
+			}},
+			{Name: "Erika Erfunden", Signals: []Signal{{Signal: "author", Passage: "Mein Buch erschien 2025"}}},
+		}
+	})
+	got, err := client(srv).About(t.Context(), "Studio Beispiel", []string{"Mara Beispielfrau"}, about)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]Signal{"Mara Beispielfrau": {{Signal: "works_with_people", Passage: "gebe Yoga-Kurse in Dortmund"}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("about: %+v", got)
+	}
+}

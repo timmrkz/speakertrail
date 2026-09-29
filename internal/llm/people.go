@@ -60,6 +60,48 @@ func signalKeys() []string {
 	return keys
 }
 
+// peopleSchemaSignals is the shape of a list of signals in an answer.
+func peopleSchemaSignals() map[string]any {
+	return map[string]any{
+		"type": "array",
+		"items": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"signal":  map[string]any{"type": "string", "enum": signalKeys()},
+				"passage": map[string]any{"type": "string"},
+			},
+			"required":             []string{"signal", "passage"},
+			"additionalProperties": false,
+		},
+	}
+}
+
+// quoteForm folds a text for checking quotes: lower case, words and
+// numbers only, one space between. Unlike a name, a quote keeps its
+// numbers, so "2024" is no quote of "2025".
+func quoteForm(s string) string {
+	f := strings.FieldsFunc(strings.ToLower(s), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	return " " + strings.Join(f, " ") + " "
+}
+
+// checkSignals keeps the signals the rubric knows whose passage the page
+// contains, once each. The model's word alone is not enough. quotes is
+// the page in quoteForm.
+func checkSignals(in []Signal, quotes string) []Signal {
+	var out []Signal
+	have := map[string]bool{}
+	for _, s := range in {
+		s.Passage = strings.TrimSpace(s.Passage)
+		ps := strings.TrimSpace(quoteForm(s.Passage))
+		if d := rubric.Lookup(s.Signal); d == nil || have[s.Signal] || ps == "" || !strings.Contains(quotes, " "+ps+" ") {
+			continue
+		}
+		have[s.Signal] = true
+		out = append(out, s)
+	}
+	return out
+}
+
 // signalRules explains each signal to the model.
 func signalRules() string {
 	var b strings.Builder
@@ -124,18 +166,7 @@ var peopleSchema = map[string]any{
 					"founder":          map[string]any{"type": "boolean"},
 					"builds":           map[string]any{"type": "string"},
 					"founder_evidence": map[string]any{"type": "string"},
-					"signals": map[string]any{
-						"type": "array",
-						"items": map[string]any{
-							"type": "object",
-							"properties": map[string]any{
-								"signal":  map[string]any{"type": "string", "enum": signalKeys()},
-								"passage": map[string]any{"type": "string"},
-							},
-							"required":             []string{"signal", "passage"},
-							"additionalProperties": false,
-						},
-					},
+					"signals":          peopleSchemaSignals(),
 				},
 				"required":             []string{"name", "role", "affiliation", "evidence", "founder", "builds", "founder_evidence", "signals"},
 				"additionalProperties": false,
@@ -154,6 +185,7 @@ func (c *Client) People(ctx context.Context, title, text string) (PeopleResult, 
 	var res PeopleResult
 	seen := map[string]bool{}
 	haystack := " " + extract.NormaliseName(text) + " "
+	quotes := quoteForm(text)
 	parts, unread := split(text, partSize, maxParts)
 	res.Unread = unread
 	for _, part := range parts {
@@ -199,19 +231,7 @@ func (c *Client) People(ctx context.Context, title, text string) (PeopleResult, 
 			if !p.Founder || (p.Builds == "" && p.FounderEvidence == "") {
 				p.Founder, p.Builds, p.FounderEvidence = false, "", ""
 			}
-			// A signal counts only with a passage the page contains, once.
-			var signals []Signal
-			have := map[string]bool{}
-			for _, s := range p.Signals {
-				s.Passage = strings.TrimSpace(s.Passage)
-				ps := extract.NormaliseName(s.Passage)
-				if d := rubric.Lookup(s.Signal); d == nil || have[s.Signal] || ps == "" || !strings.Contains(haystack, " "+ps+" ") {
-					continue
-				}
-				have[s.Signal] = true
-				signals = append(signals, s)
-			}
-			p.Signals = signals
+			p.Signals = checkSignals(p.Signals, quotes)
 			res.People = append(res.People, p)
 		}
 	}

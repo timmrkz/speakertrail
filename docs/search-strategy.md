@@ -50,10 +50,10 @@ Good fits:
   meetups or communities
 - people who switched careers towards work with people
 
-Open question: **therapists**. Licensed psychotherapists have strict rules
-about what they say in public, and some will decline for that reason.
-Suggestion: coaches in, therapists off by default, one setting to include
-them. Tim decides.
+**Therapists are out** for now. Licensed psychotherapists have strict rules
+about what they say in public. Coaches are in.
+
+**Only NRW** for now, because the conversations are recorded in person.
 
 ## Signals the engine can read
 
@@ -123,7 +123,7 @@ becomes a source. A directory that forbids automated access becomes a
 manual source, like any other site. No workarounds.
 
 Directories are national. The imprint gives the postcode, and only NRW
-counts, unless Tim decides otherwise.
+counts.
 
 ### The person's own website
 
@@ -182,11 +182,24 @@ Small batches, each one tested on Tim's Mac before the next.
 5. **Find on Instagram.**
 6. **Learning from keeps and skips.**
 
+## Suggestions
+
+A **suggestion** is one person the engine puts forward as a likely guest.
+It is one card: the name, what they do, the signals with their passages,
+whether they are still active, and Find on LinkedIn. Tim either keeps them,
+which means he wants to contact them, or skips them, and the engine does
+not suggest them again.
+
+The engine may know hundreds of people. Suggestions are the few it puts
+forward each week, the best fits Tim has not decided on yet. Their number
+is what Tim can review and follow up in one sitting. A proposal to start
+with: 10 a week, reviewed on the phone in a few minutes. It becomes a
+setting.
+
 ## How we know it works
 
-Tim looks at the first 20 people People shows. Today few of them would be
-a guest. The aim is that at least half are people he would like to
-contact. The report counts keeps and skips per signal, so a signal that
+Tim looks at the week's suggestions. Today few of them would be a guest.
+The aim is that he keeps at least half. The report counts keeps and skips per signal, so a signal that
 misleads shows up.
 
 ## What a session needs
@@ -199,6 +212,4 @@ settings.
 
 ## Open questions
 
-- Therapists in or out?
-- Only NRW, or anywhere Tim can record?
-- How many suggestions a week are useful, and on which day?
+- How many suggestions a week, and on which day?

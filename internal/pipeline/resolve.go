@@ -49,6 +49,9 @@ type Resolver struct {
 	Rules FitRules
 	// Now is the check time. Tests set it.
 	Now func() time.Time
+	// RunID is the run the work belongs to, which new people remember.
+	// Zero outside a run.
+	RunID int64
 }
 
 // Resolve stores the events of one check. Each event is written in its own
@@ -381,9 +384,9 @@ func (r *Resolver) resolvePerson(ctx context.Context, tx pgx.Tx, eventID int64, 
 	isNew := id == 0
 	if isNew {
 		err = tx.QueryRow(ctx, `
-			INSERT INTO people (full_name, normalised_name, city, headline, created_at, updated_at, status_changed_at)
-			VALUES ($1, $2, $3, $4, $5, $5, $5) RETURNING id`,
-			p.Name, norm, city, p.Affiliation, now).Scan(&id)
+			INSERT INTO people (full_name, normalised_name, city, headline, first_run_id, created_at, updated_at, status_changed_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $6, $6) RETURNING id`,
+			p.Name, norm, city, p.Affiliation, nullID(r.RunID), now).Scan(&id)
 		if err != nil {
 			return 0, false, err
 		}

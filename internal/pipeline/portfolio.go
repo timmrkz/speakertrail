@@ -180,6 +180,9 @@ func (p *Pipeline) enqueueLookUps(ctx context.Context, runID, sourceID int64, li
 	if limit <= 0 {
 		return 0, nil
 	}
+	if ended, err := p.ended(ctx, runID); err != nil || ended {
+		return 0, err
+	}
 	cfg, err := settings.Load(ctx, p.Pool)
 	if err != nil {
 		return 0, err
@@ -460,9 +463,9 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 	isNew := id == 0
 	if isNew {
 		err = tx.QueryRow(ctx, `
-			INSERT INTO people (full_name, normalised_name, city, headline, fit, fit_evidence, created_at, updated_at, status_changed_at)
-			VALUES ($1, $2, $3, $4, 'founder', $5, $6, $6, $6) RETURNING id`,
-			name, norm, city, headline, evidence, rec.at).Scan(&id)
+			INSERT INTO people (full_name, normalised_name, city, headline, fit, fit_evidence, first_run_id, created_at, updated_at, status_changed_at)
+			VALUES ($1, $2, $3, $4, 'founder', $5, $6, $7, $7, $7) RETURNING id`,
+			name, norm, city, headline, evidence, nullID(rec.runID), rec.at).Scan(&id)
 	} else {
 		_, err = tx.Exec(ctx, `
 			UPDATE people SET fit = 'founder', updated_at = $3,

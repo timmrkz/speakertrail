@@ -48,6 +48,9 @@ func (p *Pipeline) enqueueReads(ctx context.Context, runID, sourceID int64, limi
 	if p.Reader == nil || limit <= 0 {
 		return 0, nil
 	}
+	if ended, err := p.ended(ctx, runID); err != nil || ended {
+		return 0, err
+	}
 	sql := unreadEvents
 	args := []any{p.now(), limit}
 	if sourceID != 0 {
@@ -169,7 +172,7 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 	if err := tx.QueryRow(ctx, `SELECT city FROM events WHERE id = $1 FOR UPDATE`, rec.eventID).Scan(&city); err != nil {
 		return err
 	}
-	r := &Resolver{Pool: p.Pool, Now: p.now}
+	r := &Resolver{Pool: p.Pool, Now: p.now, RunID: rec.runID}
 	for _, person := range people {
 		pid, isNew, err := r.resolvePerson(ctx, tx, rec.eventID, city,
 			extract.Person{Name: person.Name, Role: person.Role, Affiliation: person.Affiliation}, rec.url, rec.at)

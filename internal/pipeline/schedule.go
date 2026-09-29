@@ -24,10 +24,25 @@ func (p *Pipeline) StartRun(ctx context.Context, kind string) (int64, error) {
 	return id, err
 }
 
-// FinishRun records the end of a run.
+// FinishRun records the end of a run that got through its work. A run
+// that was stopped keeps its end.
 func (p *Pipeline) FinishRun(ctx context.Context, runID int64) error {
-	_, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1`, runID, p.now())
+	_, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2, ended = 'finished' WHERE id = $1 AND ended = ''`, runID, p.now())
 	return err
+}
+
+// ended says whether a run has been stopped or ended by a restart. Work
+// still running for it then queues nothing more.
+func (p *Pipeline) ended(ctx context.Context, runID int64) (bool, error) {
+	if runID == 0 {
+		return false, nil
+	}
+	var ended bool
+	err := p.Pool.QueryRow(ctx, `SELECT ended IN ('stopped', 'restart') FROM runs WHERE id = $1`, runID).Scan(&ended)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return ended, err
 }
 
 // EnqueueDue queues a check for every source that is due, the first checks
@@ -172,28 +187,38 @@ func (p *Pipeline) EndInterrupted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2, ended = 'restart' WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
 	if err != nil {
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil
 }
 
-// StopRun ends a run by hand. Its queued checks and reads are dropped, and
-// what is running finishes by itself. Events not read yet wait for the next
-// run.
+// StopRun ends a run by hand. Its queued checks, reads and lookups are
+// dropped, and what is running finishes by itself but queues nothing more.
+// Events not read yet wait for the next run. A run that already ended, or
+// has nothing left to do, is not stopped.
 func (p *Pipeline) StopRun(ctx context.Context, runID int64) (bool, error) {
 	now := p.now()
-	if _, err := p.Pool.Exec(ctx, `
-		UPDATE jobs SET status = 'failed', last_error = 'stopped by hand', locked_until = NULL, updated_at = $2
-		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, now); err != nil {
-		return false, err
-	}
-	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1 AND finished_at IS NULL`, runID, now)
+	tag, err := p.Pool.Exec(ctx, `
+		UPDATE runs r SET finished_at = $2, ended = 'stopped'
+		WHERE r.id = $1 AND r.finished_at IS NULL AND r.ended = '' AND EXISTS (
+			SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')`, runID, now)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	return true, p.dropQueued(ctx, runID, "stopped by hand")
+}
+
+// dropQueued ends the jobs a run still has waiting.
+func (p *Pipeline) dropQueued(ctx context.Context, runID int64, why string) error {
+	_, err := p.Pool.Exec(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = $3, locked_until = NULL, updated_at = $2
+		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, p.now(), why)
+	return err
 }
 
 // CheckNow queues one source for an immediate check in its own run.
@@ -227,9 +252,21 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 	}
 	p.log().Info("nightly run started", "run", runID, "sources", n)
 	werr := p.workWithRetries(ctx, w, runID)
-	// Record the end even when the context was cancelled.
+	// Record the end even when the context was cancelled. A run cut short,
+	// like make crawl stopped with Ctrl-C, ends as stopped, and what it
+	// still had queued is dropped.
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	if ctx.Err() != nil {
+		if _, err := p.Pool.Exec(finishCtx, `UPDATE runs SET finished_at = $2, ended = 'stopped' WHERE id = $1 AND ended = ''`, runID, p.now()); err != nil {
+			return err
+		}
+		if err := p.dropQueued(finishCtx, runID, "the run was stopped"); err != nil {
+			return err
+		}
+		p.log().Info("nightly run stopped", "run", runID)
+		return werr
+	}
 	if err := p.FinishRun(finishCtx, runID); err != nil {
 		return err
 	}

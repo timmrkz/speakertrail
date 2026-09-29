@@ -17,10 +17,16 @@ import (
 )
 
 // runJSON builds one run with its totals from the checks, the reads of
-// event pages and the lookups of startups. A run started by hand or by Check now is worked on by serve,
-// which records no end. It is finished once none of its jobs wait any more.
+// event pages and the lookups of startups. A run started by hand or by
+// Check now is worked on by serve, which records no end. It is finished
+// once none of its jobs wait any more. Its state is going, finished,
+// stopped by hand, or interrupted when the app stopped under it.
 const runJSON = `json_build_object(
 	'id', r.id, 'kind', r.kind, 'started_at', r.started_at,
+	'state', CASE WHEN r.ended = 'stopped' THEN 'stopped' WHEN r.ended = 'restart' THEN 'interrupted'
+		WHEN r.finished_at IS NULL AND EXISTS (
+			SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		THEN 'going' ELSE 'finished' END,
 	'finished_at', COALESCE(r.finished_at, CASE WHEN NOT EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
 		THEN GREATEST(r.started_at, (SELECT max(checked_at) FROM source_checks WHERE run_id = r.id),
@@ -32,8 +38,12 @@ const runJSON = `json_build_object(
 	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id)
 		+ (SELECT COALESCE(sum(people_new), 0) FROM event_reads WHERE run_id = r.id)
 		+ (SELECT COALESCE(sum(people_new), 0) FROM startup_lookups WHERE run_id = r.id),
+	-- New people the run found who fit, like founders.
+	'fits_new', (SELECT count(*) FROM people WHERE first_run_id = r.id AND fit <> 'other'),
 	'pages_read', (SELECT count(*) FROM event_reads WHERE run_id = r.id),
+	'reads_failed', (SELECT count(*) FROM event_reads WHERE run_id = r.id AND error <> ''),
 	'startups_looked_up', (SELECT count(*) FROM startup_lookups WHERE run_id = r.id),
+	'lookups_failed', (SELECT count(*) FROM startup_lookups WHERE run_id = r.id AND error <> ''),
 	'progress', CASE WHEN r.finished_at IS NULL AND EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
 		THEN (` + progressJSON + `) END,
@@ -592,7 +602,8 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.sendQuery(w, r, http.StatusOK, `
+	var raw []byte
+	err := s.opts.Pool.QueryRow(r.Context(), `
 		SELECT json_build_object('run', `+runJSON+`,
 			'checks', (SELECT COALESCE(json_agg(json_build_object(
 				'id', c.id, 'source', json_build_object('id', src.id, 'name', src.name, 'url', src.url),
@@ -602,7 +613,25 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 				'fetch_id', (SELECT f.id FROM fetches f WHERE f.id = c.fetch_id))
 				ORDER BY (c.error <> '') DESC, c.events_found DESC, src.name), '[]')
 				FROM source_checks c JOIN sources src ON src.id = c.source_id WHERE c.run_id = r.id))
-		FROM runs r WHERE r.id = $1`, id)
+		FROM runs r WHERE r.id = $1`, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		fail(w, http.StatusNotFound, "Not found")
+		return
+	}
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	if out["failures"], err = s.failuresOf(r.Context(), id); err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) fetchPart(w http.ResponseWriter, r *http.Request) {

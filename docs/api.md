@@ -159,14 +159,17 @@ A person in `GET /api/people` carries `activity`, what the last lookup saw of th
 {
   "runs": [
     {
-      "id": 5, "kind": "nightly", "started_at": "...", "finished_at": "...",
-      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "startups_looked_up": 10, "people_new": 41, "errors": 3
+      "id": 5, "kind": "nightly", "state": "finished", "started_at": "...", "finished_at": "...",
+      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "reads_failed": 2,
+      "startups_looked_up": 10, "lookups_failed": 1, "people_new": 41, "fits_new": 6, "errors": 3
     }
   ]
 }
 ```
 
-`pages_read` counts the event pages the local model read in the run, `startups_looked_up` the startups whose imprint it looked up, and `people_new` includes the people both found. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
+`pages_read` counts the event pages the local model read in the run, `startups_looked_up` the startups whose imprint it looked up, and `people_new` includes the people both found. `fits_new` counts the new people who fit, like founders. `errors` counts the checks that failed, `reads_failed` and `lookups_failed` the reads and lookups.
+
+`state` is the run's true state: `going`, `finished`, `stopped` by hand, or `interrupted` when the app stopped under it and the run ended as the app started again. A nightly run cut short, like `make crawl` stopped with Ctrl-C, is `stopped`. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
 
@@ -185,9 +188,19 @@ While a run is going, it carries `progress`, and is null otherwise:
 
 When the app starts, runs it was working on when it stopped end, and their work does not come back by itself. A run drops checks, reads and lookups left over from earlier runs. An event page whose read failed three times is not read again.
 
-`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks, reads and lookups are dropped, and what is running finishes. A run that already ended answers 409.
+`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks, reads and lookups are dropped, and what is running finishes but queues nothing more. A run that already ended answers 409.
 
-`GET /api/runs/{id}` answers `{"run": {...}, "checks": [...]}`, where each check is:
+`GET /api/runs/{id}` answers `{"run": {...}, "checks": [...], "failures": [...]}`. Each failure says in plain words what went wrong, one per source for checks and one per reason for reads and lookups:
+
+```json
+{ "what": "check", "source": { "id": 3, "name": "Startplatz events", "url": "...", "status": "active" },
+  "reason": "The site did not answer in time", "action": "check", "count": 1,
+  "detail": "get https://...: context deadline exceeded" }
+```
+
+`what` is `check`, `read` or `lookup`, and `source` is null for reads and lookups. `action` is the one thing that fixes it: `retire` the source, `check` it again, or empty when the engine already made the source manual or retired it, or when no source is to blame, like a language model that did not answer. A source that failed its last three checks is worth retiring. `detail` is the error as recorded.
+
+Each check is:
 
 ```json
 {

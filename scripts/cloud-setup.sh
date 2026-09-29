@@ -58,15 +58,21 @@ link_chromium() {
 
 setup_postgres() {
 	command -v pg_ctlcluster >/dev/null || return 1
-	pg_ctlcluster "$PG_VERSION" main start || return 1
+	# Run again inside a session, Postgres already runs. It is left running
+	# then, and only stopped when this script started it.
+	local started=""
+	if ! pg_isready -q -h localhost; then
+		pg_ctlcluster "$PG_VERSION" main start || return 1
+		started=1
+	fi
 	# CREATEDB lets tests create and drop their own throwaway databases.
-	runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q <<-SQL || { pg_ctlcluster "$PG_VERSION" main stop; return 1; }
+	runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q <<-SQL || { [ -z "$started" ] || pg_ctlcluster "$PG_VERSION" main stop; return 1; }
 		SELECT 'CREATE ROLE $DB_USER LOGIN CREATEDB PASSWORD ''$DB_PASSWORD'''
 		WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER')\gexec
 		SELECT 'CREATE DATABASE $DB_NAME OWNER $DB_USER'
 		WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec
 	SQL
-	pg_ctlcluster "$PG_VERSION" main stop
+	[ -z "$started" ] || pg_ctlcluster "$PG_VERSION" main stop
 	echo "role and database $DB_NAME are ready"
 }
 

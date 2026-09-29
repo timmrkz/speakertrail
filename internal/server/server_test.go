@@ -557,3 +557,147 @@ func TestARetiredSourceStaysRetired(t *testing.T) {
 		t.Errorf("set back to active: %d %s", code, body)
 	}
 }
+
+// A run says its true state and what it brought: new people, new fits,
+// startups looked up and what failed.
+func TestRunsSayHowTheyEnded(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	run := func(ended string, finished bool) int64 {
+		var id int64
+		var at any
+		if finished {
+			at = now
+		}
+		if err := e.pool.QueryRow(ctx, `INSERT INTO runs (kind, started_at, finished_at, ended) VALUES ('manual', $1, $2, $3) RETURNING id`,
+			now, at, ended).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finished, stopped, restart, going := run("", false), run("stopped", true), run("restart", true), run("", false)
+	exec(`INSERT INTO jobs (kind, key, run_after, created_at, updated_at) VALUES ('check_source', 'run:' || $1::bigint || ':source:1', $2, $2, $2)`, going, now)
+	exec(`INSERT INTO people (full_name, normalised_name, fit, first_run_id) VALUES ('Mia Beispiel', 'mia beispiel', 'founder', $1), ('Ole Muster', 'ole muster', 'other', $1)`, finished)
+	exec(`INSERT INTO organisations (name, normalised_name) VALUES ('Probe Labs', 'probe labs')`)
+	exec(`INSERT INTO startup_lookups (run_id, organisation_id, url, error, looked_up_at) SELECT $1, id, 'https://probe.example/', 'get https://probe.example/: context deadline exceeded', $2 FROM organisations WHERE name = 'Probe Labs'`, finished, now)
+
+	code, body := e.do(t, "GET", "/api/runs", "")
+	if code != 200 {
+		t.Fatalf("runs: %d %s", code, body)
+	}
+	var got struct {
+		Runs []struct {
+			ID            int64  `json:"id"`
+			State         string `json:"state"`
+			FitsNew       int    `json:"fits_new"`
+			LookupsFailed int    `json:"lookups_failed"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]string{finished: "finished", stopped: "stopped", restart: "interrupted", going: "going"}
+	for _, r := range got.Runs {
+		if want[r.ID] != r.State {
+			t.Errorf("run %d is %q, want %q", r.ID, r.State, want[r.ID])
+		}
+		if r.ID == finished && (r.FitsNew != 1 || r.LookupsFailed != 1) {
+			t.Errorf("the finished run brought %d fits and %d failed lookups, want 1 and 1", r.FitsNew, r.LookupsFailed)
+		}
+	}
+	if len(got.Runs) != 4 {
+		t.Errorf("%d runs, want 4", len(got.Runs))
+	}
+}
+
+// A run's failures are grouped by source, each with the reason in plain
+// words and the one action that fixes it. Reads and lookups that failed
+// are grouped by reason.
+func TestRunFailuresInPlainWords(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	var run int64
+	e.pool.QueryRow(ctx, `INSERT INTO runs (kind, started_at, finished_at, ended) VALUES ('nightly', $1, $1, 'finished') RETURNING id`, now).Scan(&run)
+	source := func(name, status string) int64 {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, url, status) VALUES ($1, 'listing', $2, $3) RETURNING id`,
+			name, "https://"+strings.ToLower(strings.ReplaceAll(name, " ", "-"))+".example/events", status).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	gone, robots, slow, flaky := source("Beispiel Treff", "retired"), source("Muster Salon", "manual"), source("Probe Abend", "active"), source("Kontroll Runde", "active")
+	check := func(src int64, status int, msg string, at time.Time, r any) {
+		exec(`INSERT INTO source_checks (run_id, source_id, http_status, error, checked_at) VALUES ($1, $2, $3, $4, $5)`, r, src, status, msg, at)
+	}
+	check(gone, 404, "get https://beispiel-treff.example/events: status 404", now, run)
+	check(robots, 0, "https://muster-salon.example/events: disallowed by robots.txt", now, run)
+	check(slow, 0, `get "https://probe-abend.example/events": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`, now, run)
+	// This one failed in its last three checks, so it is worth retiring.
+	for i := range 2 {
+		check(flaky, 503, "get https://kontroll-runde.example/events: status 503", now.Add(-time.Duration(i+1)*24*time.Hour), nil)
+	}
+	check(flaky, 503, "get https://kontroll-runde.example/events: status 503", now, run)
+	var ev int64
+	e.pool.QueryRow(ctx, `SELECT id FROM events LIMIT 1`).Scan(&ev)
+	for range 2 {
+		exec(`INSERT INTO event_reads (run_id, event_id, url, error, read_at) VALUES ($1, $2, 'https://example.org/e/129',
+			'no language model answers. Is Docker Model Runner on? Turn it on with: docker desktop enable model-runner (dial tcp: connection refused)', $3)`, run, ev, now)
+	}
+
+	code, body := e.do(t, "GET", fmt.Sprintf("/api/runs/%d", run), "")
+	if code != 200 {
+		t.Fatalf("run: %d %s", code, body)
+	}
+	var got struct {
+		Failures []struct {
+			What   string `json:"what"`
+			Source *struct {
+				Name   string `json:"name"`
+				Status string `json:"status"`
+			} `json:"source"`
+			Reason string `json:"reason"`
+			Action string `json:"action"`
+			Count  int    `json:"count"`
+			Detail string `json:"detail"`
+		} `json:"failures"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, f := range got.Failures {
+		name := ""
+		if f.Source != nil {
+			name = f.Source.Name + " (" + f.Source.Status + ")"
+		}
+		lines = append(lines, fmt.Sprintf("%s %s: %s, %d, action %q", f.What, name, f.Reason, f.Count, f.Action))
+		if f.Detail == "" {
+			t.Errorf("%s %s has no detail", f.What, name)
+		}
+	}
+	want := []string{
+		`check Beispiel Treff (retired): The page is gone, 1, action ""`,
+		`check Kontroll Runde (active): The site had an error of its own, HTTP 503, three checks in a row, 1, action "retire"`,
+		`check Muster Salon (manual): robots.txt does not allow the bot, 1, action ""`,
+		`check Probe Abend (active): The site did not answer in time, 1, action "check"`,
+		`read : The language model did not answer. Is Docker Model Runner on?, 2, action ""`,
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}

@@ -825,8 +825,8 @@ func TestInterruptedRunsEndWhenTheAppStarts(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'check_source' AND status IN ('queued', 'running')"); c != 0 {
 		t.Errorf("%d checks would come back", c)
 	}
-	if c := e.count(t, "runs WHERE id = $1 AND finished_at IS NOT NULL", run); c != 1 {
-		t.Error("the interrupted run did not end")
+	if c := e.count(t, "runs WHERE id = $1 AND finished_at IS NOT NULL AND ended = 'restart'", run); c != 1 {
+		t.Error("the interrupted run did not end by the restart")
 	}
 	if c := e.count(t, "jobs WHERE kind = 'prune' AND status = 'queued'"); c != 1 {
 		t.Error("housekeeping outside a run must stay")
@@ -1198,5 +1198,107 @@ func TestAnEventPageThatFailsDoesNotHoldUpTheRun(t *testing.T) {
 	}
 	if c := e.count(t, "event_reads WHERE event_id = $1 AND error <> ''", ev); c != 1 {
 		t.Errorf("%d failed reads recorded, want 1", c)
+	}
+}
+
+// A check that still runs when Tim stops the run finishes, but queues no
+// reads for the stopped run. The events wait for the next run.
+func TestAStoppedRunQueuesNothingMore(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	src := e.addSource(t, "/events", "active")
+	run, _, err := e.p.RunNow(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped, err := e.p.StopRun(ctx, run); err != nil || !stopped {
+		t.Fatalf("stop: %v %v", stopped, err)
+	}
+	if got := e.one(t, `SELECT ended FROM runs WHERE id = $1`, run); got != "stopped" {
+		t.Errorf("a run stopped by hand ended as %q", got)
+	}
+	// The check that was running when the stop came.
+	if err := e.p.CheckSource(ctx, src, run); err != nil {
+		t.Fatal(err)
+	}
+	if c := e.count(t, "jobs WHERE status = 'queued' AND key LIKE $1", fmt.Sprintf("run:%d:%%", run)); c != 0 {
+		t.Errorf("%d jobs queued for the stopped run", c)
+	}
+	if c := e.count(t, "events WHERE people_read_at IS NULL"); c != 2 {
+		t.Errorf("%d events wait for the next run, want 2", c)
+	}
+}
+
+// Each new person remembers the run that found them, so a run can say how
+// many new people and fits it brought. A person found again keeps their
+// first run.
+func TestPeopleRememberTheRunThatFoundThem(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	run := runOnce(t, e)
+	if c := e.count(t, "people WHERE first_run_id = $1", run); c != 2 {
+		t.Errorf("%d people found by the run, want 2", c)
+	}
+	if c := e.count(t, "people WHERE first_run_id = $1 AND fit <> 'other'", run); c != 1 {
+		t.Errorf("%d fits found by the run, want 1", c)
+	}
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = NULL`)
+	e.pool.Exec(t.Context(), `UPDATE events SET people_read_at = NULL`)
+	second := runOnce(t, e)
+	if c := e.count(t, "people WHERE first_run_id = $1", second); c != 0 {
+		t.Errorf("%d people moved to the second run", c)
+	}
+
+	// Founders from a portfolio's imprints count for their run too.
+	e2 := setup(t, "")
+	portfolioSite(t, e2)
+	run2 := runOnce(t, e2)
+	if c := e2.count(t, "people WHERE first_run_id = $1 AND fit = 'founder'", run2); c != 3 {
+		t.Errorf("%d founders from lookups remember their run, want 3", c)
+	}
+}
+
+// A nightly run cut short, like make crawl stopped with Ctrl-C, ends as
+// stopped, and its queued work does not wait for anyone.
+func TestACancelledNightlyRunEndsAsStopped(t *testing.T) {
+	e := setup(t, "")
+	for i := range 3 {
+		e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	err := e.p.Nightly(ctx, cancelling{cancel})
+	if err == nil {
+		t.Fatal("a cancelled run must say so")
+	}
+	if got := e.one(t, `SELECT ended || ' ' || (finished_at IS NOT NULL)::text FROM runs`); got != "stopped true" {
+		t.Errorf("the cancelled run ended as %v", got)
+	}
+	if c := e.count(t, "jobs WHERE status = 'queued' AND key LIKE 'run:%'"); c != 0 {
+		t.Errorf("%d jobs of the cancelled run still queued", c)
+	}
+}
+
+// cancelling is a worker that is stopped before it gets to anything.
+type cancelling struct{ cancel context.CancelFunc }
+
+func (c cancelling) RunUntilIdle(ctx context.Context) error {
+	c.cancel()
+	return ctx.Err()
+}
+
+// A nightly run that gets through everything ends as finished.
+func TestANightlyRunEndsAsFinished(t *testing.T) {
+	e := setup(t, "")
+	e.addSource(t, "/s0", "active")
+	w := &queue.Worker{Queue: e.p.Queue, Handlers: e.p.Handlers(), Concurrency: 2, PollInterval: 10 * time.Millisecond}
+	if err := e.p.Nightly(t.Context(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT ended FROM runs`); got != "finished" {
+		t.Errorf("the nightly run ended as %q", got)
 	}
 }

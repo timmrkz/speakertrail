@@ -168,7 +168,7 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		return p.finishPortfolio(ctx, src, runID, cfg, page, rec)
 	}
 
-	r := &Resolver{Pool: p.Pool, Rules: RulesFrom(cfg), Now: p.now}
+	r := &Resolver{Pool: p.Pool, Rules: RulesFrom(cfg), Now: p.now, RunID: runID}
 	events := inWindow(result.Events, p.now(), cfg.Days("collect_ahead_days", 30))
 	stats, err := r.Resolve(ctx, src, events)
 	if err != nil {

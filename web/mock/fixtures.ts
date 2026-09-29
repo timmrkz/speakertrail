@@ -222,6 +222,7 @@ const SOURCE_ROWS: S[] = [
   [23, 'Digital Hub Bonn', 'listing', 'https://example.org/digitalhub-bonn/events', 'Bonn', 'active', 11, 2, 'ok', '', 'Imported from the brief'],
   [24, 'Founders Foundation', 'listing', 'https://example.org/founders-foundation/events', 'Bielefeld', 'candidate', 0, null, 'error', 'HTTP 403. The site blocks the crawler', 'Web search: Gründer Events OWL'],
   [25, 'Old Köln startup blog', 'listing', 'https://example.org/old-blog/events', 'Köln', 'retired', 0, 0, 'error', 'HTTP 404. The page is gone', 'Imported from the brief'],
+  [27, 'Beispiel Hub startups', 'portfolio', 'https://example.org/beispiel-hub/startups', 'Köln', 'active', 6, 34, 'ok', '', 'Added by Tim'],
 ]
 
 // Hours since the nightly run at 05:00 Berlin, `nights` runs back.
@@ -234,7 +235,7 @@ export function nightHoursAgo(nights = 0): number {
 export function buildSources(): MockSource[] {
   const lastRun = nightHoursAgo(0)
   const out: MockSource[] = SOURCE_ROWS.map(([id, name, kind, url, city, status, points, found, health, note, from]) => ({
-    id, name, kind, url, query: null, category: kind === 'organiser_page' ? 'Venue and organiser' : 'Event listing', city, status,
+    id, name, kind, url, query: null, category: kind === 'organiser_page' ? 'Venue and organiser' : kind === 'portfolio' ? 'Startup portfolio' : 'Event listing', city, status,
     fetch_mode: id === 10 ? 'browser' : 'auto', notes: '', checks: found === null ? 0 : Math.max(1, (id * 7) % 23),
     empty_checks_in_row: status === 'retired' ? 4 : found === 0 ? 1 : 0, points, health, health_note: note, discovered_from: from,
     last_found: found, last_mode: id === 10 ? 'browser' : 'http',
@@ -274,9 +275,9 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
     checks.set(id, list)
     runs.push({
       id, kind: 'nightly', started_at: started, finished_at: running ? null : hoursAgo(startH - 0.02 * list.length - 0.05),
-      sources_checked: list.length, events_found: list.reduce((a, c) => a + c.events_found, 0),
+      sources_checked: list.length, events_found: list.reduce((a, c) => a + c.events_found, 0), pages_read: 12 + ((i * 7) % 18), startups_looked_up: (i * 3) % 11,
       events_new: Math.max(0, 9 - i + ((i * 5) % 7)), people_new: Math.max(0, 14 - i + ((i * 3) % 9)),
-      errors: list.filter((c) => c.error).length,
+      errors: list.filter((c) => c.error).length, progress: null,
     })
   }
   return { runs, checks }

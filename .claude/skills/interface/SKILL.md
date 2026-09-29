@@ -56,6 +56,35 @@ repository.
   shape. When the server's answer changes, change the mock with it, from
   `docs/api.md`.
 
+## Work in hand
+
+Tim wants to see at every moment what the engine does. Adopted from Frame
+Fairy's rules, without its styling:
+
+- **Say what happens now.** "Checking Startplatz events", "Reading the
+  page of Pitch Abend Köln". Not "Working".
+- **Show how far.** The `.progress` fill in `app.css`, with its light
+  travelling over what is done. Work that cannot say how far it is uses
+  `.progress.unknown`, the shuttle, never a bar stuck at a number it does
+  not have. The fill never jumps back: count what the work will add, like
+  the reads a check queues, before it is queued.
+- **Show time so far and about how long is left.** Time left is measured
+  from how long the same kind of work took before, like the server's
+  `seconds_left`, never guessed. It moves in steps of five seconds and in
+  whole minutes from a minute on, and it counts down between answers.
+  Until there is anything to measure against, it says so.
+- **Work out of sight pulses.** `.dot.busy` on the place that leads to it,
+  like Runs in the sidebar and More on a phone.
+- **It can be stopped**, in the same place it was started.
+- **One component per kind of work.** A run shows itself through
+  `RunProgress.svelte` in the list and in its sheet alike. A new kind of
+  work gets the same fill, shuttle and pulse, never a new animation.
+
+Check it in the mock: the mock's run moves through its checks and reads
+every two seconds, like the server's. Probe the step text, the fill width
+and the time left over the whole run and see that the fill only grows and
+the time left only shrinks.
+
 ## What to report
 
 What changed, the screenshots before and after, the measurement that proves

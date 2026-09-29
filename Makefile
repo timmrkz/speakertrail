@@ -11,6 +11,11 @@
 #
 #   make            build the app
 #   make crawl      check every due source once, like the nightly job
+#   make report     write report.md: what the engine did lately, without
+#                   names, to attach to a chat with Claude
+#   make people     who is on stage on 5 event pages the runs found, by the
+#                   engine's rules and by the local model. Stores nothing.
+#                   URL="https://… https://…" names the pages instead
 #   make ui         the interface with live reload on http://localhost:5173,
 #                   next to a running make run
 #   make mock       the interface alone, with invented data and no backend
@@ -34,10 +39,15 @@ SHELL := /bin/sh
 # the tools that are already there. DOCKER=0 forces the direct way.
 DOCKER ?= $(if $(or $(CI),$(CLAUDE_CODE_REMOTE),$(SPEAKERTRAIL_IN_DOCKER)),0,1)
 
-.PHONY: all run crawl ui mock test unit interface shell check db pull-prod image stop clean help docker
+# The language model for make people. It runs on this machine, on the Mac
+# through Docker Model Runner. Any model on hub.docker.com/u/ai works, for
+# example MODEL=ai/gemma3:4b-q4_K_M for a faster, smaller one.
+MODEL ?= ai/gemma3:12b-q4_K_M
+
+.PHONY: all run crawl report people model model-if-on ui mock test unit interface shell check db pull-prod image stop clean help docker
 
 help:
-	@sed -n '1,28p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
 
 ifeq ($(DOCKER),1)
 
@@ -51,16 +61,36 @@ all: docker
 	@$(COMPOSE) build web
 	@echo "Ready: the app is built"
 
-run: all .env
+run: all .env model-if-on
 	@$(COMPOSE) run --rm web import 2>&1 | $(STARTING_DATA) || true
 	@echo "Open http://localhost:8080 and log in with the password in .env"
-	@$(COMPOSE) up --attach web --no-log-prefix web
+	@LLM_MODEL=$(MODEL) $(COMPOSE) up --attach web --no-log-prefix web
 
 .env:
 	@sh scripts/env.sh $(COMPOSE) run --rm --no-deps -T web
 
-crawl: all
-	@$(COMPOSE) run --rm nightly
+crawl: all model-if-on
+	@LLM_MODEL=$(MODEL) $(COMPOSE) run --rm nightly
+
+people: all model
+	@$(COMPOSE) run --rm -e LLM_MODEL=$(MODEL) web people $(URL)
+
+report: all
+	@err=$$($(COMPOSE) run --rm -T -e LLM_MODEL=$(MODEL) web report 2>&1 >report.md) || { echo "$$err"; exit 1; }
+	@echo "Wrote report.md. Attach it to a chat with Claude."
+
+# The model, downloaded once. The first time takes a while, it is several GB.
+model: docker
+	@docker model version >/dev/null 2>&1 || { \
+		echo "Docker Model Runner is off. Turn it on with: docker desktop enable model-runner"; exit 1; }
+	@docker model pull $(MODEL)
+
+# Runs read event pages with the model when Model Runner is on. Without it
+# the app works the same and only reads no pages.
+model-if-on: docker
+	@if docker model version >/dev/null 2>&1; then docker model pull $(MODEL); else \
+		echo "Docker Model Runner is off, so runs read no event pages for people."; \
+		echo "Turn it on with: docker desktop enable model-runner"; fi
 
 # The toolbox runs this same Makefile, which then works directly.
 test unit interface: docker
@@ -151,6 +181,17 @@ run: all db
 
 crawl: all db
 	@$(ENV) $(BIN)/speakertrail nightly
+
+# Directly, the model answers on http://localhost:12434, or at LLM_URL.
+people: all db
+	@LLM_MODEL=$(MODEL) $(ENV) $(BIN)/speakertrail people $(URL)
+
+report: all db
+	@$(ENV) $(BIN)/speakertrail report >report.md
+	@echo "Wrote report.md. Attach it to a chat with Claude."
+
+model:
+	@echo "Directly, start the model yourself and set LLM_URL if it is not on localhost:12434"
 
 # The toolbox's database is its own container, which compose starts.
 db:

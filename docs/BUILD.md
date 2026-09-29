@@ -39,6 +39,8 @@ reachable from the Mac, and only from the Mac itself.
 | `make run` | builds and starts the app with its database, on http://localhost:8080 |
 | `make` | builds the app |
 | `make crawl` | checks every due source once, like the nightly job |
+| `make report` | writes `report.md`: the last runs, what failed and what waits, without anyone's name. Attach it to a chat with Claude when something looks wrong |
+| `make people` | who is on stage on 5 event pages the runs found, by the engine's rules and by the local model, see below. `URL="…"` names the pages instead. Stores nothing |
 | `make ui` | the interface with live reload on http://localhost:5173, sending the API to a `make run` in another terminal |
 | `make mock` | the interface alone with invented data, on http://localhost:5173. The mock password is `speakertrail` |
 | `make test` | `unit` and `interface` |
@@ -51,6 +53,76 @@ reachable from the Mac, and only from the Mac itself.
 | `make stop` | stops every container make started |
 | `make clean` | removes the built app, the images and the caches. The database stays |
 | `make help` | this list |
+
+## Startups from portfolios
+
+A portfolio is a page that lists startups, like an accelerator's or a
+university's. Add one on Sources and set "The page lists" to Startups. A
+run checks each portfolio every 14 days and stores the startups it links
+to, over up to six pages of the list. Many portfolios link to a page of
+their own about each startup, and the website is found there. Then it
+looks up at most 10 startups per run: it loads the startup's
+website, finds its imprint and takes the managing directors it names. They
+count as founders when the imprint reads like a young company, a GmbH, UG
+or sole trader with at most four managing directors. A bank, a stock
+company or an association does not. This needs no language model.
+When the imprint names founders, the lookup also reads the startup's team
+page and keeps the profile links whose address carries a founder's name,
+like `linkedin.com/in/lena-musterfrau`. The engine never opens them. You
+confirm or reject each on the person's sheet, where Find on LinkedIn
+searches for anyone without one.
+
+A portfolio only says a startup existed once, so each lookup also looks for
+signs of life. A parked domain or a website that did not answer three
+times counts as gone, an imprint that says "i. L." or "in Liquidation" as
+being wound up. Otherwise the newest date the website shows, from its
+sitemap or its copyright, says whether it is active or quiet, quiet after
+a year without change. Every startup is looked up again after 90 days.
+People shows it for founders without an upcoming event, and lists the
+active ones first.
+
+Each of these founders says why on their sheet, like "Managing director of
+Beispiel GmbH, by its imprint. In the portfolio of Beispiel Hub". `make
+report` lists the lookups that found nobody, and why.
+
+## The language model
+
+The engine reads people better with a language model. Every run reads the
+own pages of upcoming events with it, up to 10 per run, and stores who is
+on stage with the passage that shows it. When the page says someone founded
+or runs something, they count as a founder, and People shows founders
+first. A title counts too, when its role says founder, Gründerin or owner:
+"Projektleiter, Gründerzentrum" does not, and neither does a CEO alone.
+`make report` says for each founder which passage or title made them one. It runs on this Mac,
+not with a paid service: Docker Desktop's Model Runner runs it on the Mac's
+graphics chip, and the app's container asks it.
+
+`make run` and `make crawl` get the model when Model Runner is on. Without
+it the app works the same and only reads no event pages. Model Runner is on
+by default in Docker Desktop on Apple silicon. If make says it is off:
+
+```
+docker desktop enable model-runner
+```
+
+The first `make people` downloads the model, `ai/gemma3:12b-q4_K_M`, about
+8 GB. After that it starts in seconds. To try another one, name it:
+
+```
+make people MODEL=ai/gemma3:4b-q4_K_M
+```
+
+Without `URL`, `make people` takes the pages of single upcoming events that
+runs found, one per source. So start a run in the app first, on Runs.
+
+The model answers one question at a time. When it fails, for example
+because the Mac runs short of memory with two models loaded, the run leaves
+the remaining event pages for a later run instead of retrying them, and
+`make report` lists the failure.
+
+Each line the model gives comes with the passage from the page that puts
+the person on stage. A name the page does not contain is left out, and so is
+anyone who is only a contact person or in the imprint.
 
 ## Settings
 

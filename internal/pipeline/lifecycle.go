@@ -94,6 +94,14 @@ func SourceKindFor(raw string) string {
 	return "listing"
 }
 
+// meetupOwnPages are Meetup's own pages, which belong to no group.
+var meetupOwnPages = map[string]bool{
+	"find": true, "topics": true, "cities": true, "lp": true, "apps": true, "login": true, "register": true,
+	"pro": true, "blog": true, "help": true, "about": true, "privacy": true, "terms": true, "cookie_policy": true,
+	"meetup-pro": true, "start": true, "home": true, "members": true, "account": true, "messages": true,
+	"notifications": true, "search": true, "de-de": true, "en-us": true, "online-events": true, "media": true,
+}
+
 // CalendarURL turns an event link on a platform into the organiser's
 // calendar, which lists all their future dates.
 func CalendarURL(raw string) string {
@@ -104,15 +112,23 @@ func CalendarURL(raw string) string {
 	host := strings.TrimPrefix(strings.ToLower(u.Hostname()), "www.")
 	if host == "meetup.com" {
 		path := u.Path
-		if i := strings.Index(path[1:], "/"); strings.HasPrefix(path, "/de-de/") || strings.HasPrefix(path, "/en-us/") {
+		if i := strings.Index(path[1:], "/"); strings.HasPrefix(strings.ToLower(path), "/de-de/") || strings.HasPrefix(strings.ToLower(path), "/en-us/") {
 			path = path[i+1:]
 		}
 		if m := meetupEventPath.FindStringSubmatch(path); m != nil {
 			return "https://www.meetup.com/" + m[1] + "/"
 		}
 		parts := strings.Split(strings.Trim(path, "/"), "/")
-		if len(parts) >= 1 && parts[0] != "" && parts[0] != "find" && parts[0] != "topics" && parts[0] != "cities" {
+		if len(parts) >= 1 && parts[0] != "" && !meetupOwnPages[strings.ToLower(parts[0])] {
 			return "https://www.meetup.com/" + parts[0] + "/"
+		}
+		return ""
+	}
+	// A Tickettailor link to one event becomes the organiser's page.
+	if host == "tickettailor.com" && strings.HasPrefix(u.Path, "/events/") {
+		parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+		if len(parts) >= 2 && parts[1] != "" {
+			return "https://www.tickettailor.com/events/" + parts[1]
 		}
 		return ""
 	}

@@ -16,19 +16,79 @@ import (
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
-// runJSON builds one run with its totals from the checks. A run started by
-// hand or by Check now is worked on by serve, which records no end. It is
-// finished once none of its checks wait any more.
+// runJSON builds one run with its totals from the checks, the reads of
+// event pages and the lookups of startups. A run started by hand or by Check now is worked on by serve,
+// which records no end. It is finished once none of its jobs wait any more.
 const runJSON = `json_build_object(
 	'id', r.id, 'kind', r.kind, 'started_at', r.started_at,
 	'finished_at', COALESCE(r.finished_at, CASE WHEN NOT EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
-		THEN (SELECT COALESCE(max(checked_at), r.started_at) FROM source_checks WHERE run_id = r.id) END),
+		THEN GREATEST(r.started_at, (SELECT max(checked_at) FROM source_checks WHERE run_id = r.id),
+			(SELECT max(read_at) FROM event_reads WHERE run_id = r.id),
+			(SELECT max(looked_up_at) FROM startup_lookups WHERE run_id = r.id)) END),
 	'sources_checked', (SELECT count(DISTINCT source_id) FROM source_checks WHERE run_id = r.id),
 	'events_found', (SELECT COALESCE(sum(events_found), 0) FROM source_checks WHERE run_id = r.id),
 	'events_new', (SELECT COALESCE(sum(events_new), 0) FROM source_checks WHERE run_id = r.id),
-	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id),
+	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id)
+		+ (SELECT COALESCE(sum(people_new), 0) FROM event_reads WHERE run_id = r.id)
+		+ (SELECT COALESCE(sum(people_new), 0) FROM startup_lookups WHERE run_id = r.id),
+	'pages_read', (SELECT count(*) FROM event_reads WHERE run_id = r.id),
+	'startups_looked_up', (SELECT count(*) FROM startup_lookups WHERE run_id = r.id),
+	'progress', CASE WHEN r.finished_at IS NULL AND EXISTS (
+		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		THEN (` + progressJSON + `) END,
 	'errors', (SELECT count(*) FROM source_checks WHERE run_id = r.id AND error <> ''))`
+
+// progressJSON says how far a going run is: its checks, reads and lookups,
+// done and in all, what is running now, and about how long is left. The
+// time left is measured, from how long the last 200 checks, 100 reads and
+// 100 lookups took. Checks and lookups run four at a time, reads one at a
+// time, because the model answers one question at a time. Without any
+// history there is no estimate.
+const progressJSON = `WITH j AS (
+		SELECT j.kind, j.status, s.kind AS source_kind FROM jobs j
+		LEFT JOIN sources s ON j.kind = 'check_source' AND s.id = (j.payload->>'source_id')::bigint
+		WHERE j.key LIKE 'run:' || r.id || ':%' AND j.kind IN ('check_source', 'read_event', 'look_up_startup')),
+	c AS (SELECT
+		count(*) FILTER (WHERE kind = 'check_source') AS checks,
+		count(*) FILTER (WHERE kind = 'check_source' AND status IN ('done', 'failed')) AS checks_done,
+		count(*) FILTER (WHERE kind = 'check_source' AND source_kind = 'portfolio' AND status NOT IN ('done', 'failed')) AS portfolios_left,
+		count(*) FILTER (WHERE kind = 'read_event') AS reads,
+		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done,
+		count(*) FILTER (WHERE kind = 'look_up_startup') AS lookups,
+		count(*) FILTER (WHERE kind = 'look_up_startup' AND status IN ('done', 'failed')) AS lookups_done FROM j),
+	speed AS (SELECT
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM source_checks ORDER BY id DESC LIMIT 200) x) AS check_ms,
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM event_reads WHERE error = '' ORDER BY id DESC LIMIT 100) x) AS read_ms,
+		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM startup_lookups ORDER BY id DESC LIMIT 100) x) AS lookup_ms,
+		-- Each check queues reads of its new events, so the run expects as
+		-- many per check as checks brought lately, up to the setting.
+		LEAST(COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'event_pages_per_check'), 3),
+			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > now() - interval '14 days')::numeric
+				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > now() - interval '14 days'), 0), 0)) AS reads_per_check,
+		-- Each portfolio check queues up to this many lookups.
+		COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'startups_per_run'), 10) AS lookups_per_portfolio),
+	expect AS (SELECT
+		GREATEST(c.reads, c.reads + round((c.checks - c.checks_done) * speed.reads_per_check)) AS reads,
+		c.lookups + c.portfolios_left * speed.lookups_per_portfolio AS lookups FROM c, speed)
+	SELECT json_build_object(
+		'checks', c.checks, 'checks_done', c.checks_done, 'reads', c.reads, 'reads_done', c.reads_done, 'reads_expected', expect.reads,
+		'lookups', c.lookups, 'lookups_done', c.lookups_done, 'lookups_expected', expect.lookups,
+		'now', (SELECT COALESCE(json_agg(json_build_object(
+				'kind', CASE jr.kind WHEN 'check_source' THEN 'check' WHEN 'read_event' THEN 'read' ELSE 'lookup' END,
+				'label', CASE jr.kind
+					WHEN 'check_source' THEN (SELECT name FROM sources WHERE id = (jr.payload->>'source_id')::bigint)
+					WHEN 'read_event' THEN (SELECT title FROM events WHERE id = (jr.payload->>'event_id')::bigint)
+					ELSE (SELECT name FROM organisations WHERE id = (jr.payload->>'organisation_id')::bigint) END,
+				'since', jr.updated_at) ORDER BY jr.updated_at), '[]')
+			FROM jobs jr WHERE jr.status = 'running' AND jr.key LIKE 'run:' || r.id || ':%'
+				AND jr.kind IN ('check_source', 'read_event', 'look_up_startup')),
+		'seconds_left', CASE WHEN (c.checks > c.checks_done AND speed.check_ms IS NULL) OR (expect.reads > c.reads_done AND speed.read_ms IS NULL)
+				OR (expect.lookups > c.lookups_done AND speed.lookup_ms IS NULL)
+			THEN NULL ELSE round(GREATEST(
+				((c.checks - c.checks_done) * COALESCE(speed.check_ms, 0) + (expect.lookups - c.lookups_done) * COALESCE(speed.lookup_ms, 0)) / 4,
+				(expect.reads - c.reads_done) * COALESCE(speed.read_ms, 0)) / 1000) END)
+	FROM c, speed, expect`
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	now := s.opts.Now()
@@ -148,13 +208,21 @@ const personJSON = `json_build_object(
 		FROM appearances a JOIN events e ON e.id = a.event_id
 		WHERE a.person_id = p.id AND e.starts_at >= $1 ORDER BY e.starts_at LIMIT 1),
 	'profiles', (SELECT COALESCE(json_agg(json_build_object('id', pr.id, 'platform', pr.platform, 'url', pr.url, 'review', pr.review) ORDER BY pr.platform), '[]')
-		FROM profiles pr WHERE pr.person_id = p.id))`
+		FROM profiles pr WHERE pr.person_id = p.id),
+	'activity', (SELECT json_build_object('state', o.activity, 'since', o.last_sign_at, 'note', o.activity_note, 'company', o.name)
+		FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
+		WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''
+		ORDER BY ` + activityRank + `, o.last_sign_at DESC NULLS LAST LIMIT 1))`
+
+// activityRank orders what a lookup says about a startup, the most alive
+// first.
+const activityRank = `array_position(ARRAY['active', 'unknown', 'quiet', 'dissolved', 'gone'], o.activity)`
 
 func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	order := map[string]string{
-		"":     "next_start NULLS LAST, p.full_name",
-		"next": "next_start NULLS LAST, p.full_name",
+		"":     "next_start NULLS LAST, activity_rank, p.full_name",
+		"next": "next_start NULLS LAST, activity_rank, p.full_name",
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
 	}[q.Get("sort")]
@@ -167,18 +235,32 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"all":      "true",
 		"upcoming": "next_start IS NOT NULL",
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
+		"founder":  "p.fit = 'founder'",
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, upcoming or profile")
+		fail(w, http.StatusBadRequest, "filter must be all, upcoming, profile or founder")
 		return
 	}
+	// counts says how many people each filter shows for the same search, so
+	// a filter that shows nobody never hides that others were found.
 	s.sendQuery(w, r, http.StatusOK, `
-		SELECT json_build_object('people', COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]'))
-		FROM (SELECT p.*, (SELECT min(e.starts_at) FROM appearances a JOIN events e ON e.id = a.event_id
-				WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start
-			FROM people p) p
-		WHERE `+filter+`
-		  AND ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')`,
+		WITH base AS (
+			SELECT p.*, (SELECT min(e.starts_at) FROM appearances a JOIN events e ON e.id = a.event_id
+					WHERE a.person_id = p.id AND e.starts_at >= $1) AS next_start,
+				-- Founders of startups that look alive come before those that
+				-- went quiet or are gone. Nothing known counts as unknown.
+				COALESCE((SELECT min(`+activityRank+`) FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
+					WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''), 2) AS activity_rank
+			FROM people p
+			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%'))
+		SELECT json_build_object(
+			'people', (SELECT COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]') FROM base p WHERE `+filter+`),
+			'counts', (SELECT json_build_object(
+				'all', count(*),
+				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
+				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
+				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
+				FROM base p))`,
 		s.opts.Now().Add(-12*time.Hour), likeSafe(q.Get("q")))
 }
 
@@ -186,7 +268,8 @@ func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
 	s.sendQuery(w, r, http.StatusOK, `
 		SELECT (`+personJSON+`::jsonb || jsonb_build_object(
 			'notes', p.notes,
-			'appearances', (SELECT COALESCE(jsonb_agg(jsonb_build_object('role', a.role, 'event', jsonb_build_object(
+			'fit_evidence', p.fit_evidence,
+			'appearances', (SELECT COALESCE(jsonb_agg(jsonb_build_object('role', a.role, 'evidence', a.evidence, 'event', jsonb_build_object(
 					'id', e.id, 'title', e.title, 'starts_at', e.starts_at, 'city', e.city, 'venue', COALESCE(v.name, ''),
 					'url', e.canonical_url)) ORDER BY e.starts_at DESC), '[]')
 				FROM appearances a JOIN events e ON e.id = a.event_id LEFT JOIN organisations v ON v.id = e.venue_id
@@ -265,31 +348,35 @@ const sourceJSON = `json_build_object(
 	'last_checked_at', s.last_checked_at, 'next_check_at', s.next_check_at, 'checks', s.checks,
 	'empty_checks_in_row', s.empty_checks_in_row, 'points', s.points,
 	'last_check', CASE WHEN lc.id IS NULL THEN NULL ELSE json_build_object(
-		'events_found', lc.events_found, 'http_status', lc.http_status, 'mode', lc.mode, 'error', lc.error) END,
+		'events_found', lc.events_found, 'startups_found', lc.startups_found,
+		'http_status', lc.http_status, 'mode', lc.mode, 'error', lc.error) END,
 	'health', CASE
 		WHEN s.status = 'manual' THEN 'warning'
 		WHEN lc.id IS NULL THEN 'never'
 		WHEN lc.error <> '' THEN 'error'
-		WHEN lc.events_found = 0 THEN 'warning'
-		WHEN prev.avg_found >= 4 AND lc.events_found < prev.avg_found * 0.3 THEN 'warning'
+		WHEN lc.found = 0 THEN 'warning'
+		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN 'warning'
 		ELSE 'ok' END,
 	'health_note', CASE
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.events_found = 0 THEN 'The last check found no events'
-		WHEN prev.avg_found >= 4 AND lc.events_found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.events_found || ' events, usually about ' || round(prev.avg_found)
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE WHEN s.kind = 'portfolio' THEN 'startups' ELSE 'events' END
+		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
+			'Found ' || lc.found || CASE WHEN s.kind = 'portfolio' THEN ' startups' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
 		(SELECT 'Linked from ' || name FROM sources x WHERE x.id = s.discovered_from_source_id),
 		NULLIF(s.discovered_note, '')))`
 
+// A check found events, or startups when the source is a portfolio.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT * FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
-	LEFT JOIN LATERAL (SELECT avg(events_found) AS avg_found FROM (
-		SELECT events_found FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
+	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
+		SELECT CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
 func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
@@ -311,6 +398,8 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL  string `json:"url"`
 		Name string `json:"name"`
+		// Portfolio is true for a page that lists startups, not events.
+		Portfolio bool `json:"portfolio"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -330,8 +419,12 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	}
 	// A link to one event becomes the calendar it belongs to.
 	link := u.String()
-	if cal := pipeline.CalendarURL(link); cal != "" {
-		link = cal
+	kind := "portfolio"
+	if !body.Portfolio {
+		if cal := pipeline.CalendarURL(link); cal != "" {
+			link = cal
+		}
+		kind = pipeline.SourceKindFor(link)
 	}
 	name := strings.TrimSpace(body.Name)
 	if name == "" {
@@ -340,7 +433,7 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	var id int64
 	err = s.opts.Pool.QueryRow(r.Context(), `
 		INSERT INTO sources (name, kind, url, status, discovered_note) VALUES ($1, $2, $3, 'candidate', 'Added by Tim')
-		RETURNING id`, name, pipeline.SourceKindFor(link), link).Scan(&id)
+		RETURNING id`, name, kind, link).Scan(&id)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		fail(w, http.StatusConflict, "This address is already a source")
@@ -363,6 +456,9 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		FetchMode *string `json:"fetch_mode"`
 		Notes     *string `json:"notes"`
 		Name      *string `json:"name"`
+		// Portfolio switches between a page of startups and a page of
+		// events.
+		Portfolio *bool `json:"portfolio"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -376,17 +472,45 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "fetch_mode must be auto, http or browser")
 		return
 	}
+	var kind *string
+	if body.Portfolio != nil {
+		var link *string
+		err := s.opts.Pool.QueryRow(r.Context(), `SELECT url FROM sources WHERE id = $1`, id).Scan(&link)
+		if errors.Is(err, pgx.ErrNoRows) {
+			fail(w, http.StatusNotFound, "Not found")
+			return
+		}
+		if err != nil {
+			s.internal(w, r, err)
+			return
+		}
+		if link == nil {
+			fail(w, http.StatusBadRequest, "Only a source with a web address can list startups")
+			return
+		}
+		k := "portfolio"
+		if !*body.Portfolio {
+			k = pipeline.SourceKindFor(*link)
+		}
+		kind = &k
+	}
 	tag, err := s.opts.Pool.Exec(r.Context(), `
 		UPDATE sources SET
+			kind = COALESCE($6, kind),
 			status = COALESCE($2, status),
 			status_changed_at = CASE WHEN $2::text IS NOT NULL AND $2 <> status THEN now() ELSE status_changed_at END,
 			empty_checks_in_row = CASE WHEN $2::text IS NOT NULL AND $2 <> status THEN 0 ELSE empty_checks_in_row END,
-			next_check_at = CASE WHEN $2::text IN ('active', 'probation', 'candidate') AND $2 <> status THEN NULL ELSE next_check_at END,
+			-- A source set going again, or that now lists something else, is
+			-- checked in the next run. One retired by hand is not checked
+			-- again until it is set back.
+			next_check_at = CASE WHEN ($2::text IN ('active', 'probation', 'candidate') AND $2 <> status)
+				OR ($6::text IS NOT NULL AND $6 <> kind) THEN NULL
+				WHEN $2::text = 'retired' THEN now() + interval '10 years' ELSE next_check_at END,
 			fetch_mode = COALESCE($3, fetch_mode),
 			notes = COALESCE($4, notes),
 			name = COALESCE(NULLIF($5, ''), name),
 			updated_at = now()
-		WHERE id = $1`, id, body.Status, body.FetchMode, body.Notes, body.Name)
+		WHERE id = $1`, id, body.Status, body.FetchMode, body.Notes, body.Name, kind)
 	if err != nil {
 		s.internal(w, r, err)
 		return
@@ -428,6 +552,33 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]any{"run_id": id, "started": started})
+}
+
+// currentRun answers the run that is going, or null, for the dot on Runs.
+func (s *Server) currentRun(w http.ResponseWriter, r *http.Request) {
+	s.sendQuery(w, r, http.StatusOK, `
+		SELECT json_build_object('run', (SELECT `+runJSON+` FROM runs r
+			WHERE r.kind <> 'check' AND r.finished_at IS NULL AND EXISTS (
+				SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+			ORDER BY r.id DESC LIMIT 1))`)
+}
+
+// stopRun ends a run by hand. A run that already ended answers 409.
+func (s *Server) stopRun(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	stopped, err := s.opts.Pipeline.StopRun(r.Context(), id)
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	if !stopped {
+		fail(w, http.StatusConflict, "This run has already ended")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) runs(w http.ResponseWriter, r *http.Request) {

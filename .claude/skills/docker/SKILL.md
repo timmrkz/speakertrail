@@ -44,4 +44,24 @@ The scratch copy has no Chromium in the toolbox, so the browser tests skip
 there. CI's `toolbox` job builds the real `Dockerfile` and runs `make test`
 in it, Chromium included. That job is the proof.
 
+## The language model in a session
+
+Docker Model Runner has no plugin in a session, but Docker ships it as a
+container that works the same, CPU only:
+
+```
+docker run -d --name mr --network host -e HTTPS_PROXY=$HTTPS_PROXY \
+  -e HTTP_PROXY=$HTTP_PROXY -e NO_PROXY=localhost,127.0.0.1 \
+  -e SSL_CERT_FILE=/ca.crt -v /root/.ccr/ca-bundle.crt:/ca.crt:ro \
+  docker/model-runner:latest
+curl -s localhost:12434/models/create -d '{"from":"ai/gemma3:4B-Q4_K_M"}'
+```
+
+Then `LLM_URL=http://localhost:12434/engines/v1` for the program directly.
+For the app's container, point `LLM_URL` at
+`http://host.docker.internal:12434/engines/v1` in the scratch override,
+with `extra_hosts: ["host.docker.internal:host-gateway"]` and the proxy
+variables, lower case too, set empty. A 4B model answers one page in
+about 40 seconds on the session's CPU. Tim's Mac does it on the GPU.
+
 Afterwards `make stop`, and move no scratch file into the repository.

@@ -24,6 +24,7 @@ import (
 type Pipeline interface {
 	CheckNow(ctx context.Context, sourceID int64) (int64, error)
 	RunNow(ctx context.Context) (runID int64, started bool, err error)
+	StopRun(ctx context.Context, runID int64) (bool, error)
 }
 
 // Options configure the server.
@@ -82,7 +83,9 @@ func (s *Server) routes() {
 	p("PATCH /api/sources/{id}", s.patchSource)
 	p("POST /api/sources/{id}/check", s.checkSource)
 	p("GET /api/runs", s.runs)
+	p("GET /api/runs/current", s.currentRun)
 	p("POST /api/runs", s.startRun)
+	p("POST /api/runs/{id}/stop", s.stopRun)
 	p("GET /api/runs/{id}", s.run)
 	p("GET /api/fetches/{id}/{part}", s.fetchPart)
 	p("GET /api/settings", s.settings)

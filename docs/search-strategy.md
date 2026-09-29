@@ -2,7 +2,8 @@
 
 A brief for the next stage of the engine. It says who makes a good guest,
 where such people are found in NRW, how the engine tells them apart, and in
-which order to build it. No code yet.
+which order to build it. What is built so far is under
+[Where it stands](#where-it-stands).
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
@@ -185,6 +186,31 @@ Small batches, each one tested on Tim's Mac before the next.
 5. **Find on Instagram.**
 6. **Learning from keeps and skips.**
 7. **Weekly suggestions**, once the experiment works.
+
+## Where it stands
+
+Built, in the order above:
+
+0. **The workspace.** People updates by itself while a run goes, newest on
+   top. Runs show their true state, what they brought and what failed, in
+   plain words with the action that fixes it. Events moved under More.
+1. **The rubric**, in `internal/rubric`, over everyone found so far, with
+   People sorted by it and every reason shown with its passage. One
+   addition to the signals above: a startup's founders found through an
+   accelerator's portfolio are *backed by a startup programme*, a signal
+   against, because the imprint's one or two managing directors alone
+   would put every portfolio founder at the top.
+2. **About pages in lookups**, read by the rules and the local model.
+4. **Directories** as a kind of source, with only NRW counting by postcode.
+5. **Find on Instagram**, Instagram's keyword search in Tim's browser.
+6. **Keeps and skips** on each person, counted per signal on Overview and
+   in the report, with how the top 20 by fit were decided.
+
+Waiting:
+
+3. **The starting list of new sources.** Each one is checked by hand for
+   robots.txt and terms first, and the cloud session cannot reach the
+   sites yet, see [What a session needs](#what-a-session-needs).
 
 ## First an experiment
 

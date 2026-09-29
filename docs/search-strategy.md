@@ -172,6 +172,9 @@ Most of the machinery exists. What changes:
 
 Small batches, each one tested on Tim's Mac before the next.
 
+0. **The workspace for the experiment:** People live and newest first,
+   events stepped back, runs made solid. Tim reviews everything that
+   follows here.
 1. **The rubric on what we have.** Score the people already found, with
    reasons, and sort People by it. This shows whether the rubric matches
    Tim's sense of fit before any new source is added.
@@ -181,25 +184,49 @@ Small batches, each one tested on Tim's Mac before the next.
 4. **Directories as a source kind**, with the NRW postcode filter.
 5. **Find on Instagram.**
 6. **Learning from keeps and skips.**
+7. **Weekly suggestions**, once the experiment works.
 
-## Suggestions
+## First an experiment
 
-A **suggestion** is one person the engine puts forward as a likely guest.
-It is one card: the name, what they do, the signals with their passages,
-whether they are still active, and Find on LinkedIn. Tim either keeps them,
-which means he wants to contact them, or skips them, and the engine does
-not suggest them again.
+Before anything is built for good, the strategy is tried as an experiment:
+the rubric, the new sources and the tools they need. Tim reviews the
+result where he does today, in the list of people.
 
-The engine may know hundreds of people. Suggestions are the few it puts
-forward each week, the best fits Tim has not decided on yet. Their number
-is what Tim can review and follow up in one sitting. A proposal to start
-with: 10 a week, reviewed on the phone in a few minutes. It becomes a
-setting.
+Weekly **suggestions** come later, once the experiment shows the rubric
+works. A suggestion is one person the engine puts forward as a likely
+guest: the name, what they do, the signals with their passages, whether
+they are still active, and Find on LinkedIn. Tim keeps them, to contact
+them, or skips them, and a skipped person is not suggested again. How
+many a week is decided then.
+
+## The workspace for the experiment
+
+Tim reviews on People while runs go. What that needs:
+
+- **People updates by itself while a run goes.** New people appear
+  without a refresh and without coming back later.
+- **Newest on top** is the default order of People. A new person is what
+  Tim looks at first.
+- **Events step back.** They stay, as a source of people and for the
+  public calendar, but they are no longer prominent in the workspace.
+- **Runs need care.** Starting, watching and stopping a run feels
+  rudimentary and brittle today. It has to feel reliable and solid:
+  - a run always shows its true state: going, finished, stopped, or ended
+    by a restart, and never a step that is no longer true
+  - what it does now, by name, and what is left, with the time left
+    measured, never stuck on a vague waiting message
+  - when it ends, one line on what it brought: new people, new fits,
+    startups looked up, and what failed
+  - failures grouped by source, with the reason in plain words and the
+    one action that fixes it, like retiring the source
+  - Start and Stop answer at once and never leave the screen in between
+  - the same state on every screen, the phone included, without a refresh
 
 ## How we know it works
 
-Tim looks at the week's suggestions. Today few of them would be a guest.
-The aim is that he keeps at least half. The report counts keeps and skips per signal, so a signal that
+Tim looks at the newest people after a run, and at those sorted by fit.
+Today few of them would be a guest. The aim is that at least half of the
+top 20 by fit are people he would contact. The report counts keeps and skips per signal, so a signal that
 misleads shows up.
 
 ## What a session needs
@@ -212,4 +239,5 @@ settings.
 
 ## Open questions
 
-- How many suggestions a week, and on which day?
+- How many suggestions a week, and on which day? Decided after the
+  experiment.

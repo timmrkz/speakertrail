@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, SOURCE_STATUSES, type Source, type SourceStatus } from '../lib/api'
+  import { api, SOURCE_STATUSES, type Source, type SourceLists, type SourceStatus } from '../lib/api'
   import { fmtAgo, KIND_LABEL, plural, shortUrl, STATUS_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
@@ -20,8 +20,9 @@
   let adding = $state(false)
   let newUrl = $state('')
   let newName = $state('')
-  // What the page lists: events, or startups for a portfolio.
-  let newLists = $state<'events' | 'startups'>('events')
+  // What the page lists: events, startups for a portfolio, or businesses
+  // for a directory.
+  let newLists = $state<SourceLists>('events')
   let addError = $state('')
   let addBusy = $state(false)
   let urlField: HTMLInputElement | undefined = $state()
@@ -79,7 +80,7 @@
     addBusy = true
     addError = ''
     try {
-      const s = await api.addSource(url, newName.trim() || undefined, newLists === 'startups')
+      const s = await api.addSource(url, newName.trim() || undefined, newLists)
       sources.data = [s, ...(sources.data ?? [])]
       newUrl = ''
       newName = ''
@@ -121,8 +122,8 @@
         </div>
         <div class="field">
           <span class="field-label">The page lists</span>
-          <span title="A page of startups, like an accelerator's portfolio, leads to the people who run each one, through its imprint">
-            <Segmented label="The page lists" options={[{ value: 'events', label: 'Events' }, { value: 'startups', label: 'Startups' }]} bind:value={newLists} />
+          <span title="Events lead to the people on stage. A page of startups, like an accelerator's portfolio, or of businesses, like a list of gyms or coaches, leads to the people who run each one, through its imprint. Only businesses in NRW count">
+            <Segmented label="The page lists" options={[{ value: 'events', label: 'Events' }, { value: 'startups', label: 'Startups' }, { value: 'businesses', label: 'Businesses' }]} bind:value={newLists} />
           </span>
         </div>
       </div>

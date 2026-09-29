@@ -255,7 +255,7 @@ function sourceOut(m: MockSource): Source {
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
-      events_found: m.kind === 'portfolio' ? 0 : last_found, startups_found: m.kind === 'portfolio' ? last_found : 0,
+      events_found: m.kind === 'portfolio' || m.kind === 'directory' ? 0 : last_found, startups_found: m.kind === 'portfolio' || m.kind === 'directory' ? last_found : 0,
       http_status: last_http, mode: last_mode, error: last_error,
     },
   }
@@ -415,7 +415,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (s.sources.some((x) => x.url === url)) return err(409, 'This source is already on the list')
     const host = new URL(url).hostname.replace(/^www\./, '')
     const m: MockSource = {
-      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.portfolio === true ? 'portfolio' : 'listing', url, query: null,
+      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.lists === 'startups' || b.portfolio === true ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing', url, query: null,
       category: '', city: '', status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
       health: 'never', health_note: '', discovered_from: 'Added by hand', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
     }
@@ -429,7 +429,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
     if (typeof b.notes === 'string') src.notes = b.notes
     if (typeof b.name === 'string') src.name = b.name
-    if (typeof b.portfolio === 'boolean') src.kind = b.portfolio ? 'portfolio' : 'listing'
+    if (typeof b.lists === 'string') src.kind = b.lists === 'startups' ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing'
     return ok(sourceOut(src))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {

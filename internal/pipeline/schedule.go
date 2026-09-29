@@ -79,7 +79,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status = 'candidate' AND (next_check_at IS NULL OR next_check_at <= $1)
 		 -- A new portfolio goes first, so its startups are looked up soon.
-		 ORDER BY kind = 'portfolio' DESC, checks, created_at, id
+		 ORDER BY kind IN ('portfolio', 'directory') DESC, checks, created_at, id
 		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
 		return 0, err

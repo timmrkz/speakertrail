@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, SOURCE_STATUSES, type FetchMode, type Source, type SourcePatch, type SourceStatus } from '../lib/api'
+  import { api, SOURCE_STATUSES, type FetchMode, type Source, type SourceLists, type SourcePatch, type SourceStatus } from '../lib/api'
   import { fmtAgo, fmtDateTime, KIND_LABEL, MODE_LABEL, plural, shortUrl, STATUS_LABEL } from '../lib/format'
   import { errorText, toast } from '../lib/toast.svelte'
   import HealthPill from '../lib/components/HealthPill.svelte'
@@ -101,7 +101,7 @@
         <dt>Last check</dt>
         <dd>{source.last_checked_at ? `${fmtDateTime(source.last_checked_at)}, ${fmtAgo(source.last_checked_at)}` : 'Never'}</dd>
         {#if source.last_check}
-          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : plural(source.last_check.events_found, 'event')}</dd>
+          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : source.kind === 'directory' ? plural(source.last_check.startups_found, 'business in NRW', 'businesses in NRW') : plural(source.last_check.events_found, 'event')}</dd>
           <dt>Fetched with</dt><dd>{source.last_check.mode}{source.last_check.http_status ? `, HTTP ${source.last_check.http_status}` : ''}</dd>
           {#if source.last_check.error}<dt>Error</dt><dd class="err">{source.last_check.error}</dd>{/if}
         {/if}
@@ -141,15 +141,17 @@
         {#if source.url}
           <div class="field">
             <label for="src-lists">The page lists</label>
-            <select id="src-lists" class="select" value={source.kind === 'portfolio' ? 'startups' : 'events'} disabled={saving}
+            <select id="src-lists" class="select" value={source.kind === 'portfolio' ? 'startups' : source.kind === 'directory' ? 'businesses' : 'events'} disabled={saving}
               onchange={(e) => {
-                const startups = (e.currentTarget as HTMLSelectElement).value === 'startups'
-                patch({ portfolio: startups }, startups ? 'Now read as a list of startups' : 'Now read as a list of events')
+                const lists = (e.currentTarget as HTMLSelectElement).value as SourceLists
+                patch({ lists }, `Now read as a list of ${lists}`)
               }}>
               <option value="events">Events</option>
               <option value="startups">Startups</option>
+              <option value="businesses">Businesses</option>
             </select>
-            <span class="field-hint">{source.kind === 'portfolio' ? 'Each startup is followed to its imprint, for who runs it' : 'Events and the people on stage'}</span>
+            <span class="field-hint">{source.kind === 'portfolio' ? 'Each startup is followed to its imprint, for who runs it'
+              : source.kind === 'directory' ? 'Each business in NRW is followed to its imprint and about page, for who runs it' : 'Events and the people on stage'}</span>
           </div>
         {/if}
       </div>

@@ -65,9 +65,13 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 		var u *string
 		if url != "" {
 			kind = pipeline.SourceKindFor(url)
-			// A page of startups is a portfolio, whatever its address.
-			if r["category"] == "Startup portfolio" {
+			// A page of startups is a portfolio, a page of businesses a
+			// directory, whatever its address.
+			switch r["category"] {
+			case "Startup portfolio":
 				kind = "portfolio"
+			case "Directory":
+				kind = "directory"
 			}
 			u = &url
 		}

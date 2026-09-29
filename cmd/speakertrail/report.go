@@ -44,8 +44,8 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			UNION ALL SELECT 'events kept, upcoming', count(*)::text FROM events WHERE fit = 'kept' AND starts_at >= now()
 			UNION ALL SELECT 'events waiting for a read', count(*)::text FROM events
 				WHERE fit = 'kept' AND starts_at >= now() AND people_read_at IS NULL AND canonical_url <> ''
-			UNION ALL SELECT 'startups from portfolios', count(*)::text FROM organisations o
-				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'portfolio')
+			UNION ALL SELECT 'startups and businesses from portfolios and directories', count(*)::text FROM organisations o
+				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory'))
 			UNION ALL SELECT 'startups looked up', count(*)::text FROM organisations WHERE looked_up_at IS NOT NULL
 			UNION ALL (SELECT 'startups ' || activity, count(*)::text FROM organisations WHERE activity <> '' GROUP BY activity ORDER BY activity)
 			UNION ALL SELECT 'people', count(*)::text FROM people

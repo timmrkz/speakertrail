@@ -63,7 +63,7 @@ const progressJSON = `WITH j AS (
 	c AS (SELECT
 		count(*) FILTER (WHERE kind = 'check_source') AS checks,
 		count(*) FILTER (WHERE kind = 'check_source' AND status IN ('done', 'failed')) AS checks_done,
-		count(*) FILTER (WHERE kind = 'check_source' AND source_kind = 'portfolio' AND status NOT IN ('done', 'failed')) AS portfolios_left,
+		count(*) FILTER (WHERE kind = 'check_source' AND source_kind IN ('portfolio', 'directory') AND status NOT IN ('done', 'failed')) AS portfolios_left,
 		count(*) FILTER (WHERE kind = 'read_event') AS reads,
 		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done,
 		count(*) FILTER (WHERE kind = 'look_up_startup') AS lookups,
@@ -392,9 +392,9 @@ const sourceJSON = `json_build_object(
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.found = 0 THEN 'The last check found no ' || CASE WHEN s.kind = 'portfolio' THEN 'startups' ELSE 'events' END
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' ELSE 'events' END
 		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.found || CASE WHEN s.kind = 'portfolio' THEN ' startups' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
+			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
@@ -403,10 +403,10 @@ const sourceJSON = `json_build_object(
 
 // A check found events, or startups when the source is a portfolio.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
 	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
-		SELECT CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+		SELECT CASE WHEN s.kind IN ('portfolio', 'directory') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
@@ -425,14 +425,29 @@ func (s *Server) sendSource(w http.ResponseWriter, r *http.Request, status int, 
 	s.sendQuery(w, r, status, `SELECT `+sourceJSON+` `+sourceFrom+` WHERE s.id = $1`, id)
 }
 
+// listKinds is the source kind for what a page lists. Events take the kind
+// the address says, like a Luma calendar.
+var listKinds = map[string]string{"": "", "events": "", "startups": "portfolio", "businesses": "directory"}
+
 func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL  string `json:"url"`
 		Name string `json:"name"`
-		// Portfolio is true for a page that lists startups, not events.
-		Portfolio bool `json:"portfolio"`
+		// Lists says what the page lists: events, startups for a
+		// portfolio, or businesses for a directory. Portfolio true is the
+		// same as startups.
+		Lists     string `json:"lists"`
+		Portfolio bool   `json:"portfolio"`
 	}
 	if !decode(w, r, &body) {
+		return
+	}
+	if body.Portfolio && body.Lists == "" {
+		body.Lists = "startups"
+	}
+	listKind, ok := listKinds[body.Lists]
+	if !ok {
+		fail(w, http.StatusBadRequest, "lists must be events, startups or businesses")
 		return
 	}
 	u, err := url.Parse(strings.TrimSpace(body.URL))
@@ -450,8 +465,8 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	}
 	// A link to one event becomes the calendar it belongs to.
 	link := u.String()
-	kind := "portfolio"
-	if !body.Portfolio {
+	kind := listKind
+	if kind == "" {
 		if cal := pipeline.CalendarURL(link); cal != "" {
 			link = cal
 		}
@@ -487,12 +502,23 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		FetchMode *string `json:"fetch_mode"`
 		Notes     *string `json:"notes"`
 		Name      *string `json:"name"`
-		// Portfolio switches between a page of startups and a page of
-		// events.
-		Portfolio *bool `json:"portfolio"`
+		// Lists switches what the page is read as: events, startups or
+		// businesses. Portfolio true is startups, false events.
+		Lists     *string `json:"lists"`
+		Portfolio *bool   `json:"portfolio"`
 	}
 	if !decode(w, r, &body) {
 		return
+	}
+	if body.Portfolio != nil && body.Lists == nil {
+		l := map[bool]string{true: "startups", false: "events"}[*body.Portfolio]
+		body.Lists = &l
+	}
+	if body.Lists != nil {
+		if _, ok := listKinds[*body.Lists]; !ok {
+			fail(w, http.StatusBadRequest, "lists must be events, startups or businesses")
+			return
+		}
 	}
 	valid := map[string]bool{"candidate": true, "probation": true, "active": true, "retired": true, "manual": true}
 	if body.Status != nil && !valid[*body.Status] {
@@ -504,7 +530,7 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var kind *string
-	if body.Portfolio != nil {
+	if body.Lists != nil {
 		var link *string
 		err := s.opts.Pool.QueryRow(r.Context(), `SELECT url FROM sources WHERE id = $1`, id).Scan(&link)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -519,8 +545,8 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadRequest, "Only a source with a web address can list startups")
 			return
 		}
-		k := "portfolio"
-		if !*body.Portfolio {
+		k := listKinds[*body.Lists]
+		if k == "" {
 			k = pipeline.SourceKindFor(*link)
 		}
 		kind = &k

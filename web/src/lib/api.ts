@@ -16,7 +16,10 @@ export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio' | 'directory'
+// What a source's page lists: events, startups for a portfolio, or
+// businesses run by people for a directory.
+export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'new' | 'fit' | 'next' | 'name'
@@ -172,7 +175,8 @@ export interface PeopleQuery {
 
 export interface LastCheck {
   events_found: number
-  // For a portfolio: the startups its page lists.
+  // For a portfolio or a directory: the startups or businesses its page
+  // lists, in NRW for a directory.
   startups_found: number
   http_status: number
   mode: string
@@ -201,8 +205,8 @@ export interface Source {
   discovered_from: string
 }
 
-// portfolio switches a source between a page of startups and a page of events.
-export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { portfolio?: boolean }
+// lists switches what a source's page is read as.
+export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { lists?: SourceLists }
 
 export interface RunProgress {
   checks: number
@@ -362,8 +366,8 @@ export const api = {
   patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
-  addSource: (url: string, name?: string, portfolio = false) =>
-    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), ...(portfolio ? { portfolio } : {}) }),
+  addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
+    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), lists }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),

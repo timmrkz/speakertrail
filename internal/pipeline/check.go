@@ -164,7 +164,7 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		return p.failed(ctx, src, cfg, page, fetchErr)
 	}
 
-	if src.Kind == "portfolio" {
+	if src.Kind == "portfolio" || src.Kind == "directory" {
 		return p.finishPortfolio(ctx, src, runID, cfg, page, rec)
 	}
 

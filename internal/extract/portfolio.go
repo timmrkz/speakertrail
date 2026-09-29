@@ -6,12 +6,24 @@ import (
 	"strings"
 )
 
-// Startup is a company a portfolio links to: its website, or the page
-// about it on the portfolio's own site, which links to the website.
+// Startup is a company a portfolio or a directory links to: its website,
+// or the page about it on the list's own site, which links to the
+// website.
 type Startup struct {
 	Name    string
 	Website string
 	Page    string
+	// Postcode is the one the list shows next to the entry, if any.
+	Postcode string
+}
+
+// postcodeOf finds the postcode in the text around an entry, when there
+// is exactly one.
+func postcodeOf(context string) string {
+	if m := postcodeRe.FindAllStringSubmatch(context, 2); len(m) == 1 {
+		return m[0][1]
+	}
+	return ""
 }
 
 // notStartupSites are platforms, networks and tools a portfolio links to
@@ -84,7 +96,7 @@ func Portfolio(body, base string) PortfolioPage {
 			continue
 		}
 		seen[site] = true
-		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, host), Website: u.Scheme + "://" + u.Host + "/"})
+		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, host), Website: u.Scheme + "://" + u.Host + "/", Postcode: postcodeOf(l.Context)})
 	}
 	// Pages about single startups share one parent path, like "/startups/".
 	// The parent with the most of them wins, when it says so or has many.
@@ -115,7 +127,7 @@ func Portfolio(body, base string) PortfolioPage {
 		}
 		seen[page] = true
 		slug := strings.Trim(u.Path[strings.LastIndex(strings.TrimSuffix(u.Path, "/"), "/")+1:], "/")
-		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, slug), Page: page})
+		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, slug), Page: page, Postcode: postcodeOf(l.Context)})
 	}
 	return out
 }

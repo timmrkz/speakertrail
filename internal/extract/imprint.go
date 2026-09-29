@@ -31,6 +31,9 @@ type Link struct {
 	Text string
 	// Chrome is true for links in a page's header, navigation or footer.
 	Chrome bool
+	// Context is the text of the list item, row or block around the link,
+	// like the address next to a directory's entry.
+	Context string
 }
 
 // Links lists a page's links as absolute addresses.
@@ -40,27 +43,64 @@ func Links(body, base string) []Link {
 		return nil
 	}
 	var out []Link
-	var walk func(n *nethtml.Node, chrome bool)
-	walk = func(n *nethtml.Node, chrome bool) {
+	var walk func(n, block *nethtml.Node, chrome bool)
+	walk = func(n, block *nethtml.Node, chrome bool) {
 		if n.Type == nethtml.ElementNode {
 			switch n.DataAtom {
 			case atom.Nav, atom.Header, atom.Footer:
 				chrome = true
 			case atom.Script, atom.Style, atom.Noscript, atom.Template:
 				return
+			case atom.Li, atom.Tr, atom.Article, atom.Dd, atom.P, atom.Div, atom.Section:
+				block = n
 			case atom.A:
 				if u := absURL(base, attr(n, "href")); u != "" {
-					out = append(out, Link{URL: u, Text: cleanText(linkText(n)), Chrome: chrome})
+					l := Link{URL: u, Text: cleanText(linkText(n)), Chrome: chrome}
+					if block != nil {
+						l.Context = contextText(block)
+					}
+					out = append(out, l)
 				}
 				return
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c, chrome)
+			walk(c, block, chrome)
 		}
 	}
-	walk(doc, false)
+	walk(doc, nil, false)
 	return out
+}
+
+// contextText is a block's text, at most 400 bytes of it. A block with
+// more than three links holds several entries, and says nothing about one.
+func contextText(n *nethtml.Node) string {
+	var b strings.Builder
+	links := 0
+	var walk func(*nethtml.Node)
+	walk = func(n *nethtml.Node) {
+		if n.Type == nethtml.ElementNode && n.DataAtom == atom.A {
+			links++
+		}
+		if b.Len() > 400 {
+			return
+		}
+		if n.Type == nethtml.TextNode {
+			b.WriteString(n.Data)
+			b.WriteByte(' ')
+		}
+		if n.Type == nethtml.ElementNode && (n.DataAtom == atom.Script || n.DataAtom == atom.Style) {
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	if links > 3 {
+		return ""
+	}
+	return cleanText(b.String())
 }
 
 func attr(n *nethtml.Node, key string) string {

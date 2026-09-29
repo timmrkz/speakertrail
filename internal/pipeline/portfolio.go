@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,6 +44,10 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 		base = src.URL
 	}
 	startups := p.portfolioStartups(ctx, page.Body, base)
+	// A directory is national. An entry it places outside NRW is not kept.
+	if src.Kind == "directory" {
+		startups = slices.DeleteFunc(startups, func(s extract.Startup) bool { return s.Postcode != "" && !extract.InNRW(s.Postcode) })
+	}
 	if len(startups) > maxStartups {
 		startups = startups[:maxStartups]
 	}
@@ -159,17 +164,21 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 	return err
 }
 
-// unlookedStartups are startups from portfolios whose imprint was not looked
-// up yet, then those looked up longest ago, before $3, to see whether they
-// are still active. One whose site failed three times since is given up.
+// unlookedStartups are startups from portfolios and businesses from
+// directories whose imprint was not looked up yet, those from directories
+// first, because owners who run it themselves are the best case. Then
+// those looked up longest ago, before $3, to see whether they are still
+// active. One whose site failed three times since is given up.
 const unlookedStartups = `
 	SELECT o.id FROM organisations o
 	WHERE (o.looked_up_at IS NULL OR o.looked_up_at < $3) AND (o.website <> '' OR o.portfolio_page <> '')
 	  AND EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id
-		WHERE si.organisation_id = o.id AND s.kind = 'portfolio' AND ($2 = 0 OR s.id = $2))
+		WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory') AND ($2 = 0 OR s.id = $2))
 	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> ''
 		AND l.looked_up_at > COALESCE(o.looked_up_at, '-infinity')) < 3
-	ORDER BY o.looked_up_at NULLS FIRST, o.id LIMIT $1`
+	ORDER BY o.looked_up_at IS NULL DESC,
+		EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'directory') DESC,
+		o.looked_up_at, o.id LIMIT $1`
 
 // relookupBefore is when a startup's last lookup is old enough for another.
 func (p *Pipeline) relookupBefore(cfg settings.Settings) time.Time {
@@ -222,13 +231,15 @@ type lookUpRecord struct {
 	website      string
 	// profiles are links to people's own profiles found on the startup's
 	// site. Only those that carry a founder's name are kept.
-	profiles          []string
-	note, err         string
-	duration          time.Duration
-	at                time.Time
-	found, isNew      int
-	sourceID          int64
-	sourceName, name  string
+	profiles         []string
+	note, err        string
+	duration         time.Duration
+	at               time.Time
+	found, isNew     int
+	sourceID         int64
+	sourceName, name string
+	// sourceKind is portfolio or directory.
+	sourceKind        string
 	lookedUp, renamed bool
 	// activity is what the signs of life say, see organisations.activity,
 	// with lastSign the newest date the website shows.
@@ -259,11 +270,11 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 	var lookedUp *time.Time
 	var portfolioPage string
 	err = p.Pool.QueryRow(ctx, `
-		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name
+		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name, s.kind
 		FROM organisations o
-		JOIN LATERAL (SELECT s.id, s.name FROM sightings si JOIN sources s ON s.id = si.source_id
-			WHERE si.organisation_id = o.id AND s.kind = 'portfolio' ORDER BY si.id LIMIT 1) s ON true
-		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName)
+		JOIN LATERAL (SELECT s.id, s.name, s.kind FROM sightings si JOIN sources s ON s.id = si.source_id
+			WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory') ORDER BY si.id LIMIT 1) s ON true
+		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName, &rec.sourceKind)
 	recent := lookedUp != nil && !lookedUp.Before(p.relookupBefore(cfg))
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (recent || rec.url == "" && portfolioPage == "")) {
 		return nil
@@ -332,6 +343,15 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
 	im := extract.ParseImprint(imp.Text)
+	// A directory is national, and only NRW counts, by the imprint's
+	// postcode.
+	if rec.sourceKind == "directory" && !extract.InNRW(im.Postcode) {
+		rec.note = "no postcode in the imprint"
+		if im.Postcode != "" {
+			rec.note = "outside NRW (" + strings.TrimSpace(im.Postcode+" "+im.City) + ")"
+		}
+		return p.finishLookUp(ctx, rec, im)
+	}
 	if extract.InLiquidation(imp.Text) {
 		rec.activity, rec.activityNote = "dissolved", "the imprint says the company is being wound up"
 	}
@@ -471,6 +491,9 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 	default:
 		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
+		if rec.sourceKind == "directory" {
+			evidence = fmt.Sprintf("%s of %s, by its imprint. Listed in %s", label, company, rec.sourceName)
+		}
 		for _, name := range im.Directors {
 			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
 			if err != nil {

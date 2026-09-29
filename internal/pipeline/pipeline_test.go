@@ -1415,3 +1415,59 @@ func TestLookupsReadTheAboutPage(t *testing.T) {
 		t.Error("a phone number was kept")
 	}
 }
+
+// A directory lists businesses run by people all over Germany, like gyms
+// or coaches. Only those in NRW count: an entry the list places elsewhere
+// is not kept, and one whose imprint gives a postcode elsewhere leads to
+// nobody. Owners are the best case, and nobody here is backed by a
+// startup programme. All invented.
+func TestDirectoryLeadsToOwnersInNRW(t *testing.T) {
+	e := setup(t, "")
+	e.site.set("/gyms", `<html><body><main><h1>Gyms</h1><ul>
+<li><a href="http://beispiel-bjj.test/">Beispiel BJJ</a><br>Musterstraße 1, 50667 Köln</li>
+<li><a href="http://muster-kampfsport.test/">Muster Kampfsport</a> <span>80331 München</span></li>
+<li><a href="http://probe-dojo.test/">Probe Dojo</a></li>
+<li><a href="http://kontrolle-coaching.test/">Kontrolle Coaching</a></li>
+</ul></main></body></html>`)
+	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><nav><a href="/ueber-mich">Über mich</a></nav>
+<footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-bjj.test/ueber-mich", `<html><body><p>Ich bin Lena Musterfrau, Schwarzgurt und Trainerin, und leite die Akademie seit 2016.</p></body></html>`)
+	e.site.set("http://beispiel-bjj.test/impressum", `<html><body><p>Beispiel BJJ Academy</p><p>Musterstraße 1, 50667 Köln</p><p>Inhaberin: Lena Musterfrau</p></body></html>`)
+	e.site.set("http://probe-dojo.test/impressum", `<html><body><p>Probe Dojo</p><p>Probeweg 2, 80331 München</p><p>Inhaber: Tom Testmann</p></body></html>`)
+	e.site.set("http://probe-dojo.test/", `<html><body><h1>Probe Dojo</h1></body></html>`)
+	e.site.set("http://kontrolle-coaching.test/", `<html><body><h1>Coaching</h1></body></html>`)
+	e.site.set("http://kontrolle-coaching.test/impressum", `<html><body><p>Kontrolle Coaching e.K.</p><p>Hafenstraße 3, 44137 Dortmund</p>
+<p>Inhaberin: Mara Beispielfrau</p></body></html>`)
+	e.site.set("http://muster-kampfsport.test/", `<html><body>never asked</body></html>`)
+	var src int64
+	if err := e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Gym list', 'directory', $1, 'candidate') RETURNING id`,
+		e.site.srv.URL+"/gyms").Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+
+	if got := e.one(t, `SELECT startups_found::text FROM source_checks WHERE source_id = $1`, src); got != "3" {
+		t.Errorf("the check kept %v entries, want 3 without the one in München", got)
+	}
+	if c := e.count(t, "organisations WHERE name = 'Muster Kampfsport'"); c != 0 {
+		t.Error("an entry outside NRW was kept")
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.name = 'Probe Dojo'`); got != "outside NRW (80331 München)" {
+		t.Errorf("the lookup outside NRW says %q", got)
+	}
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT p.full_name || ': ' || p.fit_evidence || ' | ' || p.fit_score || ' ' ||
+			(SELECT string_agg(CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal, ',' ORDER BY s.is_for DESC, s.signal) FROM person_signals s WHERE s.person_id = p.id)
+		FROM people p ORDER BY p.full_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Lena Musterfrau: Owner of Beispiel BJJ, by its imprint. Listed in Gym list | 3 +athlete,+owner_operator,+works_with_people",
+		"Mara Beispielfrau: Owner of Kontrolle Coaching e.K., by its imprint. Listed in Gym list | 2 +owner_operator,+works_with_people",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("people:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}

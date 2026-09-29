@@ -141,13 +141,15 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
 }
 ```
 
-`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events. Its health counts `startups_found`.
+`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events, and one of kind `directory` lists businesses run by people, like gyms or coaches. Their health counts `startups_found`, for a directory only those in NRW.
 
 A check of a portfolio stores each startup its page links to, with its website, or with the portfolio's own page about it, and follows the list to its next pages, six pages at most. A lookup then finds the website on that page when needed, loads it, finds its imprint and stores the managing directors it names as founders, when the imprint reads like a young company: a GmbH, UG or sole trader with at most four managing directors. A startup whose site does not answer is looked up again by a later run, three times at most. Only names are taken from an imprint.
 
-`POST /api/sources` with `{"url": "...", "name": "optional", "portfolio": false}` adds a candidate source and answers it with 201. With `"portfolio": true` the page is a list of startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+A directory works the same way, with two differences. Directories are national, so only NRW counts: an entry whose postcode on the list lies outside NRW is not kept, and a lookup whose imprint gives no postcode in NRW takes nobody, noted as "outside NRW (80331 München)". And an owner, "Inhaber", is the best case, so businesses from directories are looked up before startups from portfolios.
 
-`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "portfolio"}` answers the updated source. `portfolio` switches between a list of startups and a list of events, and the source is checked in the next run.
+`POST /api/sources` with `{"url": "...", "name": "optional", "lists": "events"}` adds a candidate source and answers it with 201. `lists` is `events`, `startups` for a portfolio or `businesses` for a directory. `"portfolio": true` still means startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+
+`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "lists"}` answers the updated source. `lists` switches what the page is read as, and the source is checked in the next run.
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 

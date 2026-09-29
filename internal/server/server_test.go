@@ -755,3 +755,28 @@ func TestPeopleByFit(t *testing.T) {
 		t.Errorf("good fits: %s", body)
 	}
 }
+
+// A source says what its page lists: events, startups or businesses.
+func TestSourcesSayWhatTheyList(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	code, body := e.do(t, "POST", "/api/sources", `{"url":"https://gyms.example/liste","lists":"businesses"}`)
+	if code != 201 || !strings.Contains(body, `"kind":"directory"`) {
+		t.Fatalf("add a directory: %d %s", code, body)
+	}
+	var src struct{ ID int64 }
+	json.Unmarshal([]byte(body), &src)
+	for lists, kind := range map[string]string{"startups": "portfolio", "events": "listing", "businesses": "directory"} {
+		code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"lists":"`+lists+`"}`)
+		if code != 200 || !strings.Contains(body, `"kind":"`+kind+`"`) {
+			t.Errorf("lists %s: %d %s", lists, code, body)
+		}
+	}
+	// The older way still works.
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"portfolio":true}`); code != 200 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("portfolio true: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"url":"https://other.example/","lists":"recipes"}`); code != 400 {
+		t.Errorf("an unknown list: %d, want 400", code)
+	}
+}

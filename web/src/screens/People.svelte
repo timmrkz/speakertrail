@@ -1,21 +1,26 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
   import { ACTIVITY_TONE, activityText, fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
+  import { runWatch } from '../lib/run.svelte'
   import Chips from '../lib/components/Chips.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import ProfileBadges from '../lib/components/ProfileBadges.svelte'
+  import RunOutcome from '../lib/components/RunOutcome.svelte'
+  import RunProgress from '../lib/components/RunProgress.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import PersonSheet from './PersonSheet.svelte'
 
   let q = $state('')
   let query = $state('')
-  let sort = $state<PeopleSort>('next')
-  // Tim looks for founders, so the list opens on them.
-  let filter = $state<PeopleFilter>('founder')
+  // A new person is what Tim looks at first, so the list opens on everyone,
+  // newest on top.
+  let sort = $state<PeopleSort>('new')
+  let filter = $state<PeopleFilter>('all')
   let reload = $state(0)
 
   const people = new Load<Person[]>()
@@ -26,15 +31,38 @@
     document.title = 'People · Speaker Trail'
   })
 
+  const fetchPeople = (params: { q: string; sort: PeopleSort; filter: PeopleFilter }) => async () => {
+    const r = await api.people(params)
+    counts = r.counts
+    return r.people
+  }
+
   $effect(() => {
     const params = { q: query, sort, filter }
     void reload
-    people.run(async () => {
-      const r = await api.people(params)
-      counts = r.counts
-      return r.people
-    })
+    people.run(fetchPeople(params))
   })
+
+  // While a run goes, new people come in without a refresh: the list reads
+  // again every few seconds, and once more when the run ends.
+  $effect(() => runWatch.watch())
+  let lastLive = 0
+  $effect(() => {
+    void runWatch.tick
+    void runWatch.ended
+    if (!runWatch.run && !runWatch.ended) return
+    const t = Date.now()
+    if (runWatch.run && t - lastLive < 4000) return
+    lastLive = t
+    untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
+  })
+
+  // People the going run found, or the one that just ended, are marked new.
+  let since = $derived.by(() => {
+    const at = (runWatch.run ?? runWatch.ended)?.started_at
+    return at ? new Date(at).getTime() : null
+  })
+  let isNew = (p: Person) => since !== null && new Date(p.first_seen).getTime() >= since
 
   let openId = $derived.by(() => {
     const m = router.match('/app/people/:id')
@@ -43,10 +71,10 @@
 
   let filters = $derived(
     ([
+      { value: 'all', label: 'All' },
       { value: 'founder', label: 'Founders' },
       { value: 'upcoming', label: 'Upcoming' },
       { value: 'profile', label: 'Profile found' },
-      { value: 'all', label: 'All' },
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
   )
   let others = $derived(counts ? counts.all : 0)
@@ -62,9 +90,19 @@
   <div class="view-head">
     <div>
       <h1>People</h1>
-      <p>Everyone named on stage, next appearance first.</p>
+      <p>Everyone the engine found, on stage or behind a startup.</p>
     </div>
   </div>
+
+  {#if runWatch.run}
+    <a class="panel run-now" href={runWatch.run.id > 0 ? `/app/runs/${runWatch.run.id}` : '/app/runs'}>
+      <RunProgress run={runWatch.run} />
+    </a>
+  {:else if runWatch.ended}
+    <a class="panel run-now" href="/app/runs/{runWatch.ended.id}">
+      <RunOutcome run={runWatch.ended} />
+    </a>
+  {/if}
 
   <div class="filters">
     <div class="toolbar tight">
@@ -72,8 +110,8 @@
       <label class="sort">
         <span class="sr-only">Sort by</span>
         <select class="select" bind:value={sort}>
-          <option value="next">Next appearance</option>
           <option value="new">Newest</option>
+          <option value="next">Next appearance</option>
           <option value="name">Name</option>
         </select>
       </label>
@@ -105,7 +143,7 @@
         <li>
           <a class="row-btn person" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
             <span class="avatar" aria-hidden="true">{initials(p.name)}</span>
-            <b class="ellipsis name">{p.name}</b>
+            <b class="ellipsis name">{p.name}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
               <span class="next" class:none={!p.next_appearance && !p.activity}>
@@ -139,6 +177,12 @@
   .filters { display: grid; gap: 10px; }
   .sort { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
+  .run-now { display: block; color: var(--ink); text-decoration: none; padding: 12px 14px; }
+  .run-now:hover { border-color: var(--line-strong); text-decoration: none; }
+  .new {
+    margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px;
+    background: var(--accent-soft); color: var(--accent);
+  }
   .stale { opacity: .6; }
   .dot-tone { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
   .dot-tone.good { background: var(--good); }

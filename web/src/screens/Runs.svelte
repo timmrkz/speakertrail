@@ -1,62 +1,68 @@
 <script lang="ts">
   import { api, type Run } from '../lib/api'
-  import { fmtAgo, fmtDateTime, fmtDuration, fmtNum } from '../lib/format'
+  import { fmtAgo, fmtDateTime, fmtDuration } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
-  import { toast } from '../lib/toast.svelte'
+  import { runWatch } from '../lib/run.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
+  import RunOutcome from '../lib/components/RunOutcome.svelte'
   import RunProgress from '../lib/components/RunProgress.svelte'
+  import RunStatePill from '../lib/components/RunStatePill.svelte'
   import RunSheet from './RunSheet.svelte'
 
   const runs = new Load<Run[]>()
-  runs.run(api.runs)
 
   $effect(() => {
     document.title = 'Runs · Speaker Trail'
   })
+
+  $effect(() => runWatch.watch())
 
   let openId = $derived.by(() => {
     const m = router.match('/app/runs/:id')
     return m ? Number(m.id) : null
   })
 
-  // A run that is still going refreshes the list every few seconds, so its
-  // numbers grow while you watch.
-  let going = $derived(runs.data?.find((r) => !r.finished_at && r.kind !== 'check') ?? null)
+  // The list follows the watch: it reads again with every answer while a
+  // run goes, and once more when one ends. A Check now going refreshes it
+  // too, every few seconds.
   $effect(() => {
-    if (!runs.data?.some((r) => !r.finished_at)) return
-    const t = setInterval(() => runs.run(api.runs), 2000)
+    void runWatch.tick
+    void runWatch.ended
+    runs.run(api.runs, { quiet: true })
+  })
+  $effect(() => {
+    if (!runs.data?.some((r) => r.state === 'going' && r.kind === 'check')) return
+    const t = setInterval(() => runs.run(api.runs, { quiet: true }), 2000)
     return () => clearInterval(t)
   })
 
-  // One button starts a run and, while it is going, stops it.
-  let busy = $state<'' | 'starting' | 'stopping'>('')
-  async function startOrStop() {
-    const run = going
-    busy = run ? 'stopping' : 'starting'
-    try {
-      if (run) {
-        await api.stopRun(run.id)
-        toast.show('Run stopped. Unread event pages wait for the next run')
-      } else {
-        const r = await api.startRun()
-        if (!r.started) toast.show('A run is already going')
-      }
-      await runs.run(api.runs)
-    } catch (e) {
-      toast.show(e instanceof Error ? e.message : run ? 'Could not stop the run' : 'Could not start the run')
-    } finally {
-      busy = ''
-    }
-  }
-  let label = $derived(busy === 'starting' ? 'Starting' : busy === 'stopping' ? 'Stopping' : going ? 'Stop the run' : 'Start a run')
+  // The going run and the one that just ended come from the watch, so the
+  // list shows what the dot and every other screen show.
+  let list = $derived.by(() => {
+    const out = (runs.data ?? []).map((r) => {
+      if (runWatch.run && r.id === runWatch.run.id) return runWatch.run
+      if (runWatch.ended && r.id === runWatch.ended.id) return runWatch.ended
+      return r
+    })
+    // A run just started shows at once, before the list has it.
+    const w = runWatch.run
+    if (w && !out.some((r) => r.id === w.id)) out.unshift(w)
+    return out
+  })
+
+  let going = $derived(runWatch.run)
+  let label = $derived(
+    runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop the run' : 'Start a run',
+  )
 
   const KIND: Record<Run['kind'], string> = { nightly: 'nightly', manual: 'started by hand', check: 'Check now' }
 
   function took(r: Run): string {
-    if (!r.finished_at) return 'still running'
+    if (r.state === 'going') return 'still running'
+    if (!r.finished_at) return ''
     return `took ${fmtDuration(new Date(r.finished_at).getTime() - new Date(r.started_at).getTime())}`
   }
 </script>
@@ -67,7 +73,8 @@
       <h1>Runs</h1>
       <p>Each run, what it checked and what it found.</p>
     </div>
-    <button class="btn start" class:primary={!going} type="button" onclick={startOrStop} disabled={busy !== ''}
+    <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
+      disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
       title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Check every due source now, like the nightly run'}>
       <Icon name={going ? 'close' : 'refresh'} />{label}
     </button>
@@ -79,28 +86,21 @@
     </EmptyState>
   {:else if !runs.data}
     <Skeleton count={6} />
-  {:else if !runs.data.length}
+  {:else if !list.length}
     <EmptyState icon="runs" title="No runs yet" text="Start one now, or the first one starts tonight." />
   {:else}
     <ul class="list">
-      {#each runs.data as r (r.id)}
+      {#each list as r (r.id)}
         <li>
-          <a class="row-btn run" href="/app/runs/{r.id}" aria-current={openId === r.id ? 'true' : undefined}>
+          <a class="row-btn run" href={r.id > 0 ? `/app/runs/${r.id}` : undefined} aria-current={openId === r.id ? 'true' : undefined}>
             <span class="when">
               <b>{fmtDateTime(r.started_at)}</b>
-              <span class="faint small">{fmtAgo(r.started_at)}, {KIND[r.kind] ?? r.kind}, {took(r)}</span>
+              <span class="faint small">{[fmtAgo(r.started_at), KIND[r.kind] ?? r.kind, took(r)].filter(Boolean).join(', ')}</span>
             </span>
-            <span class="nums">
-              <span><span class="num">{fmtNum(r.sources_checked)}</span> checked</span>
-              <span><span class="num">{fmtNum(r.events_new)}</span> new events</span>
-              <span><span class="num">{fmtNum(r.pages_read)}</span> pages read</span>
-              <span><span class="num">{fmtNum(r.startups_looked_up)}</span> startups looked up</span>
-              <span><span class="num">{fmtNum(r.people_new)}</span> new people</span>
-              <span class:err={r.errors > 0}><span class="num">{fmtNum(r.errors)}</span> {r.errors === 1 ? 'error' : 'errors'}</span>
-            </span>
-            <span class="go" aria-hidden="true"><Icon name="chevron" /></span>
+            <span class="state"><RunStatePill state={r.state} /></span>
+            <span class="brought"><RunOutcome run={r} /></span>
           </a>
-          {#if r.progress}<div class="going"><RunProgress run={r} /></div>{/if}
+          {#if r.state === 'going' && r.progress}<div class="going"><RunProgress run={r} /></div>{/if}
         </li>
       {/each}
     </ul>
@@ -117,10 +117,8 @@
   .going { padding: 0 16px 14px; }
   /* Room for the longest label, so the button keeps its width. */
   .start { min-width: 11.2em; justify-content: center; }
-  .run { grid-template-columns: minmax(0, 1fr) auto; }
+  .run { grid-template-columns: minmax(0, 1fr) auto; row-gap: 4px; }
   .when { display: grid; gap: 1px; min-width: 0; }
-  .nums { grid-column: 1; display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); }
-  .nums .num { color: var(--ink); font-weight: 500; }
-  .nums .err, .nums .err .num { color: var(--bad); }
-  .go { grid-column: 2; grid-row: 1 / span 2; color: var(--ink-3); }
+  .state { grid-column: 2; grid-row: 1; align-self: start; }
+  .brought { grid-column: 1 / span 2; min-width: 0; }
 </style>

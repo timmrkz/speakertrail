@@ -277,6 +277,9 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
       id, kind: 'nightly', started_at: started, finished_at: running ? null : hoursAgo(startH - 0.02 * list.length - 0.05),
       sources_checked: list.length, events_found: list.reduce((a, c) => a + c.events_found, 0), pages_read: 12 + ((i * 7) % 18), startups_looked_up: (i * 3) % 11,
       events_new: Math.max(0, 9 - i + ((i * 5) % 7)), people_new: Math.max(0, 14 - i + ((i * 3) % 9)),
+      fits_new: Math.max(0, 4 - (i % 5)), reads_failed: i % 4 === 1 ? 2 : 0, lookups_failed: i % 5 === 0 ? 1 : 0,
+      // One run stopped by hand and one the app stopped under, like real ones.
+      state: i === 2 ? 'stopped' : i === 5 ? 'interrupted' : 'finished',
       errors: list.filter((c) => c.error).length, progress: null,
     })
   }

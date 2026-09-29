@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api'
   import { navigate, router } from '../lib/router.svelte'
+  import { runWatch } from '../lib/run.svelte'
   import { toast } from '../lib/toast.svelte'
   import Brand from '../lib/components/Brand.svelte'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
@@ -15,12 +16,14 @@
   import NotFound from './NotFound.svelte'
 
   type Item = { href: string; label: string; icon: IconName }
+  // People and runs come first, because Tim reviews people while runs go.
+  // Events stay, as a source of people and for the calendar, further down.
   const NAV: Item[] = [
     { href: '/app', label: 'Overview', icon: 'overview' },
-    { href: '/app/events', label: 'Events', icon: 'events' },
     { href: '/app/people', label: 'People', icon: 'people' },
-    { href: '/app/sources', label: 'Sources', icon: 'sources' },
     { href: '/app/runs', label: 'Runs', icon: 'runs' },
+    { href: '/app/sources', label: 'Sources', icon: 'sources' },
+    { href: '/app/events', label: 'Events', icon: 'events' },
     { href: '/app/settings', label: 'Settings', icon: 'settings' },
   ]
   const TABS = NAV.slice(0, 4)
@@ -37,25 +40,17 @@
       ready = true
     })
 
-  // A run going out of sight shows as a pulsing dot on Runs, and on More
-  // on a phone, where Runs sits.
-  let going = $state(false)
+  // A going run shows as a pulsing dot on Runs, from the same watch every
+  // screen uses.
   $effect(() => {
-    if (!ready) return
-    const check = () =>
-      api
-        .currentRun()
-        .then((r) => (going = r !== null))
-        .catch(() => {})
-    check()
-    const t = setInterval(check, 5000)
-    return () => clearInterval(t)
+    if (ready) return runWatch.watch()
   })
+  let going = $derived(runWatch.run !== null)
 
   function current(href: string): boolean {
     return href === '/app' ? router.path === '/app' : router.under(href)
   }
-  let moreActive = $derived(['/app/runs', '/app/settings', '/app/more'].some((h) => router.under(h)))
+  let moreActive = $derived(['/app/events', '/app/settings', '/app/more'].some((h) => router.under(h)))
 
   async function logout() {
     try {
@@ -101,7 +96,7 @@
       {:else if router.path === '/app/settings'}
         <Settings />
       {:else if router.path === '/app/more'}
-        <More {logout} {going} />
+        <More {logout} />
       {:else}
         <NotFound embedded />
       {/if}
@@ -109,11 +104,11 @@
 
     <nav class="tabbar" aria-label="Main">
       {#each TABS as item (item.href)}
-        <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}><Icon name={item.icon} size={22} /><span>{item.label}</span></a>
+        <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
+          <span class="tab-icon"><Icon name={item.icon} size={22} />{#if item.href === '/app/runs' && going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>{item.label}</span>
+        </a>
       {/each}
-      <a href="/app/more" aria-current={moreActive ? 'page' : undefined}>
-        <span class="tab-icon"><Icon name="more" size={22} />{#if going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>More</span>
-      </a>
+      <a href="/app/more" aria-current={moreActive ? 'page' : undefined}><Icon name="more" size={22} /><span>More</span></a>
     </nav>
   </div>
 {/if}

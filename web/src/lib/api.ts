@@ -211,14 +211,24 @@ export interface RunProgress {
   seconds_left: number | null
 }
 
+// A run's true state. Interrupted: the app stopped under it, and it ended
+// when the app started again.
+export type RunState = 'going' | 'finished' | 'stopped' | 'interrupted'
+
 export interface Run {
   id: number
   // nightly, manual for a run started by hand, check for Check now
   kind: 'nightly' | 'manual' | 'check'
-  // Event pages the language model read in this run.
+  state: RunState
+  // Event pages the language model read in this run, and how many of
+  // those reads failed.
   pages_read: number
-  // Startups whose imprint this run looked up.
+  reads_failed: number
+  // Startups whose imprint this run looked up, and the lookups that failed.
   startups_looked_up: number
+  lookups_failed: number
+  // New people who fit, like founders.
+  fits_new: number
   // How far a going run is. Null once it has ended.
   progress: RunProgress | null
   started_at: string
@@ -228,6 +238,17 @@ export interface Run {
   events_new: number
   people_new: number
   errors: number
+}
+
+// What failed in a run, in plain words. One per source for checks, one per
+// reason for reads and lookups. action is the one thing that fixes it.
+export interface RunFailure {
+  what: 'check' | 'read' | 'lookup'
+  source: (SourceRef & { status: SourceStatus }) | null
+  reason: string
+  action: '' | 'retire' | 'check'
+  count: number
+  detail: string
 }
 
 export interface Check {
@@ -335,7 +356,7 @@ export const api = {
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
-  run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
+  run: (id: number) => request<{ run: Run; checks: Check[]; failures: RunFailure[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
 }

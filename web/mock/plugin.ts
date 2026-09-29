@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite'
 import type {
   Activity, Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  RunProgress, Setting, Source, SourceStatus, Stats,
+  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -128,6 +128,29 @@ function createState() {
 
 type State = ReturnType<typeof createState>
 
+// Like the server: what failed, one per source, in plain words, with the
+// action that fixes it. Reads that failed are grouped by reason.
+function failuresOf(s: State, run: Run): RunFailure[] {
+  const out: RunFailure[] = []
+  for (const c of (s.checks.get(run.id) ?? []).filter((x) => x.error).sort((a, b) => a.source.name.localeCompare(b.source.name))) {
+    const src = s.sources.find((x) => x.id === c.source.id)
+    const status = (src?.status ?? 'active') as SourceStatus
+    const [reason, kind] = c.http_status === 404 ? ['The page is gone', 'gone'] : c.http_status === 403 ? ['The site refuses the bot', 'blocked']
+      : c.http_status === 0 ? ['The site did not answer in time', 'passing'] : [`The site answered with an error, HTTP ${c.http_status}`, 'lasting']
+    const action = status === 'retired' || status === 'manual' ? '' : kind === 'passing' ? 'check' : 'retire'
+    out.push({ what: 'check', source: { ...c.source, status }, reason, action, count: 1, detail: c.error })
+  }
+  if (run.reads_failed) {
+    out.push({ what: 'read', source: null, reason: 'The language model did not answer. Is Docker Model Runner on?', action: '', count: run.reads_failed,
+      detail: 'no language model answers. Is Docker Model Runner on? Turn it on with: docker desktop enable model-runner (dial tcp: connection refused)' })
+  }
+  if (run.lookups_failed) {
+    out.push({ what: 'lookup', source: null, reason: 'The site did not answer in time', action: '', count: run.lookups_failed,
+      detail: 'get https://schweigen.example/: context deadline exceeded' })
+  }
+  return out
+}
+
 function setting(s: State, key: string): Json | undefined {
   return s.settings.find((x) => x.key === key)?.value
 }
@@ -165,8 +188,8 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
-    // Some founders come from lookups, with what the lookup saw.
-    activity: p.fit === 'founder' && !next
+    // Founders of a startup come with what its lookup saw, like the server.
+    activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
       : null,
   }
@@ -390,21 +413,23 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
-  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.progress && r.kind !== 'check') ?? null })],
+  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.state === 'going' && r.kind !== 'check') ?? null })],
   ['POST', /^\/api\/runs\/(\d+)\/stop$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
     if (!run) return err(404, 'No such run')
-    if (run.finished_at) return err(409, 'This run has already ended')
+    if (run.state !== 'going') return err(409, 'This run has already ended')
     run.finished_at = new Date().toISOString()
+    run.state = 'stopped'
     run.progress = null
     return { status: 204 }
   }],
   ['POST', /^\/api\/runs$/, (s) => {
-    const going = s.runs.find((r) => !r.finished_at && r.kind !== 'check')
+    const going = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
-    const run = {
-      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
-      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, startups_looked_up: 0, people_new: 0, errors: 0,
+    const run: Run = {
+      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, state: 'going', started_at: new Date().toISOString(), finished_at: null as string | null,
+      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
+      people_new: 0, fits_new: 0, errors: 0,
       // Like the server: 8 checks four at a time, then the reads they bring,
       // one at a time, and 4 lookups of startups from a portfolio among the
       // checks, measured at about 3 s a check, 5 s a read and 4 s a lookup.
@@ -419,10 +444,28 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const names = s.sources.slice(0, 8).map((x) => x.name)
     const titles = s.events.slice(0, 6).map((e) => e.title)
     const startups = ['Beispiel Robotics', 'Probe Labs', 'Muster Health', 'Kontrolle Analytics']
+    // People the run finds, one or two at a time, so People fills while
+    // Tim watches. All invented.
+    const found: [string, string, Person['fit']][] = [
+      ['Frieda Faustmann', 'Coach, Faustmann Coaching', 'other'], ['Kemal Kastner', 'Inhaber, Kastner Kampfsport', 'founder'],
+      ['Nora Nettelbeck', 'Author, Das leise Jahr', 'other'], ['Paul Pannwitz', 'Founder, Pannwitz Putzteam', 'founder'],
+      ['Rike Reimers', 'Yoga teacher, Studio Reimers', 'other'], ['Sven Sandkamp', 'Head coach, TV Beispielstadt', 'athlete'],
+    ]
+    const addPerson = () => {
+      const next = found.shift()
+      if (!next) return
+      const [name, headline, fit] = next
+      s.people.push({
+        id: Math.max(...s.people.map((x) => x.id)) + 1, name, headline, city: 'Köln', fit, first_seen: new Date().toISOString(),
+        notes: '', profiles: [], affiliations: [],
+      })
+      run.people_new++
+      if (fit !== 'other') run.fits_new++
+    }
     const t = setInterval(() => {
       const p = run.progress
       // Stopped by hand, or done.
-      if (run.finished_at || !p) {
+      if (run.state !== 'going' || !p) {
         run.progress = null
         return clearInterval(t)
       }
@@ -439,15 +482,16 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
         p.lookups = 4
         p.lookups_done = Math.min(4, p.lookups_done + 2)
         run.startups_looked_up = p.lookups_done
-        run.people_new += 1
+        addPerson()
         p.now = p.lookups_done < 4 ? startups.slice(p.lookups_done, p.lookups_done + 2).map((label) => ({ kind: 'lookup' as const, label, since })) : []
       } else if (p.reads_done < p.reads) {
         p.reads_done++
         run.pages_read = p.reads_done
-        run.people_new += 2
+        addPerson()
         p.now = p.reads_done < p.reads ? [{ kind: 'read' as const, label: titles[p.reads_done % titles.length], since }] : []
       } else {
         run.finished_at = new Date().toISOString()
+        run.state = 'finished'
         run.progress = null
         return clearInterval(t)
       }
@@ -458,7 +502,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
-    return run ? ok({ run, checks: s.checks.get(run.id) ?? [] }) : err(404, 'No such run')
+    return run ? ok({ run, checks: s.checks.get(run.id) ?? [], failures: failuresOf(s, run) }) : err(404, 'No such run')
   }],
   ['GET', /^\/api\/fetches\/(\d+)\/(text|html|screenshot)$/, (s, m) => {
     const id = Number(m[1])

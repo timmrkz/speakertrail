@@ -15,6 +15,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/rubric"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -105,6 +106,20 @@ const progressJSON = `WITH j AS (
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	now := s.opts.Now()
+	searches := s.opts.Searches
+	if searches == nil {
+		searches = &search.Pool{DB: s.opts.Pool, Now: s.opts.Now}
+	}
+	usage, err := searches.Usage(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	usageJSON, err := json.Marshal(usage)
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
 	s.sendQuery(w, r, http.StatusOK, `
 		WITH weeks AS (
 			SELECT generate_series(date_trunc('week', ($1::timestamptz) AT TIME ZONE 'Europe/Berlin') - interval '7 weeks',
@@ -137,8 +152,9 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 				SELECT city, count(*) AS n FROM events WHERE starts_at >= $2 AND fit = 'kept' AND city <> ''
 				GROUP BY city ORDER BY n DESC, city LIMIT 12) c),
 			'last_run', (SELECT `+runJSON+` FROM runs r ORDER BY r.started_at DESC LIMIT 1),
-			'fit', `+fitJSON+`)`,
-		now, now.Add(-12*time.Hour), now.Add(-7*24*time.Hour))
+			'fit', `+fitJSON+`,
+			'searches', $4::json)`,
+		now, now.Add(-12*time.Hour), now.Add(-7*24*time.Hour), string(usageJSON))
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {

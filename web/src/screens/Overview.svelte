@@ -32,6 +32,10 @@
   let fit = $derived(stats.data?.fit ?? null)
   let decided = $derived((fit?.signals ?? []).some((s) => s.kept + s.skipped > 0))
 
+  const PROVIDER_LABEL: Record<string, string> = { tavily: 'Tavily', brave: 'Brave' }
+  let searches = $derived(stats.data?.searches ?? [])
+  let searchesLeft = $derived(searches.filter((u) => u.set).reduce((a, u) => a + Math.max(0, u.budget - u.used), 0))
+
   let topCities = $derived((stats.data?.cities ?? []).slice(0, 6))
   let cityMax = $derived(Math.max(1, ...topCities.map((c) => c.events)))
   $effect(() => runWatch.watch())
@@ -133,6 +137,24 @@
       </section>
     {/if}
 
+    {#if searches.length}
+      <section class="panel" aria-labelledby="search-h">
+        <div class="panel-head">
+          <h2 id="search-h" title="Searches find businesses in NRW, each followed to its imprint. Each search goes to the provider with the most of its budget left. The budgets are in Settings">Searches this month</h2>
+          <span class="faint small num">{fmtNum(searchesLeft)} left</span>
+        </div>
+        <ul class="cities searches">
+          {#each searches as u (u.provider)}
+            <li class:none={!u.set}>
+              <span class="city ellipsis">{PROVIDER_LABEL[u.provider] ?? u.provider}</span>
+              <span class="bar" aria-hidden="true"><i style:width="{u.budget > 0 ? Math.min(100, (u.used / u.budget) * 100) : 0}%"></i></span>
+              <span class="num" title={u.set ? `${fmtNum(u.used)} of ${fmtNum(u.budget)} searches this month` : 'No API key, so it is never called'}>{u.set ? `${fmtNum(u.used)} of ${fmtNum(u.budget)}` : 'No key'}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <div class="grid-2">
       <section class="panel" aria-labelledby="weekly-h">
         <div class="panel-head">
@@ -195,6 +217,9 @@
   .bar { height: 20px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--series-1); border-radius: 5px; min-width: 3px; }
   .cities .num { text-align: right; }
+  .searches li { grid-template-columns: 110px minmax(0, 1fr) 110px; }
+  .searches li.none { color: var(--ink-3); }
+  .searches li.none .bar i { display: none; }
   .run {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: center; color: var(--ink);
     padding: 12px 14px; margin: -4px -6px; border-radius: 8px; text-decoration: none;
@@ -215,5 +240,6 @@
     .note { display: none; }
     .run-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .cities li { grid-template-columns: 96px minmax(0, 1fr) 28px; }
+    .searches li { grid-template-columns: 64px minmax(0, 1fr) 104px; }
   }
 </style>

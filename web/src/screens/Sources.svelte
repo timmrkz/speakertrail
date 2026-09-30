@@ -24,6 +24,9 @@
   // for a directory.
   let newLists = $state<SourceLists>('events')
   let addError = $state('')
+  // A web address adds a page, anything else a search, like "BJJ Gym Köln".
+  const looksLikeUrl = (v: string) => /^https?:\/\//i.test(v) || /^[^\s/]+\.[a-z]{2,}(\/\S*)?$/i.test(v)
+  let isSearch = $derived(newUrl.trim() !== '' && !looksLikeUrl(newUrl.trim()))
   let addBusy = $state(false)
   let urlField: HTMLInputElement | undefined = $state()
 
@@ -71,16 +74,17 @@
 
   async function add(e: SubmitEvent) {
     e.preventDefault()
-    const url = newUrl.trim()
-    if (!/^https?:\/\/\S+\.\S+/.test(url)) {
-      addError = 'Enter a full web address, starting with https://'
+    const input = newUrl.trim()
+    if (!input) {
+      addError = 'Enter a web address or a search'
       urlField?.focus()
       return
     }
+    const url = isSearch || /^https?:\/\//i.test(input) ? input : `https://${input}`
     addBusy = true
     addError = ''
     try {
-      const s = await api.addSource(url, newName.trim() || undefined, newLists)
+      const s = isSearch ? await api.addSearch(input) : await api.addSource(url, newName.trim() || undefined, newLists)
       sources.data = [s, ...(sources.data ?? [])]
       newUrl = ''
       newName = ''
@@ -112,22 +116,22 @@
       <h2>Add a source</h2>
       <div class="add-grid">
         <div class="field">
-          <label for="src-url">Web address</label>
-          <input bind:this={urlField} bind:value={newUrl} id="src-url" class="input" type="url" inputmode="url" placeholder="https://" autocomplete="off"
+          <label for="src-url">Web address or search</label>
+          <input bind:this={urlField} bind:value={newUrl} id="src-url" class="input" type="text" placeholder="https:// or BJJ Gym Köln" autocomplete="off" autocapitalize="off"
             aria-invalid={addError ? 'true' : undefined} aria-describedby={addError ? 'src-err' : 'src-hint'} />
         </div>
         <div class="field">
           <label for="src-name">Name <span class="faint">(optional)</span></label>
-          <input bind:value={newName} id="src-name" class="input" type="text" placeholder="Taken from the page if empty" autocomplete="off" />
+          <input bind:value={newName} id="src-name" class="input" type="text" placeholder={isSearch ? 'The search itself' : 'Taken from the page if empty'} autocomplete="off" disabled={isSearch} />
         </div>
         <div class="field">
           <span class="field-label">The page lists</span>
-          <span title="Events lead to the people on stage. A page of startups, like an accelerator's portfolio, or of businesses, like a list of gyms or coaches, leads to the people who run each one, through its imprint. Only businesses in NRW count">
+          <span class:off={isSearch} inert={isSearch} title="Events lead to the people on stage. A page of startups, like an accelerator's portfolio, or of businesses, like a list of gyms or coaches, leads to the people who run each one, through its imprint. Only businesses in NRW count">
             <Segmented label="The page lists" options={[{ value: 'events', label: 'Events' }, { value: 'startups', label: 'Startups' }, { value: 'businesses', label: 'Businesses' }]} bind:value={newLists} />
           </span>
         </div>
       </div>
-      {#if addError}<p id="src-err" class="field-error" role="alert">{addError}</p>{:else}<p id="src-hint" class="field-hint">A link to one event adds the calendar it belongs to. It gets checked in the next run.</p>{/if}
+      {#if addError}<p id="src-err" class="field-error" role="alert">{addError}</p>{:else}<p id="src-hint" class="field-hint">{isSearch ? 'A search finds businesses, each followed to its imprint for who runs it. Only NRW counts.' : 'A link to one event adds the calendar it belongs to. It gets checked in the next run.'}</p>{/if}
       <div class="row end">
         <button class="btn" type="button" onclick={() => ((adding = false), (addError = ''))}>Cancel</button>
         <button class="btn primary" type="submit" disabled={addBusy}>{addBusy ? 'Adding' : 'Add source'}</button>
@@ -188,6 +192,7 @@
   .stale { opacity: .6; }
   .add-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 12px; }
   @media (max-width: 640px) { .add-grid { grid-template-columns: 1fr; } }
+  .off { opacity: .45; }
   /* Phones stack the row. Wide screens lay it out in columns. */
   .source {
     grid-template-columns: minmax(0, 1fr) auto;

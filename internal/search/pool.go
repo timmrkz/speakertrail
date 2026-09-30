@@ -27,11 +27,11 @@ type Pool struct {
 
 // Use is how much of a provider's budget this month is spent.
 type Use struct {
-	Provider string
-	Used     int
-	Budget   int
+	Provider string `json:"provider"`
+	Used     int    `json:"used"`
+	Budget   int    `json:"budget"`
 	// Set is true when the provider has an API key.
-	Set bool
+	Set bool `json:"set"`
 }
 
 // Known are the providers the engine can use, with or without a key.

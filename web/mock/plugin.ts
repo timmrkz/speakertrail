@@ -303,6 +303,11 @@ function stats(s: State): Stats {
     cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
     last_run: s.runs[0] ?? null,
     fit: fitStats(s),
+    // Tavily has a key and has spent part of its budget. Brave has none yet.
+    searches: [
+      { provider: 'tavily', used: 214, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: true },
+      { provider: 'brave', used: 0, budget: Number(setting(s, 'brave_monthly_searches') ?? 1000), set: false },
+    ],
   }
 }
 
@@ -432,6 +437,18 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return ok({ sources: list })
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
+    const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''
+    if (query) {
+      if (s.sources.some((x) => x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'This search is already a source')
+      const city = ['Köln', 'Düsseldorf', 'Dortmund', 'Essen', 'Duisburg', 'Bochum', 'Wuppertal', 'Bielefeld', 'Bonn', 'Münster', 'Aachen'].find((c) => query.includes(c)) ?? ''
+      const m: MockSource = {
+        id: s.nextId.source++, name: query, kind: 'search_query', url: null, query,
+        category: 'Search', city, status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
+        health: 'never', health_note: '', discovered_from: 'Added by Tim', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
+      }
+      s.sources.push(m)
+      return { status: 201, body: sourceOut(m) }
+    }
     const url = typeof b.url === 'string' ? b.url.trim() : ''
     if (!/^https?:\/\/\S+\.\S+/.test(url)) return err(400, 'That does not look like a web address')
     if (s.sources.some((x) => x.url === url)) return err(409, 'This source is already on the list')

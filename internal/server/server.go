@@ -18,6 +18,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/timmrkz/speakertrail/internal/search"
 )
 
 // Pipeline is what the server needs to queue work.
@@ -32,7 +34,10 @@ type Options struct {
 	Pool     *pgxpool.Pool
 	Pipeline Pipeline
 	// UI is the built web interface. It may be nil or empty.
-	UI            fs.FS
+	UI fs.FS
+	// Searches says how much of each search provider's budget is spent.
+	// Without it, every provider counts as having no key.
+	Searches      *search.Pool
 	PasswordHash  string
 	SessionSecret string
 	Now           func() time.Time

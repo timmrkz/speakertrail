@@ -233,7 +233,11 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 	if ui == nil {
 		slog.Warn("the interface is not built into this binary, run npm run build in web/ first")
 	}
-	h := server.New(server.Options{Pool: pool, Pipeline: p, UI: ui, PasswordHash: cfg.UIPasswordHash, SessionSecret: cfg.SessionSecret})
+	searches := p.Search
+	if searches == nil {
+		searches = &search.Pool{DB: pool}
+	}
+	h := server.New(server.Options{Pool: pool, Pipeline: p, Searches: searches, UI: ui, PasswordHash: cfg.UIPasswordHash, SessionSecret: cfg.SessionSecret})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()

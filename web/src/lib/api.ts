@@ -110,6 +110,16 @@ export interface Stats {
     signals: { key: string; label: string; for: boolean; kept: number; skipped: number }[]
     top: { size: number; kept: number; skipped: number; open: number }
   }
+  // Each search provider's budget and how much of it this month has spent.
+  // A provider without a key is never called.
+  searches: SearchUse[]
+}
+
+export interface SearchUse {
+  provider: string
+  used: number
+  budget: number
+  set: boolean
 }
 
 export interface Profile {
@@ -378,6 +388,7 @@ export const api = {
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
   addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
     request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), lists }),
+  addSearch: (query: string) => request<Source>('POST', '/api/sources', { query }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),

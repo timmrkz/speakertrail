@@ -155,7 +155,7 @@ export const KIND_LABEL: Record<string, string> = {
   organiser_page: 'Organiser page',
   profile_page: 'Profile page',
   newsletter: 'Newsletter',
-  search_query: 'Web search',
+  search_query: 'Search',
   portfolio: 'Portfolio',
   directory: 'Directory',
 }

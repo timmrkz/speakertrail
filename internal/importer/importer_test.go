@@ -28,7 +28,7 @@ func TestImportStartingData(t *testing.T) {
 		counts[s] = n
 	}
 	rows.Close()
-	want := map[string]int{"active": 17, "probation": 21, "candidate": 58, "manual": 5, "retired": 7}
+	want := map[string]int{"active": 17, "probation": 21, "candidate": 72, "manual": 18, "retired": 7}
 	for s, n := range want {
 		if counts[s] != n {
 			t.Errorf("%d %s sources, want %d", counts[s], s, n)
@@ -43,6 +43,9 @@ func TestImportStartingData(t *testing.T) {
 		{`SELECT kind FROM sources WHERE url = 'https://luma.com/theofflineclubcologne'`, "calendar_luma"},
 		{`SELECT status FROM sources WHERE name = 'TEDxKoeln'`, "retired"},
 		{`SELECT kind FROM sources WHERE name = 'Gateway startups'`, "portfolio"},
+		{`SELECT kind || ' ' || city FROM sources WHERE name = 'DGfC coaches near Köln'`, "directory Köln"},
+		{`SELECT kind || ' ' || city FROM sources WHERE name = 'Literaturhaus Bonn'`, "calendar_ical Bonn"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'directory' AND status = 'candidate'`, int32(13)},
 		{`SELECT status FROM sources WHERE name = 'PechaKucha Night Köln'`, "manual"},
 		{`SELECT city FROM sources WHERE name = 'Fuckup Nights Cologne'`, "Köln"},
 		{`SELECT count(*)::int FROM sources WHERE name IN ('Frauen gründen anders', 'Kölner Vorbildunternehmerinnen')`, int32(2)},

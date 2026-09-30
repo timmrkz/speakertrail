@@ -204,6 +204,11 @@ func ParseImprint(text string) Imprint {
 		if im.Postcode == "" {
 			if m := postcodeRe.FindStringSubmatch(line); m != nil {
 				im.Postcode, im.City = m[1], strings.TrimSpace(m[2])
+			} else if lonePostcode.MatchString(line) && i+1 < len(lines) {
+				// The postcode on a line of its own, the city on the next.
+				if m := postcodeRe.FindStringSubmatch(line + " " + strings.TrimSpace(lines[i+1])); m != nil {
+					im.Postcode, im.City = m[1], strings.TrimSpace(m[2])
+				}
 			}
 		}
 		m := directorLabel.FindStringSubmatch(line)
@@ -242,7 +247,58 @@ func ParseImprint(text string) Imprint {
 			}
 		}
 	}
+	// Someone who runs it alone often names only themselves, after
+	// "Angaben gemäß § 5" or as the one who publishes the site, without a
+	// word like Inhaber. When the imprint names no company with a legal
+	// form and nobody else, that person runs it.
+	if len(im.Directors) == 0 && im.LegalForm == "" {
+		if name := ownerAfterHeading(lines); name != "" {
+			im.Directors, im.Label = []string{name}, "owner"
+		}
+	}
 	return im
+}
+
+var (
+	lonePostcode = regexp.MustCompile(`^\d{5}$`)
+	// ownerHeading opens the part of an imprint that says who is behind
+	// the site.
+	ownerHeading = regexp.MustCompile(`(?i)^(?:angaben\s+gem(?:ä|ae)(?:ß|ss)\s*§\s*5|informationen\s+gem(?:ä|ae)(?:ß|ss)\s*§\s*5|herausgeber(?:in)?\b|anbieter(?:in)?\b|diensteanbieter(?:in)?\b|betreiber(?:in)?\b|verantwortlich(?:e)?\s+(?:für|fuer)\s+(?:den\s+)?inhalt)`)
+	// businessWords mark a line that names a business, not a person, like
+	// "Bewegungsraum Muster".
+	businessWords = regexp.MustCompile(`(?i)(?:studio|raum|praxis|coaching|yoga|akademie|academy|gym|fitness|zentrum|center|schule|school|dojo|verlag|beratung|institut|atelier|werkstatt|team|club|verein|kampfsport|training|massage|therapie|shop|laden|café|cafe|salon|agentur)`)
+)
+
+// ownerAfterHeading finds a full personal name on the heading's line or
+// one of the next few lines, before the address begins.
+func ownerAfterHeading(lines []string) string {
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if !ownerHeading.MatchString(line) {
+			continue
+		}
+		candidates := []string{}
+		if _, rest, ok := strings.Cut(line, ":"); ok {
+			candidates = append(candidates, rest)
+		}
+		for j := i + 1; j < len(lines) && j <= i+4; j++ {
+			candidates = append(candidates, lines[j])
+		}
+		for _, c := range candidates {
+			c = strings.TrimSpace(c)
+			if c == "" || ownerHeading.MatchString(c) {
+				continue
+			}
+			if postcodeRe.MatchString(c) || lonePostcode.MatchString(c) || businessWords.MatchString(c) || legalForm.MatchString(c) {
+				break
+			}
+			if names := directorNames(c); len(names) > 0 {
+				return names[0]
+			}
+			break
+		}
+	}
+	return ""
 }
 
 // directorNames reads "Die Geschäftsführer Lena Beispiel (CEO) und Tom

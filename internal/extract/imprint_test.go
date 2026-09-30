@@ -100,6 +100,46 @@ Kontrolle Keramik
 33602 Bielefeld`,
 			city: "Bielefeld", directors: []string{"Karla Kontrolle"}, young: true,
 		},
+		"a coach names only herself": {
+			text: `Impressum
+Angaben gemäß § 5 TMG:
+Herausgeberin & Verantwortliche für den Inhalt:
+Lena Musterfrau, Dipl.-Psych. ( DGfC )
+Engelbertstr. 5, 50674 Köln
+Telefon: 0221 000000`,
+			city: "Köln", directors: []string{"Lena Musterfrau"}, young: true,
+		},
+		"a yoga teacher right after § 5": {
+			text: `Angaben gemäß § 5 DDG
+Tom Testmann
+Yoga und Achtsamkeit
+Beispielweg 3
+44137 Dortmund`,
+			city: "Dortmund", directors: []string{"Tom Testmann"}, young: true,
+		},
+		"a studio that names only itself": {
+			text: `Angaben gemäß § 5 TMG
+Bewegungsraum Muster
+Beispielweg 3
+44137 Dortmund`,
+			city: "Dortmund",
+		},
+		"a company's person responsible for content is no owner": {
+			text: `Angaben gemäß § 5 TMG
+Beispiel Fitness GmbH
+Musterstraße 1, 50667 Köln
+Verantwortlich für den Inhalt: Tom Testmann`,
+			company: "Beispiel Fitness GmbH", form: "GmbH", city: "Köln",
+		},
+		"the postcode on a line of its own": {
+			text: `Impressum
+Studio Beispiel
+Sülzburgstraße 104
+50937
+Köln-Sülz
+Inhaberin: Mara Beispielfrau`,
+			city: "Köln-Sülz", directors: []string{"Mara Beispielfrau"}, young: true,
+		},
 	} {
 		im := ParseImprint(tc.text)
 		if im.Company != tc.company || im.LegalForm != tc.form || im.City != tc.city {

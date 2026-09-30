@@ -7,6 +7,13 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
+// CleanText makes text from a page safe to store: valid UTF-8, with bytes
+// that are none replaced, and without NUL characters, which the database
+// refuses. Sites that say UTF-8 and send something else are common.
+func CleanText(s string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(s, "�"), "\x00", "")
+}
+
 // VisibleText returns the text a reader sees on an HTML page, one block per
 // line.
 func VisibleText(doc string) string {

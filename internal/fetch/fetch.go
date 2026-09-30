@@ -168,7 +168,7 @@ func (f *Fetcher) HTTP(ctx context.Context, rawURL string) (*Page, error) {
 	if err != nil {
 		return page, fmt.Errorf("read %s: %w", rawURL, err)
 	}
-	page.Body = string(body)
+	page.Body = CleanText(string(body))
 	if page.IsHTML() {
 		page.Text = VisibleText(page.Body)
 	} else {

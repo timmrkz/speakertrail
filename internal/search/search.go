@@ -170,7 +170,8 @@ func call(c *http.Client, req *http.Request, name string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		msg := strings.TrimSpace(string(body))
 		if len(msg) > 200 {
-			msg = msg[:200]
+			// Cut at 200 bytes, and drop a character cut in half.
+			msg = strings.ToValidUTF8(msg[:200], "")
 		}
 		return fmt.Errorf("%s answered %d: %s", name, resp.StatusCode, msg)
 	}

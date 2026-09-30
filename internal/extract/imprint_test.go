@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // All companies, people and addresses here are invented.
@@ -210,6 +211,20 @@ func TestStartupLinks(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("startup %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// A website's name that starts with an umlaut or a dash stays whole text.
+func TestStartupNameFromHostWithUmlauts(t *testing.T) {
+	for host, want := range map[string]string{
+		"ärztehaus-beispiel.example": "Ärztehaus Beispiel",
+		"über-muster.example":        "Über Muster",
+		"–probe.example":             "–probe",
+		"beispiel-robotics.example":  "Beispiel Robotics",
+	} {
+		if got := startupName("", host); got != want || !utf8.ValidString(got) {
+			t.Errorf("%s: %q, want %q", host, got, want)
 		}
 	}
 }

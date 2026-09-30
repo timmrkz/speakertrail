@@ -500,7 +500,7 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 			rec.note += " (" + im.LegalForm + ")"
 		}
 	default:
-		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
+		label := extract.Capitalize(im.Label)
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
 		switch rec.sourceKind {
 		case "directory":

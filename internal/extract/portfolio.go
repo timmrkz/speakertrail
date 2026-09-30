@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Startup is a company a portfolio or a directory links to: its website,
@@ -213,9 +215,19 @@ func startupName(text, host string) string {
 	label := strings.Split(host, ".")[0]
 	words := strings.FieldsFunc(label, func(r rune) bool { return r == '-' || r == '_' })
 	for i, w := range words {
-		words[i] = strings.ToUpper(w[:1]) + w[1:]
+		words[i] = Capitalize(w)
 	}
 	return strings.Join(words, " ")
+}
+
+// Capitalize makes the first letter upper case. It works on letters, not
+// bytes, so "ärzte" becomes "Ärzte" and never a broken character.
+func Capitalize(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 || r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // siteOf is a host's website without subdomains: "blog.beispiel.de" is

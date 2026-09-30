@@ -1565,6 +1565,38 @@ func TestSearchesLeadToPeopleInNRW(t *testing.T) {
 	}
 }
 
+// An owner found through two websites in the same city is one person, who
+// runs both. The same name in another city is someone else. All invented.
+func TestOneOwnerOfTwoWebsitesIsOnePerson(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fs := &fakeSearch{results: []search.Result{
+		{Title: "Beispiel BJJ Köln", URL: "http://beispiel-bjj.test/"},
+		{Title: "Testmann Coaching", URL: "http://testmann-coaching.test/"},
+		{Title: "Probe Yoga Bonn", URL: "http://probe-yoga.test/"},
+	}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fs}, Now: func() time.Time { return now }}
+	for site, imprint := range map[string]string{
+		"beispiel-bjj":      "<p>Beispiel BJJ</p><p>Musterweg 1, 50667 Köln</p><p>Inhaber: Tom Testmann</p>",
+		"testmann-coaching": "<p>Testmann Coaching</p><p>Musterweg 3, 50667 Köln</p><p>Inhaber: Tom Testmann</p>",
+		"probe-yoga":        "<p>Probe Yoga</p><p>Probeweg 5, 53111 Bonn</p><p>Inhaber: Tom Testmann</p>",
+	} {
+		e.site.set("http://"+site+".test/", `<html><body><h1>Willkommen</h1><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+		e.site.set("http://"+site+".test/impressum", "<html><body>"+imprint+"</body></html>")
+	}
+	if _, err := e.pool.Exec(ctx, `INSERT INTO sources (name, kind, query, status, city) VALUES ('Coach Köln', 'search_query', 'Coach Köln', 'candidate', 'Köln')`); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+
+	got := e.one(t, `
+		SELECT string_agg(p.city || ': ' || (SELECT string_agg(o.name, ', ' ORDER BY o.name) FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id), ' | ' ORDER BY p.city)
+		FROM people p WHERE p.full_name = 'Tom Testmann'`)
+	if got != "Bonn: Probe Yoga Bonn | Köln: Beispiel BJJ Köln, Testmann Coaching" {
+		t.Errorf("people named Tom Testmann: %v", got)
+	}
+}
+
 // Without a search provider, a search waits and nothing fails.
 func TestSearchesWaitWithoutAProvider(t *testing.T) {
 	e := setup(t, "")

@@ -540,15 +540,30 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 }
 
 // resolveFounder finds the person among those who run this startup, or
-// adds them, and marks them a founder with the imprint as evidence.
+// someone with the same full name in the same city, who then runs both, or
+// adds them. It marks them a founder with the imprint as evidence.
 func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string) (int64, bool, error) {
 	norm := extract.NormaliseName(name)
+	// Lookups run side by side. Two of them finding the same owner wait for
+	// each other here, so the second finds the person the first added.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('person:' || $1))`, norm); err != nil {
+		return 0, false, err
+	}
 	var id int64
 	err := tx.QueryRow(ctx, `
 		SELECT p.id FROM people p JOIN affiliations af ON af.person_id = p.id
 		WHERE p.normalised_name = $1 AND af.organisation_id = $2 ORDER BY p.id LIMIT 1`, norm, rec.orgID).Scan(&id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, err
+	}
+	// The same first and last name in the same city is the same person,
+	// found through a second business or a second website of the same one.
+	if id == 0 && strings.Contains(norm, " ") && city != "" {
+		err = tx.QueryRow(ctx, `
+			SELECT id FROM people WHERE normalised_name = $1 AND lower(city) = lower($2) ORDER BY id LIMIT 1`, norm, city).Scan(&id)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, err
+		}
 	}
 	isNew := id == 0
 	if isNew {

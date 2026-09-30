@@ -189,6 +189,7 @@ var (
 func ParseImprint(text string) Imprint {
 	var im Imprint
 	lines := strings.Split(text, "\n")
+	companyLine := -1
 	seen := map[string]bool{}
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -199,6 +200,7 @@ func ParseImprint(text string) Imprint {
 			if m := legalForm.FindStringSubmatchIndex(line); m != nil && len(line) <= 90 && !directorLabel.MatchString(line) {
 				im.Company = strings.Trim(cleanText(line[:m[3]]), " ,")
 				im.LegalForm = strings.Join(strings.Fields(line[m[2]:m[3]]), " ")
+				companyLine = i
 			}
 		}
 		if im.Postcode == "" {
@@ -249,11 +251,13 @@ func ParseImprint(text string) Imprint {
 	}
 	// Someone who runs it alone often names only themselves, after
 	// "Angaben gemäß § 5" or as the one who publishes the site, without a
-	// word like Inhaber. When the imprint names no company with a legal
-	// form and nobody else, that person runs it.
-	if len(im.Directors) == 0 && im.LegalForm == "" {
-		if name := ownerAfterHeading(lines); name != "" {
+	// word like Inhaber. When the imprint names nobody else, that person
+	// runs it. A company with a legal form named only after them belongs
+	// to someone else, like the insurer or the web host.
+	if len(im.Directors) == 0 {
+		if name, at := ownerAfterHeading(lines); name != "" && (companyLine < 0 || companyLine > at) {
 			im.Directors, im.Label = []string{name}, "owner"
+			im.Company, im.LegalForm = "", ""
 		}
 	}
 	return im
@@ -270,22 +274,27 @@ var (
 )
 
 // ownerAfterHeading finds a full personal name on the heading's line or
-// one of the next few lines, before the address begins.
-func ownerAfterHeading(lines []string) string {
+// one of the next few lines, before the address begins, and the line it
+// is on.
+func ownerAfterHeading(lines []string) (string, int) {
 	for i, line := range lines {
 		line = strings.TrimSpace(line)
 		if !ownerHeading.MatchString(line) {
 			continue
 		}
-		candidates := []string{}
+		type candidate struct {
+			text string
+			at   int
+		}
+		candidates := []candidate{}
 		if _, rest, ok := strings.Cut(line, ":"); ok {
-			candidates = append(candidates, rest)
+			candidates = append(candidates, candidate{rest, i})
 		}
 		for j := i + 1; j < len(lines) && j <= i+4; j++ {
-			candidates = append(candidates, lines[j])
+			candidates = append(candidates, candidate{lines[j], j})
 		}
-		for _, c := range candidates {
-			c = strings.TrimSpace(c)
+		for _, cd := range candidates {
+			c := strings.TrimSpace(cd.text)
 			if c == "" || ownerHeading.MatchString(c) {
 				continue
 			}
@@ -293,12 +302,12 @@ func ownerAfterHeading(lines []string) string {
 				break
 			}
 			if names := directorNames(c); len(names) > 0 {
-				return names[0]
+				return names[0], cd.at
 			}
 			break
 		}
 	}
-	return ""
+	return "", -1
 }
 
 // directorNames reads "Die Geschäftsführer Lena Beispiel (CEO) und Tom

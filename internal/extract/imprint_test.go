@@ -131,6 +131,16 @@ Musterstraße 1, 50667 Köln
 Verantwortlich für den Inhalt: Tom Testmann`,
 			company: "Beispiel Fitness GmbH", form: "GmbH", city: "Köln",
 		},
+		"an insurer's legal form is not the practice's": {
+			text: `Impressum
+Angaben gemäß § 5 TMG:
+Mara Beispielfrau
+Heilpraktikerin für Psychotherapie
+Beispielweg 7, 48143 Münster
+Berufshaftpflichtversicherung:
+Muster Sachversicherung AG, Musterplatz 1, 44139 Dortmund`,
+			city: "Münster", directors: []string{"Mara Beispielfrau"}, young: true,
+		},
 		"the postcode on a line of its own": {
 			text: `Impressum
 Studio Beispiel

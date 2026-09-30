@@ -32,6 +32,14 @@ The guests who worked, and the ones in the pipeline, share a pattern:
 
 Names stay out of this file, because the repository is public.
 
+The first searches found the right kind of people, owners of studios and
+gyms, but most of them are not on LinkedIn. Someone who fits but cannot be
+reached there does not help. LinkedIn is where people talk about their
+ideas, their convictions and their business, and where Tim has reached
+guests before. Instagram accounts are often quiet or all show. So the aim
+is people who fit **and are on LinkedIn**, best of all people who write
+there.
+
 ## Who fits
 
 **The core idea: people who work with people.** Their work is face to face,

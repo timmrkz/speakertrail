@@ -43,7 +43,13 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 	if base == "" {
 		base = src.URL
 	}
-	startups := p.portfolioStartups(ctx, page.Body, base)
+	return p.storeEntries(ctx, src, runID, cfg, p.portfolioStartups(ctx, page.Body, base), rec)
+}
+
+// storeEntries stores the startups or businesses a check found, in one
+// short transaction, records the check and queues lookups of the ones not
+// looked up yet. Portfolios, directories and searches share it.
+func (p *Pipeline) storeEntries(ctx context.Context, src Source, runID int64, cfg settings.Settings, startups []extract.Startup, rec checkRecord) error {
 	// A directory is national. An entry it places outside NRW is not kept.
 	if src.Kind == "directory" {
 		startups = slices.DeleteFunc(startups, func(s extract.Startup) bool { return s.Postcode != "" && !extract.InNRW(s.Postcode) })
@@ -147,11 +153,16 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 		status = "retired"
 	}
 	interval := cfg.Days("portfolio_check_days", 14)
+	if src.Kind == "search_query" {
+		interval = cfg.Days("search_check_days", 30)
+	}
 	if status == "retired" {
 		interval = cfg.Days("retired_recheck_days", 28)
 	}
+	// A page that needed the browser keeps needing it. A search is not
+	// fetched at all and keeps its mode.
 	newMode := src.Mode
-	if src.Mode == "auto" && found > 0 {
+	if src.Mode == "auto" && found > 0 && (mode == fetch.ModeHTTP || mode == fetch.ModeBrowser) {
 		newMode = string(mode)
 	}
 	_, err := p.Pool.Exec(ctx, `
@@ -173,11 +184,11 @@ const unlookedStartups = `
 	SELECT o.id FROM organisations o
 	WHERE (o.looked_up_at IS NULL OR o.looked_up_at < $3) AND (o.website <> '' OR o.portfolio_page <> '')
 	  AND EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id
-		WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory') AND ($2 = 0 OR s.id = $2))
+		WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory', 'search_query') AND ($2 = 0 OR s.id = $2))
 	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> ''
 		AND l.looked_up_at > COALESCE(o.looked_up_at, '-infinity')) < 3
 	ORDER BY o.looked_up_at IS NULL DESC,
-		EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'directory') DESC,
+		EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind IN ('directory', 'search_query')) DESC,
 		o.looked_up_at, o.id LIMIT $1`
 
 // relookupBefore is when a startup's last lookup is old enough for another.
@@ -238,7 +249,7 @@ type lookUpRecord struct {
 	found, isNew     int
 	sourceID         int64
 	sourceName, name string
-	// sourceKind is portfolio or directory.
+	// sourceKind is portfolio, directory or search_query.
 	sourceKind        string
 	lookedUp, renamed bool
 	// activity is what the signs of life say, see organisations.activity,
@@ -273,7 +284,7 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name, s.kind
 		FROM organisations o
 		JOIN LATERAL (SELECT s.id, s.name, s.kind FROM sightings si JOIN sources s ON s.id = si.source_id
-			WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory') ORDER BY si.id LIMIT 1) s ON true
+			WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory', 'search_query') ORDER BY si.id LIMIT 1) s ON true
 		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName, &rec.sourceKind)
 	recent := lookedUp != nil && !lookedUp.Before(p.relookupBefore(cfg))
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (recent || rec.url == "" && portfolioPage == "")) {
@@ -343,9 +354,9 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
 	im := extract.ParseImprint(imp.Text)
-	// A directory is national, and only NRW counts, by the imprint's
-	// postcode.
-	if rec.sourceKind == "directory" && !extract.InNRW(im.Postcode) {
+	// A directory or a search is national, and only NRW counts, by the
+	// imprint's postcode.
+	if (rec.sourceKind == "directory" || rec.sourceKind == "search_query") && !extract.InNRW(im.Postcode) {
 		rec.note = "no postcode in the imprint"
 		if im.Postcode != "" {
 			rec.note = "outside NRW (" + strings.TrimSpace(im.Postcode+" "+im.City) + ")"
@@ -491,8 +502,11 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 	default:
 		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
-		if rec.sourceKind == "directory" {
+		switch rec.sourceKind {
+		case "directory":
 			evidence = fmt.Sprintf("%s of %s, by its imprint. Listed in %s", label, company, rec.sourceName)
+		case "search_query":
+			evidence = fmt.Sprintf("%s of %s, by its imprint. Found by the search %s", label, company, rec.sourceName)
 		}
 		for _, name := range im.Directors {
 			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)

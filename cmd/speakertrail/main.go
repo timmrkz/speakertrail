@@ -28,6 +28,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/server"
 	"github.com/timmrkz/speakertrail/internal/settings"
 	"github.com/timmrkz/speakertrail/web"
@@ -158,6 +159,16 @@ func engine(ctx context.Context, pool *pgxpool.Pool) (*pipeline.Pipeline, func()
 	if model := llm.FromEnvIfSet(); model != nil {
 		p.Reader = model
 		slog.Info("language model reads event pages", "model", model.Model, "url", model.URL)
+	}
+	// Searches go through the providers whose keys are set, each within its
+	// monthly budget.
+	if providers := search.FromEnv(); len(providers) > 0 {
+		p.Search = &search.Pool{DB: pool, Providers: providers}
+		var names []string
+		for _, pr := range providers {
+			names = append(names, pr.Name())
+		}
+		slog.Info("searches through", "providers", strings.Join(names, ", "))
 	}
 	cleanup := func() {
 		if browser != nil {

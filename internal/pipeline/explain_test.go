@@ -32,6 +32,8 @@ func TestExplain(t *testing.T) {
 		{"the language model failed: no answer within 2m0s", 0, "The language model took too long", pipeline.FailPassing},
 		{"the model's answer is not JSON: unexpected end", 0, "The language model gave no usable answer", pipeline.FailPassing},
 		{"something nobody expected", 0, "Something unexpected went wrong", pipeline.FailPassing},
+		{"tavily answered 401: {\"detail\":{\"error\":\"Unauthorized\"}}", 0, "The search provider does not accept the key", pipeline.FailEngine},
+		{"brave answered 429: {\"error\":{\"code\":\"RATE_LIMITED\"}}", 0, "The search provider refused the search, maybe its limit is reached", pipeline.FailEngine},
 	} {
 		reason, kind := pipeline.Explain(c.msg, c.status)
 		if reason != c.reason || kind != c.kind {

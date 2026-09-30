@@ -605,7 +605,7 @@ func (s *Server) checkSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var exists bool
-	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND url IS NOT NULL)`, id).Scan(&exists); err != nil {
+	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND (url IS NOT NULL OR kind = 'search_query'))`, id).Scan(&exists); err != nil {
 		s.internal(w, r, err)
 		return
 	}

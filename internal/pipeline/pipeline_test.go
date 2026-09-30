@@ -19,6 +19,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -1491,5 +1492,80 @@ func TestTrainingsOnOtherStagesAreKept(t *testing.T) {
 		if kept, why := rules.Fit(extract.Event{Title: title, City: "Köln", Format: "in_person"}); kept != want {
 			t.Errorf("%q kept %v (%s), want %v", title, kept, why, want)
 		}
+	}
+}
+
+// fakeSearch answers every query with the same results.
+type fakeSearch struct {
+	mu      sync.Mutex
+	queries []string
+	results []search.Result
+}
+
+func (f *fakeSearch) Name() string { return "tavily" }
+
+func (f *fakeSearch) Search(_ context.Context, q string) ([]search.Result, error) {
+	f.mu.Lock()
+	f.queries = append(f.queries, q)
+	f.mu.Unlock()
+	return f.results, nil
+}
+
+// A search is a source: its results lead to websites, their imprints and
+// their about pages, like a directory, and only NRW counts. LinkedIn,
+// Instagram and platform pages among the results are never followed. All
+// invented.
+func TestSearchesLeadToPeopleInNRW(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fs := &fakeSearch{results: []search.Result{
+		{Title: "Beispiel BJJ Köln – Brazilian Jiu-Jitsu", URL: "http://beispiel-bjj.test/training"},
+		{Title: "Muster Coaching München", URL: "http://muster-coaching.test/"},
+		{Title: "Lena Musterfrau | LinkedIn", URL: "https://www.linkedin.com/in/lena-musterfrau/"},
+		{Title: "beispielbjj on Instagram", URL: "https://www.instagram.com/beispielbjj/"},
+		{Title: "Beispiel BJJ | Facebook", URL: "https://www.facebook.com/beispielbjj"},
+		{Title: "Beispiel BJJ, the same site again", URL: "http://beispiel-bjj.test/kontakt"},
+	}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fs}, Now: func() time.Time { return now }}
+	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-bjj.test/impressum", `<html><body><p>Beispiel BJJ</p><p>Musterweg 1, 50667 Köln</p><p>Inhaber: Tom Testmann</p></body></html>`)
+	e.site.set("http://muster-coaching.test/", `<html><body><h1>Coaching</h1></body></html>`)
+	e.site.set("http://muster-coaching.test/impressum", `<html><body><p>Angaben gemäß § 5 TMG</p><p>Mara Beispielfrau</p><p>Beispielstraße 2, 80331 München</p></body></html>`)
+	var src int64
+	if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, query, status, city) VALUES ('BJJ Gym Köln', 'search_query', 'BJJ Gym Köln', 'candidate', 'Köln') RETURNING id`).Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	run := runOnce(t, e)
+
+	if strings.Join(fs.queries, "|") != "BJJ Gym Köln" {
+		t.Errorf("searches %q", fs.queries)
+	}
+	if got := e.one(t, `SELECT startups_found || ' ' || mode FROM source_checks WHERE source_id = $1 AND run_id = $2`, src, run); got != "2 search" {
+		t.Errorf("the search's check: %v", got)
+	}
+	if got := e.one(t, `SELECT string_agg(website, ' ' ORDER BY website) FROM organisations`); got != "http://beispiel-bjj.test/ http://muster-coaching.test/" {
+		t.Errorf("websites kept: %v", got)
+	}
+	if got := e.one(t, `SELECT p.full_name || ': ' || p.fit_evidence FROM people p`); got != "Tom Testmann: Owner of Beispiel BJJ Köln, by its imprint. Found by the search BJJ Gym Köln" {
+		t.Errorf("people: %v", got)
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.website LIKE '%muster-coaching%'`); got != "outside NRW (80331 München)" {
+		t.Errorf("the coach in München: %v", got)
+	}
+	if got := e.one(t, `SELECT status FROM sources WHERE id = $1`, src); got == "candidate" {
+		t.Error("a search that found websites stays a candidate")
+	}
+	if c := e.count(t, "search_calls"); c != 1 {
+		t.Errorf("%d searches counted, want 1", c)
+	}
+}
+
+// Without a search provider, a search waits and nothing fails.
+func TestSearchesWaitWithoutAProvider(t *testing.T) {
+	e := setup(t, "")
+	e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, query, status) VALUES ('Yoga Köln', 'search_query', 'Yoga Köln', 'candidate')`)
+	run := runOnce(t, e)
+	if c := e.count(t, "source_checks WHERE run_id = $1", run); c != 0 {
+		t.Errorf("%d checks without a search provider", c)
 	}
 }

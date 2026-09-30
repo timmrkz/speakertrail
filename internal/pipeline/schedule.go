@@ -88,6 +88,24 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Due searches, when a search provider is set up. Each brings up to 20
+	// websites to look up, so a run takes only a few.
+	if p.Search != nil {
+		rows, err := p.Pool.Query(ctx, `
+			SELECT id FROM sources
+			WHERE kind = 'search_query' AND query IS NOT NULL AND status IN ('candidate', 'probation', 'active')
+			  AND (next_check_at IS NULL OR next_check_at <= $1)
+			ORDER BY next_check_at NULLS FIRST, points DESC, id
+			LIMIT $2`, now, cfg.Int("searches_per_run", 3))
+		if err != nil {
+			return 0, err
+		}
+		searches, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		if err != nil {
+			return 0, err
+		}
+		ids = append(ids, searches...)
+	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
 			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id),

@@ -39,6 +39,12 @@ var notStartupSites = []string{
 	"europa.eu", "bund.de", "nrw.de", "wordpress.org", "wordpress.com", "wix.com", "jimdo.com", "squarespace.com",
 }
 
+// IsPlatform says whether a host is a platform, network or tool, not
+// anybody's own website, like facebook.com or youtube.com.
+func IsPlatform(host string) bool {
+	return hostIs(strings.ToLower(host), notStartupSites...)
+}
+
 // genericText is link text that says nothing about the company.
 var genericText = regexp.MustCompile(`(?i)^(?:website|webseite|zur website|zur webseite|homepage|visit|visit website|mehr|mehr erfahren|more|learn more|read more|details|link|hier|here|www\..*|https?://.*)$`)
 

@@ -42,6 +42,8 @@ type Source struct {
 	Empty    int
 	Changed  time.Time
 	Category string
+	// Query is what a search source searches for.
+	Query string
 }
 
 // Resolver writes extracted events into the database, merging them with

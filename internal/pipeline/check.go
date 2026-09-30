@@ -19,6 +19,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -50,6 +51,9 @@ type Pipeline struct {
 	// Reader is the local language model that reads event pages for
 	// people. Without it events are not read.
 	Reader Reader
+	// Search asks search providers for websites. Without it searches
+	// wait.
+	Search *search.Pool
 	Log    *slog.Logger
 
 	mu             sync.Mutex
@@ -95,9 +99,9 @@ func loadSource(ctx context.Context, pool *pgxpool.Pool, id int64) (Source, erro
 	var s Source
 	var u *string
 	err := pool.QueryRow(ctx, `
-		SELECT id, name, kind, url, city, status, fetch_mode, checks, empty_checks_in_row, status_changed_at, category
+		SELECT id, name, kind, url, city, status, fetch_mode, checks, empty_checks_in_row, status_changed_at, category, COALESCE(query, '')
 		FROM sources WHERE id = $1`, id).
-		Scan(&s.ID, &s.Name, &s.Kind, &u, &s.City, &s.Status, &s.Mode, &s.Checks, &s.Empty, &s.Changed, &s.Category)
+		Scan(&s.ID, &s.Name, &s.Kind, &u, &s.City, &s.Status, &s.Mode, &s.Checks, &s.Empty, &s.Changed, &s.Category, &s.Query)
 	if u != nil {
 		s.URL = *u
 	}
@@ -127,6 +131,9 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 	}
 	if err != nil {
 		return err
+	}
+	if src.Kind == "search_query" {
+		return p.checkSearch(ctx, src, runID)
 	}
 	if src.URL == "" || src.Status == "manual" {
 		return nil

@@ -70,7 +70,8 @@ test` runs all tests.
 | `SESSION_SECRET` | The login, at least 16 characters |
 | `PORT` | `serve`, default 8080 |
 | `CHROME_PATH` | Optional, the Chromium to use |
-| `TAVILY_API_KEY` | Search and profile lookups, later |
+| `TAVILY_API_KEY` | Searches through Tavily, optional. Its free plan has 1,000 a month |
+| `BRAVE_SEARCH_API_KEY` | Searches through Brave, optional. Its monthly credit covers about 1,000 |
 | `ANTHROPIC_API_KEY` | Language model features, later |
 | `TEST_DATABASE_URL` | Tests |
 

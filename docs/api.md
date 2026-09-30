@@ -64,9 +64,15 @@ All parameters are optional. `from` defaults to today, `to` to `from` plus the s
   "last_7_days": { "people": 41, "events": 23, "organisations": 12, "sources": 9 },
   "weekly": [ { "week_start": "2026-08-03", "people": 0, "events": 0, "sources": 0 } ],
   "cities": [ { "city": "Köln", "events": 38 } ],
-  "last_run": null
+  "last_run": null,
+  "searches": [
+    { "provider": "tavily", "used": 214, "budget": 1000, "set": true },
+    { "provider": "brave", "used": 0, "budget": 1000, "set": false }
+  ]
 }
 ```
+
+`searches` holds each search provider the engine knows, with how many searches it made this month, counted from the first of the month in Berlin, and its budget from Settings, `tavily_monthly_searches` and `brave_monthly_searches`. `set` is false when the provider has no API key, and then it is never called.
 
 `fit` says what the keeps and skips teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how often a person who had it was `kept` or `skipped`, and `top` how the top 20 by fit were decided, `{"size": 20, "kept": 6, "skipped": 3, "open": 11}`.
 
@@ -149,9 +155,13 @@ A check of a portfolio stores each startup its page links to, with its website, 
 
 A directory works the same way, with two differences. Directories are national, so only NRW counts: an entry whose postcode on the list lies outside NRW is not kept, and a lookup whose imprint gives no postcode in NRW takes nobody, noted as "outside NRW (80331 München)". And an owner, "Inhaber", is the best case, so businesses from directories are looked up before startups from portfolios.
 
+A search, kind `search_query`, has a `query` and no `url`. Its check asks a search provider, keeps one website per host, leaves out LinkedIn, Instagram, platforms and list sites like Yelp or Eventbrite, and stores each website as a business, like a directory's entry. Only NRW counts, by the imprint's postcode. Each search goes to the provider with the largest share of its budget left, and to the next one when it fails. Once every budget is spent, or when no provider has a key, searches wait. A run takes `searches_per_run` due searches, and a search runs again after `search_check_days`. Its health counts `startups_found`, the websites it kept.
+
 `POST /api/sources` with `{"url": "...", "name": "optional", "lists": "events"}` adds a candidate source and answers it with 201. `lists` is `events`, `startups` for a portfolio or `businesses` for a directory. `"portfolio": true` still means startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
 
-`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "lists"}` answers the updated source. `lists` switches what the page is read as, and the source is checked in the next run.
+`POST /api/sources` with `{"query": "BJJ Gym Köln"}` adds a search instead, a candidate source of kind `search_query`, and answers it with 201. Its name is the query unless `name` is given. A search that is already a source answers 409, whatever its case.
+
+`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "lists"}` answers the updated source. `lists` switches what the page is read as, and the source is checked in the next run. A search has no page, so `lists` on a search answers 400.
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 

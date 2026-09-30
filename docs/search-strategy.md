@@ -88,6 +88,37 @@ There is no hidden number.
 
 ## Where they are found in NRW
 
+### Searches
+
+A fixed list of sources is not enough. Most of these people are on no
+list and on no stage. They have a website with an imprint, and a search
+finds it, the way Tim would search "BJJ Gym Köln" himself.
+
+A **search** is a source like any other: a query instead of a page. Its
+results are websites, each followed to its imprint and about page, like a
+directory's entries, and only NRW counts. The starting searches are eight
+kinds of people who fit, in the eleven biggest cities of NRW:
+
+- BJJ gyms, combat sports schools, CrossFit boxes
+- yoga studios, personal trainers
+- life coaches, couples coaching, nutrition advice
+
+Tim adds more on Sources, by typing a search instead of a web address.
+
+Two search providers stand behind one interface, in `internal/search`:
+Tavily, whose free plan has 1,000 searches a month, and Brave, whose
+monthly credit covers about 1,000. Both are used at the same time, so
+together they give about 2,000 searches a month. Each search goes to the
+one with the largest share of its budget left, and to the other when it
+fails. Every call counts, also a failed one, because it may be billed.
+Once a budget in Settings is spent, the engine stops calling that
+provider. Another provider is one more type with a `Search` method.
+
+A search brings up to 20 websites. A run takes three due searches, and a
+search runs again after 30 days, both set in Settings. Platforms and list
+sites like Yelp, Gelbe Seiten or Eventbrite are left out of the results,
+LinkedIn and Instagram always.
+
 ### Events
 
 Today's sources are mostly startup events. The new people are on other
@@ -186,6 +217,8 @@ Small batches, each one tested on Tim's Mac before the next.
 5. **Find on Instagram.**
 6. **Learning from keeps and skips.**
 7. **Weekly suggestions**, once the experiment works.
+8. **Searches**, added once the fixed sources proved too narrow: most
+   people who fit are on no list, but a search finds their website.
 
 ## Where it stands
 
@@ -205,12 +238,19 @@ Built, in the order above:
 5. **Find on Instagram**, Instagram's keyword search in Tim's browser.
 6. **Keeps and skips** on each person, counted per signal on Overview and
    in the report, with how the top 20 by fit were decided.
+3. **The starting list of new sources**, 27 of them, each checked by hand
+   for robots.txt and terms. Those that forbid automated access are
+   manual sources.
+8. **Searches**, with Tavily and Brave together, see
+   [Searches](#searches). Overview shows how much of each budget this
+   month has spent.
 
 Waiting:
 
-3. **The starting list of new sources.** Each one is checked by hand for
-   robots.txt and terms first, and the cloud session cannot reach the
-   sites yet, see [What a session needs](#what-a-session-needs).
+- **Keys.** Searches wait until `TAVILY_API_KEY` or
+  `BRAVE_SEARCH_API_KEY` is set, see the README.
+- **Searches that learn.** Which searches bring people Tim keeps, and new
+  searches made from what those people have in common.
 
 ## First an experiment
 

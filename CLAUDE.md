@@ -89,6 +89,8 @@ messages, pull request text, code comments and chat replies.
   lists businesses run by people, like gyms or coaches, and a **lookup** is
   one look at one startup's or business's website, its imprint and its
   about page, for who runs it.
+  A **search** is a source that asks a search provider, like "BJJ Gym
+  Köln", and its results are websites to look up.
   A **run** is one pass over the due sources, nightly or started by hand. A
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An

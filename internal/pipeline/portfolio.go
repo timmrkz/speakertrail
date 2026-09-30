@@ -219,7 +219,7 @@ func (p *Pipeline) enqueueLookUps(ctx context.Context, runID, sourceID int64, li
 	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindLookUp, Key: fmt.Sprintf("run:%d:lookup:%d", runID, id),
+			Kind: KindLookUp, Key: fmt.Sprintf("run:%d:lookup:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: LookUpPayload{OrganisationID: id, RunID: runID},
 		}); err != nil {
 			return 0, err

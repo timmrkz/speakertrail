@@ -45,6 +45,11 @@ func (p *Pipeline) ended(ctx context.Context, runID int64) (bool, error) {
 	return ended, err
 }
 
+// runAttempts is how often a job of a run is tried. Once, because a run
+// ends only when all its jobs have, and a retry an hour later would keep it
+// going. A source whose check failed is due again in the next run.
+const runAttempts = 1
+
 // EnqueueDue queues a check for every source that is due, the first checks
 // of a limited number of new candidates, the open seeds and the pruning.
 // It returns the number of sources queued.
@@ -108,7 +113,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id),
+			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: CheckPayload{SourceID: id, RunID: runID},
 		}); err != nil {
 			return 0, err
@@ -253,7 +258,7 @@ func (p *Pipeline) CheckNow(ctx context.Context, sourceID int64) (int64, error) 
 		return 0, err
 	}
 	_, err = p.Queue.Enqueue(ctx, queue.NewJob{
-		Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, sourceID),
+		Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, sourceID), MaxAttempts: runAttempts,
 		Payload: CheckPayload{SourceID: sourceID, RunID: runID},
 	})
 	return runID, err

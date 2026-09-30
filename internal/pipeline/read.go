@@ -68,7 +68,7 @@ func (p *Pipeline) enqueueReads(ctx context.Context, runID, sourceID int64, limi
 	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindReadEvent, Key: fmt.Sprintf("run:%d:read:%d", runID, id),
+			Kind: KindReadEvent, Key: fmt.Sprintf("run:%d:read:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: ReadPayload{EventID: id, RunID: runID},
 		}); err != nil {
 			return 0, err

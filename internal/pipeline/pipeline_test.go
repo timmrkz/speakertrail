@@ -365,6 +365,11 @@ func TestEnqueueDue(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'check_source'"); c != 7 {
 		t.Errorf("%d check jobs after queueing twice", c)
 	}
+	// A run's checks are tried once, so a failing one never keeps the run
+	// waiting for a retry.
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND max_attempts = 1"); c != 7 {
+		t.Errorf("%d of 7 checks are tried only once", c)
+	}
 
 	// The next run replaces checks the last one left behind.
 	next, _ := e.p.StartRun(ctx, "nightly")

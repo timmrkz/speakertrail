@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/rubric"
@@ -63,7 +64,7 @@ const progressJSON = `WITH j AS (
 	c AS (SELECT
 		count(*) FILTER (WHERE kind = 'check_source') AS checks,
 		count(*) FILTER (WHERE kind = 'check_source' AND status IN ('done', 'failed')) AS checks_done,
-		count(*) FILTER (WHERE kind = 'check_source' AND source_kind IN ('portfolio', 'directory') AND status NOT IN ('done', 'failed')) AS portfolios_left,
+		count(*) FILTER (WHERE kind = 'check_source' AND source_kind IN ('portfolio', 'directory', 'search_query') AND status NOT IN ('done', 'failed')) AS portfolios_left,
 		count(*) FILTER (WHERE kind = 'read_event') AS reads,
 		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done,
 		count(*) FILTER (WHERE kind = 'look_up_startup') AS lookups,
@@ -77,7 +78,8 @@ const progressJSON = `WITH j AS (
 		LEAST(COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'event_pages_per_check'), 3),
 			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > now() - interval '14 days')::numeric
 				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > now() - interval '14 days'), 0), 0)) AS reads_per_check,
-		-- Each portfolio check queues up to this many lookups.
+		-- Each check of a portfolio, a directory or a search queues up to
+		-- this many lookups.
 		COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'startups_per_run'), 10) AS lookups_per_portfolio),
 	expect AS (SELECT
 		GREATEST(c.reads, c.reads + round((c.checks - c.checks_done) * speed.reads_per_check)) AS reads,
@@ -412,21 +414,22 @@ const sourceJSON = `json_build_object(
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' ELSE 'events' END
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' ELSE 'events' END
 		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
+			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
 		(SELECT 'Linked from ' || name FROM sources x WHERE x.id = s.discovered_from_source_id),
 		NULLIF(s.discovered_note, '')))`
 
-// A check found events, or startups when the source is a portfolio.
+// A check found events, or startups and businesses when the source is a
+// portfolio, a directory or a search.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory') THEN c.startups_found ELSE c.events_found END AS found
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
 	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
-		SELECT CASE WHEN s.kind IN ('portfolio', 'directory') THEN c.startups_found ELSE c.events_found END AS found
+		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
@@ -437,7 +440,7 @@ func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
 			ORDER BY array_position(ARRAY['active','probation','candidate','manual','retired'], s.status), s.points DESC, s.name), '[]'))
 		`+sourceFrom+`
 		WHERE ($1 = '' OR s.status = $1)
-		  AND ($2 = '' OR s.name ILIKE '%' || $2 || '%' OR s.url ILIKE '%' || $2 || '%' OR s.city ILIKE '%' || $2 || '%' OR s.notes ILIKE '%' || $2 || '%')`,
+		  AND ($2 = '' OR s.name ILIKE '%' || $2 || '%' OR s.url ILIKE '%' || $2 || '%' OR s.query ILIKE '%' || $2 || '%' OR s.city ILIKE '%' || $2 || '%' OR s.notes ILIKE '%' || $2 || '%')`,
 		q.Get("status"), likeSafe(q.Get("q")))
 }
 
@@ -458,8 +461,15 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 		// same as startups.
 		Lists     string `json:"lists"`
 		Portfolio bool   `json:"portfolio"`
+		// Query adds a search instead of a page: its results are
+		// businesses, each followed to its imprint.
+		Query string `json:"query"`
 	}
 	if !decode(w, r, &body) {
+		return
+	}
+	if q := strings.Join(strings.Fields(body.Query), " "); q != "" {
+		s.addSearch(w, r, q, strings.TrimSpace(body.Name))
 		return
 	}
 	if body.Portfolio && body.Lists == "" {
@@ -503,6 +513,33 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		fail(w, http.StatusConflict, "This address is already a source")
+		return
+	}
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	s.sendSource(w, r, http.StatusCreated, id)
+}
+
+// addSearch adds a search as a source. It runs in the next run that has a
+// search provider.
+func (s *Server) addSearch(w http.ResponseWriter, r *http.Request, query, name string) {
+	if len([]rune(query)) > 200 {
+		fail(w, http.StatusBadRequest, "A search is at most 200 characters")
+		return
+	}
+	if name == "" {
+		name = query
+	}
+	var id int64
+	err := s.opts.Pool.QueryRow(r.Context(), `
+		INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
+		VALUES ($1, 'search_query', $2, 'Search', $3, 'candidate', 'Added by Tim')
+		RETURNING id`, name, query, extract.CityOf(query)).Scan(&id)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		fail(w, http.StatusConflict, "This search is already a source")
 		return
 	}
 	if err != nil {

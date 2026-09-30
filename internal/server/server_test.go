@@ -781,6 +781,30 @@ func TestSourcesSayWhatTheyList(t *testing.T) {
 	}
 }
 
+// A search is added like a page. Its results are businesses, and it cannot
+// be switched to list events.
+func TestAddASearch(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	code, body := e.do(t, "POST", "/api/sources", `{"query":"  Yoga Studio   Bochum "}`)
+	if code != 201 || !strings.Contains(body, `"kind":"search_query"`) || !strings.Contains(body, `"query":"Yoga Studio Bochum"`) ||
+		!strings.Contains(body, `"city":"Bochum"`) || !strings.Contains(body, `"url":null`) {
+		t.Fatalf("add a search: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"query":"yoga studio bochum"}`); code != 409 {
+		t.Errorf("the same search twice: %d, want 409", code)
+	}
+	var src struct{ ID int64 }
+	json.Unmarshal([]byte(body), &src)
+	if code, _ := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"lists":"events"}`); code != 400 {
+		t.Errorf("a search switched to events: %d, want 400", code)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, startups_found, events_found) VALUES ($1, 0, 0)`, src.ID)
+	if code, body := e.do(t, "GET", "/api/sources?q=bochum", ""); code != 200 || !strings.Contains(body, "The last check found no businesses") {
+		t.Errorf("a search in the list: %d %s", code, body)
+	}
+}
+
 // Keeping or skipping a person is one click and undone by another. Each
 // decision remembers the person's signals, so the counts per signal
 // survive when a skipped person is deleted later. The stats say how often

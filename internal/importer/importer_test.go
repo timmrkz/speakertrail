@@ -15,12 +15,12 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SeedsAdded != 17 {
+	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.SeedsAdded != 17 {
 		t.Fatalf("first import: %s", res)
 	}
 
 	counts := map[string]int{}
-	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources GROUP BY status`)
+	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources WHERE kind <> 'search_query' GROUP BY status`)
 	for rows.Next() {
 		var s string
 		var n int
@@ -50,6 +50,8 @@ func TestImportStartingData(t *testing.T) {
 		{`SELECT city FROM sources WHERE name = 'Fuckup Nights Cologne'`, "Köln"},
 		{`SELECT count(*)::int FROM sources WHERE name IN ('Frauen gründen anders', 'Kölner Vorbildunternehmerinnen')`, int32(2)},
 		{`SELECT count(*)::int FROM seeds WHERE processed_at IS NULL`, int32(2)},
+		{`SELECT status || ' ' || city || ' ' || category FROM sources WHERE query = 'BJJ Gym Köln'`, "candidate Köln Search"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'search_query' AND city = ''`, int32(0)},
 	}
 	for _, c := range checks {
 		var got any
@@ -68,7 +70,7 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded != 0 || res.SeedsAdded != 0 {
+	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 {
 		t.Errorf("second import added rows: %s", res)
 	}
 	var status string

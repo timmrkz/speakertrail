@@ -19,6 +19,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
 // The test world is late September 2026, like the first run.
@@ -1469,5 +1470,26 @@ func TestDirectoryLeadsToOwnersInNRW(t *testing.T) {
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("people:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Events on other stages are kept: a coach's workshop or a breathwork
+// training is where guests are, a sales training still is not.
+func TestTrainingsOnOtherStagesAreKept(t *testing.T) {
+	e := setup(t, "")
+	cfg, err := settings.Load(t.Context(), e.pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := pipeline.RulesFrom(cfg)
+	for title, want := range map[string]bool{
+		"Atem-Training am Rhein": true,
+		"BJJ Training und Open Mat": true,
+		"Sales Training für Teams": false,
+		"Webinar: Resilienz": false,
+	} {
+		if kept, why := rules.Fit(extract.Event{Title: title, City: "Köln", Format: "in_person"}); kept != want {
+			t.Errorf("%q kept %v (%s), want %v", title, kept, why, want)
+		}
 	}
 }

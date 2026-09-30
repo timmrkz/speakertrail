@@ -299,11 +299,12 @@ func runFetch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	browser := fs.Bool("browser", false, "load the page in the headless browser")
 	save := fs.String("save", "", "write the page to this file")
+	lists := fs.String("lists", "events", "what the page lists: events, startups or businesses")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return errors.New("usage: speakertrail fetch [-browser] [-save file] <url>")
+	if fs.NArg() != 1 || (*lists != "events" && *lists != "startups" && *lists != "businesses") {
+		return errors.New("usage: speakertrail fetch [-browser] [-save file] [-lists events|startups|businesses] <url>")
 	}
 	opts := fetch.Options{Contact: "https://github.com/timmrkz/speakertrail"}
 	if *browser {
@@ -325,6 +326,10 @@ func runFetch(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	if *lists != "events" {
+		printEntries(page, *lists == "businesses")
+		return nil
+	}
 	res := extract.Extract(extract.Page{URL: page.FinalURL, ContentType: page.ContentType, Body: page.Body})
 	fmt.Printf("%s %d, %s, %d bytes, %d events, looks like a JavaScript shell: %v\n",
 		page.Mode, page.Status, page.Duration.Round(time.Millisecond), len(page.Body), len(res.Events), fetch.LooksLikeJSShell(page))
@@ -341,6 +346,40 @@ func runFetch(ctx context.Context, args []string) error {
 		fmt.Println("link:", l)
 	}
 	return nil
+}
+
+// printEntries shows what a check of a portfolio or a directory would keep
+// from one page: each entry, its website or its page on the list's own
+// site, and for a directory whether its postcode lies in NRW.
+func printEntries(page *fetch.Page, directory bool) {
+	base := page.FinalURL
+	if base == "" {
+		base = page.URL
+	}
+	pp := extract.Portfolio(page.Body, base)
+	fmt.Printf("%s %d, %s, %d bytes, %d entries, %d more pages, looks like a JavaScript shell: %v\n",
+		page.Mode, page.Status, page.Duration.Round(time.Millisecond), len(page.Body), len(pp.Startups), len(pp.More), fetch.LooksLikeJSShell(page))
+	for _, s := range pp.Startups {
+		where := s.Website
+		if where == "" {
+			where = s.Page
+		}
+		nrw := ""
+		if directory {
+			switch {
+			case s.Postcode == "":
+				nrw = "  (no postcode on the list, the imprint decides)"
+			case extract.InNRW(s.Postcode):
+				nrw = "  NRW " + s.Postcode
+			default:
+				nrw = "  outside NRW " + s.Postcode + ", not kept"
+			}
+		}
+		fmt.Printf("- %s  %s%s\n", s.Name, where, nrw)
+	}
+	for _, m := range pp.More {
+		fmt.Println("more:", m)
+	}
 }
 
 func runHashPassword() error {

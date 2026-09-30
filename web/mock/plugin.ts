@@ -67,7 +67,7 @@ function createState() {
       notes: info?.notes ?? '',
       profiles: (info?.profiles ?? []).map(([platform, url, review]) => ({ id: profileId++, platform, url, review })),
       affiliations: (info?.affiliations ?? (affiliation ? [[affiliation.replace(/^.*,\s*/, ''), 'member', true]] : []))
-        .map(([organisation, role, current]) => ({ organisation, role, current })),
+        .map(([organisation, role, current]) => ({ organisation, role, current, website: '', imprint_url: '' })),
     }
     people.set(name, p)
     return p
@@ -81,8 +81,13 @@ function createState() {
       ['Ida Ingwersen', 'Ingwersen Labs GmbH'], ['Ole Osterkamp', 'Osterkamp Analytics GmbH'],
     ].map(([name, company], i) => ({
       id: 900 + i, name, headline: `Managing director, ${company}`, city: 'Köln', fit: 'founder' as const,
-      first_seen: hoursAgo(30 + i * 7), notes: '', profiles: [],
-      affiliations: [{ organisation: company, role: 'founder', current: true }],
+      first_seen: hoursAgo(30 + i * 7), notes: '',
+      // The first runs her business alone, so her site's Instagram is hers to confirm.
+      profiles: i === 0 ? [{ id: 9000, platform: 'instagram' as const, url: 'https://www.instagram.com/example.hellwig/', review: 'open' as const }] : [],
+      affiliations: [{
+        organisation: company, role: 'founder', current: true,
+        website: `https://${company.split(' ')[0].toLowerCase()}.example/`, imprint_url: `https://${company.split(' ')[0].toLowerCase()}.example/impressum`,
+      }],
     }))
   }
 

@@ -183,7 +183,10 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   notes: string
   // Where an event page says the person founded or runs something.
   fit_evidence: string
-  affiliations: { organisation: string; role: string; current: boolean }[]
+  // Each business the person runs or belongs to, with its website and its
+  // imprint when a lookup found them. The imprint gives an email address,
+  // by law. The app stores the link, never the address.
+  affiliations: { organisation: string; role: string; current: boolean; website: string; imprint_url: string }[]
   sightings: { source_id: number; source: string; checked_at: string }[]
 }
 

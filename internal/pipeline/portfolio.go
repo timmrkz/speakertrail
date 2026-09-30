@@ -508,8 +508,9 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 		case "search_query":
 			evidence = fmt.Sprintf("%s of %s, by its imprint. Found by the search %s", label, company, rec.sourceName)
 		}
+		alone := len(im.Directors) == 1
 		for _, name := range im.Directors {
-			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
+			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence, alone)
 			if err != nil {
 				return err
 			}
@@ -542,7 +543,7 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 // resolveFounder finds the person among those who run this startup, or
 // someone with the same full name in the same city, who then runs both, or
 // adds them. It marks them a founder with the imprint as evidence.
-func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string) (int64, bool, error) {
+func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string, alone bool) (int64, bool, error) {
 	norm := extract.NormaliseName(name)
 	// Lookups run side by side. Two of them finding the same owner wait for
 	// each other here, so the second finds the person the first added.
@@ -584,8 +585,14 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 		return 0, false, err
 	}
 	// Profiles the startup's own site links under this person's name. The
-	// engine never opens them. Tim confirms or rejects each.
-	for _, l := range extract.ProfilesOf(rec.profiles, name) {
+	// engine never opens them. Tim confirms or rejects each. Someone who
+	// runs the business alone speaks for it, so every profile its site
+	// links, like the studio's Instagram, is a way to reach them.
+	links := extract.ProfilesOf(rec.profiles, name)
+	if alone {
+		links = rec.profiles
+	}
+	for _, l := range links {
 		platform, clean := ProfileOf(l)
 		if clean == "" {
 			continue

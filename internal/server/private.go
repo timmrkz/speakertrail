@@ -326,7 +326,8 @@ func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
 					'url', e.canonical_url)) ORDER BY e.starts_at DESC), '[]')
 				FROM appearances a JOIN events e ON e.id = a.event_id LEFT JOIN organisations v ON v.id = e.venue_id
 				WHERE a.person_id = p.id),
-			'affiliations', (SELECT COALESCE(jsonb_agg(jsonb_build_object('organisation', o.name, 'role', af.role, 'current', af.is_current) ORDER BY o.name), '[]')
+			'affiliations', (SELECT COALESCE(jsonb_agg(jsonb_build_object('organisation', o.name, 'role', af.role, 'current', af.is_current,
+					'website', o.website, 'imprint_url', COALESCE(o.imprint_url, '')) ORDER BY o.name), '[]')
 				FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id),
 			'sightings', (SELECT COALESCE(jsonb_agg(jsonb_build_object('source_id', x.id, 'source', x.name, 'checked_at', x.last) ORDER BY x.last DESC), '[]')
 				FROM (SELECT s.id, s.name, max(si.checked_at) AS last FROM sightings si JOIN sources s ON s.id = si.source_id

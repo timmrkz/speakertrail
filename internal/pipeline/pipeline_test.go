@@ -1532,7 +1532,8 @@ func TestSearchesLeadToPeopleInNRW(t *testing.T) {
 		{Title: "Beispiel BJJ, the same site again", URL: "http://beispiel-bjj.test/kontakt"},
 	}}
 	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fs}, Now: func() time.Time { return now }}
-	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><footer><a href="/impressum">Impressum</a>
+		<a href="https://www.instagram.com/beispielbjj/">Instagram</a><a href="https://x.com/share">Teilen</a></footer></body></html>`)
 	e.site.set("http://beispiel-bjj.test/impressum", `<html><body><p>Beispiel BJJ</p><p>Musterweg 1, 50667 Köln</p><p>Inhaber: Tom Testmann</p></body></html>`)
 	e.site.set("http://muster-coaching.test/", `<html><body><h1>Coaching</h1></body></html>`)
 	e.site.set("http://muster-coaching.test/impressum", `<html><body><p>Angaben gemäß § 5 TMG</p><p>Mara Beispielfrau</p><p>Beispielstraße 2, 80331 München</p></body></html>`)
@@ -1553,6 +1554,11 @@ func TestSearchesLeadToPeopleInNRW(t *testing.T) {
 	}
 	if got := e.one(t, `SELECT p.full_name || ': ' || p.fit_evidence FROM people p`); got != "Tom Testmann: Owner of Beispiel BJJ Köln, by its imprint. Found by the search BJJ Gym Köln" {
 		t.Errorf("people: %v", got)
+	}
+	// He runs the gym alone, so the Instagram its site links is a way to
+	// reach him, for Tim to confirm. The share button is no profile.
+	if got := e.one(t, `SELECT string_agg(platform || ' ' || handle || ' ' || review, ', ') FROM profiles`); got != "instagram beispielbjj open" {
+		t.Errorf("profiles: %v", got)
 	}
 	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.website LIKE '%muster-coaching%'`); got != "outside NRW (80331 München)" {
 		t.Errorf("the coach in München: %v", got)

@@ -122,10 +122,13 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
   "notes": "",
   "fit_evidence": "hat die Backstube Muster gegründet",
   "appearances": [{ "role": "pitch", "evidence": "...", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
-  "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true }],
+  "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true,
+    "website": "https://beispiel.example/", "imprint_url": "https://beispiel.example/impressum" }],
   "sightings": [{ "source_id": 3, "source": "Startplatz events", "checked_at": "..." }]
 }
 ```
+
+`website` and `imprint_url` are the business's, empty when no lookup found them. They are how Tim reaches someone found through their website: the imprint gives an email address, by law. The app stores the links, never the address or a phone number. A person who runs a business alone also gets every profile its website links, like the studio's Instagram, to confirm or reject. With several people in the imprint, only profiles whose address carries the person's name are theirs.
 
 `evidence` is the passage from the event page that puts the person on stage, when the local model found them. It is empty when the rules found them.
 

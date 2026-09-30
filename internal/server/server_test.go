@@ -540,6 +540,17 @@ func TestPeopleShowWhetherTheirStartupIsActive(t *testing.T) {
 	if !strings.Contains(body, `"state":"active"`) || !strings.Contains(body, `"company":"Active GmbH"`) || !strings.Contains(body, `"note":"a note"`) {
 		t.Errorf("activity missing: %s", body)
 	}
+
+	// A person's sheet links each business's website and imprint, where
+	// Tim finds how to reach them. No address or number is stored.
+	e.pool.Exec(ctx, `UPDATE organisations SET website = 'https://active.example/', imprint_url = 'https://active.example/impressum' WHERE name = 'Active GmbH'`)
+	var cem2 int64
+	e.pool.QueryRow(ctx, `SELECT id FROM people WHERE full_name = 'Cem Current'`).Scan(&cem2)
+	code, body = e.do(t, "GET", "/api/people/"+itoa(cem2), "")
+	flat := strings.ReplaceAll(body, " ", "")
+	if code != 200 || !strings.Contains(flat, `"website":"https://active.example/"`) || !strings.Contains(flat, `"imprint_url":"https://active.example/impressum"`) {
+		t.Errorf("the business's website and imprint on the sheet: %d %s", code, body)
+	}
 }
 
 // A source Tim retires by hand is not checked again until he sets it back.

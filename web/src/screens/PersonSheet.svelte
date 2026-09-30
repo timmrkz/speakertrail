@@ -153,33 +153,6 @@
       {/if}
     </section>
 
-    <section class="section" aria-labelledby="apps-h">
-      <h3 id="apps-h" class="label">On stage</h3>
-      {#if !p.appearances.length}
-        <p class="muted small">No appearances recorded.</p>
-      {/if}
-      {#each [{ list: upcoming, label: 'Upcoming' }, { list: past, label: 'Earlier' }] as group (group.label)}
-        {#if group.list.length}
-          <ul class="apps" aria-label={group.label}>
-            {#each group.list as a (a.event.id + a.role)}
-              <li class:past={group.label === 'Earlier'}>
-                <span class="when num">{fmtDateTime(a.event.starts_at)}</span>
-                <span class="what">
-                  {#if a.event.url}
-                    <a href={a.event.url} target="_blank" rel="noopener noreferrer">{a.event.title}<Icon name="external" size={12} /></a>
-                  {:else}
-                    <b>{a.event.title}</b>
-                  {/if}
-                  <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
-                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
-                </span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      {/each}
-    </section>
-
     <section class="section" aria-labelledby="prof-h">
       <h3 id="prof-h" class="label">Profiles</h3>
       {#if p.profiles.length}
@@ -230,11 +203,51 @@
         <h3 id="aff-h" class="label">Affiliations</h3>
         <ul class="plain">
           {#each p.affiliations as a (a.organisation + a.role)}
-            <li><b>{a.organisation}</b> <span class="faint">{a.role}{a.current ? '' : ', before'}</span></li>
+            <li class="aff">
+              <span><b>{a.organisation}</b> <span class="faint">{a.role}{a.current ? '' : ', before'}</span></span>
+              {#if a.website || a.imprint_url}
+                <span class="row aff-links">
+                  {#if a.website}
+                    <a class="btn sm" href={a.website} target="_blank" rel="noopener noreferrer" title="The business's own website"><Icon name="external" size={14} />Website</a>
+                  {/if}
+                  {#if a.imprint_url}
+                    <a class="btn sm" href={a.imprint_url} target="_blank" rel="noopener noreferrer"
+                      title="The imprint gives an email address, by law, and often a phone number. The app never stores them"><Icon name="external" size={14} />Imprint</a>
+                  {/if}
+                </span>
+              {/if}
+            </li>
           {/each}
         </ul>
       </section>
     {/if}
+
+    <section class="section" aria-labelledby="apps-h">
+      <h3 id="apps-h" class="label">On stage</h3>
+      {#if !p.appearances.length}
+        <p class="muted small">No appearances recorded.</p>
+      {/if}
+      {#each [{ list: upcoming, label: 'Upcoming' }, { list: past, label: 'Earlier' }] as group (group.label)}
+        {#if group.list.length}
+          <ul class="apps" aria-label={group.label}>
+            {#each group.list as a (a.event.id + a.role)}
+              <li class:past={group.label === 'Earlier'}>
+                <span class="when num">{fmtDateTime(a.event.starts_at)}</span>
+                <span class="what">
+                  {#if a.event.url}
+                    <a href={a.event.url} target="_blank" rel="noopener noreferrer">{a.event.title}<Icon name="external" size={12} /></a>
+                  {:else}
+                    <b>{a.event.title}</b>
+                  {/if}
+                  <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
+                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
+                </span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/each}
+    </section>
 
     <section class="section" aria-labelledby="seen-h">
       <h3 id="seen-h" class="label">Seen on</h3>
@@ -304,6 +317,8 @@
   .prof-main a { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
   .prof-actions { flex-wrap: nowrap; }
   .plain { display: grid; gap: 6px; font-size: 14px; }
+  .aff { display: grid; gap: 6px; }
+  .aff-links { justify-self: start; }
   .note-state { color: var(--ink-3); }
   .loading { display: grid; gap: 10px; }
   @media (max-width: 420px) {

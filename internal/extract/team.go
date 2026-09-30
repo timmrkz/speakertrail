@@ -70,13 +70,21 @@ func AboutLink(body, base string) string {
 // company page or a post: linkedin.com/in/…, xing.com/profile/…, x.com/….
 var personalProfile = regexp.MustCompile(`(?i)^https?://(?:[a-z]+\.)?(?:linkedin\.com/in/|xing\.com/profile/|(?:x|twitter)\.com/|instagram\.com/|github\.com/)([^/?#]+)/?$`)
 
+// notAHandle are paths on those platforms that are buttons or pages of the
+// platform itself, like a share button, not someone's profile.
+var notAHandle = map[string]bool{
+	"share": true, "sharer": true, "intent": true, "home": true, "explore": true, "hashtag": true,
+	"login": true, "accounts": true, "i": true, "search": true, "privacy": true, "about": true,
+}
+
 // ProfileLinks lists the links of a page that lead to a person's own
 // profile on a platform. The engine never loads them, it only keeps them.
 func ProfileLinks(body, base string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, l := range Links(body, base) {
-		if personalProfile.MatchString(l.URL) && !seen[l.URL] {
+		m := personalProfile.FindStringSubmatch(l.URL)
+		if m != nil && !notAHandle[strings.ToLower(m[1])] && !seen[l.URL] {
 			seen[l.URL] = true
 			out = append(out, l.URL)
 		}

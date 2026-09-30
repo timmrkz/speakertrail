@@ -1483,10 +1483,10 @@ func TestTrainingsOnOtherStagesAreKept(t *testing.T) {
 	}
 	rules := pipeline.RulesFrom(cfg)
 	for title, want := range map[string]bool{
-		"Atem-Training am Rhein": true,
+		"Atem-Training am Rhein":    true,
 		"BJJ Training und Open Mat": true,
-		"Sales Training für Teams": false,
-		"Webinar: Resilienz": false,
+		"Sales Training für Teams":  false,
+		"Webinar: Resilienz":        false,
 	} {
 		if kept, why := rules.Fit(extract.Event{Title: title, City: "Köln", Format: "in_person"}); kept != want {
 			t.Errorf("%q kept %v (%s), want %v", title, kept, why, want)

@@ -303,9 +303,10 @@ function stats(s: State): Stats {
     cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
     last_run: s.runs[0] ?? null,
     fit: fitStats(s),
-    // Tavily has a key and has spent part of its budget. Brave has none yet.
+    // Exa has a key and has spent part of its budget. The others have none.
     searches: [
-      { provider: 'tavily', used: 214, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: true },
+      { provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: true },
+      { provider: 'tavily', used: 0, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: false },
       { provider: 'brave', used: 0, budget: Number(setting(s, 'brave_monthly_searches') ?? 1000), set: false },
     ],
   }

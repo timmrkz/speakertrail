@@ -32,7 +32,7 @@
   let fit = $derived(stats.data?.fit ?? null)
   let decided = $derived((fit?.signals ?? []).some((s) => s.kept + s.skipped > 0))
 
-  const PROVIDER_LABEL: Record<string, string> = { tavily: 'Tavily', brave: 'Brave' }
+  const PROVIDER_LABEL: Record<string, string> = { exa: 'Exa', tavily: 'Tavily', brave: 'Brave' }
   let searches = $derived(stats.data?.searches ?? [])
   let searchesLeft = $derived(searches.filter((u) => u.set).reduce((a, u) => a + Math.max(0, u.budget - u.used), 0))
 

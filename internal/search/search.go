@@ -34,8 +34,8 @@ type Provider interface {
 	Search(ctx context.Context, query string) ([]Result, error)
 }
 
-// maxResults is how many results one search asks for. Both providers
-// allow 20.
+// maxResults is how many results one search asks for, where the price
+// does not depend on it.
 const maxResults = 20
 
 var defaultClient = &http.Client{Timeout: 30 * time.Second}
@@ -73,6 +73,44 @@ func (t *Tavily) Search(ctx context.Context, query string) ([]Result, error) {
 	res := make([]Result, 0, len(out.Results))
 	for _, r := range out.Results {
 		res = append(res, Result{Title: r.Title, URL: r.URL, Snippet: r.Content})
+	}
+	return res, nil
+}
+
+// Exa is the search API at exa.ai. Its free plan needs no card. A search
+// with up to 10 results costs the base price, each further result more, so
+// it asks for 10.
+type Exa struct {
+	Key string
+	// URL is the endpoint. Tests set it.
+	URL    string
+	Client *http.Client
+}
+
+func (e *Exa) Name() string { return "exa" }
+
+func (e *Exa) Search(ctx context.Context, query string) ([]Result, error) {
+	body, _ := json.Marshal(map[string]any{
+		"query": query, "type": "auto", "numResults": 10, "userLocation": "DE",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, orDefault(e.URL, "https://api.exa.ai/search"), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", e.Key)
+	req.Header.Set("Content-Type", "application/json")
+	var out struct {
+		Results []struct {
+			Title string `json:"title"`
+			URL   string `json:"url"`
+		} `json:"results"`
+	}
+	if err := call(e.Client, req, e.Name(), &out); err != nil {
+		return nil, err
+	}
+	res := make([]Result, 0, len(out.Results))
+	for _, r := range out.Results {
+		res = append(res, Result{Title: r.Title, URL: r.URL})
 	}
 	return res, nil
 }
@@ -149,10 +187,13 @@ func orDefault(s, def string) string {
 	return s
 }
 
-// FromEnv returns the providers whose API keys are set: TAVILY_API_KEY and
-// BRAVE_SEARCH_API_KEY.
+// FromEnv returns the providers whose API keys are set: EXA_API_KEY,
+// TAVILY_API_KEY and BRAVE_SEARCH_API_KEY.
 func FromEnv() []Provider {
 	var out []Provider
+	if k := strings.TrimSpace(os.Getenv("EXA_API_KEY")); k != "" {
+		out = append(out, &Exa{Key: k})
+	}
 	if k := strings.TrimSpace(os.Getenv("TAVILY_API_KEY")); k != "" {
 		out = append(out, &Tavily{Key: k})
 	}

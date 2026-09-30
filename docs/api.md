@@ -66,13 +66,14 @@ All parameters are optional. `from` defaults to today, `to` to `from` plus the s
   "cities": [ { "city": "Köln", "events": 38 } ],
   "last_run": null,
   "searches": [
-    { "provider": "tavily", "used": 214, "budget": 1000, "set": true },
+    { "provider": "exa", "used": 42, "budget": 1000, "set": true },
+    { "provider": "tavily", "used": 0, "budget": 1000, "set": false },
     { "provider": "brave", "used": 0, "budget": 1000, "set": false }
   ]
 }
 ```
 
-`searches` holds each search provider the engine knows, with how many searches it made this month, counted from the first of the month in Berlin, and its budget from Settings, `tavily_monthly_searches` and `brave_monthly_searches`. `set` is false when the provider has no API key, and then it is never called.
+`searches` holds each search provider the engine knows, with how many searches it made this month, counted from the first of the month in Berlin, and its budget from Settings, `exa_monthly_searches`, `tavily_monthly_searches` and `brave_monthly_searches`. `set` is false when the provider has no API key, and then it is never called.
 
 `fit` says what the keeps and skips teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how often a person who had it was `kept` or `skipped`, and `top` how the top 20 by fit were decided, `{"size": 20, "kept": 6, "skipped": 3, "open": 11}`.
 

@@ -18,7 +18,7 @@ It is one Go binary with the web interface built in.
 ## How it works
 
 1. **Schedule.** Each night the due sources are queued: active and probation sources, retired ones whose recheck is due, up to 10 new candidates, and 3 due searches when a search provider has a key.
-2. **Search.** A search like "BJJ Gym Köln" goes to Tavily or Brave, whichever has more of its monthly budget left. Each website it finds is followed to its imprint, and its owner counts when the business is in NRW. Both providers can be used at the same time, and a provider without a key is left out.
+2. **Search.** A search like "BJJ Gym Köln" goes to Exa, Tavily or Brave, whichever has the most of its monthly budget left. Each website it finds is followed to its imprint, and its owner counts when the business is in NRW. One provider is enough. Several can be used at the same time, and a provider without a key is left out.
 3. **Fetch.** Plain HTTP first, with an honest User-Agent and robots.txt respected, at most 1 request every 5 seconds per website. When a page is an empty JavaScript shell, the headless browser loads it instead, and the source remembers that. LinkedIn and Instagram are never requested, not even by the browser.
 4. **Extract.** iCal feeds, schema.org Event data, then adapters for Luma, Meetup and Eventbrite. Names come only from clearly marked lines like "Speaker: ..." or "Jury: ...".
 5. **Read.** With the local language model, a run also reads each upcoming event's own page and finds who is on stage, with the passage that shows it, and whether the page says they founded or run something. Without the model this step is left out.
@@ -36,7 +36,7 @@ The source list, the fit rules and every number live in the Settings screen.
 | `internal/fetch` | HTTP, robots.txt, the headless browser and the filter that keeps it away from blocked sites |
 | `internal/extract` | Turns pages into events and people |
 | `internal/pipeline` | Source checks, resolving, the source lifecycle, the nightly run |
-| `internal/search` | Search providers behind one interface, Tavily and Brave, with their monthly budgets |
+| `internal/search` | Search providers behind one interface, Exa, Tavily and Brave, with their monthly budgets |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/server` | The JSON API and the login, described in `docs/api.md` |
 | `internal/queue` | Job queue in Postgres with retries and the per-website limit |
@@ -72,8 +72,9 @@ test` runs all tests.
 | `SESSION_SECRET` | The login, at least 16 characters |
 | `PORT` | `serve`, default 8080 |
 | `CHROME_PATH` | Optional, the Chromium to use |
+| `EXA_API_KEY` | Searches through Exa, optional. Its free plan needs no card and covers about 1,400 a month |
 | `TAVILY_API_KEY` | Searches through Tavily, optional. Its free plan has 1,000 a month |
-| `BRAVE_SEARCH_API_KEY` | Searches through Brave, optional. Its monthly credit covers about 1,000 |
+| `BRAVE_SEARCH_API_KEY` | Searches through Brave, optional. Its monthly credit covers about 1,000, and it needs a card |
 | `ANTHROPIC_API_KEY` | Language model features, later |
 | `TEST_DATABASE_URL` | Tests |
 

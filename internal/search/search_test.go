@@ -73,6 +73,45 @@ func braveServer(t *testing.T, calls *atomic.Int32, status int) *httptest.Server
 	return srv
 }
 
+// exaServer answers like Exa's search API.
+func exaServer(t *testing.T, calls *atomic.Int32) *httptest.Server {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if r.Method != http.MethodPost || r.URL.Path != "/search" || r.Header.Get("x-api-key") != "exa-test" {
+			t.Errorf("exa request %s %s %q", r.Method, r.URL.Path, r.Header.Get("x-api-key"))
+		}
+		var body struct {
+			Query        string `json:"query"`
+			Type         string `json:"type"`
+			NumResults   int    `json:"numResults"`
+			UserLocation string `json:"userLocation"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if body.Query == "" || body.Type != "auto" || body.NumResults != 10 || body.UserLocation != "DE" {
+			t.Errorf("exa body %+v", body)
+		}
+		fmt.Fprint(w, `{"requestId":"b5947044c4b78efa9552a7c89b306d95","results":[
+			{"id":"https://probe-kampfsport.example/","title":"Probe Kampfsport Bochum","url":"https://probe-kampfsport.example/","publishedDate":null,"author":null}],
+			"costDollars":{"total":0.007}}`)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestExa(t *testing.T) {
+	var calls atomic.Int32
+	srv := exaServer(t, &calls)
+	got, err := (&search.Exa{Key: "exa-test", URL: srv.URL + "/search"}).Search(t.Context(), "Kampfsportschule Bochum")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].URL != "https://probe-kampfsport.example/" || got[0].Title != "Probe Kampfsport Bochum" {
+		t.Errorf("results %+v", got)
+	}
+}
+
 func TestTavily(t *testing.T) {
 	var calls atomic.Int32
 	srv := tavilyServer(t, &calls, http.StatusOK)
@@ -108,10 +147,16 @@ func TestProviderErrors(t *testing.T) {
 }
 
 func TestFromEnv(t *testing.T) {
+	t.Setenv("EXA_API_KEY", "")
 	t.Setenv("TAVILY_API_KEY", "")
 	t.Setenv("BRAVE_SEARCH_API_KEY", "brave-test")
 	got := search.FromEnv()
 	if len(got) != 1 || got[0].Name() != "brave" {
+		t.Errorf("providers %v", got)
+	}
+	t.Setenv("EXA_API_KEY", " exa-test ")
+	got = search.FromEnv()
+	if len(got) != 2 || got[0].Name() != "exa" || got[0].(*search.Exa).Key != "exa-test" {
 		t.Errorf("providers %v", got)
 	}
 }
@@ -159,7 +204,8 @@ func TestPoolSpreadsSearchesOverProviders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fmt.Sprint(usage) != "[{tavily 4 4 true} {brave 2 2 true}]" {
+	// Exa has a budget but no key here, so it is never called.
+	if fmt.Sprint(usage) != "[{exa 0 1000 false} {tavily 4 4 true} {brave 2 2 true}]" {
 		t.Errorf("usage %v", usage)
 	}
 	// A new month has new budgets.
@@ -181,7 +227,7 @@ func TestPoolFallsBackWhenAProviderFails(t *testing.T) {
 		t.Errorf("tavily %d, brave %d", tc.Load(), bc.Load())
 	}
 	usage, _ := p.Usage(t.Context())
-	if usage[0].Used != 1 {
+	if usage[1].Provider != "tavily" || usage[1].Used != 1 {
 		t.Errorf("the failed call does not count: %v", usage)
 	}
 }

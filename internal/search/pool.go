@@ -35,7 +35,7 @@ type Use struct {
 }
 
 // Known are the providers the engine can use, with or without a key.
-var Known = []string{"tavily", "brave"}
+var Known = []string{"exa", "tavily", "brave"}
 
 func (p *Pool) now() time.Time {
 	if p.Now != nil {

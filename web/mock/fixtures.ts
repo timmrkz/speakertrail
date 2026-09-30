@@ -313,6 +313,7 @@ export function buildSettings(): Setting[] {
     ['site_request_interval_seconds', 5, 'Minimum seconds between two requests to the same website'],
     ['worker_concurrency', 4, 'Jobs a worker runs at the same time'],
     ['browser_pages', 2, 'Headless browser pages open at the same time'],
+    ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
     ['tavily_monthly_searches', 1000, 'Tavily searches per month. Its free plan has 1,000'],
     ['brave_monthly_searches', 1000, 'Brave searches per month. Its monthly credit covers about 1,000, more are billed'],
     ['searches_per_run', 3, 'Due searches a run takes. Each brings up to 20 websites to look up'],

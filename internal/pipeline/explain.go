@@ -45,9 +45,9 @@ func Explain(msg string, status int) (reason, kind string) {
 		return false
 	}
 	switch {
-	case has("tavily answered 401", "brave answered 401", "tavily answered 403", "brave answered 403"):
+	case has("exa answered 401", "tavily answered 401", "brave answered 401", "exa answered 403", "tavily answered 403", "brave answered 403"):
 		return "The search provider does not accept the key", FailEngine
-	case has("tavily answered", "brave answered"):
+	case has("exa answered", "tavily answered", "brave answered"):
 		return "The search provider refused the search, maybe its limit is reached", FailEngine
 	case has("disallowed by robots.txt"):
 		return "robots.txt does not allow the bot", FailBlocked

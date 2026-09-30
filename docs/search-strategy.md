@@ -105,16 +105,24 @@ kinds of people who fit, in the eleven biggest cities of NRW:
 
 Tim adds more on Sources, by typing a search instead of a web address.
 
-Two search providers stand behind one interface, in `internal/search`:
-Tavily, whose free plan has 1,000 searches a month, and Brave, whose
-monthly credit covers about 1,000. Both are used at the same time, so
-together they give about 2,000 searches a month. Each search goes to the
-one with the largest share of its budget left, and to the other when it
-fails. Every call counts, also a failed one, because it may be billed.
-Once a budget in Settings is spent, the engine stops calling that
-provider. Another provider is one more type with a `Search` method.
+Search providers stand behind one interface, in `internal/search`. Why
+not Google itself: its robots.txt forbids bots on `/search`, and it blocks
+automated searches within a few requests. The providers are:
 
-A search brings up to 20 websites. A run takes three due searches, and a
+- **Exa**, the one to start with. Its free plan needs no card and gives
+  $10 a month, about 1,400 searches at 10 results each.
+- **Tavily**, whose free plan has 1,000 searches a month. Its sign-up may
+  ask for a card.
+- **Brave**, whose monthly credit covers about 1,000. It needs a card.
+
+One is enough, because a run takes only three searches. Those with a key
+are used together: each search goes to the one with the largest share of
+its budget left, and to the next when it fails. Every call counts, also a
+failed one, because it may be billed. Once a budget in Settings is spent,
+the engine stops calling that provider. Another provider is one more type
+with a `Search` method.
+
+A search brings up to 20 websites, 10 from Exa. A run takes three due searches, and a
 search runs again after 30 days, both set in Settings. Platforms and list
 sites like Yelp, Gelbe Seiten or Eventbrite are left out of the results,
 LinkedIn and Instagram always.
@@ -241,13 +249,13 @@ Built, in the order above:
 3. **The starting list of new sources**, 27 of them, each checked by hand
    for robots.txt and terms. Those that forbid automated access are
    manual sources.
-8. **Searches**, with Tavily and Brave together, see
+8. **Searches**, with Exa, Tavily and Brave, see
    [Searches](#searches). Overview shows how much of each budget this
    month has spent.
 
 Waiting:
 
-- **Keys.** Searches wait until `TAVILY_API_KEY` or
+- **A key.** Searches wait until `EXA_API_KEY`, `TAVILY_API_KEY` or
   `BRAVE_SEARCH_API_KEY` is set, see the README.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.

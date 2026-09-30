@@ -359,7 +359,7 @@ func TestPrivateAPI(t *testing.T) {
 		t.Fatalf("stats: %v %s", err, body)
 	}
 	// The search budgets, spent this month. The test has no keys.
-	if !strings.Contains(body, `"searches":[{"provider":"tavily","used":0,"budget":1000,"set":false},{"provider":"brave","used":0,"budget":1000,"set":false}]`) {
+	if !strings.Contains(body, `"searches":[{"provider":"exa","used":0,"budget":1000,"set":false},{"provider":"tavily","used":0,"budget":1000,"set":false},{"provider":"brave","used":0,"budget":1000,"set":false}]`) {
 		t.Errorf("searches in the stats: %s", body)
 	}
 	if stats.Totals.People != 1 || stats.Totals.EventsKeptUpcoming != 1 || stats.Totals.Profiles != 1 || stats.Totals.Sources["active"] != 1 {

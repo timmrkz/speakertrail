@@ -146,8 +146,8 @@ never opens LinkedIn for that. Exa has public LinkedIn profiles and posts
 in its index, and the engine asks Exa, only from that index, never with a
 live fetch. An unknown profile costs nothing and counts as not found.
 
-What the test on 30 September 2026 found, with 18 searches and about 140
-profile lookups for about $0.26 in all:
+What the tests on 30 September and 1 October 2026 found, with 22
+searches and about 170 profile lookups for about $0.31 in all:
 
 - **Profile searches** like "Inhaberin Yoga Studio Köln", limited to
   `linkedin.com/in`, find people who fit, in NRW: 56 of 60. Each comes
@@ -168,16 +168,24 @@ profile lookups for about $0.26 in all:
   With `#köln` in the query, 6 of 9 authors lived in NRW, with "in Köln"
   4 of 7. Requiring "Köln" in the post's text brought 1 of 6.
 
-So, two ways to the same goal, both kept to NRW by the author's profile:
+- **Posts aimed at a kind of person work for some kinds.** A second test
+  on 1 October aimed post searches at yoga, BJJ, life coaching and
+  personal training. Life coaches in Düsseldorf worked well, 5 of 6
+  authors in NRW. BJJ and yoga brought mostly posts by gyms and studios
+  as companies, and trainers mostly from elsewhere: 9 of 27 authors in
+  NRW in all.
 
-1. **Posts first.** A post search with a place in the query, like
-   "Ein Jahr eigenes Studio, was ich gelernt habe #köln", only posts of
-   the last three months. Each author's profile is looked up, and only
-   authors in NRW count. The post is the reason they appear, with its
-   date and link.
-2. **Profiles, then activity.** The profile searches as in the test,
-   then each profile's full text, and only people who posted in the last
-   six months count.
+**One way: posts.** Both ways cost a fraction of a cent per active person,
+so the cost does not decide. Posts win because everyone they find is
+active, and the post is the reason to talk. A post search has a place in
+the query, like "Ein Jahr eigenes Studio, was ich gelernt habe #köln",
+and takes only posts of the last three months. Each author's profile is
+looked up, and only authors in NRW count. Company pages are left out.
+The post is why a person appears, with its date and link.
+
+Profile searches with the activity check stay a fallback, only if posts
+keep missing a kind of person Tim wants, like owners of gyms whose
+studio posts instead of them.
 
 The rubric reads the profile: works with people, owner, coach, and the
 signals against. **Writes on LinkedIn**, with the date of the last post,
@@ -189,9 +197,9 @@ name, the headline, the place, the profile link, and the post that
 brought the person, with its date. Likes and comments are read only for
 their dates and never stored.
 
-Costs, from the test: a search is $0.007, a profile lookup $0.001. One
-active person in NRW costs about $0.005 through posts and $0.01 through
-profiles. Exa's free $10 a month is enough for well over 1,000.
+Costs, from the tests: a search is $0.007, a profile lookup $0.001. One
+active person in NRW costs about $0.005 to $0.01. Exa's free $10 a month
+is enough for well over 1,000.
 
 ### Events
 
@@ -294,8 +302,8 @@ Small batches, each one tested on Tim's Mac before the next.
 8. **Searches**, added once the fixed sources proved too narrow: most
    people who fit are on no list, but a search finds their website.
 9. **Active on LinkedIn**, see [Active on LinkedIn](#active-on-linkedin):
-   post searches with the author's place, then profile searches with the
-   activity check, then the rubric signal for writing on LinkedIn.
+   post searches with the author's place, then the rubric signal for
+   writing on LinkedIn.
 
 ## Where it stands
 

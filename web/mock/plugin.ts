@@ -5,8 +5,8 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  RunProgress, Setting, Source, SourceStatus, Stats,
+  Activity, Appearance, Check, Decision, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -44,6 +44,7 @@ interface PersonRow {
   notes: string
   profiles: Profile[]
   affiliations: PersonDetail['affiliations']
+  decision?: Decision
 }
 
 function createState() {
@@ -66,7 +67,7 @@ function createState() {
       notes: info?.notes ?? '',
       profiles: (info?.profiles ?? []).map(([platform, url, review]) => ({ id: profileId++, platform, url, review })),
       affiliations: (info?.affiliations ?? (affiliation ? [[affiliation.replace(/^.*,\s*/, ''), 'member', true]] : []))
-        .map(([organisation, role, current]) => ({ organisation, role, current })),
+        .map(([organisation, role, current]) => ({ organisation, role, current, website: '', imprint_url: '' })),
     }
     people.set(name, p)
     return p
@@ -80,8 +81,13 @@ function createState() {
       ['Ida Ingwersen', 'Ingwersen Labs GmbH'], ['Ole Osterkamp', 'Osterkamp Analytics GmbH'],
     ].map(([name, company], i) => ({
       id: 900 + i, name, headline: `Managing director, ${company}`, city: 'Köln', fit: 'founder' as const,
-      first_seen: hoursAgo(30 + i * 7), notes: '', profiles: [],
-      affiliations: [{ organisation: company, role: 'founder', current: true }],
+      first_seen: hoursAgo(30 + i * 7), notes: '',
+      // The first runs her business alone, so her site's Instagram is hers to confirm.
+      profiles: i === 0 ? [{ id: 9000, platform: 'instagram' as const, url: 'https://www.instagram.com/example.hellwig/', review: 'open' as const }] : [],
+      affiliations: [{
+        organisation: company, role: 'founder', current: true,
+        website: `https://${company.split(' ')[0].toLowerCase()}.example/`, imprint_url: `https://${company.split(' ')[0].toLowerCase()}.example/impressum`,
+      }],
     }))
   }
 
@@ -128,6 +134,29 @@ function createState() {
 
 type State = ReturnType<typeof createState>
 
+// Like the server: what failed, one per source, in plain words, with the
+// action that fixes it. Reads that failed are grouped by reason.
+function failuresOf(s: State, run: Run): RunFailure[] {
+  const out: RunFailure[] = []
+  for (const c of (s.checks.get(run.id) ?? []).filter((x) => x.error).sort((a, b) => a.source.name.localeCompare(b.source.name))) {
+    const src = s.sources.find((x) => x.id === c.source.id)
+    const status = (src?.status ?? 'active') as SourceStatus
+    const [reason, kind] = c.http_status === 404 ? ['The page is gone', 'gone'] : c.http_status === 403 ? ['The site refuses the bot', 'blocked']
+      : c.http_status === 0 ? ['The site did not answer in time', 'passing'] : [`The site answered with an error, HTTP ${c.http_status}`, 'lasting']
+    const action = status === 'retired' || status === 'manual' ? '' : kind === 'passing' ? 'check' : 'retire'
+    out.push({ what: 'check', source: { ...c.source, status }, reason, action, count: 1, detail: c.error })
+  }
+  if (run.reads_failed) {
+    out.push({ what: 'read', source: null, reason: 'The language model did not answer. Is Docker Model Runner on?', action: '', count: run.reads_failed,
+      detail: 'no language model answers. Is Docker Model Runner on? Turn it on with: docker desktop enable model-runner (dial tcp: connection refused)' })
+  }
+  if (run.lookups_failed) {
+    out.push({ what: 'lookup', source: null, reason: 'The site did not answer in time', action: '', count: run.lookups_failed,
+      detail: 'get https://schweigen.example/: context deadline exceeded' })
+  }
+  return out
+}
+
 function setting(s: State, key: string): Json | undefined {
   return s.settings.find((x) => x.key === key)?.value
 }
@@ -154,19 +183,66 @@ function appearancesOf(s: State, id: number): Appearance[] {
     }))
 }
 
+// A small copy of the fit rubric (internal/rubric) for the invented
+// people: their title, the events they host and where lookups found them.
+const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
+  [/coach|trainer|lehrer|teacher|yoga|kampfsport|bjj|psychologist|run club/i, 'works_with_people', 'Works with people', true],
+  [/inhaber|owner|runs the/i, 'owner_operator', 'Runs it themselves', true],
+  [/organiser|host at|runs the/i, 'runs_events', 'Runs their own events', true],
+  [/autor|author/i, 'author', 'Author', true],
+  [/athlete|athlet/i, 'athlete', 'Athlete', true],
+  [/head of|\bvp\b|director of/i, 'corporate', 'Corporate title', false],
+  [/researcher|data lead/i, 'large_company', 'Large company', false],
+]
+
+function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
+  const out: FitSignal[] = []
+  const add = (key: string, label: string, isFor: boolean, passage: string, found_in: string) => {
+    if (!out.some((x) => x.key === key)) out.push({ key, label, for: isFor, passage, found_in })
+  }
+  for (const [re, key, label, isFor] of MOCK_RUBRIC) if (re.test(p.headline)) add(key, label, isFor, p.headline, 'title')
+  const hosted = apps.find((a) => a.role === 'host' || a.role === 'moderator')
+  if (hosted) add('runs_events', 'Runs their own events', true, `Hosts "${hosted.event.title}"`, 'event')
+  if (p.id >= 900) {
+    add('owner_operator', 'Runs it themselves', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
+    add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
+  }
+  return out.sort((a, b) => Number(b.for) - Number(a.for))
+}
+
+// Like the server: keeps and skips per signal, and the top 20 by fit.
+function fitStats(s: State): Stats['fit'] {
+  const list = s.people.map((p) => personList(s, p))
+  const labels = new Map<string, [string, boolean]>()
+  for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
+  labels.set('backed', ['Backed by a startup programme', false])
+  const signals = [...labels].map(([key, [label, isFor]]) => ({
+    key, label, for: isFor,
+    kept: list.filter((p) => p.decision === 'kept' && p.signals.some((x) => x.key === key)).length,
+    skipped: list.filter((p) => p.decision === 'skipped' && p.signals.some((x) => x.key === key)).length,
+  }))
+  const top = [...list].sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen)).slice(0, 20)
+  return {
+    signals,
+    top: { size: top.length, kept: top.filter((p) => p.decision === 'kept').length, skipped: top.filter((p) => p.decision === 'skipped').length, open: top.filter((p) => !p.decision).length },
+  }
+}
+
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
   const now = new Date().toISOString()
   const next = apps.find((a) => a.event.starts_at >= now)
+  const signals = signalsOf(p, apps)
   return {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
+    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, decision: p.decision ?? '',
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
-    // Some founders come from lookups, with what the lookup saw.
-    activity: p.fit === 'founder' && !next
+    // Founders of a startup come with what its lookup saw, like the server.
+    activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
       : null,
   }
@@ -203,7 +279,7 @@ function sourceOut(m: MockSource): Source {
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
-      events_found: m.kind === 'portfolio' ? 0 : last_found, startups_found: m.kind === 'portfolio' ? last_found : 0,
+      events_found: m.kind === 'portfolio' || m.kind === 'directory' ? 0 : last_found, startups_found: m.kind === 'portfolio' || m.kind === 'directory' ? last_found : 0,
       http_status: last_http, mode: last_mode, error: last_error,
     },
   }
@@ -231,6 +307,13 @@ function stats(s: State): Stats {
     weekly,
     cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
     last_run: s.runs[0] ?? null,
+    fit: fitStats(s),
+    // Exa has a key and has spent part of its budget. The others have none.
+    searches: [
+      { provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: true },
+      { provider: 'tavily', used: 0, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: false },
+      { provider: 'brave', used: 0, budget: Number(setting(s, 'brave_monthly_searches') ?? 1000), set: false },
+    ],
   }
 }
 
@@ -311,6 +394,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
+      fits: list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped').length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
@@ -318,7 +402,9 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
+    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    else if (sort === 'fit') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.
@@ -335,6 +421,8 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
+    if (b.decision === '' || b.decision === 'kept' || b.decision === 'skipped') p.decision = b.decision as Decision
+    else if (b.decision !== undefined) return err(400, 'decision must be kept, skipped or empty')
     return ok(personDetail(s, p))
   }],
   ['PATCH', /^\/api\/profiles\/(\d+)$/, (s, m, _q, b) => {
@@ -355,12 +443,24 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return ok({ sources: list })
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
+    const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''
+    if (query) {
+      if (s.sources.some((x) => x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'This search is already a source')
+      const city = ['Köln', 'Düsseldorf', 'Dortmund', 'Essen', 'Duisburg', 'Bochum', 'Wuppertal', 'Bielefeld', 'Bonn', 'Münster', 'Aachen'].find((c) => query.includes(c)) ?? ''
+      const m: MockSource = {
+        id: s.nextId.source++, name: query, kind: 'search_query', url: null, query,
+        category: 'Search', city, status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
+        health: 'never', health_note: '', discovered_from: 'Added by Tim', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
+      }
+      s.sources.push(m)
+      return { status: 201, body: sourceOut(m) }
+    }
     const url = typeof b.url === 'string' ? b.url.trim() : ''
     if (!/^https?:\/\/\S+\.\S+/.test(url)) return err(400, 'That does not look like a web address')
     if (s.sources.some((x) => x.url === url)) return err(409, 'This source is already on the list')
     const host = new URL(url).hostname.replace(/^www\./, '')
     const m: MockSource = {
-      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.portfolio === true ? 'portfolio' : 'listing', url, query: null,
+      id: s.nextId.source++, name: typeof b.name === 'string' && b.name.trim() ? b.name.trim() : host, kind: b.lists === 'startups' || b.portfolio === true ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing', url, query: null,
       category: '', city: '', status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
       health: 'never', health_note: '', discovered_from: 'Added by hand', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
     }
@@ -374,7 +474,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
     if (typeof b.notes === 'string') src.notes = b.notes
     if (typeof b.name === 'string') src.name = b.name
-    if (typeof b.portfolio === 'boolean') src.kind = b.portfolio ? 'portfolio' : 'listing'
+    if (typeof b.lists === 'string') src.kind = b.lists === 'startups' ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing'
     return ok(sourceOut(src))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {
@@ -390,21 +490,23 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     return { status: 202 }
   }],
   ['GET', /^\/api\/runs$/, (s) => ok({ runs: s.runs })],
-  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.progress && r.kind !== 'check') ?? null })],
+  ['GET', /^\/api\/runs\/current$/, (s) => ok({ run: s.runs.find((r) => r.state === 'going' && r.kind !== 'check') ?? null })],
   ['POST', /^\/api\/runs\/(\d+)\/stop$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
     if (!run) return err(404, 'No such run')
-    if (run.finished_at) return err(409, 'This run has already ended')
+    if (run.state !== 'going') return err(409, 'This run has already ended')
     run.finished_at = new Date().toISOString()
+    run.state = 'stopped'
     run.progress = null
     return { status: 204 }
   }],
   ['POST', /^\/api\/runs$/, (s) => {
-    const going = s.runs.find((r) => !r.finished_at && r.kind !== 'check')
+    const going = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
-    const run = {
-      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, started_at: new Date().toISOString(), finished_at: null as string | null,
-      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, startups_looked_up: 0, people_new: 0, errors: 0,
+    const run: Run = {
+      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, state: 'going', started_at: new Date().toISOString(), finished_at: null as string | null,
+      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
+      people_new: 0, fits_new: 0, errors: 0,
       // Like the server: 8 checks four at a time, then the reads they bring,
       // one at a time, and 4 lookups of startups from a portfolio among the
       // checks, measured at about 3 s a check, 5 s a read and 4 s a lookup.
@@ -419,10 +521,28 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const names = s.sources.slice(0, 8).map((x) => x.name)
     const titles = s.events.slice(0, 6).map((e) => e.title)
     const startups = ['Beispiel Robotics', 'Probe Labs', 'Muster Health', 'Kontrolle Analytics']
+    // People the run finds, one or two at a time, so People fills while
+    // Tim watches. All invented.
+    const found: [string, string, Person['fit']][] = [
+      ['Frieda Faustmann', 'Coach, Faustmann Coaching', 'other'], ['Kemal Kastner', 'Inhaber, Kastner Kampfsport', 'founder'],
+      ['Nora Nettelbeck', 'Author, Das leise Jahr', 'other'], ['Paul Pannwitz', 'Founder, Pannwitz Putzteam', 'founder'],
+      ['Rike Reimers', 'Yoga teacher, Studio Reimers', 'other'], ['Sven Sandkamp', 'Head coach, TV Beispielstadt', 'athlete'],
+    ]
+    const addPerson = () => {
+      const next = found.shift()
+      if (!next) return
+      const [name, headline, fit] = next
+      s.people.push({
+        id: Math.max(...s.people.map((x) => x.id)) + 1, name, headline, city: 'Köln', fit, first_seen: new Date().toISOString(),
+        notes: '', profiles: [], affiliations: [],
+      })
+      run.people_new++
+      if (fit !== 'other') run.fits_new++
+    }
     const t = setInterval(() => {
       const p = run.progress
       // Stopped by hand, or done.
-      if (run.finished_at || !p) {
+      if (run.state !== 'going' || !p) {
         run.progress = null
         return clearInterval(t)
       }
@@ -439,15 +559,16 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
         p.lookups = 4
         p.lookups_done = Math.min(4, p.lookups_done + 2)
         run.startups_looked_up = p.lookups_done
-        run.people_new += 1
+        addPerson()
         p.now = p.lookups_done < 4 ? startups.slice(p.lookups_done, p.lookups_done + 2).map((label) => ({ kind: 'lookup' as const, label, since })) : []
       } else if (p.reads_done < p.reads) {
         p.reads_done++
         run.pages_read = p.reads_done
-        run.people_new += 2
+        addPerson()
         p.now = p.reads_done < p.reads ? [{ kind: 'read' as const, label: titles[p.reads_done % titles.length], since }] : []
       } else {
         run.finished_at = new Date().toISOString()
+        run.state = 'finished'
         run.progress = null
         return clearInterval(t)
       }
@@ -458,7 +579,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
   }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {
     const run = s.runs.find((r) => r.id === Number(m[1]))
-    return run ? ok({ run, checks: s.checks.get(run.id) ?? [] }) : err(404, 'No such run')
+    return run ? ok({ run, checks: s.checks.get(run.id) ?? [], failures: failuresOf(s, run) }) : err(404, 'No such run')
   }],
   ['GET', /^\/api\/fetches\/(\d+)\/(text|html|screenshot)$/, (s, m) => {
     const id = Number(m[1])

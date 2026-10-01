@@ -220,6 +220,7 @@ func (b *Browser) Load(ctx context.Context, rawURL, userAgent string) (*Page, er
 	page.Duration = time.Since(start)
 	page.FinalURL = finalURL
 	page.Status = int(status.Load())
+	page.Body, page.Text = CleanText(page.Body), CleanText(page.Text)
 	if err != nil {
 		return page, fmt.Errorf("browser %s: %w", rawURL, err)
 	}

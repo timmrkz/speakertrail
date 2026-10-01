@@ -2,6 +2,10 @@
   import { api, type Stats } from '../lib/api'
   import { fmtAgo, fmtDateTime, fmtDuration, fmtNum } from '../lib/format'
   import { Load } from '../lib/load.svelte'
+  import { runWatch } from '../lib/run.svelte'
+  import RunOutcome from '../lib/components/RunOutcome.svelte'
+  import RunProgress from '../lib/components/RunProgress.svelte'
+  import RunStatePill from '../lib/components/RunStatePill.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import WeeklyChart from '../lib/components/WeeklyChart.svelte'
@@ -19,15 +23,33 @@
     const src = s.totals.sources
     return [
       { label: 'People', value: s.totals.people, delta: s.last_7_days.people, note: `${fmtNum(s.totals.profiles)} profiles found`, href: '/app/people' },
-      { label: 'Upcoming events kept', value: s.totals.events_kept_upcoming, delta: s.last_7_days.events, note: `of ${fmtNum(s.totals.events_upcoming)} upcoming`, href: '/app/events' },
-      { label: 'Organisations', value: s.totals.organisations, delta: s.last_7_days.organisations, note: 'hosts, venues and companies', href: '' },
       { label: 'Sources', value: src.active + src.probation + src.candidate, delta: s.last_7_days.sources, note: `${src.active} active, ${src.probation} probation, ${src.candidate} candidate`, href: '/app/sources' },
+      { label: 'Organisations', value: s.totals.organisations, delta: s.last_7_days.organisations, note: 'hosts, venues and companies', href: '' },
+      { label: 'Upcoming events kept', value: s.totals.events_kept_upcoming, delta: s.last_7_days.events, note: `of ${fmtNum(s.totals.events_upcoming)} upcoming`, href: '/app/events' },
     ]
   })
 
+  let fit = $derived(stats.data?.fit ?? null)
+  let decided = $derived((fit?.signals ?? []).some((s) => s.kept + s.skipped > 0))
+
+  const PROVIDER_LABEL: Record<string, string> = { exa: 'Exa', tavily: 'Tavily', brave: 'Brave' }
+  let searches = $derived(stats.data?.searches ?? [])
+  let searchesLeft = $derived(searches.filter((u) => u.set).reduce((a, u) => a + Math.max(0, u.budget - u.used), 0))
+
   let topCities = $derived((stats.data?.cities ?? []).slice(0, 6))
   let cityMax = $derived(Math.max(1, ...topCities.map((c) => c.events)))
-  let run = $derived(stats.data?.last_run ?? null)
+  $effect(() => runWatch.watch())
+  // The numbers read again when a run ends.
+  $effect(() => {
+    if (runWatch.ended) stats.run(api.stats, { quiet: true })
+  })
+  // The last run as every screen shows it.
+  let run = $derived.by(() => {
+    const last = stats.data?.last_run ?? null
+    if (runWatch.run && (!last || runWatch.run.id >= last.id || runWatch.run.id <= 0)) return runWatch.run
+    if (runWatch.ended && (!last || runWatch.ended.id >= last.id)) return runWatch.ended
+    return last
+  })
 </script>
 
 <div class="view">
@@ -60,6 +82,79 @@
       {/each}
     </div>
 
+    <section class="panel" aria-labelledby="run-h">
+      <div class="panel-head">
+        <h2 id="run-h">Last run</h2>
+        <a class="small" href="/app/runs">All runs</a>
+      </div>
+      {#if run}
+        <a class="run" href={run.id > 0 ? `/app/runs/${run.id}` : '/app/runs'}>
+          <div class="run-when">
+            <b>{fmtDateTime(run.started_at)}</b>
+            <span class="faint small">
+              {fmtAgo(run.started_at)}{run.state === 'going' ? ', still running' : run.finished_at ? `, took ${fmtDuration(new Date(run.finished_at).getTime() - new Date(run.started_at).getTime())}` : ''}
+            </span>
+          </div>
+          <span class="run-state"><RunStatePill state={run.state} /></span>
+          <div class="run-out">
+            {#if run.state === 'going' && run.progress}<RunProgress {run} />{:else}<RunOutcome {run} />{/if}
+          </div>
+          <dl class="run-nums">
+            <div><dt>Sources checked</dt><dd class="num">{fmtNum(run.sources_checked)}</dd></div>
+            <div><dt>New people</dt><dd class="num">{fmtNum(run.people_new)}</dd></div>
+            <div><dt>Who fit</dt><dd class="num">{fmtNum(run.fits_new)}</dd></div>
+            <div class:err={run.errors > 0}><dt>Sources failed</dt><dd class="num">{fmtNum(run.errors)}</dd></div>
+          </dl>
+        </a>
+      {:else}
+        <p class="muted">No run yet. The first one starts tonight.</p>
+      {/if}
+    </section>
+
+    {#if fit}
+      <section class="panel" aria-labelledby="fit-h">
+        <div class="panel-head">
+          <h2 id="fit-h" title="Keep or skip people on their sheet. Each decision counts for the signals the person had, so a signal that misleads shows up">Keeps and skips</h2>
+          <a class="small" href="/app/people">People</a>
+        </div>
+        <p class="top">
+          Of the top {fit.top.size} by fit, <b class="good">{fit.top.kept} kept</b>, <b class="bad">{fit.top.skipped} skipped</b>,
+          {fit.top.open} not decided yet.
+        </p>
+        {#if decided}
+          <ul class="fit-signals">
+            {#each fit.signals as s (s.key)}
+              <li class:none={s.kept + s.skipped === 0}>
+                <span class="ellipsis" class:for={s.for} class:against={!s.for}>{s.for ? '+' : '−'}&thinsp;{s.label}</span>
+                <span class="num good" title="Kept">{s.kept}</span>
+                <span class="num bad" title="Skipped">{s.skipped}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted small">No one kept or skipped yet. Each decision shows here, by the signals the person had.</p>
+        {/if}
+      </section>
+    {/if}
+
+    {#if searches.length}
+      <section class="panel" aria-labelledby="search-h">
+        <div class="panel-head">
+          <h2 id="search-h" title="Searches find businesses in NRW, each followed to its imprint. Each search goes to the provider with the most of its budget left. The budgets are in Settings">Searches this month</h2>
+          <span class="faint small num">{fmtNum(searchesLeft)} left</span>
+        </div>
+        <ul class="cities searches">
+          {#each searches as u (u.provider)}
+            <li class:none={!u.set}>
+              <span class="city ellipsis">{PROVIDER_LABEL[u.provider] ?? u.provider}</span>
+              <span class="bar" aria-hidden="true"><i style:width="{u.budget > 0 ? Math.min(100, (u.used / u.budget) * 100) : 0}%"></i></span>
+              <span class="num" title={u.set ? `${fmtNum(u.used)} of ${fmtNum(u.budget)} searches this month` : 'No API key, so it is never called'}>{u.set ? `${fmtNum(u.used)} of ${fmtNum(u.budget)}` : 'No key'}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     <div class="grid-2">
       <section class="panel" aria-labelledby="weekly-h">
         <div class="panel-head">
@@ -89,32 +184,6 @@
         {/if}
       </section>
     </div>
-
-    <section class="panel" aria-labelledby="run-h">
-      <div class="panel-head">
-        <h2 id="run-h">Last run</h2>
-        <a class="small" href="/app/runs">All runs</a>
-      </div>
-      {#if run}
-        <a class="run" href="/app/runs/{run.id}">
-          <div class="run-when">
-            <b>{fmtDateTime(run.started_at)}</b>
-            <span class="faint small">
-              {fmtAgo(run.started_at)}{run.finished_at ? `, took ${fmtDuration(new Date(run.finished_at).getTime() - new Date(run.started_at).getTime())}` : ', still running'}
-            </span>
-          </div>
-          <dl class="run-nums">
-            <div><dt>Sources checked</dt><dd class="num">{fmtNum(run.sources_checked)}</dd></div>
-            <div><dt>New events</dt><dd class="num">{fmtNum(run.events_new)}</dd></div>
-            <div><dt>New people</dt><dd class="num">{fmtNum(run.people_new)}</dd></div>
-            <div class:err={run.errors > 0}><dt>Errors</dt><dd class="num">{fmtNum(run.errors)}</dd></div>
-          </dl>
-          <span class="go" aria-hidden="true"><Icon name="chevron" /></span>
-        </a>
-      {:else}
-        <p class="muted">No run yet. The first one starts tonight.</p>
-      {/if}
-    </section>
   {/if}
 </div>
 
@@ -132,23 +201,38 @@
   .delta b { color: var(--good); font-weight: 600; }
   .delta b.zero { color: var(--ink-3); }
   .note { font-size: 12px; color: var(--ink-3); }
+  .top { font-size: 14px; color: var(--ink-2); }
+  .top .good, .fit-signals .good { color: var(--good); }
+  .top .bad, .fit-signals .bad { color: var(--bad); }
+  .fit-signals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 24px; }
+  .fit-signals li { display: grid; grid-template-columns: minmax(0, 1fr) 28px 28px; gap: 8px; font-size: 13px; align-items: center; }
+  .fit-signals li .num { text-align: right; }
+  .fit-signals li.none { color: var(--ink-3); }
+  .fit-signals li.none .num { color: var(--ink-3); }
+  .fit-signals .for { color: var(--ink); }
+  .fit-signals .against { color: var(--ink-2); }
+  @media (max-width: 760px) { .fit-signals { grid-template-columns: minmax(0, 1fr); } }
   .cities { display: grid; gap: 10px; }
   .cities li { display: grid; grid-template-columns: 110px minmax(0, 1fr) 32px; gap: 12px; align-items: center; font-size: 14px; }
   .bar { height: 20px; background: var(--surface-2); border-radius: 5px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--series-1); border-radius: 5px; min-width: 3px; }
   .cities .num { text-align: right; }
+  .searches li { grid-template-columns: 110px minmax(0, 1fr) 110px; }
+  .searches li.none { color: var(--ink-3); }
+  .searches li.none .bar i { display: none; }
   .run {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; color: var(--ink);
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 14px; align-items: center; color: var(--ink);
     padding: 12px 14px; margin: -4px -6px; border-radius: 8px; text-decoration: none;
   }
   .run:hover { background: var(--surface-2); text-decoration: none; }
   .run-when { display: grid; gap: 2px; grid-column: 1; }
-  .run-nums { grid-column: 1; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
+  .run-state { grid-column: 2; grid-row: 1; align-self: start; }
+  .run-out { grid-column: 1 / span 2; min-width: 0; }
+  .run-nums { grid-column: 1 / span 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }
   .run-nums div { display: grid; gap: 2px; }
   .run-nums dt { font-size: 12px; color: var(--ink-3); }
   .run-nums dd { margin: 0; font-size: 20px; }
   .run-nums .err dd { color: var(--bad); }
-  .go { grid-column: 2; grid-row: 1 / span 2; color: var(--ink-3); }
   @media (max-width: 760px) {
     .stats { gap: 8px; }
     .stat { padding: 12px; }
@@ -156,5 +240,6 @@
     .note { display: none; }
     .run-nums { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .cities li { grid-template-columns: 96px minmax(0, 1fr) 28px; }
+    .searches li { grid-template-columns: 64px minmax(0, 1fr) 104px; }
   }
 </style>

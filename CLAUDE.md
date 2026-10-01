@@ -30,7 +30,7 @@ Start with [README.md](README.md). In short:
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | starting data from the brief | `internal/importer/` | |
 | build, Docker | `Makefile`, `compose.yaml`, `Dockerfile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md), `.claude/skills/docker/` |
-| who to look for, and where | | [docs/search-strategy.md](docs/search-strategy.md) |
+| who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
 
@@ -85,13 +85,17 @@ messages, pull request text, code comments and chat replies.
 - **One name per thing.** A **source** is a page the crawler checks again
   and again. A **check** is one look at one source. A **read** is the
   language model's look at one event's own page, for the people on stage.
-  A **portfolio** is a source that lists startups, and a **lookup** is one
-  look at one startup's website and its imprint, for who runs it.
+  A **portfolio** is a source that lists startups, a **directory** one that
+  lists businesses run by people, like gyms or coaches, and a **lookup** is
+  one look at one startup's or business's website, its imprint and its
+  about page, for who runs it.
+  A **search** is a source that asks a search provider, like "BJJ Gym
+  Köln", and its results are websites to look up.
   A **run** is one pass over the due sources, nightly or started by hand. A
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An
-  **event** is kept or dropped, never accepted or rejected. A **profile** is
-  confirmed or rejected. The public page is the **calendar**, Tim's side is
+  **event** is kept or dropped, never accepted or rejected. A **person** is
+  kept or skipped. A **profile** is confirmed or rejected. The public page is the **calendar**, Tim's side is
   the **workspace**. Whatever a thing is called in the interface, it is
   called that in the docs and the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top, and

@@ -3,11 +3,10 @@
   import ThemeButton from '../lib/components/ThemeButton.svelte'
 
   // The phone tab bar has room for four screens. The rest live here.
-  // going: a run is going, shown on Runs by the same pulsing dot as in the tab bar.
-  let { logout, going = false }: { logout: () => void; going?: boolean } = $props()
+  let { logout }: { logout: () => void } = $props()
 
   const LINKS: { href: string; label: string; text: string; icon: IconName }[] = [
-    { href: '/app/runs', label: 'Runs', text: 'Every run and each check', icon: 'runs' },
+    { href: '/app/events', label: 'Events', text: 'Where people were found, kept or dropped', icon: 'events' },
     { href: '/app/settings', label: 'Settings', text: 'How the crawler behaves', icon: 'settings' },
     { href: '/', label: 'Calendar', text: 'What everyone else sees', icon: 'calendar' },
   ]
@@ -25,7 +24,6 @@
         <a class="row-btn item" href={l.href}>
           <span class="ic"><Icon name={l.icon} /></span>
           <span class="t"><b>{l.label}</b><span class="faint small">{l.text}</span></span>
-          {#if l.href === '/app/runs' && going}<span class="dot busy" title="A run is going"></span>{/if}
           <Icon name="chevron" />
         </a>
       </li>

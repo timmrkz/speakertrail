@@ -1,21 +1,43 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
   import { ACTIVITY_TONE, activityText, fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
+  import { runWatch } from '../lib/run.svelte'
   import Chips from '../lib/components/Chips.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import ProfileBadges from '../lib/components/ProfileBadges.svelte'
+  import RunOutcome from '../lib/components/RunOutcome.svelte'
+  import RunProgress from '../lib/components/RunProgress.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import PersonSheet from './PersonSheet.svelte'
 
   let q = $state('')
   let query = $state('')
-  let sort = $state<PeopleSort>('next')
-  // Tim looks for founders, so the list opens on them.
-  let filter = $state<PeopleFilter>('founder')
+  // A new person is what Tim looks at first, so the list opens on everyone,
+  // newest on top, unless he chose another order on this device.
+  const SORTS: PeopleSort[] = ['new', 'fit', 'next', 'name']
+  let sort = $state<PeopleSort>(savedSort())
+  let filter = $state<PeopleFilter>('all')
+
+  function savedSort(): PeopleSort {
+    try {
+      const v = localStorage.getItem('people-sort') as PeopleSort | null
+      return v && SORTS.includes(v) ? v : 'new'
+    } catch {
+      return 'new'
+    }
+  }
+  $effect(() => {
+    try {
+      localStorage.setItem('people-sort', sort)
+    } catch {
+      // Private mode. The order is forgotten, which is fine.
+    }
+  })
   let reload = $state(0)
 
   const people = new Load<Person[]>()
@@ -26,15 +48,38 @@
     document.title = 'People · Speaker Trail'
   })
 
+  const fetchPeople = (params: { q: string; sort: PeopleSort; filter: PeopleFilter }) => async () => {
+    const r = await api.people(params)
+    counts = r.counts
+    return r.people
+  }
+
   $effect(() => {
     const params = { q: query, sort, filter }
     void reload
-    people.run(async () => {
-      const r = await api.people(params)
-      counts = r.counts
-      return r.people
-    })
+    people.run(fetchPeople(params))
   })
+
+  // While a run goes, new people come in without a refresh: the list reads
+  // again every few seconds, and once more when the run ends.
+  $effect(() => runWatch.watch())
+  let lastLive = 0
+  $effect(() => {
+    void runWatch.tick
+    void runWatch.ended
+    if (!runWatch.run && !runWatch.ended) return
+    const t = Date.now()
+    if (runWatch.run && t - lastLive < 4000) return
+    lastLive = t
+    untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
+  })
+
+  // People the going run found, or the one that just ended, are marked new.
+  let since = $derived.by(() => {
+    const at = (runWatch.run ?? runWatch.ended)?.started_at
+    return at ? new Date(at).getTime() : null
+  })
+  let isNew = (p: Person) => since !== null && new Date(p.first_seen).getTime() >= since
 
   let openId = $derived.by(() => {
     const m = router.match('/app/people/:id')
@@ -43,10 +88,11 @@
 
   let filters = $derived(
     ([
+      { value: 'all', label: 'All' },
+      { value: 'fits', label: 'Good fits' },
       { value: 'founder', label: 'Founders' },
       { value: 'upcoming', label: 'Upcoming' },
       { value: 'profile', label: 'Profile found' },
-      { value: 'all', label: 'All' },
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
   )
   let others = $derived(counts ? counts.all : 0)
@@ -54,7 +100,7 @@
   // Keep the list in step with changes made in the sheet.
   function updated(p: PersonDetail) {
     if (!people.data) return
-    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline } : x))
+    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, decision: p.decision } : x))
   }
 </script>
 
@@ -62,9 +108,19 @@
   <div class="view-head">
     <div>
       <h1>People</h1>
-      <p>Everyone named on stage, next appearance first.</p>
+      <p>Everyone the engine found, on stage or behind a startup.</p>
     </div>
   </div>
+
+  {#if runWatch.run}
+    <a class="panel run-now" href={runWatch.run.id > 0 ? `/app/runs/${runWatch.run.id}` : '/app/runs'}>
+      <RunProgress run={runWatch.run} />
+    </a>
+  {:else if runWatch.ended}
+    <a class="panel run-now" href="/app/runs/{runWatch.ended.id}">
+      <RunOutcome run={runWatch.ended} />
+    </a>
+  {/if}
 
   <div class="filters">
     <div class="toolbar tight">
@@ -72,8 +128,9 @@
       <label class="sort">
         <span class="sr-only">Sort by</span>
         <select class="select" bind:value={sort}>
-          <option value="next">Next appearance</option>
           <option value="new">Newest</option>
+          <option value="fit">Best fit</option>
+          <option value="next">Next appearance</option>
           <option value="name">Name</option>
         </select>
       </label>
@@ -90,9 +147,9 @@
   {:else if !people.data.length}
     <EmptyState
       icon="people"
-      title={filter === 'founder' && !query ? 'No founders yet' : 'Nobody here yet'}
+      title={filter === 'founder' && !query ? 'No founders yet' : filter === 'fits' && !query ? 'No good fits yet' : 'Nobody here yet'}
       text={filter !== 'all' && others > 0
-        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : 'in this filter'}.`
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : filter === 'fits' ? 'with more signals for a fit than against yet' : 'in this filter'}.`
         : query ? 'Nobody matches this search.' : 'People show up once the crawler finds them on event pages.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
@@ -103,9 +160,10 @@
     <ul class="list" class:stale={people.loading}>
       {#each people.data as p (p.id)}
         <li>
-          <a class="row-btn person" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
-            <span class="avatar" aria-hidden="true">{initials(p.name)}</span>
-            <b class="ellipsis name">{p.name}</b>
+          <a class="row-btn person" class:skipped={p.decision === 'skipped'} href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}
+            title={p.decision === 'kept' ? 'Kept' : p.decision === 'skipped' ? 'Skipped' : undefined}>
+            <span class="avatar" class:kept={p.decision === 'kept'} aria-hidden="true">{initials(p.name)}</span>
+            <b class="ellipsis name">{p.name}{#if p.decision}<span class="sr-only">, {p.decision}</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
               <span class="next" class:none={!p.next_appearance && !p.activity}>
@@ -117,6 +175,11 @@
                   No upcoming appearance
                 {/if}
               </span>
+              {#if p.signals.length}
+                <span class="signals ellipsis" title={p.signals.map((s) => `${s.for ? 'For' : 'Against'}: ${s.label}`).join('\n')}>
+                  {#each p.signals as s, i (s.key)}{#if i}<span class="sep" aria-hidden="true">·</span>{/if}<span class:for={s.for} class:against={!s.for}><span class="sr-only">{s.for ? 'For: ' : 'Against: '}</span>{s.label}</span>{/each}
+                </span>
+              {/if}
             </span>
             <span class="meta">
               <ProfileBadges profiles={p.profiles} />
@@ -139,6 +202,12 @@
   .filters { display: grid; gap: 10px; }
   .sort { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
+  .run-now { display: block; color: var(--ink); text-decoration: none; padding: 12px 14px; }
+  .run-now:hover { border-color: var(--line-strong); text-decoration: none; }
+  .new {
+    margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px;
+    background: var(--accent-soft); color: var(--accent);
+  }
   .stale { opacity: .6; }
   .dot-tone { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
   .dot-tone.good { background: var(--good); }
@@ -158,6 +227,16 @@
   .next :global(svg) { flex: none; }
   .next.none { color: var(--ink-3); }
   .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
+  /* A kept person's initials turn green, a skipped person steps back. */
+  .avatar.kept { background: var(--good-soft); color: var(--good); }
+  .person.skipped { opacity: .55; }
+  .signals { font-size: 12px; font-weight: 500; }
+  .signals .for { color: var(--good); }
+  .signals .against { color: var(--bad); }
+  /* The sign says it without colour. Screen readers get the words instead. */
+  .signals .for::before { content: "+\2009" / ""; }
+  .signals .against::before { content: "\2212\2009" / ""; }
+  .signals .sep { color: var(--ink-3); margin: 0 5px; }
   .count {
     min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2);
     font-size: 12px; display: inline-grid; place-items: center;

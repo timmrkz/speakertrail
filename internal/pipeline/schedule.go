@@ -24,11 +24,31 @@ func (p *Pipeline) StartRun(ctx context.Context, kind string) (int64, error) {
 	return id, err
 }
 
-// FinishRun records the end of a run.
+// FinishRun records the end of a run that got through its work. A run
+// that was stopped keeps its end.
 func (p *Pipeline) FinishRun(ctx context.Context, runID int64) error {
-	_, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1`, runID, p.now())
+	_, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2, ended = 'finished' WHERE id = $1 AND ended = ''`, runID, p.now())
 	return err
 }
+
+// ended says whether a run has been stopped or ended by a restart. Work
+// still running for it then queues nothing more.
+func (p *Pipeline) ended(ctx context.Context, runID int64) (bool, error) {
+	if runID == 0 {
+		return false, nil
+	}
+	var ended bool
+	err := p.Pool.QueryRow(ctx, `SELECT ended IN ('stopped', 'restart') FROM runs WHERE id = $1`, runID).Scan(&ended)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return ended, err
+}
+
+// runAttempts is how often a job of a run is tried. Once, because a run
+// ends only when all its jobs have, and a retry an hour later would keep it
+// going. A source whose check failed is due again in the next run.
+const runAttempts = 1
 
 // EnqueueDue queues a check for every source that is due, the first checks
 // of a limited number of new candidates, the open seeds and the pruning.
@@ -37,6 +57,13 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	cfg, err := settings.Load(ctx, p.Pool)
 	if err != nil {
 		return 0, err
+	}
+	// Everyone the current rubric has not scored yet, like all people
+	// after the rubric changed.
+	if n, err := ScoreStale(ctx, p.Pool); err != nil {
+		return 0, err
+	} else if n > 0 {
+		p.log().Info("people scored by the fit rubric", "people", n)
 	}
 	now := p.now()
 	// Checks, reads and lookups left over from an earlier run are replaced
@@ -57,7 +84,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status = 'candidate' AND (next_check_at IS NULL OR next_check_at <= $1)
 		 -- A new portfolio goes first, so its startups are looked up soon.
-		 ORDER BY kind = 'portfolio' DESC, checks, created_at, id
+		 ORDER BY kind IN ('portfolio', 'directory') DESC, checks, created_at, id
 		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
 		return 0, err
@@ -66,9 +93,27 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Due searches, when a search provider is set up. Each brings up to 20
+	// websites to look up, so a run takes only a few.
+	if p.Search != nil {
+		rows, err := p.Pool.Query(ctx, `
+			SELECT id FROM sources
+			WHERE kind = 'search_query' AND query IS NOT NULL AND status IN ('candidate', 'probation', 'active')
+			  AND (next_check_at IS NULL OR next_check_at <= $1)
+			ORDER BY next_check_at NULLS FIRST, points DESC, id
+			LIMIT $2`, now, cfg.Int("searches_per_run", 3))
+		if err != nil {
+			return 0, err
+		}
+		searches, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		if err != nil {
+			return 0, err
+		}
+		ids = append(ids, searches...)
+	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id),
+			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: CheckPayload{SourceID: id, RunID: runID},
 		}); err != nil {
 			return 0, err
@@ -172,28 +217,38 @@ func (p *Pipeline) EndInterrupted(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
+	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2, ended = 'restart' WHERE id = ANY($1) AND finished_at IS NULL`, runs, now)
 	if err != nil {
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil
 }
 
-// StopRun ends a run by hand. Its queued checks and reads are dropped, and
-// what is running finishes by itself. Events not read yet wait for the next
-// run.
+// StopRun ends a run by hand. Its queued checks, reads and lookups are
+// dropped, and what is running finishes by itself but queues nothing more.
+// Events not read yet wait for the next run. A run that already ended, or
+// has nothing left to do, is not stopped.
 func (p *Pipeline) StopRun(ctx context.Context, runID int64) (bool, error) {
 	now := p.now()
-	if _, err := p.Pool.Exec(ctx, `
-		UPDATE jobs SET status = 'failed', last_error = 'stopped by hand', locked_until = NULL, updated_at = $2
-		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, now); err != nil {
-		return false, err
-	}
-	tag, err := p.Pool.Exec(ctx, `UPDATE runs SET finished_at = $2 WHERE id = $1 AND finished_at IS NULL`, runID, now)
+	tag, err := p.Pool.Exec(ctx, `
+		UPDATE runs r SET finished_at = $2, ended = 'stopped'
+		WHERE r.id = $1 AND r.finished_at IS NULL AND r.ended = '' AND EXISTS (
+			SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')`, runID, now)
 	if err != nil {
 		return false, err
 	}
-	return tag.RowsAffected() == 1, nil
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+	return true, p.dropQueued(ctx, runID, "stopped by hand")
+}
+
+// dropQueued ends the jobs a run still has waiting.
+func (p *Pipeline) dropQueued(ctx context.Context, runID int64, why string) error {
+	_, err := p.Pool.Exec(ctx, `
+		UPDATE jobs SET status = 'failed', last_error = $3, locked_until = NULL, updated_at = $2
+		WHERE status = 'queued' AND key LIKE 'run:' || $1::bigint || ':%'`, runID, p.now(), why)
+	return err
 }
 
 // CheckNow queues one source for an immediate check in its own run.
@@ -203,7 +258,7 @@ func (p *Pipeline) CheckNow(ctx context.Context, sourceID int64) (int64, error) 
 		return 0, err
 	}
 	_, err = p.Queue.Enqueue(ctx, queue.NewJob{
-		Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, sourceID),
+		Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, sourceID), MaxAttempts: runAttempts,
 		Payload: CheckPayload{SourceID: sourceID, RunID: runID},
 	})
 	return runID, err
@@ -227,9 +282,21 @@ func (p *Pipeline) Nightly(ctx context.Context, w Worker) error {
 	}
 	p.log().Info("nightly run started", "run", runID, "sources", n)
 	werr := p.workWithRetries(ctx, w, runID)
-	// Record the end even when the context was cancelled.
+	// Record the end even when the context was cancelled. A run cut short,
+	// like make crawl stopped with Ctrl-C, ends as stopped, and what it
+	// still had queued is dropped.
 	finishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
+	if ctx.Err() != nil {
+		if _, err := p.Pool.Exec(finishCtx, `UPDATE runs SET finished_at = $2, ended = 'stopped' WHERE id = $1 AND ended = ''`, runID, p.now()); err != nil {
+			return err
+		}
+		if err := p.dropQueued(finishCtx, runID, "the run was stopped"); err != nil {
+			return err
+		}
+		p.log().Info("nightly run stopped", "run", runID)
+		return werr
+	}
 	if err := p.FinishRun(finishCtx, runID); err != nil {
 		return err
 	}

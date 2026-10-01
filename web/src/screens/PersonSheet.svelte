@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
+  import { api, type Decision, type PersonDetail, type Profile, type Review } from '../lib/api'
+  import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, instagramSearch, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -31,6 +31,13 @@
     return (a.find((x) => x.role === 'founder') ?? a[0])?.organisation ?? ''
   })
   let hasLinkedin = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'linkedin' && x.review === 'confirmed'))
+  let hasInstagram = $derived((person.data?.profiles ?? []).some((x) => x.platform === 'instagram' && x.review === 'confirmed'))
+  // Where a passage comes from, in words.
+  const FOUND_IN: Record<string, string> = {
+    title: 'from their title', 'event page': 'from an event page', event: 'from an event they host', imprint: 'from the imprint',
+    lookup: 'from a lookup of their website', portfolio: 'from a startup portfolio', 'about page': "from their website's about page",
+    model: 'read by the language model',
+  }
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 
   async function saveNotes() {
@@ -44,6 +51,27 @@
     } catch (e) {
       noteState = 'error'
       toast.show(errorText(e), 'bad')
+    }
+  }
+
+  // Keep, to contact them, or skip. The pressed one again undoes it.
+  let deciding = $state(false)
+  async function decide(next: Decision) {
+    if (!person.data || deciding) return
+    const before = person.data.decision
+    const to = before === next ? '' : next
+    deciding = true
+    person.data = { ...person.data, decision: to }
+    onupdate?.(person.data)
+    try {
+      await api.patchPerson(id, { decision: to })
+      toast.show(to === 'kept' ? `Kept ${person.data.name}` : to === 'skipped' ? `Skipped ${person.data.name}` : `${person.data.name} is open again`)
+    } catch (e) {
+      person.data = { ...person.data, decision: before }
+      onupdate?.(person.data)
+      toast.show(errorText(e), 'bad')
+    } finally {
+      deciding = false
     }
   }
 
@@ -80,6 +108,16 @@
             <p class="small"><span class="pill {ACTIVITY_TONE[person.data.activity.state]}" title="{person.data.activity.company}: {person.data.activity.note}">{activityText(person.data.activity)}</span></p>
           {/if}
           <p class="faint small">{[person.data.city, `first seen ${fmtAgo(person.data.first_seen)}`].filter(Boolean).join(' · ')}</p>
+          <div class="row decide">
+            <button class="btn sm good" type="button" aria-pressed={person.data.decision === 'kept'} disabled={deciding} onclick={() => decide('kept')}
+              title={person.data.decision === 'kept' ? 'Kept. Click again to undo' : 'Keep, to contact them. It teaches the fit rubric'}>
+              <Icon name="check" size={14} />Keep
+            </button>
+            <button class="btn sm bad" type="button" aria-pressed={person.data.decision === 'skipped'} disabled={deciding} onclick={() => decide('skipped')}
+              title={person.data.decision === 'skipped' ? 'Skipped. Click again to undo' : 'Skip. It teaches the fit rubric'}>
+              <Icon name="x" size={14} />Skip
+            </button>
+          </div>
         </div>
       </div>
     {:else}
@@ -96,31 +134,23 @@
     </EmptyState>
   {:else if person.data}
     {@const p = person.data}
-    <section class="section" aria-labelledby="apps-h">
-      <h3 id="apps-h" class="label">On stage</h3>
-      {#if !p.appearances.length}
-        <p class="muted small">No appearances recorded.</p>
+    <section class="section" aria-labelledby="fit-h">
+      <h3 id="fit-h" class="label" title="What speaks for and against a guest, each with the passage that shows it. The score is the signals for, less those against">
+        Fit{#if p.signals.length}, {p.fit_score > 0 ? '+' : p.fit_score < 0 ? '−' : ''}{Math.abs(p.fit_score)}{/if}
+      </h3>
+      {#if p.signals.length}
+        <ul class="signals">
+          {#each p.signals as sig (sig.key)}
+            <li class:for={sig.for} class:against={!sig.for}>
+              <b><span aria-hidden="true">{sig.for ? '+' : '−'}</span><span class="sr-only">{sig.for ? 'For: ' : 'Against: '}</span>{sig.label}</b>
+              <q>{sig.passage}</q>
+              <span class="faint small">{FOUND_IN[sig.found_in] ?? sig.found_in}</span>
+            </li>
+          {/each}
+        </ul>
+      {:else}
+        <p class="muted small">Nothing known yet that speaks for or against.</p>
       {/if}
-      {#each [{ list: upcoming, label: 'Upcoming' }, { list: past, label: 'Earlier' }] as group (group.label)}
-        {#if group.list.length}
-          <ul class="apps" aria-label={group.label}>
-            {#each group.list as a (a.event.id + a.role)}
-              <li class:past={group.label === 'Earlier'}>
-                <span class="when num">{fmtDateTime(a.event.starts_at)}</span>
-                <span class="what">
-                  {#if a.event.url}
-                    <a href={a.event.url} target="_blank" rel="noopener noreferrer">{a.event.title}<Icon name="external" size={12} /></a>
-                  {:else}
-                    <b>{a.event.title}</b>
-                  {/if}
-                  <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
-                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
-                </span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      {/each}
     </section>
 
     <section class="section" aria-labelledby="prof-h">
@@ -150,11 +180,21 @@
       {:else}
         <p class="muted small">No profile found yet.</p>
       {/if}
-      {#if !hasLinkedin}
-        <a class="btn sm find" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
-          title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
-          <Icon name="external" size={14} />Find on LinkedIn
-        </a>
+      {#if !hasLinkedin || !hasInstagram}
+        <div class="row find">
+          {#if !hasLinkedin}
+            <a class="btn sm" href={linkedinSearch(p.name)} target="_blank" rel="noopener noreferrer"
+              title="Searches LinkedIn for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
+              <Icon name="external" size={14} />Find on LinkedIn
+            </a>
+          {/if}
+          {#if !hasInstagram}
+            <a class="btn sm" href={instagramSearch(p.name)} target="_blank" rel="noopener noreferrer"
+              title="Searches Instagram for {p.name} in your own browser{company ? `. Look for ${company}` : ''}">
+              <Icon name="external" size={14} />Find on Instagram
+            </a>
+          {/if}
+        </div>
       {/if}
     </section>
 
@@ -163,11 +203,51 @@
         <h3 id="aff-h" class="label">Affiliations</h3>
         <ul class="plain">
           {#each p.affiliations as a (a.organisation + a.role)}
-            <li><b>{a.organisation}</b> <span class="faint">{a.role}{a.current ? '' : ', before'}</span></li>
+            <li class="aff">
+              <span><b>{a.organisation}</b> <span class="faint">{a.role}{a.current ? '' : ', before'}</span></span>
+              {#if a.website || a.imprint_url}
+                <span class="row aff-links">
+                  {#if a.website}
+                    <a class="btn sm" href={a.website} target="_blank" rel="noopener noreferrer" title="The business's own website"><Icon name="external" size={14} />Website</a>
+                  {/if}
+                  {#if a.imprint_url}
+                    <a class="btn sm" href={a.imprint_url} target="_blank" rel="noopener noreferrer"
+                      title="The imprint gives an email address, by law, and often a phone number. The app never stores them"><Icon name="external" size={14} />Imprint</a>
+                  {/if}
+                </span>
+              {/if}
+            </li>
           {/each}
         </ul>
       </section>
     {/if}
+
+    <section class="section" aria-labelledby="apps-h">
+      <h3 id="apps-h" class="label">On stage</h3>
+      {#if !p.appearances.length}
+        <p class="muted small">No appearances recorded.</p>
+      {/if}
+      {#each [{ list: upcoming, label: 'Upcoming' }, { list: past, label: 'Earlier' }] as group (group.label)}
+        {#if group.list.length}
+          <ul class="apps" aria-label={group.label}>
+            {#each group.list as a (a.event.id + a.role)}
+              <li class:past={group.label === 'Earlier'}>
+                <span class="when num">{fmtDateTime(a.event.starts_at)}</span>
+                <span class="what">
+                  {#if a.event.url}
+                    <a href={a.event.url} target="_blank" rel="noopener noreferrer">{a.event.title}<Icon name="external" size={12} /></a>
+                  {:else}
+                    <b>{a.event.title}</b>
+                  {/if}
+                  <span class="faint">{ROLE_LABEL[a.role] ?? a.role} · {[a.event.venue, a.event.city].filter(Boolean).join(', ')}</span>
+                  {#if a.evidence}<q class="evidence" title="From the event page">{a.evidence}</q>{/if}
+                </span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/each}
+    </section>
 
     <section class="section" aria-labelledby="seen-h">
       <h3 id="seen-h" class="label">Seen on</h3>
@@ -208,6 +288,8 @@
 <style>
   .head { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; align-items: center; }
   .head-text { display: grid; gap: 3px; min-width: 0; }
+  .decide { margin-top: 6px; }
+  .decide .btn { min-width: 5.6em; }
   .head-text h2 { font-size: 19px; }
   .head-text p { overflow-wrap: anywhere; }
   .apps { display: grid; gap: 8px; }
@@ -235,9 +317,19 @@
   .prof-main a { font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
   .prof-actions { flex-wrap: nowrap; }
   .plain { display: grid; gap: 6px; font-size: 14px; }
+  .aff { display: grid; gap: 6px; }
+  .aff-links { justify-self: start; }
   .note-state { color: var(--ink-3); }
   .loading { display: grid; gap: 10px; }
   @media (max-width: 420px) {
     .profile { grid-template-columns: minmax(0, 1fr); }
   }
+  .signals { display: grid; gap: 8px; }
+  .signals li { display: grid; gap: 2px; padding-left: 10px; border-left: 3px solid var(--line); }
+  .signals li.for { border-left-color: var(--good); }
+  .signals li.against { border-left-color: var(--bad); }
+  .signals li.for b { color: var(--good); }
+  .signals li.against b { color: var(--bad); }
+  .signals b span[aria-hidden] { display: inline-block; width: 1em; }
+  .signals q { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 </style>

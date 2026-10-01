@@ -1,7 +1,7 @@
 // Package importer loads the starting data from the brief: the source list,
-// the manual and retired sources, and the seeds. Importing twice changes
-// nothing, and it never touches a row that already exists, so the engine's
-// lifecycle and Tim's edits survive.
+// the manual and retired sources, the starting searches and the seeds.
+// Importing twice changes nothing, and it never touches a row that already
+// exists, so the engine's lifecycle and Tim's edits survive.
 package importer
 
 import (
@@ -24,15 +24,19 @@ var sourcesCSV string
 //go:embed data/seeds.csv
 var seedsCSV string
 
+//go:embed data/searches.csv
+var searchesCSV string
+
 // Result counts what an import did.
 type Result struct {
 	SourcesAdded, SourcesKept, SourcesSkipped int
+	SearchesAdded, SearchesKept               int
 	SeedsAdded, SeedsKept                     int
 }
 
 func (r Result) String() string {
-	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. seeds: %d added, %d already there",
-		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SeedsAdded, r.SeedsKept)
+	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. searches: %d added, %d already there. seeds: %d added, %d already there",
+		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SearchesAdded, r.SearchesKept, r.SeedsAdded, r.SeedsKept)
 }
 
 // Import loads the starting data.
@@ -65,9 +69,13 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 		var u *string
 		if url != "" {
 			kind = pipeline.SourceKindFor(url)
-			// A page of startups is a portfolio, whatever its address.
-			if r["category"] == "Startup portfolio" {
+			// A page of startups is a portfolio, a page of businesses a
+			// directory, whatever its address.
+			switch r["category"] {
+			case "Startup portfolio":
 				kind = "portfolio"
+			case "Directory":
+				kind = "directory"
 			}
 			u = &url
 		}
@@ -89,6 +97,29 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 			return res, fmt.Errorf("source %q: %w", name, err)
 		}
 		res.SourcesAdded++
+	}
+
+	// The starting searches: kinds of people who fit, in the biggest cities
+	// of NRW. Each is a source of its own, waiting until a search provider
+	// has a key.
+	searches, err := readCSV(searchesCSV)
+	if err != nil {
+		return res, fmt.Errorf("searches.csv: %w", err)
+	}
+	for _, s := range searches {
+		q := s["query"]
+		tag, err := pool.Exec(ctx, `
+			INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
+			VALUES ($1, 'search_query', $1, 'Search', $2, 'candidate', 'Imported from the starting searches')
+			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
+		if err != nil {
+			return res, fmt.Errorf("search %q: %w", q, err)
+		}
+		if tag.RowsAffected() == 1 {
+			res.SearchesAdded++
+		} else {
+			res.SearchesKept++
+		}
 	}
 
 	seeds, err := readCSV(seedsCSV)

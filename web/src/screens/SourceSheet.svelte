@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, SOURCE_STATUSES, type FetchMode, type Source, type SourcePatch, type SourceStatus } from '../lib/api'
+  import { api, SOURCE_STATUSES, type FetchMode, type Source, type SourceLists, type SourcePatch, type SourceStatus } from '../lib/api'
   import { fmtAgo, fmtDateTime, KIND_LABEL, MODE_LABEL, plural, shortUrl, STATUS_LABEL } from '../lib/format'
   import { errorText, toast } from '../lib/toast.svelte'
   import HealthPill from '../lib/components/HealthPill.svelte'
@@ -74,7 +74,7 @@
     {#if source}
       <div class="head">
         <h2>{source.name || shortUrl(source.url) || source.query}</h2>
-        <p class="muted small">{[KIND_LABEL[source.kind] ?? source.kind, source.category, source.city].filter(Boolean).join(' · ')}</p>
+        <p class="muted small">{[...new Set([KIND_LABEL[source.kind] ?? source.kind, source.category, source.city].filter(Boolean))].join(' · ')}</p>
         {#if source.url}
           <a class="small wrap-anywhere" href={source.url} target="_blank" rel="noopener noreferrer">{shortUrl(source.url)} <Icon name="external" size={12} /></a>
         {:else if source.query}
@@ -101,7 +101,7 @@
         <dt>Last check</dt>
         <dd>{source.last_checked_at ? `${fmtDateTime(source.last_checked_at)}, ${fmtAgo(source.last_checked_at)}` : 'Never'}</dd>
         {#if source.last_check}
-          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : plural(source.last_check.events_found, 'event')}</dd>
+          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : source.kind === 'directory' ? plural(source.last_check.startups_found, 'business in NRW', 'businesses in NRW') : source.kind === 'search_query' ? plural(source.last_check.startups_found, 'business', 'businesses') : plural(source.last_check.events_found, 'event')}</dd>
           <dt>Fetched with</dt><dd>{source.last_check.mode}{source.last_check.http_status ? `, HTTP ${source.last_check.http_status}` : ''}</dd>
           {#if source.last_check.error}<dt>Error</dt><dd class="err">{source.last_check.error}</dd>{/if}
         {/if}
@@ -125,31 +125,33 @@
           </select>
           <span class="field-hint">{STATUS_HELP[source.status]}</span>
         </div>
-        <div class="field">
-          <label for="src-mode">How to fetch</label>
-          <select id="src-mode" class="select" value={source.fetch_mode} disabled={saving}
-            onchange={(e) => {
-              const v = (e.currentTarget as HTMLSelectElement).value as FetchMode
-              patch({ fetch_mode: v }, `Fetch mode set to ${MODE_LABEL[v].toLowerCase()}`)
-            }}>
-            <option value="auto">{MODE_LABEL.auto}</option>
-            <option value="http">{MODE_LABEL.http}</option>
-            <option value="browser">{MODE_LABEL.browser}</option>
-          </select>
-          <span class="field-hint">{source.fetch_mode === 'browser' ? 'Opens the page in a browser first. Slower.' : source.fetch_mode === 'http' ? 'Reads the raw page. Fast.' : 'Tries the raw page, then a browser if needed'}</span>
-        </div>
         {#if source.url}
           <div class="field">
-            <label for="src-lists">The page lists</label>
-            <select id="src-lists" class="select" value={source.kind === 'portfolio' ? 'startups' : 'events'} disabled={saving}
+            <label for="src-mode">How to fetch</label>
+            <select id="src-mode" class="select" value={source.fetch_mode} disabled={saving}
               onchange={(e) => {
-                const startups = (e.currentTarget as HTMLSelectElement).value === 'startups'
-                patch({ portfolio: startups }, startups ? 'Now read as a list of startups' : 'Now read as a list of events')
+                const v = (e.currentTarget as HTMLSelectElement).value as FetchMode
+                patch({ fetch_mode: v }, `Fetch mode set to ${MODE_LABEL[v].toLowerCase()}`)
+              }}>
+              <option value="auto">{MODE_LABEL.auto}</option>
+              <option value="http">{MODE_LABEL.http}</option>
+              <option value="browser">{MODE_LABEL.browser}</option>
+            </select>
+            <span class="field-hint">{source.fetch_mode === 'browser' ? 'Opens the page in a browser first. Slower.' : source.fetch_mode === 'http' ? 'Reads the raw page. Fast.' : 'Tries the raw page, then a browser if needed'}</span>
+          </div>
+          <div class="field">
+            <label for="src-lists">The page lists</label>
+            <select id="src-lists" class="select" value={source.kind === 'portfolio' ? 'startups' : source.kind === 'directory' ? 'businesses' : 'events'} disabled={saving}
+              onchange={(e) => {
+                const lists = (e.currentTarget as HTMLSelectElement).value as SourceLists
+                patch({ lists }, `Now read as a list of ${lists}`)
               }}>
               <option value="events">Events</option>
               <option value="startups">Startups</option>
+              <option value="businesses">Businesses</option>
             </select>
-            <span class="field-hint">{source.kind === 'portfolio' ? 'Each startup is followed to its imprint, for who runs it' : 'Events and the people on stage'}</span>
+            <span class="field-hint">{source.kind === 'portfolio' ? 'Each startup is followed to its imprint, for who runs it'
+              : source.kind === 'directory' ? 'Each business in NRW is followed to its imprint and about page, for who runs it' : 'Events and the people on stage'}</span>
           </div>
         {/if}
       </div>

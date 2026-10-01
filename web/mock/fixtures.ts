@@ -243,9 +243,9 @@ export function buildSources(): MockSource[] {
     checked_hours_ago: found === null && health === 'never' ? null : lastRun - 0.05 - (id % 9) * 0.03 + (status === 'retired' ? 24 * 12 : 0),
   }))
   out.push({
-    id: 26, name: 'Web search: Gründer Stammtisch NRW', kind: 'search_query', url: null, query: 'Gründer Stammtisch NRW', category: 'Search', city: '',
+    id: 26, name: 'Yoga Studio Köln', kind: 'search_query', url: null, query: 'Yoga Studio Köln', category: 'Search', city: 'Köln',
     status: 'candidate', fetch_mode: 'auto', notes: '', checks: 1, empty_checks_in_row: 0, points: 1, health: 'ok', health_note: '',
-    discovered_from: 'Added by the discovery job', last_found: 4, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.3,
+    discovered_from: 'Imported from the starting searches', last_found: 14, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.3,
   })
   return out
 }
@@ -277,6 +277,9 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
       id, kind: 'nightly', started_at: started, finished_at: running ? null : hoursAgo(startH - 0.02 * list.length - 0.05),
       sources_checked: list.length, events_found: list.reduce((a, c) => a + c.events_found, 0), pages_read: 12 + ((i * 7) % 18), startups_looked_up: (i * 3) % 11,
       events_new: Math.max(0, 9 - i + ((i * 5) % 7)), people_new: Math.max(0, 14 - i + ((i * 3) % 9)),
+      fits_new: Math.max(0, 4 - (i % 5)), reads_failed: i % 4 === 1 ? 2 : 0, lookups_failed: i % 5 === 0 ? 1 : 0,
+      // One run stopped by hand and one the app stopped under, like real ones.
+      state: i === 2 ? 'stopped' : i === 5 ? 'interrupted' : 'finished',
       errors: list.filter((c) => c.error).length, progress: null,
     })
   }
@@ -310,7 +313,11 @@ export function buildSettings(): Setting[] {
     ['site_request_interval_seconds', 5, 'Minimum seconds between two requests to the same website'],
     ['worker_concurrency', 4, 'Jobs a worker runs at the same time'],
     ['browser_pages', 2, 'Headless browser pages open at the same time'],
-    ['tavily_monthly_searches', 1000, 'Web searches per month, discovery and profiles together'],
+    ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
+    ['tavily_monthly_searches', 1000, 'Tavily searches per month. Its free plan has 1,000'],
+    ['brave_monthly_searches', 1000, 'Brave searches per month. Its monthly credit covers about 1,000, more are billed'],
+    ['searches_per_run', 3, 'Due searches a run takes. Each brings up to 20 websites to look up'],
+    ['search_check_days', 30, 'Days between two runs of the same search'],
     ['claude_monthly_budget_eur', 4, 'Monthly cap for Claude API calls, in euros'],
     ['voice_guide', '', 'How Tim writes, used when drafting posts'],
   ]

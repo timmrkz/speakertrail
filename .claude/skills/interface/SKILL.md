@@ -74,7 +74,13 @@ Fairy's rules, without its styling:
   whole minutes from a minute on, and it counts down between answers.
   Until there is anything to measure against, it says so.
 - **Work out of sight pulses.** `.dot.busy` on the place that leads to it,
-  like Runs in the sidebar and More on a phone.
+  like Runs in the sidebar and in the phone's tab bar.
+- **One watch, one state.** The going run comes from `runWatch` in
+  `lib/run.svelte.ts`, for every screen and the dot alike, so no screen
+  shows a state another has left. A screen that shows the run calls
+  `runWatch.watch()` in an effect. Start and Stop go through it and show
+  at once, before the server answers. How a run ended shows through
+  `RunStatePill.svelte` and `RunOutcome.svelte`, everywhere the same.
 - **It can be stopped**, in the same place it was started.
 - **One component per kind of work.** A run shows itself through
   `RunProgress.svelte` in the list and in its sheet alike. A new kind of

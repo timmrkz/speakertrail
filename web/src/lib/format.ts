@@ -155,8 +155,9 @@ export const KIND_LABEL: Record<string, string> = {
   organiser_page: 'Organiser page',
   profile_page: 'Profile page',
   newsletter: 'Newsletter',
-  search_query: 'Web search',
+  search_query: 'Search',
   portfolio: 'Portfolio',
+  directory: 'Directory',
 }
 
 export const MODE_LABEL: Record<string, string> = {
@@ -252,6 +253,14 @@ export function linkedinSearch(name: string): string {
   return `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name)}`
 }
 
+// A search on Instagram in Tim's own browser, where coaches and athletes
+// often are rather than on LinkedIn. It is Instagram's keyword search, the
+// address its own search box opens. The engine itself never requests
+// Instagram.
+export function instagramSearch(name: string): string {
+  return `https://www.instagram.com/explore/search/keyword/?q=${encodeURIComponent(name)}`
+}
+
 // How a founder's startup looked at its last lookup, in a few words.
 export function activityText(a: { state: string; since: string | null } | null): string {
   if (!a) return ''
@@ -271,3 +280,30 @@ export function activityText(a: { state: string; since: string | null } | null):
 }
 
 export const ACTIVITY_TONE: Record<string, string> = { active: 'good', unknown: '', quiet: 'warn', dissolved: 'bad', gone: 'bad' }
+
+// A run's state in one word, and its tone.
+export const RUN_STATE: Record<string, { label: string; tone: string }> = {
+  going: { label: 'Going', tone: 'accent' },
+  finished: { label: 'Finished', tone: 'good' },
+  stopped: { label: 'Stopped', tone: 'warn' },
+  interrupted: { label: 'Interrupted', tone: 'warn' },
+}
+
+// What a run brought, in one line: new people, how many of them fit, the
+// startups it looked up. failed says what failed, empty when nothing did.
+export function runBrought(r: {
+  people_new: number; fits_new: number; startups_looked_up: number; events_new: number; errors: number; reads_failed: number; lookups_failed: number
+}): { brought: string; failed: string } {
+  const parts = [
+    plural(r.people_new, 'new person', 'new people') + (r.fits_new ? `, ${fmtNum(r.fits_new)} who fit` : ''),
+    r.events_new ? plural(r.events_new, 'new event') : '',
+    r.startups_looked_up ? `${plural(r.startups_looked_up, 'startup')} looked up` : '',
+  ].filter(Boolean)
+  const failed = [
+    r.errors ? plural(r.errors, 'source') : '',
+    r.reads_failed ? plural(r.reads_failed, 'read') : '',
+    r.lookups_failed ? plural(r.lookups_failed, 'lookup') : '',
+  ].filter(Boolean)
+  const list = failed.length > 1 ? `${failed.slice(0, -1).join(', ')} and ${failed[failed.length - 1]}` : failed[0] ?? ''
+  return { brought: parts.join(', '), failed: list ? `${list} failed` : '' }
+}

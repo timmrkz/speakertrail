@@ -14,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/timmrkz/speakertrail/internal/fetch"
 )
@@ -57,6 +58,11 @@ func newSite(t *testing.T, robots string, pages map[string]string) *httptest.Ser
 		}
 		if strings.HasPrefix(body, "REDIRECT ") {
 			http.Redirect(w, r, strings.TrimPrefix(body, "REDIRECT "), http.StatusFound)
+			return
+		}
+		if strings.HasPrefix(body, "ODDCHARSET ") {
+			w.Header().Set("Content-Type", "text/html; charset=x-unheard-of")
+			w.Write([]byte(strings.TrimPrefix(body, "ODDCHARSET ")))
 			return
 		}
 		if strings.HasPrefix(body, "LATIN1 ") {
@@ -118,6 +124,8 @@ func TestHTTPFetch(t *testing.T) {
 		"/nobots":  "no",
 		"/private": "private",
 		"/umlaut":  "LATIN1 <p>Gr\xfcnder Abend in D\xfcsseldorf</p>",
+		"/broken":  "<p>Yoga Studio \x80 Essen\x00</p>",
+		"/odd":     "ODDCHARSET <p>Yoga Studio \x80 Essen</p>",
 	})
 	f := fetch.New(fetch.Options{Contact: "https://example.org/bot"})
 	ctx := t.Context()
@@ -150,6 +158,21 @@ func TestHTTPFetch(t *testing.T) {
 	}
 	if p.Text != "Gründer Abend in Düsseldorf" {
 		t.Errorf("latin-1 page decoded as %q", p.Text)
+	}
+
+	// A page that says UTF-8 but is not, with a stray Windows-1252 byte and
+	// a NUL, or that names a character set nobody knows, still gives text
+	// the database takes.
+	for _, path := range []string{"/broken", "/odd"} {
+		p, err = f.HTTP(ctx, site.URL+path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for name, s := range map[string]string{"body": p.Body, "text": p.Text} {
+			if !utf8.ValidString(s) || strings.ContainsRune(s, 0) || !strings.Contains(s, "Studio") {
+				t.Errorf("%s %s %q", path, name, s)
+			}
+		}
 	}
 }
 

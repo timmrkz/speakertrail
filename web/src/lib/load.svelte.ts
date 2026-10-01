@@ -7,9 +7,11 @@ export class Load<T> {
   error = $state('')
   private seq = 0
 
-  async run(fetcher: () => Promise<T>): Promise<void> {
+  // quiet refreshes what is shown without saying so, like a list that
+  // updates by itself while a run goes.
+  async run(fetcher: () => Promise<T>, opts: { quiet?: boolean } = {}): Promise<void> {
     const mine = ++this.seq
-    this.loading = true
+    this.loading = !opts.quiet
     this.error = ''
     try {
       const data = await fetcher()

@@ -31,6 +31,9 @@ type Link struct {
 	Text string
 	// Chrome is true for links in a page's header, navigation or footer.
 	Chrome bool
+	// Context is the text of the list item, row or block around the link,
+	// like the address next to a directory's entry.
+	Context string
 }
 
 // Links lists a page's links as absolute addresses.
@@ -40,27 +43,64 @@ func Links(body, base string) []Link {
 		return nil
 	}
 	var out []Link
-	var walk func(n *nethtml.Node, chrome bool)
-	walk = func(n *nethtml.Node, chrome bool) {
+	var walk func(n, block *nethtml.Node, chrome bool)
+	walk = func(n, block *nethtml.Node, chrome bool) {
 		if n.Type == nethtml.ElementNode {
 			switch n.DataAtom {
 			case atom.Nav, atom.Header, atom.Footer:
 				chrome = true
 			case atom.Script, atom.Style, atom.Noscript, atom.Template:
 				return
+			case atom.Li, atom.Tr, atom.Article, atom.Dd, atom.P, atom.Div, atom.Section:
+				block = n
 			case atom.A:
 				if u := absURL(base, attr(n, "href")); u != "" {
-					out = append(out, Link{URL: u, Text: cleanText(linkText(n)), Chrome: chrome})
+					l := Link{URL: u, Text: cleanText(linkText(n)), Chrome: chrome}
+					if block != nil {
+						l.Context = contextText(block)
+					}
+					out = append(out, l)
 				}
 				return
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c, chrome)
+			walk(c, block, chrome)
 		}
 	}
-	walk(doc, false)
+	walk(doc, nil, false)
 	return out
+}
+
+// contextText is a block's text, at most 400 bytes of it. A block with
+// more than three links holds several entries, and says nothing about one.
+func contextText(n *nethtml.Node) string {
+	var b strings.Builder
+	links := 0
+	var walk func(*nethtml.Node)
+	walk = func(n *nethtml.Node) {
+		if n.Type == nethtml.ElementNode && n.DataAtom == atom.A {
+			links++
+		}
+		if b.Len() > 400 {
+			return
+		}
+		if n.Type == nethtml.TextNode {
+			b.WriteString(n.Data)
+			b.WriteByte(' ')
+		}
+		if n.Type == nethtml.ElementNode && (n.DataAtom == atom.Script || n.DataAtom == atom.Style) {
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	if links > 3 {
+		return ""
+	}
+	return cleanText(b.String())
 }
 
 func attr(n *nethtml.Node, key string) string {
@@ -149,6 +189,7 @@ var (
 func ParseImprint(text string) Imprint {
 	var im Imprint
 	lines := strings.Split(text, "\n")
+	companyLine := -1
 	seen := map[string]bool{}
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
@@ -159,11 +200,17 @@ func ParseImprint(text string) Imprint {
 			if m := legalForm.FindStringSubmatchIndex(line); m != nil && len(line) <= 90 && !directorLabel.MatchString(line) {
 				im.Company = strings.Trim(cleanText(line[:m[3]]), " ,")
 				im.LegalForm = strings.Join(strings.Fields(line[m[2]:m[3]]), " ")
+				companyLine = i
 			}
 		}
 		if im.Postcode == "" {
 			if m := postcodeRe.FindStringSubmatch(line); m != nil {
 				im.Postcode, im.City = m[1], strings.TrimSpace(m[2])
+			} else if lonePostcode.MatchString(line) && i+1 < len(lines) {
+				// The postcode on a line of its own, the city on the next.
+				if m := postcodeRe.FindStringSubmatch(line + " " + strings.TrimSpace(lines[i+1])); m != nil {
+					im.Postcode, im.City = m[1], strings.TrimSpace(m[2])
+				}
 			}
 		}
 		m := directorLabel.FindStringSubmatch(line)
@@ -202,7 +249,65 @@ func ParseImprint(text string) Imprint {
 			}
 		}
 	}
+	// Someone who runs it alone often names only themselves, after
+	// "Angaben gemäß § 5" or as the one who publishes the site, without a
+	// word like Inhaber. When the imprint names nobody else, that person
+	// runs it. A company with a legal form named only after them belongs
+	// to someone else, like the insurer or the web host.
+	if len(im.Directors) == 0 {
+		if name, at := ownerAfterHeading(lines); name != "" && (companyLine < 0 || companyLine > at) {
+			im.Directors, im.Label = []string{name}, "owner"
+			im.Company, im.LegalForm = "", ""
+		}
+	}
 	return im
+}
+
+var (
+	lonePostcode = regexp.MustCompile(`^\d{5}$`)
+	// ownerHeading opens the part of an imprint that says who is behind
+	// the site.
+	ownerHeading = regexp.MustCompile(`(?i)^(?:angaben\s+gem(?:ä|ae)(?:ß|ss)\s*§\s*5|informationen\s+gem(?:ä|ae)(?:ß|ss)\s*§\s*5|herausgeber(?:in)?\b|anbieter(?:in)?\b|diensteanbieter(?:in)?\b|betreiber(?:in)?\b|verantwortlich(?:e)?\s+(?:für|fuer)\s+(?:den\s+)?inhalt)`)
+	// businessWords mark a line that names a business, not a person, like
+	// "Bewegungsraum Muster".
+	businessWords = regexp.MustCompile(`(?i)(?:studio|raum|praxis|coaching|yoga|akademie|academy|gym|fitness|zentrum|center|schule|school|dojo|verlag|beratung|institut|atelier|werkstatt|team|club|verein|kampfsport|training|massage|therapie|shop|laden|café|cafe|salon|agentur)`)
+)
+
+// ownerAfterHeading finds a full personal name on the heading's line or
+// one of the next few lines, before the address begins, and the line it
+// is on.
+func ownerAfterHeading(lines []string) (string, int) {
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if !ownerHeading.MatchString(line) {
+			continue
+		}
+		type candidate struct {
+			text string
+			at   int
+		}
+		candidates := []candidate{}
+		if _, rest, ok := strings.Cut(line, ":"); ok {
+			candidates = append(candidates, candidate{rest, i})
+		}
+		for j := i + 1; j < len(lines) && j <= i+4; j++ {
+			candidates = append(candidates, candidate{lines[j], j})
+		}
+		for _, cd := range candidates {
+			c := strings.TrimSpace(cd.text)
+			if c == "" || ownerHeading.MatchString(c) {
+				continue
+			}
+			if postcodeRe.MatchString(c) || lonePostcode.MatchString(c) || businessWords.MatchString(c) || legalForm.MatchString(c) {
+				break
+			}
+			if names := directorNames(c); len(names) > 0 {
+				return names[0], cd.at
+			}
+			break
+		}
+	}
+	return "", -1
 }
 
 // directorNames reads "Die Geschäftsführer Lena Beispiel (CEO) und Tom

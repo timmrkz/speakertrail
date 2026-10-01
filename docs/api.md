@@ -64,9 +64,18 @@ All parameters are optional. `from` defaults to today, `to` to `from` plus the s
   "last_7_days": { "people": 41, "events": 23, "organisations": 12, "sources": 9 },
   "weekly": [ { "week_start": "2026-08-03", "people": 0, "events": 0, "sources": 0 } ],
   "cities": [ { "city": "Köln", "events": 38 } ],
-  "last_run": null
+  "last_run": null,
+  "searches": [
+    { "provider": "exa", "used": 42, "budget": 1000, "set": true },
+    { "provider": "tavily", "used": 0, "budget": 1000, "set": false },
+    { "provider": "brave", "used": 0, "budget": 1000, "set": false }
+  ]
 }
 ```
+
+`searches` holds each search provider the engine knows, with how many searches it made this month, counted from the first of the month in Berlin, and its budget from Settings, `exa_monthly_searches`, `tavily_monthly_searches` and `brave_monthly_searches`. `set` is false when the provider has no API key, and then it is never called.
+
+`fit` says what the keeps and skips teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how often a person who had it was `kept` or `skipped`, and `top` how the top 20 by fit were decided, `{"size": 20, "kept": 6, "skipped": 3, "open": 11}`.
 
 `weekly` holds the last 8 weeks, oldest first, counting new rows by their creation week. `last_run` is a run object as in `GET /api/runs`, or null.
 
@@ -113,10 +122,13 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
   "notes": "",
   "fit_evidence": "hat die Backstube Muster gegründet",
   "appearances": [{ "role": "pitch", "evidence": "...", "event": { "id": 12, "title": "...", "starts_at": "...", "city": "Köln", "venue": "Startplatz", "url": "..." } }],
-  "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true }],
+  "affiliations": [{ "organisation": "Beispiel GmbH", "role": "founder", "current": true,
+    "website": "https://beispiel.example/", "imprint_url": "https://beispiel.example/impressum" }],
   "sightings": [{ "source_id": 3, "source": "Startplatz events", "checked_at": "..." }]
 }
 ```
+
+`website` and `imprint_url` are the business's, empty when no lookup found them. They are how Tim reaches someone found through their website: the imprint gives an email address, by law. The app stores the links, never the address or a phone number. A person who runs a business alone also gets every profile its website links, like the studio's Instagram, to confirm or reject. With several people in the imprint, only profiles whose address carries the person's name are theirs.
 
 `evidence` is the passage from the event page that puts the person on stage, when the local model found them. It is empty when the rules found them.
 
@@ -141,17 +153,36 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
 }
 ```
 
-`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events. Its health counts `startups_found`.
+`health` is `ok`, `warning`, `error` or `never` (not checked yet). `last_check` is null before the first check. A source of kind `portfolio` lists startups, not events, and one of kind `directory` lists businesses run by people, like gyms or coaches. Their health counts `startups_found`, for a directory only those in NRW.
 
 A check of a portfolio stores each startup its page links to, with its website, or with the portfolio's own page about it, and follows the list to its next pages, six pages at most. A lookup then finds the website on that page when needed, loads it, finds its imprint and stores the managing directors it names as founders, when the imprint reads like a young company: a GmbH, UG or sole trader with at most four managing directors. A startup whose site does not answer is looked up again by a later run, three times at most. Only names are taken from an imprint.
 
-`POST /api/sources` with `{"url": "...", "name": "optional", "portfolio": false}` adds a candidate source and answers it with 201. With `"portfolio": true` the page is a list of startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+A directory works the same way, with two differences. Directories are national, so only NRW counts: an entry whose postcode on the list lies outside NRW is not kept, and a lookup whose imprint gives no postcode in NRW takes nobody, noted as "outside NRW (80331 München)". And an owner, "Inhaber", is the best case, so businesses from directories are looked up before startups from portfolios. A first and last name that two imprints in the same city give is one person, who runs both businesses.
 
-`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "portfolio"}` answers the updated source. `portfolio` switches between a list of startups and a list of events, and the source is checked in the next run.
+A search, kind `search_query`, has a `query` and no `url`. Its check asks a search provider, keeps one website per host, leaves out LinkedIn, Instagram, platforms and list sites like Yelp or Eventbrite, and stores each website as a business, like a directory's entry. Only NRW counts, by the imprint's postcode. Each search goes to the provider with the largest share of its budget left, and to the next one when it fails. Once every budget is spent, or when no provider has a key, searches wait. A run takes `searches_per_run` due searches, and a search runs again after `search_check_days`. Its health counts `startups_found`, the websites it kept.
+
+`POST /api/sources` with `{"url": "...", "name": "optional", "lists": "events"}` adds a candidate source and answers it with 201. `lists` is `events`, `startups` for a portfolio or `businesses` for a directory. `"portfolio": true` still means startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
+
+`POST /api/sources` with `{"query": "BJJ Gym Köln"}` adds a search instead, a candidate source of kind `search_query`, and answers it with 201. Its name is the query unless `name` is given. A search that is already a source answers 409, whatever its case.
+
+`PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "lists"}` answers the updated source. `lists` switches what the page is read as, and the source is checked in the next run. A search has no page, so `lists` on a search answers 400.
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
 
-A person in `GET /api/people` carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
+A person in `GET /api/people` carries the fit rubric's verdict, see [search-strategy.md](search-strategy.md). `signals` lists what speaks for and against a fit, those for first, each with the passage that shows it and where the passage comes from: `title`, `event page`, `event`, `imprint`, `lookup`, `portfolio`, `about page` or `model`. A lookup reads the website's about page, "Über mich" or "Über uns", for what it says about the people the imprint names. A passage with an email address or a phone number is never kept. `fit_score` is the number of signals for, less those against. A claim without a passage does not count.
+
+```json
+{ "fit_score": 1, "signals": [
+  { "key": "works_with_people", "label": "Works with people", "for": true, "passage": "Yoga-Lehrerin, Studio Beispiel", "found_in": "title" },
+  { "key": "owner_operator", "label": "Runs it themselves", "for": true, "passage": "Inhaberin des Studios", "found_in": "model" },
+  { "key": "backed", "label": "Backed by a startup programme", "for": false, "passage": "In the portfolio of Beispiel Hub", "found_in": "portfolio" } ] }
+```
+
+`decision` is `kept`, `skipped`, or empty when Tim has not decided. `PATCH /api/people/{id}` with `{"decision": "kept"}` keeps a person, `"skipped"` skips them and `""` undoes either. Each decision is recorded with the signals the person had then, and still counts after a skipped person is deleted. Skipped people come last in `fit` order and are not among the good fits.
+
+`sort` is `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
+
+A person also carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
 
 `GET /api/runs` answers the last 50 runs:
 
@@ -159,14 +190,17 @@ A person in `GET /api/people` carries `activity`, what the last lookup saw of th
 {
   "runs": [
     {
-      "id": 5, "kind": "nightly", "started_at": "...", "finished_at": "...",
-      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "startups_looked_up": 10, "people_new": 41, "errors": 3
+      "id": 5, "kind": "nightly", "state": "finished", "started_at": "...", "finished_at": "...",
+      "sources_checked": 42, "events_found": 180, "events_new": 23, "pages_read": 30, "reads_failed": 2,
+      "startups_looked_up": 10, "lookups_failed": 1, "people_new": 41, "fits_new": 6, "errors": 3
     }
   ]
 }
 ```
 
-`pages_read` counts the event pages the local model read in the run, `startups_looked_up` the startups whose imprint it looked up, and `people_new` includes the people both found. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
+`pages_read` counts the event pages the local model read in the run, `startups_looked_up` the startups whose imprint it looked up, and `people_new` includes the people both found. `fits_new` counts the new people who fit, like founders. `errors` counts the checks that failed, `reads_failed` and `lookups_failed` the reads and lookups.
+
+`state` is the run's true state: `going`, `finished`, `stopped` by hand, or `interrupted` when the app stopped under it and the run ended as the app started again. A nightly run cut short, like `make crawl` stopped with Ctrl-C, is `stopped`. `kind` is `nightly`, `manual` for a run started by hand, or `check` for Check now. `finished_at` is null while the run is going. A run that `serve` works on records no end of its own, so it counts as finished once none of its checks wait any more.
 
 `POST /api/runs` starts a run by hand: every due source, as the nightly run would check them. The worker in `serve` works on it. It answers 202 with `{"run_id": 8, "started": true}`, or with the run still going and `"started": false`.
 
@@ -185,9 +219,19 @@ While a run is going, it carries `progress`, and is null otherwise:
 
 When the app starts, runs it was working on when it stopped end, and their work does not come back by itself. A run drops checks, reads and lookups left over from earlier runs. An event page whose read failed three times is not read again.
 
-`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks, reads and lookups are dropped, and what is running finishes. A run that already ended answers 409.
+`POST /api/runs/{id}/stop` stops a run by hand and answers 204. Its queued checks, reads and lookups are dropped, and what is running finishes but queues nothing more. A run that already ended answers 409.
 
-`GET /api/runs/{id}` answers `{"run": {...}, "checks": [...]}`, where each check is:
+`GET /api/runs/{id}` answers `{"run": {...}, "checks": [...], "failures": [...]}`. Each failure says in plain words what went wrong, one per source for checks and one per reason for reads and lookups:
+
+```json
+{ "what": "check", "source": { "id": 3, "name": "Startplatz events", "url": "...", "status": "active" },
+  "reason": "The site did not answer in time", "action": "check", "count": 1,
+  "detail": "get https://...: context deadline exceeded" }
+```
+
+`what` is `check`, `read` or `lookup`, and `source` is null for reads and lookups. `action` is the one thing that fixes it: `retire` the source, `check` it again, or empty when the engine already made the source manual or retired it, or when no source is to blame, like a language model that did not answer. A source that failed its last three checks is worth retiring. `detail` is the error as recorded.
+
+Each check is:
 
 ```json
 {

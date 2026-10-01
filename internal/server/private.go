@@ -11,16 +11,25 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
+	"github.com/timmrkz/speakertrail/internal/rubric"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
 // runJSON builds one run with its totals from the checks, the reads of
-// event pages and the lookups of startups. A run started by hand or by Check now is worked on by serve,
-// which records no end. It is finished once none of its jobs wait any more.
+// event pages and the lookups of startups. A run started by hand or by
+// Check now is worked on by serve, which records no end. It is finished
+// once none of its jobs wait any more. Its state is going, finished,
+// stopped by hand, or interrupted when the app stopped under it.
 const runJSON = `json_build_object(
 	'id', r.id, 'kind', r.kind, 'started_at', r.started_at,
+	'state', CASE WHEN r.ended = 'stopped' THEN 'stopped' WHEN r.ended = 'restart' THEN 'interrupted'
+		WHEN r.finished_at IS NULL AND EXISTS (
+			SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
+		THEN 'going' ELSE 'finished' END,
 	'finished_at', COALESCE(r.finished_at, CASE WHEN NOT EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
 		THEN GREATEST(r.started_at, (SELECT max(checked_at) FROM source_checks WHERE run_id = r.id),
@@ -32,8 +41,12 @@ const runJSON = `json_build_object(
 	'people_new', (SELECT COALESCE(sum(people_new), 0) FROM source_checks WHERE run_id = r.id)
 		+ (SELECT COALESCE(sum(people_new), 0) FROM event_reads WHERE run_id = r.id)
 		+ (SELECT COALESCE(sum(people_new), 0) FROM startup_lookups WHERE run_id = r.id),
+	-- New people the run found who fit, like founders.
+	'fits_new', (SELECT count(*) FROM people WHERE first_run_id = r.id AND fit <> 'other'),
 	'pages_read', (SELECT count(*) FROM event_reads WHERE run_id = r.id),
+	'reads_failed', (SELECT count(*) FROM event_reads WHERE run_id = r.id AND error <> ''),
 	'startups_looked_up', (SELECT count(*) FROM startup_lookups WHERE run_id = r.id),
+	'lookups_failed', (SELECT count(*) FROM startup_lookups WHERE run_id = r.id AND error <> ''),
 	'progress', CASE WHEN r.finished_at IS NULL AND EXISTS (
 		SELECT 1 FROM jobs j WHERE j.status IN ('queued', 'running') AND j.key LIKE 'run:' || r.id || ':%')
 		THEN (` + progressJSON + `) END,
@@ -52,7 +65,7 @@ const progressJSON = `WITH j AS (
 	c AS (SELECT
 		count(*) FILTER (WHERE kind = 'check_source') AS checks,
 		count(*) FILTER (WHERE kind = 'check_source' AND status IN ('done', 'failed')) AS checks_done,
-		count(*) FILTER (WHERE kind = 'check_source' AND source_kind = 'portfolio' AND status NOT IN ('done', 'failed')) AS portfolios_left,
+		count(*) FILTER (WHERE kind = 'check_source' AND source_kind IN ('portfolio', 'directory', 'search_query') AND status NOT IN ('done', 'failed')) AS portfolios_left,
 		count(*) FILTER (WHERE kind = 'read_event') AS reads,
 		count(*) FILTER (WHERE kind = 'read_event' AND status IN ('done', 'failed')) AS reads_done,
 		count(*) FILTER (WHERE kind = 'look_up_startup') AS lookups,
@@ -66,7 +79,8 @@ const progressJSON = `WITH j AS (
 		LEAST(COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'event_pages_per_check'), 3),
 			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > now() - interval '14 days')::numeric
 				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > now() - interval '14 days'), 0), 0)) AS reads_per_check,
-		-- Each portfolio check queues up to this many lookups.
+		-- Each check of a portfolio, a directory or a search queues up to
+		-- this many lookups.
 		COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'startups_per_run'), 10) AS lookups_per_portfolio),
 	expect AS (SELECT
 		GREATEST(c.reads, c.reads + round((c.checks - c.checks_done) * speed.reads_per_check)) AS reads,
@@ -92,6 +106,20 @@ const progressJSON = `WITH j AS (
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	now := s.opts.Now()
+	searches := s.opts.Searches
+	if searches == nil {
+		searches = &search.Pool{DB: s.opts.Pool, Now: s.opts.Now}
+	}
+	usage, err := searches.Usage(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	usageJSON, err := json.Marshal(usage)
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
 	s.sendQuery(w, r, http.StatusOK, `
 		WITH weeks AS (
 			SELECT generate_series(date_trunc('week', ($1::timestamptz) AT TIME ZONE 'Europe/Berlin') - interval '7 weeks',
@@ -123,8 +151,10 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 			'cities', (SELECT COALESCE(json_agg(json_build_object('city', city, 'events', n) ORDER BY n DESC, city), '[]') FROM (
 				SELECT city, count(*) AS n FROM events WHERE starts_at >= $2 AND fit = 'kept' AND city <> ''
 				GROUP BY city ORDER BY n DESC, city LIMIT 12) c),
-			'last_run', (SELECT `+runJSON+` FROM runs r ORDER BY r.started_at DESC LIMIT 1))`,
-		now, now.Add(-12*time.Hour), now.Add(-7*24*time.Hour))
+			'last_run', (SELECT `+runJSON+` FROM runs r ORDER BY r.started_at DESC LIMIT 1),
+			'fit', `+fitJSON+`,
+			'searches', $4::json)`,
+		now, now.Add(-12*time.Hour), now.Add(-7*24*time.Hour), string(usageJSON))
 }
 
 func (s *Server) events(w http.ResponseWriter, r *http.Request) {
@@ -200,9 +230,17 @@ func (s *Server) patchEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 // personJSON builds the list fields of a person.
-const personJSON = `json_build_object(
+var personJSON = `json_build_object(
 	'id', p.id, 'name', p.full_name, 'known_as', p.known_as, 'headline', p.headline, 'city', p.city, 'fit', p.fit,
 	'first_seen', p.created_at,
+	-- The fit rubric: its signals for first, each with the passage that
+	-- shows it, and the score they add up to.
+	'fit_score', p.fit_score,
+	-- Kept to contact, skipped, or not decided yet.
+	'decision', CASE p.podcast_status WHEN 'new' THEN '' WHEN 'known' THEN '' WHEN 'skipped' THEN 'skipped' ELSE 'kept' END,
+	'signals', (SELECT COALESCE(json_agg(json_build_object('key', s.signal, 'label', s.label, 'for', s.is_for,
+			'passage', s.passage, 'found_in', s.found_in) ORDER BY s.is_for DESC, ` + signalRank + `), '[]')
+		FROM person_signals s WHERE s.person_id = p.id),
 	'appearances', (SELECT count(*) FROM appearances WHERE person_id = p.id),
 	'next_appearance', (SELECT json_build_object('event_id', e.id, 'title', e.title, 'starts_at', e.starts_at, 'city', e.city, 'role', a.role)
 		FROM appearances a JOIN events e ON e.id = a.event_id
@@ -213,6 +251,15 @@ const personJSON = `json_build_object(
 		FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
 		WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''
 		ORDER BY ` + activityRank + `, o.last_sign_at DESC NULLS LAST LIMIT 1))`
+
+// signalRank keeps the rubric's own order of signals.
+var signalRank = func() string {
+	keys := make([]string, len(rubric.Defs))
+	for i, d := range rubric.Defs {
+		keys[i] = "'" + d.Key + "'"
+	}
+	return "array_position(ARRAY[" + strings.Join(keys, ", ") + "], s.signal)"
+}()
 
 // activityRank orders what a lookup says about a startup, the most alive
 // first.
@@ -225,9 +272,12 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"next": "next_start NULLS LAST, activity_rank, p.full_name",
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
+		// The best fits first: most signals for, fewest against. Among the
+		// same, the newest. The skipped come last.
+		"fit": "p.podcast_status = 'skipped', p.fit_score DESC, p.created_at DESC, p.id DESC",
 	}[q.Get("sort")]
 	if order == "" {
-		fail(w, http.StatusBadRequest, "sort must be next, new or name")
+		fail(w, http.StatusBadRequest, "sort must be next, new, name or fit")
 		return
 	}
 	filter := map[string]string{
@@ -236,9 +286,10 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"upcoming": "next_start IS NOT NULL",
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
 		"founder":  "p.fit = 'founder'",
+		"fits":     "p.fit_score > 0 AND p.podcast_status <> 'skipped'",
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, upcoming, profile or founder")
+		fail(w, http.StatusBadRequest, "filter must be all, fits, upcoming, profile or founder")
 		return
 	}
 	// counts says how many people each filter shows for the same search, so
@@ -258,6 +309,7 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 			'counts', (SELECT json_build_object(
 				'all', count(*),
 				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
+				'fits', count(*) FILTER (WHERE p.fit_score > 0 AND p.podcast_status <> 'skipped'),
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,
@@ -274,7 +326,8 @@ func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
 					'url', e.canonical_url)) ORDER BY e.starts_at DESC), '[]')
 				FROM appearances a JOIN events e ON e.id = a.event_id LEFT JOIN organisations v ON v.id = e.venue_id
 				WHERE a.person_id = p.id),
-			'affiliations', (SELECT COALESCE(jsonb_agg(jsonb_build_object('organisation', o.name, 'role', af.role, 'current', af.is_current) ORDER BY o.name), '[]')
+			'affiliations', (SELECT COALESCE(jsonb_agg(jsonb_build_object('organisation', o.name, 'role', af.role, 'current', af.is_current,
+					'website', o.website, 'imprint_url', COALESCE(o.imprint_url, '')) ORDER BY o.name), '[]')
 				FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id),
 			'sightings', (SELECT COALESCE(jsonb_agg(jsonb_build_object('source_id', x.id, 'source', x.name, 'checked_at', x.last) ORDER BY x.last DESC), '[]')
 				FROM (SELECT s.id, s.name, max(si.checked_at) AS last FROM sightings si JOIN sources s ON s.id = si.source_id
@@ -296,9 +349,26 @@ func (s *Server) patchPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Notes *string `json:"notes"`
+		// Decision is kept, skipped, or empty to undo either.
+		Decision *string `json:"decision"`
 	}
 	if !decode(w, r, &body) {
 		return
+	}
+	if body.Decision != nil {
+		if *body.Decision != "" && *body.Decision != "kept" && *body.Decision != "skipped" {
+			fail(w, http.StatusBadRequest, "decision must be kept, skipped or empty")
+			return
+		}
+		found, err := s.decide(r.Context(), id, *body.Decision)
+		if err != nil {
+			s.internal(w, r, err)
+			return
+		}
+		if !found {
+			fail(w, http.StatusNotFound, "Not found")
+			return
+		}
 	}
 	if body.Notes != nil {
 		tag, err := s.opts.Pool.Exec(r.Context(), `UPDATE people SET notes = $2, updated_at = now() WHERE id = $1`, id, *body.Notes)
@@ -361,21 +431,22 @@ const sourceJSON = `json_build_object(
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.found = 0 THEN 'The last check found no ' || CASE WHEN s.kind = 'portfolio' THEN 'startups' ELSE 'events' END
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' ELSE 'events' END
 		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.found || CASE WHEN s.kind = 'portfolio' THEN ' startups' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
+			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
 		(SELECT 'Linked from ' || name FROM sources x WHERE x.id = s.discovered_from_source_id),
 		NULLIF(s.discovered_note, '')))`
 
-// A check found events, or startups when the source is a portfolio.
+// A check found events, or startups and businesses when the source is a
+// portfolio, a directory or a search.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
 	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
-		SELECT CASE WHEN s.kind = 'portfolio' THEN c.startups_found ELSE c.events_found END AS found
+		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
@@ -386,7 +457,7 @@ func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
 			ORDER BY array_position(ARRAY['active','probation','candidate','manual','retired'], s.status), s.points DESC, s.name), '[]'))
 		`+sourceFrom+`
 		WHERE ($1 = '' OR s.status = $1)
-		  AND ($2 = '' OR s.name ILIKE '%' || $2 || '%' OR s.url ILIKE '%' || $2 || '%' OR s.city ILIKE '%' || $2 || '%' OR s.notes ILIKE '%' || $2 || '%')`,
+		  AND ($2 = '' OR s.name ILIKE '%' || $2 || '%' OR s.url ILIKE '%' || $2 || '%' OR s.query ILIKE '%' || $2 || '%' OR s.city ILIKE '%' || $2 || '%' OR s.notes ILIKE '%' || $2 || '%')`,
 		q.Get("status"), likeSafe(q.Get("q")))
 }
 
@@ -394,14 +465,36 @@ func (s *Server) sendSource(w http.ResponseWriter, r *http.Request, status int, 
 	s.sendQuery(w, r, status, `SELECT `+sourceJSON+` `+sourceFrom+` WHERE s.id = $1`, id)
 }
 
+// listKinds is the source kind for what a page lists. Events take the kind
+// the address says, like a Luma calendar.
+var listKinds = map[string]string{"": "", "events": "", "startups": "portfolio", "businesses": "directory"}
+
 func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		URL  string `json:"url"`
 		Name string `json:"name"`
-		// Portfolio is true for a page that lists startups, not events.
-		Portfolio bool `json:"portfolio"`
+		// Lists says what the page lists: events, startups for a
+		// portfolio, or businesses for a directory. Portfolio true is the
+		// same as startups.
+		Lists     string `json:"lists"`
+		Portfolio bool   `json:"portfolio"`
+		// Query adds a search instead of a page: its results are
+		// businesses, each followed to its imprint.
+		Query string `json:"query"`
 	}
 	if !decode(w, r, &body) {
+		return
+	}
+	if q := strings.Join(strings.Fields(body.Query), " "); q != "" {
+		s.addSearch(w, r, q, strings.TrimSpace(body.Name))
+		return
+	}
+	if body.Portfolio && body.Lists == "" {
+		body.Lists = "startups"
+	}
+	listKind, ok := listKinds[body.Lists]
+	if !ok {
+		fail(w, http.StatusBadRequest, "lists must be events, startups or businesses")
 		return
 	}
 	u, err := url.Parse(strings.TrimSpace(body.URL))
@@ -419,8 +512,8 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	}
 	// A link to one event becomes the calendar it belongs to.
 	link := u.String()
-	kind := "portfolio"
-	if !body.Portfolio {
+	kind := listKind
+	if kind == "" {
 		if cal := pipeline.CalendarURL(link); cal != "" {
 			link = cal
 		}
@@ -446,6 +539,33 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 	s.sendSource(w, r, http.StatusCreated, id)
 }
 
+// addSearch adds a search as a source. It runs in the next run that has a
+// search provider.
+func (s *Server) addSearch(w http.ResponseWriter, r *http.Request, query, name string) {
+	if len([]rune(query)) > 200 {
+		fail(w, http.StatusBadRequest, "A search is at most 200 characters")
+		return
+	}
+	if name == "" {
+		name = query
+	}
+	var id int64
+	err := s.opts.Pool.QueryRow(r.Context(), `
+		INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
+		VALUES ($1, 'search_query', $2, 'Search', $3, 'candidate', 'Added by Tim')
+		RETURNING id`, name, query, extract.CityOf(query)).Scan(&id)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		fail(w, http.StatusConflict, "This search is already a source")
+		return
+	}
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	s.sendSource(w, r, http.StatusCreated, id)
+}
+
 func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -456,12 +576,23 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		FetchMode *string `json:"fetch_mode"`
 		Notes     *string `json:"notes"`
 		Name      *string `json:"name"`
-		// Portfolio switches between a page of startups and a page of
-		// events.
-		Portfolio *bool `json:"portfolio"`
+		// Lists switches what the page is read as: events, startups or
+		// businesses. Portfolio true is startups, false events.
+		Lists     *string `json:"lists"`
+		Portfolio *bool   `json:"portfolio"`
 	}
 	if !decode(w, r, &body) {
 		return
+	}
+	if body.Portfolio != nil && body.Lists == nil {
+		l := map[bool]string{true: "startups", false: "events"}[*body.Portfolio]
+		body.Lists = &l
+	}
+	if body.Lists != nil {
+		if _, ok := listKinds[*body.Lists]; !ok {
+			fail(w, http.StatusBadRequest, "lists must be events, startups or businesses")
+			return
+		}
 	}
 	valid := map[string]bool{"candidate": true, "probation": true, "active": true, "retired": true, "manual": true}
 	if body.Status != nil && !valid[*body.Status] {
@@ -473,7 +604,7 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var kind *string
-	if body.Portfolio != nil {
+	if body.Lists != nil {
 		var link *string
 		err := s.opts.Pool.QueryRow(r.Context(), `SELECT url FROM sources WHERE id = $1`, id).Scan(&link)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -488,8 +619,8 @@ func (s *Server) patchSource(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusBadRequest, "Only a source with a web address can list startups")
 			return
 		}
-		k := "portfolio"
-		if !*body.Portfolio {
+		k := listKinds[*body.Lists]
+		if k == "" {
 			k = pipeline.SourceKindFor(*link)
 		}
 		kind = &k
@@ -528,7 +659,7 @@ func (s *Server) checkSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var exists bool
-	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND url IS NOT NULL)`, id).Scan(&exists); err != nil {
+	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND (url IS NOT NULL OR kind = 'search_query'))`, id).Scan(&exists); err != nil {
 		s.internal(w, r, err)
 		return
 	}
@@ -592,7 +723,8 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.sendQuery(w, r, http.StatusOK, `
+	var raw []byte
+	err := s.opts.Pool.QueryRow(r.Context(), `
 		SELECT json_build_object('run', `+runJSON+`,
 			'checks', (SELECT COALESCE(json_agg(json_build_object(
 				'id', c.id, 'source', json_build_object('id', src.id, 'name', src.name, 'url', src.url),
@@ -602,7 +734,25 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 				'fetch_id', (SELECT f.id FROM fetches f WHERE f.id = c.fetch_id))
 				ORDER BY (c.error <> '') DESC, c.events_found DESC, src.name), '[]')
 				FROM source_checks c JOIN sources src ON src.id = c.source_id WHERE c.run_id = r.id))
-		FROM runs r WHERE r.id = $1`, id)
+		FROM runs r WHERE r.id = $1`, id).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		fail(w, http.StatusNotFound, "Not found")
+		return
+	}
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	var out map[string]any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	if out["failures"], err = s.failuresOf(r.Context(), id); err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) fetchPart(w http.ResponseWriter, r *http.Request) {

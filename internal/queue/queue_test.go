@@ -162,6 +162,66 @@ func TestFailingJobRetriesThenStops(t *testing.T) {
 	}
 }
 
+// A job with one attempt, like every job of a run, fails at once and is not
+// retried, so the run can end. Several workers fail such jobs at the same
+// time, and one whose worker hangs is not taken over.
+func TestAJobWithOneAttemptIsNeverRetried(t *testing.T) {
+	pool := dbtest.New(t)
+	ctx := t.Context()
+	clk := newClock()
+	q := queue.New(pool, queue.Options{Now: clk.Now, Lease: time.Minute})
+
+	for i := range 12 {
+		if _, err := q.Enqueue(ctx, queue.NewJob{Kind: "check_source", Key: fmt.Sprintf("run:1:source:%d", i), MaxAttempts: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One more with the queue's default, to show the default still retries.
+	if _, err := q.Enqueue(ctx, queue.NewJob{Kind: "check_source", Key: "later"}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for {
+				j, err := q.Claim(ctx)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if j == nil {
+					return
+				}
+				if err := q.Fail(ctx, j, errors.New("boom")); err != nil {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	if n := count(t, pool, "key LIKE 'run:%' AND status = 'failed' AND attempts = 1"); n != 12 {
+		t.Errorf("%d of 12 run jobs failed after one attempt", n)
+	}
+	if n := count(t, pool, "key = 'later' AND status = 'queued'"); n != 1 {
+		t.Error("a job with the default attempts was not queued again")
+	}
+
+	// A run job whose worker hangs ends failed once its lease runs out.
+	if _, err := q.Enqueue(ctx, queue.NewJob{Kind: "read_event", Key: "run:1:read:7", MaxAttempts: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if j, _ := q.Claim(ctx); j == nil || j.Key != "run:1:read:7" || j.MaxAttempts != 1 {
+		t.Fatalf("claimed %+v", j)
+	}
+	clk.Add(2 * time.Minute)
+	if j, _ := q.Claim(ctx); j != nil && j.Key == "run:1:read:7" {
+		t.Error("a hung run job was taken over for a second attempt")
+	}
+	if n := count(t, pool, "key = 'run:1:read:7' AND status = 'failed'"); n != 1 {
+		t.Error("a hung run job did not end failed")
+	}
+}
+
 func TestExpiredLeaseIsTakenOver(t *testing.T) {
 	pool := dbtest.New(t)
 	ctx := t.Context()

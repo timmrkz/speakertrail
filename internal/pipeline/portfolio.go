@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,7 +13,9 @@ import (
 
 	"github.com/timmrkz/speakertrail/internal/extract"
 	"github.com/timmrkz/speakertrail/internal/fetch"
+	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -40,7 +43,17 @@ func (p *Pipeline) finishPortfolio(ctx context.Context, src Source, runID int64,
 	if base == "" {
 		base = src.URL
 	}
-	startups := p.portfolioStartups(ctx, page.Body, base)
+	return p.storeEntries(ctx, src, runID, cfg, p.portfolioStartups(ctx, page.Body, base), rec)
+}
+
+// storeEntries stores the startups or businesses a check found, in one
+// short transaction, records the check and queues lookups of the ones not
+// looked up yet. Portfolios, directories and searches share it.
+func (p *Pipeline) storeEntries(ctx context.Context, src Source, runID int64, cfg settings.Settings, startups []extract.Startup, rec checkRecord) error {
+	// A directory is national. An entry it places outside NRW is not kept.
+	if src.Kind == "directory" {
+		startups = slices.DeleteFunc(startups, func(s extract.Startup) bool { return s.Postcode != "" && !extract.InNRW(s.Postcode) })
+	}
 	if len(startups) > maxStartups {
 		startups = startups[:maxStartups]
 	}
@@ -140,11 +153,16 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 		status = "retired"
 	}
 	interval := cfg.Days("portfolio_check_days", 14)
+	if src.Kind == "search_query" {
+		interval = cfg.Days("search_check_days", 30)
+	}
 	if status == "retired" {
 		interval = cfg.Days("retired_recheck_days", 28)
 	}
+	// A page that needed the browser keeps needing it. A search is not
+	// fetched at all and keeps its mode.
 	newMode := src.Mode
-	if src.Mode == "auto" && found > 0 {
+	if src.Mode == "auto" && found > 0 && (mode == fetch.ModeHTTP || mode == fetch.ModeBrowser) {
 		newMode = string(mode)
 	}
 	_, err := p.Pool.Exec(ctx, `
@@ -157,17 +175,21 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 	return err
 }
 
-// unlookedStartups are startups from portfolios whose imprint was not looked
-// up yet, then those looked up longest ago, before $3, to see whether they
-// are still active. One whose site failed three times since is given up.
+// unlookedStartups are startups from portfolios and businesses from
+// directories whose imprint was not looked up yet, those from directories
+// first, because owners who run it themselves are the best case. Then
+// those looked up longest ago, before $3, to see whether they are still
+// active. One whose site failed three times since is given up.
 const unlookedStartups = `
 	SELECT o.id FROM organisations o
 	WHERE (o.looked_up_at IS NULL OR o.looked_up_at < $3) AND (o.website <> '' OR o.portfolio_page <> '')
 	  AND EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id
-		WHERE si.organisation_id = o.id AND s.kind = 'portfolio' AND ($2 = 0 OR s.id = $2))
+		WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory', 'search_query') AND ($2 = 0 OR s.id = $2))
 	  AND (SELECT count(*) FROM startup_lookups l WHERE l.organisation_id = o.id AND l.error <> ''
 		AND l.looked_up_at > COALESCE(o.looked_up_at, '-infinity')) < 3
-	ORDER BY o.looked_up_at NULLS FIRST, o.id LIMIT $1`
+	ORDER BY o.looked_up_at IS NULL DESC,
+		EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind IN ('directory', 'search_query')) DESC,
+		o.looked_up_at, o.id LIMIT $1`
 
 // relookupBefore is when a startup's last lookup is old enough for another.
 func (p *Pipeline) relookupBefore(cfg settings.Settings) time.Time {
@@ -179,6 +201,9 @@ func (p *Pipeline) relookupBefore(cfg settings.Settings) time.Time {
 func (p *Pipeline) enqueueLookUps(ctx context.Context, runID, sourceID int64, limit int) (int, error) {
 	if limit <= 0 {
 		return 0, nil
+	}
+	if ended, err := p.ended(ctx, runID); err != nil || ended {
+		return 0, err
 	}
 	cfg, err := settings.Load(ctx, p.Pool)
 	if err != nil {
@@ -194,7 +219,7 @@ func (p *Pipeline) enqueueLookUps(ctx context.Context, runID, sourceID int64, li
 	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindLookUp, Key: fmt.Sprintf("run:%d:lookup:%d", runID, id),
+			Kind: KindLookUp, Key: fmt.Sprintf("run:%d:lookup:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: LookUpPayload{OrganisationID: id, RunID: runID},
 		}); err != nil {
 			return 0, err
@@ -217,18 +242,29 @@ type lookUpRecord struct {
 	website      string
 	// profiles are links to people's own profiles found on the startup's
 	// site. Only those that carry a founder's name are kept.
-	profiles          []string
-	note, err         string
-	duration          time.Duration
-	at                time.Time
-	found, isNew      int
-	sourceID          int64
-	sourceName, name  string
+	profiles         []string
+	note, err        string
+	duration         time.Duration
+	at               time.Time
+	found, isNew     int
+	sourceID         int64
+	sourceName, name string
+	// sourceKind is portfolio, directory or search_query.
+	sourceKind        string
 	lookedUp, renamed bool
 	// activity is what the signs of life say, see organisations.activity,
 	// with lastSign the newest date the website shows.
 	activity, activityNote string
 	lastSign               *time.Time
+	// about holds what the website's about page says about each person
+	// its imprint names, by the fit rubric.
+	about map[string][]rubric.Signal
+}
+
+// AboutReader reads a website's about page for the people its imprint
+// names. *llm.Client is one.
+type AboutReader interface {
+	About(ctx context.Context, company string, names []string, text string) (map[string][]llm.Signal, error)
 }
 
 // LookUp loads a startup's website, finds its imprint and stores the
@@ -245,11 +281,11 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 	var lookedUp *time.Time
 	var portfolioPage string
 	err = p.Pool.QueryRow(ctx, `
-		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name
+		SELECT o.name, o.website, o.portfolio_page, o.looked_up_at, s.id, s.name, s.kind
 		FROM organisations o
-		JOIN LATERAL (SELECT s.id, s.name FROM sightings si JOIN sources s ON s.id = si.source_id
-			WHERE si.organisation_id = o.id AND s.kind = 'portfolio' ORDER BY si.id LIMIT 1) s ON true
-		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName)
+		JOIN LATERAL (SELECT s.id, s.name, s.kind FROM sightings si JOIN sources s ON s.id = si.source_id
+			WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory', 'search_query') ORDER BY si.id LIMIT 1) s ON true
+		WHERE o.id = $1`, orgID).Scan(&rec.name, &rec.url, &portfolioPage, &lookedUp, &rec.sourceID, &rec.sourceName, &rec.sourceKind)
 	recent := lookedUp != nil && !lookedUp.Before(p.relookupBefore(cfg))
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && (recent || rec.url == "" && portfolioPage == "")) {
 		return nil
@@ -318,6 +354,15 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		return p.finishLookUp(ctx, rec, extract.Imprint{})
 	}
 	im := extract.ParseImprint(imp.Text)
+	// A directory or a search is national, and only NRW counts, by the
+	// imprint's postcode.
+	if (rec.sourceKind == "directory" || rec.sourceKind == "search_query") && !extract.InNRW(im.Postcode) {
+		rec.note = "no postcode in the imprint"
+		if im.Postcode != "" {
+			rec.note = "outside NRW (" + strings.TrimSpace(im.Postcode+" "+im.City) + ")"
+		}
+		return p.finishLookUp(ctx, rec, im)
+	}
 	if extract.InLiquidation(imp.Text) {
 		rec.activity, rec.activityNote = "dissolved", "the imprint says the company is being wound up"
 	}
@@ -329,16 +374,47 @@ func (p *Pipeline) LookUp(ctx context.Context, orgID, runID int64) error {
 		}
 	}
 	rec.profiles = append(extract.ProfileLinks(home.Body, base), extract.ProfileLinks(imp.Body, rec.imprint)...)
-	// The team page often links each founder's profile. It is only worth a
+	// The about or team page says who is behind the company, for the fit
+	// rubric, and often links each founder's profile. It is only worth a
 	// request when the imprint named founders.
-	if team := extract.TeamLink(home.Body, base); im.Young() && team != "" && team != rec.imprint {
-		if tp, err := p.page(ctx, team); err == nil {
-			rec.profiles = append(rec.profiles, extract.ProfileLinks(tp.Body, team)...)
+	if about := extract.AboutLink(home.Body, base); im.Young() && about != "" && about != rec.imprint {
+		if ap, err := p.page(ctx, about); err == nil {
+			rec.profiles = append(rec.profiles, extract.ProfileLinks(ap.Body, about)...)
+			rec.about = p.readAbout(ctx, im, ap.Text)
 		} else {
-			p.log().Info("a team page failed", "url", team, "error", err)
+			p.log().Info("an about page failed", "url", about, "error", err)
 		}
 	}
 	return p.finishLookUp(ctx, rec, im)
+}
+
+// readAbout finds what an about page says about each person the imprint
+// names: by the rubric's rules, and by the model where there is one. A
+// model that fails leaves the rules' signals.
+func (p *Pipeline) readAbout(ctx context.Context, im extract.Imprint, text string) map[string][]rubric.Signal {
+	out := map[string][]rubric.Signal{}
+	alone := len(im.Directors) == 1
+	for _, name := range im.Directors {
+		out[name] = rubric.About(text, name, alone)
+	}
+	ar, ok := p.Reader.(AboutReader)
+	if !ok || !p.modelPause().IsZero() {
+		return out
+	}
+	found, err := ar.About(ctx, im.Company, im.Directors, text)
+	if llm.Unavailable(err) {
+		p.pauseModel()
+	}
+	if err != nil {
+		p.log().Warn("the language model could not read an about page", "company", im.Company, "error", err)
+		return out
+	}
+	for name, signals := range found {
+		for _, s := range signals {
+			out[name] = append(out[name], rubric.Signal{Key: s.Signal, Passage: s.Passage, Where: rubric.FromModel})
+		}
+	}
+	return out
 }
 
 // signsOfLife sets how active the startup looks from the newest date its
@@ -413,6 +489,7 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 	if company == "" {
 		company = rec.name
 	}
+	var ids []int64
 	switch {
 	case rec.err != "" || rec.note != "":
 	case len(im.Directors) == 0:
@@ -423,12 +500,25 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 			rec.note += " (" + im.LegalForm + ")"
 		}
 	default:
-		label := strings.ToUpper(im.Label[:1]) + im.Label[1:]
+		label := extract.Capitalize(im.Label)
 		evidence := fmt.Sprintf("%s of %s, by its imprint. In the portfolio of %s", label, company, rec.sourceName)
+		switch rec.sourceKind {
+		case "directory":
+			evidence = fmt.Sprintf("%s of %s, by its imprint. Listed in %s", label, company, rec.sourceName)
+		case "search_query":
+			evidence = fmt.Sprintf("%s of %s, by its imprint. Found by the search %s", label, company, rec.sourceName)
+		}
+		alone := len(im.Directors) == 1
 		for _, name := range im.Directors {
-			isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence)
+			id, isNew, err := p.resolveFounder(ctx, tx, rec, name, im.City, label+", "+company, evidence, alone)
 			if err != nil {
 				return err
+			}
+			ids = append(ids, id)
+			for _, s := range rec.about[name] {
+				if err := pageSignal(ctx, tx, id, s.Key, s.Passage, s.Where, rec.at); err != nil {
+					return err
+				}
 			}
 			rec.found++
 			if isNew {
@@ -443,26 +533,45 @@ func (p *Pipeline) finishLookUp(ctx context.Context, rec lookUpRecord, im extrac
 		nullID(rec.runID), rec.orgID, rec.url, rec.imprint, rec.found, rec.isNew, rec.note, rec.err, rec.duration.Milliseconds(), rec.at); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	p.score(ctx, ids)
+	return nil
 }
 
 // resolveFounder finds the person among those who run this startup, or
-// adds them, and marks them a founder with the imprint as evidence.
-func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string) (bool, error) {
+// someone with the same full name in the same city, who then runs both, or
+// adds them. It marks them a founder with the imprint as evidence.
+func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpRecord, name, city, headline, evidence string, alone bool) (int64, bool, error) {
 	norm := extract.NormaliseName(name)
+	// Lookups run side by side. Two of them finding the same owner wait for
+	// each other here, so the second finds the person the first added.
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('person:' || $1))`, norm); err != nil {
+		return 0, false, err
+	}
 	var id int64
 	err := tx.QueryRow(ctx, `
 		SELECT p.id FROM people p JOIN affiliations af ON af.person_id = p.id
 		WHERE p.normalised_name = $1 AND af.organisation_id = $2 ORDER BY p.id LIMIT 1`, norm, rec.orgID).Scan(&id)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return false, err
+		return 0, false, err
+	}
+	// The same first and last name in the same city is the same person,
+	// found through a second business or a second website of the same one.
+	if id == 0 && strings.Contains(norm, " ") && city != "" {
+		err = tx.QueryRow(ctx, `
+			SELECT id FROM people WHERE normalised_name = $1 AND lower(city) = lower($2) ORDER BY id LIMIT 1`, norm, city).Scan(&id)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return 0, false, err
+		}
 	}
 	isNew := id == 0
 	if isNew {
 		err = tx.QueryRow(ctx, `
-			INSERT INTO people (full_name, normalised_name, city, headline, fit, fit_evidence, created_at, updated_at, status_changed_at)
-			VALUES ($1, $2, $3, $4, 'founder', $5, $6, $6, $6) RETURNING id`,
-			name, norm, city, headline, evidence, rec.at).Scan(&id)
+			INSERT INTO people (full_name, normalised_name, city, headline, fit, fit_evidence, first_run_id, created_at, updated_at, status_changed_at)
+			VALUES ($1, $2, $3, $4, 'founder', $5, $6, $7, $7, $7) RETURNING id`,
+			name, norm, city, headline, evidence, nullID(rec.runID), rec.at).Scan(&id)
 	} else {
 		_, err = tx.Exec(ctx, `
 			UPDATE people SET fit = 'founder', updated_at = $3,
@@ -470,14 +579,20 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 			WHERE id = $1`, id, evidence, rec.at)
 	}
 	if err != nil {
-		return false, err
+		return 0, false, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO affiliations (person_id, organisation_id, role) VALUES ($1, $2, 'founder') ON CONFLICT DO NOTHING`, id, rec.orgID); err != nil {
-		return false, err
+		return 0, false, err
 	}
 	// Profiles the startup's own site links under this person's name. The
-	// engine never opens them. Tim confirms or rejects each.
-	for _, l := range extract.ProfilesOf(rec.profiles, name) {
+	// engine never opens them. Tim confirms or rejects each. Someone who
+	// runs the business alone speaks for it, so every profile its site
+	// links, like the studio's Instagram, is a way to reach them.
+	links := extract.ProfilesOf(rec.profiles, name)
+	if alone {
+		links = rec.profiles
+	}
+	for _, l := range links {
 		platform, clean := ProfileOf(l)
 		if clean == "" {
 			continue
@@ -491,10 +606,10 @@ func (p *Pipeline) resolveFounder(ctx context.Context, tx pgx.Tx, rec lookUpReco
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 			ON CONFLICT (platform, url) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at`,
 			id, platform, clean, handleOf(clean), "website of "+strings.TrimSuffix(domainOf(rec.url), "/"), rec.sourceID, rec.at); err != nil {
-			return false, err
+			return 0, false, err
 		}
 	}
-	return isNew, sight(ctx, tx, rec.sourceID, rec.at, "person_id", id, isNew)
+	return id, isNew, sight(ctx, tx, rec.sourceID, rec.at, "person_id", id, isNew)
 }
 
 func nullID(id int64) *int64 {

@@ -44,8 +44,8 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			UNION ALL SELECT 'events kept, upcoming', count(*)::text FROM events WHERE fit = 'kept' AND starts_at >= now()
 			UNION ALL SELECT 'events waiting for a read', count(*)::text FROM events
 				WHERE fit = 'kept' AND starts_at >= now() AND people_read_at IS NULL AND canonical_url <> ''
-			UNION ALL SELECT 'startups from portfolios', count(*)::text FROM organisations o
-				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind = 'portfolio')
+			UNION ALL SELECT 'startups and businesses from portfolios and directories', count(*)::text FROM organisations o
+				WHERE EXISTS (SELECT 1 FROM sightings si JOIN sources s ON s.id = si.source_id WHERE si.organisation_id = o.id AND s.kind IN ('portfolio', 'directory'))
 			UNION ALL SELECT 'startups looked up', count(*)::text FROM organisations WHERE looked_up_at IS NOT NULL
 			UNION ALL (SELECT 'startups ' || activity, count(*)::text FROM organisations WHERE activity <> '' GROUP BY activity ORDER BY activity)
 			UNION ALL SELECT 'people', count(*)::text FROM people
@@ -85,6 +85,15 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 			SELECT s.status || ': ' || s.name || ' (' || COALESCE(s.url, '') || ')',
 				COALESCE((SELECT 'linked from ' || x.name FROM sources x WHERE x.id = s.discovered_from_source_id), NULLIF(s.discovered_note, ''), 'added')
 			FROM sources s WHERE s.created_at > now() - interval '3 days' ORDER BY s.created_at DESC LIMIT 30`},
+		{"Fit: people by score", `
+			SELECT 'score ' || fit_score, count(*)::text FROM people GROUP BY fit_score ORDER BY fit_score DESC`},
+		{"Fit: the top 20 by score", `
+			SELECT 'kept, skipped, not decided', count(*) FILTER (WHERE podcast_status NOT IN ('new', 'known', 'skipped')) || ', ' ||
+				count(*) FILTER (WHERE podcast_status = 'skipped') || ', ' || count(*) FILTER (WHERE podcast_status IN ('new', 'known'))
+			FROM (SELECT podcast_status FROM people ORDER BY fit_score DESC, created_at DESC, id DESC LIMIT 20) t`},
+		{"Fit: keeps and skips per signal", `
+			SELECT s, count(*) FILTER (WHERE decision = 'kept') || ' kept, ' || count(*) FILTER (WHERE decision = 'skipped') || ' skipped'
+			FROM fit_decisions, unnest(signals) s GROUP BY s ORDER BY count(*) DESC, s`},
 		{"Slowest reads in the last 3 days", `
 			SELECT url, (duration_ms / 1000) || ' s, ' || people_found || ' people' FROM event_reads
 			WHERE error = '' AND read_at > now() - interval '3 days' ORDER BY duration_ms DESC LIMIT 10`},

@@ -152,7 +152,7 @@ func (c *Client) chatJSON(ctx context.Context, system, user, name string, schema
 	if res.StatusCode != http.StatusOK {
 		msg := strings.TrimSpace(string(raw))
 		if len(msg) > 300 {
-			msg = msg[:300]
+			msg = strings.ToValidUTF8(msg[:300], "")
 		}
 		if res.StatusCode == http.StatusNotFound && strings.Contains(strings.ToLower(msg), "model") {
 			return 0, fmt.Errorf("the model %s is not on this machine yet. Get it with: docker model pull %s", c.Model, c.Model)

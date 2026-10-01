@@ -6,7 +6,8 @@
 #   docker compose run --rm nightly   run one crawl now
 #
 # .env next to this file holds UI_PASSWORD_HASH and SESSION_SECRET. make
-# run writes it the first time.
+# run writes it the first time. The search keys, EXA_API_KEY,
+# TAVILY_API_KEY and BRAVE_SEARCH_API_KEY, go there too when there are any.
 
 name: speakertrail
 
@@ -35,6 +36,9 @@ services:
       DATABASE_URL: *database
       UI_PASSWORD_HASH: ${UI_PASSWORD_HASH:-}
       SESSION_SECRET: ${SESSION_SECRET:-}
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
       # Docker Model Runner, the language model on the Mac's GPU.
       LLM_URL: http://model-runner.docker.internal/engines/v1
       LLM_MODEL: ${LLM_MODEL:-ai/gemma3:12b-q4_K_M}
@@ -51,6 +55,9 @@ services:
     command: ["nightly"]
     environment:
       DATABASE_URL: *database
+      EXA_API_KEY: ${EXA_API_KEY:-}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
       LLM_URL: http://model-runner.docker.internal/engines/v1
       LLM_MODEL: ${LLM_MODEL:-ai/gemma3:12b-q4_K_M}
     depends_on:

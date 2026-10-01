@@ -4,14 +4,28 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
-// Startup is a company a portfolio links to: its website, or the page
-// about it on the portfolio's own site, which links to the website.
+// Startup is a company a portfolio or a directory links to: its website,
+// or the page about it on the list's own site, which links to the
+// website.
 type Startup struct {
 	Name    string
 	Website string
 	Page    string
+	// Postcode is the one the list shows next to the entry, if any.
+	Postcode string
+}
+
+// postcodeOf finds the postcode in the text around an entry, when there
+// is exactly one.
+func postcodeOf(context string) string {
+	if m := postcodeRe.FindAllStringSubmatch(context, 2); len(m) == 1 {
+		return m[0][1]
+	}
+	return ""
 }
 
 // notStartupSites are platforms, networks and tools a portfolio links to
@@ -25,6 +39,12 @@ var notStartupSites = []string{
 	"soundcloud.com", "flickr.com", "pinterest.com", "threads.net", "bsky.app", "mastodon.social", "discord.gg",
 	"discord.com", "slack.com", "notion.site", "gstatic.com", "googleapis.com", "cookiebot.com", "usercentrics.eu",
 	"europa.eu", "bund.de", "nrw.de", "wordpress.org", "wordpress.com", "wix.com", "jimdo.com", "squarespace.com",
+}
+
+// IsPlatform says whether a host is a platform, network or tool, not
+// anybody's own website, like facebook.com or youtube.com.
+func IsPlatform(host string) bool {
+	return hostIs(strings.ToLower(host), notStartupSites...)
 }
 
 // genericText is link text that says nothing about the company.
@@ -84,7 +104,7 @@ func Portfolio(body, base string) PortfolioPage {
 			continue
 		}
 		seen[site] = true
-		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, host), Website: u.Scheme + "://" + u.Host + "/"})
+		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, host), Website: u.Scheme + "://" + u.Host + "/", Postcode: postcodeOf(l.Context)})
 	}
 	// Pages about single startups share one parent path, like "/startups/".
 	// The parent with the most of them wins, when it says so or has many.
@@ -115,7 +135,7 @@ func Portfolio(body, base string) PortfolioPage {
 		}
 		seen[page] = true
 		slug := strings.Trim(u.Path[strings.LastIndex(strings.TrimSuffix(u.Path, "/"), "/")+1:], "/")
-		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, slug), Page: page})
+		out.Startups = append(out.Startups, Startup{Name: startupName(l.Text, slug), Page: page, Postcode: postcodeOf(l.Context)})
 	}
 	return out
 }
@@ -195,9 +215,19 @@ func startupName(text, host string) string {
 	label := strings.Split(host, ".")[0]
 	words := strings.FieldsFunc(label, func(r rune) bool { return r == '-' || r == '_' })
 	for i, w := range words {
-		words[i] = strings.ToUpper(w[:1]) + w[1:]
+		words[i] = Capitalize(w)
 	}
 	return strings.Join(words, " ")
+}
+
+// Capitalize makes the first letter upper case. It works on letters, not
+// bytes, so "ärzte" becomes "Ärzte" and never a broken character.
+func Capitalize(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if size == 0 || r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // siteOf is a host's website without subdomains: "blog.beispiel.de" is

@@ -25,6 +25,8 @@ type ResolveStats struct {
 	KeptWithPeople int
 	PeopleFound    int
 	PeopleNew      int
+	// People are the ones the check found, for the rubric to score.
+	People []int64
 }
 
 // Source is the part of a source row the pipeline needs.
@@ -40,6 +42,8 @@ type Source struct {
 	Empty    int
 	Changed  time.Time
 	Category string
+	// Query is what a search source searches for.
+	Query string
 }
 
 // Resolver writes extracted events into the database, merging them with
@@ -49,6 +53,9 @@ type Resolver struct {
 	Rules FitRules
 	// Now is the check time. Tests set it.
 	Now func() time.Time
+	// RunID is the run the work belongs to, which new people remember.
+	// Zero outside a run.
+	RunID int64
 }
 
 // Resolve stores the events of one check. Each event is written in its own
@@ -71,9 +78,10 @@ func (r *Resolver) Resolve(ctx context.Context, src Source, events []extract.Eve
 		st.EventsFound++
 		var kept, isNew bool
 		var people, newPeople int
+		var ids []int64
 		err := pgx.BeginFunc(ctx, r.Pool, func(tx pgx.Tx) error {
 			var err error
-			kept, isNew, people, newPeople, err = r.resolveEvent(ctx, tx, src, e, now)
+			kept, isNew, people, newPeople, ids, err = r.resolveEvent(ctx, tx, src, e, now)
 			return err
 		})
 		if err != nil {
@@ -90,6 +98,7 @@ func (r *Resolver) Resolve(ctx context.Context, src Source, events []extract.Eve
 		}
 		st.PeopleFound += people
 		st.PeopleNew += newPeople
+		st.People = append(st.People, ids...)
 	}
 	return st, nil
 }
@@ -101,7 +110,7 @@ func NormaliseTitle(t string) string {
 	return strings.Trim(nonAlnum.ReplaceAllString(strings.ToLower(t), " "), " ")
 }
 
-func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e extract.Event, now time.Time) (kept, isNew bool, people, newPeople int, err error) {
+func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e extract.Event, now time.Time) (kept, isNew bool, people, newPeople int, ids []int64, err error) {
 	norm := NormaliseTitle(e.Title)
 	kept, reason := r.Rules.Fit(e)
 	fit := "dropped"
@@ -195,6 +204,7 @@ func (r *Resolver) resolveEvent(ctx context.Context, tx pgx.Tx, src Source, e ex
 			return
 		}
 		people++
+		ids = append(ids, pid)
 		if pNew {
 			newPeople++
 		}
@@ -381,9 +391,9 @@ func (r *Resolver) resolvePerson(ctx context.Context, tx pgx.Tx, eventID int64, 
 	isNew := id == 0
 	if isNew {
 		err = tx.QueryRow(ctx, `
-			INSERT INTO people (full_name, normalised_name, city, headline, created_at, updated_at, status_changed_at)
-			VALUES ($1, $2, $3, $4, $5, $5, $5) RETURNING id`,
-			p.Name, norm, city, p.Affiliation, now).Scan(&id)
+			INSERT INTO people (full_name, normalised_name, city, headline, first_run_id, created_at, updated_at, status_changed_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $6, $6) RETURNING id`,
+			p.Name, norm, city, p.Affiliation, nullID(r.RunID), now).Scan(&id)
 		if err != nil {
 			return 0, false, err
 		}

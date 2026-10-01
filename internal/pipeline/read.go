@@ -14,6 +14,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/fetch"
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
@@ -48,6 +49,9 @@ func (p *Pipeline) enqueueReads(ctx context.Context, runID, sourceID int64, limi
 	if p.Reader == nil || limit <= 0 {
 		return 0, nil
 	}
+	if ended, err := p.ended(ctx, runID); err != nil || ended {
+		return 0, err
+	}
 	sql := unreadEvents
 	args := []any{p.now(), limit}
 	if sourceID != 0 {
@@ -64,7 +68,7 @@ func (p *Pipeline) enqueueReads(ctx context.Context, runID, sourceID int64, limi
 	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindReadEvent, Key: fmt.Sprintf("run:%d:read:%d", runID, id),
+			Kind: KindReadEvent, Key: fmt.Sprintf("run:%d:read:%d", runID, id), MaxAttempts: runAttempts,
 			Payload: ReadPayload{EventID: id, RunID: runID},
 		}); err != nil {
 			return 0, err
@@ -169,7 +173,8 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 	if err := tx.QueryRow(ctx, `SELECT city FROM events WHERE id = $1 FOR UPDATE`, rec.eventID).Scan(&city); err != nil {
 		return err
 	}
-	r := &Resolver{Pool: p.Pool, Now: p.now}
+	r := &Resolver{Pool: p.Pool, Now: p.now, RunID: rec.runID}
+	var ids []int64
 	for _, person := range people {
 		pid, isNew, err := r.resolvePerson(ctx, tx, rec.eventID, city,
 			extract.Person{Name: person.Name, Role: person.Role, Affiliation: person.Affiliation}, rec.url, rec.at)
@@ -185,6 +190,13 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 				return err
 			}
 		}
+		// What the model says about the person, for the rubric.
+		for _, s := range person.Signals {
+			if err := pageSignal(ctx, tx, pid, s.Signal, s.Passage, rubric.FromModel, rec.at); err != nil {
+				return err
+			}
+		}
+		ids = append(ids, pid)
 		if err := sight(ctx, tx, sourceID, rec.at, "person_id", pid, isNew); err != nil {
 			return err
 		}
@@ -199,7 +211,11 @@ func (p *Pipeline) finishRead(ctx context.Context, rec readRecord, people []llm.
 	if err := p.recordRead(ctx, tx, rec); err != nil {
 		return err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	p.score(ctx, ids)
+	return nil
 }
 
 // markFounder records that the page calls the person a founder, with the

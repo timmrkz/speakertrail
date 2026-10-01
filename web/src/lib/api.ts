@@ -16,11 +16,15 @@ export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio' | 'directory'
+// What a source's page lists: events, startups for a portfolio, or
+// businesses run by people for a directory.
+export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
-export type PeopleSort = 'next' | 'new' | 'name'
-export type PeopleFilter = 'all' | 'upcoming' | 'profile' | 'founder'
+export type Decision = '' | 'kept' | 'skipped'
+export type PeopleSort = 'new' | 'fit' | 'next' | 'name'
+export type PeopleFilter = 'all' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -99,6 +103,23 @@ export interface Stats {
   weekly: { week_start: string; people: number; events: number; sources: number }[]
   cities: { city: string; events: number }[]
   last_run: Run | null
+  // What Tim's keeps and skips teach the fit rubric: for every signal, how
+  // often a person with it was kept or skipped, and how the top 20 by fit
+  // were decided.
+  fit: {
+    signals: { key: string; label: string; for: boolean; kept: number; skipped: number }[]
+    top: { size: number; kept: number; skipped: number; open: number }
+  }
+  // Each search provider's budget and how much of it this month has spent.
+  // A provider without a key is never called.
+  searches: SearchUse[]
+}
+
+export interface SearchUse {
+  provider: string
+  used: number
+  budget: number
+  set: boolean
 }
 
 export interface Profile {
@@ -116,6 +137,17 @@ export interface NextAppearance {
   role: string
 }
 
+// One reason for or against a fit, by the fit rubric, with the passage
+// that shows it. found_in: title, event page, event, imprint, lookup,
+// portfolio, about page or model.
+export interface FitSignal {
+  key: string
+  label: string
+  for: boolean
+  passage: string
+  found_in: string
+}
+
 export interface Person {
   id: number
   name: string
@@ -124,6 +156,11 @@ export interface Person {
   city: string
   fit: PersonFit
   first_seen: string
+  // The signals for less those against. The signals are the reasons.
+  fit_score: number
+  signals: FitSignal[]
+  // Kept to contact, skipped, or not decided yet.
+  decision: Decision
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]
@@ -146,7 +183,10 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   notes: string
   // Where an event page says the person founded or runs something.
   fit_evidence: string
-  affiliations: { organisation: string; role: string; current: boolean }[]
+  // Each business the person runs or belongs to, with its website and its
+  // imprint when a lookup found them. The imprint gives an email address,
+  // by law. The app stores the link, never the address.
+  affiliations: { organisation: string; role: string; current: boolean; website: string; imprint_url: string }[]
   sightings: { source_id: number; source: string; checked_at: string }[]
 }
 
@@ -158,7 +198,8 @@ export interface PeopleQuery {
 
 export interface LastCheck {
   events_found: number
-  // For a portfolio: the startups its page lists.
+  // For a portfolio or a directory: the startups or businesses its page
+  // lists, in NRW for a directory.
   startups_found: number
   http_status: number
   mode: string
@@ -187,8 +228,8 @@ export interface Source {
   discovered_from: string
 }
 
-// portfolio switches a source between a page of startups and a page of events.
-export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { portfolio?: boolean }
+// lists switches what a source's page is read as.
+export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { lists?: SourceLists }
 
 export interface RunProgress {
   checks: number
@@ -211,14 +252,24 @@ export interface RunProgress {
   seconds_left: number | null
 }
 
+// A run's true state. Interrupted: the app stopped under it, and it ended
+// when the app started again.
+export type RunState = 'going' | 'finished' | 'stopped' | 'interrupted'
+
 export interface Run {
   id: number
   // nightly, manual for a run started by hand, check for Check now
   kind: 'nightly' | 'manual' | 'check'
-  // Event pages the language model read in this run.
+  state: RunState
+  // Event pages the language model read in this run, and how many of
+  // those reads failed.
   pages_read: number
-  // Startups whose imprint this run looked up.
+  reads_failed: number
+  // Startups whose imprint this run looked up, and the lookups that failed.
   startups_looked_up: number
+  lookups_failed: number
+  // New people who fit, like founders.
+  fits_new: number
   // How far a going run is. Null once it has ended.
   progress: RunProgress | null
   started_at: string
@@ -228,6 +279,17 @@ export interface Run {
   events_new: number
   people_new: number
   errors: number
+}
+
+// What failed in a run, in plain words. One per source for checks, one per
+// reason for reads and lookups. action is the one thing that fixes it.
+export interface RunFailure {
+  what: 'check' | 'read' | 'lookup'
+  source: (SourceRef & { status: SourceStatus }) | null
+  reason: string
+  action: '' | 'retire' | 'check'
+  count: number
+  detail: string
 }
 
 export interface Check {
@@ -324,18 +386,19 @@ export const api = {
   patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
-  patchPerson: (id: number, patch: { notes: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
+  patchPerson: (id: number, patch: { notes?: string; decision?: Decision }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
-  addSource: (url: string, name?: string, portfolio = false) =>
-    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), ...(portfolio ? { portfolio } : {}) }),
+  addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
+    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), lists }),
+  addSearch: (query: string) => request<Source>('POST', '/api/sources', { query }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
-  run: (id: number) => request<{ run: Run; checks: Check[] }>('GET', `/api/runs/${id}`),
+  run: (id: number) => request<{ run: Run; checks: Check[]; failures: RunFailure[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
 }

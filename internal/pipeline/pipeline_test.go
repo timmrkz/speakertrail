@@ -19,6 +19,8 @@ import (
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/search"
+	"github.com/timmrkz/speakertrail/internal/settings"
 )
 
 // The test world is late September 2026, like the first run.
@@ -363,6 +365,11 @@ func TestEnqueueDue(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'check_source'"); c != 7 {
 		t.Errorf("%d check jobs after queueing twice", c)
 	}
+	// A run's checks are tried once, so a failing one never keeps the run
+	// waiting for a retry.
+	if c := e.count(t, "jobs WHERE kind = 'check_source' AND max_attempts = 1"); c != 7 {
+		t.Errorf("%d of 7 checks are tried only once", c)
+	}
 
 	// The next run replaces checks the last one left behind.
 	next, _ := e.p.StartRun(ctx, "nightly")
@@ -561,6 +568,19 @@ type fakeReader struct {
 	err   error
 }
 
+// About finds that a person wrote a book, where the page says so.
+func (f *fakeReader) About(_ context.Context, _ string, names []string, text string) (map[string][]llm.Signal, error) {
+	out := map[string][]llm.Signal{}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Buch") {
+			for _, n := range names {
+				out[n] = append(out[n], llm.Signal{Signal: "author", Passage: strings.TrimSpace(line)})
+			}
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult, error) {
 	f.mu.Lock()
 	f.calls++
@@ -575,6 +595,9 @@ func (f *fakeReader) People(_ context.Context, _, text string) (llm.PeopleResult
 				p := llm.Person{Name: name, Role: "speaker", Affiliation: "Beispiel GmbH", Evidence: strings.TrimSpace(line)}
 				if name == "Lena Musterfrau" {
 					p.Founder, p.Builds, p.FounderEvidence = true, "Backstube Muster", "hat die Backstube Muster gegründet"
+				}
+				if name == "Karl Kontrolle" {
+					p.Signals = []llm.Signal{{Signal: "runs_events", Passage: "Durch den Abend führt Karl Kontrolle."}}
 				}
 				res.People = append(res.People, p)
 			}
@@ -825,8 +848,8 @@ func TestInterruptedRunsEndWhenTheAppStarts(t *testing.T) {
 	if c := e.count(t, "jobs WHERE kind = 'check_source' AND status IN ('queued', 'running')"); c != 0 {
 		t.Errorf("%d checks would come back", c)
 	}
-	if c := e.count(t, "runs WHERE id = $1 AND finished_at IS NOT NULL", run); c != 1 {
-		t.Error("the interrupted run did not end")
+	if c := e.count(t, "runs WHERE id = $1 AND finished_at IS NOT NULL AND ended = 'restart'", run); c != 1 {
+		t.Error("the interrupted run did not end by the restart")
 	}
 	if c := e.count(t, "jobs WHERE kind = 'prune' AND status = 'queued'"); c != 1 {
 		t.Error("housekeeping outside a run must stay")
@@ -1198,5 +1221,394 @@ func TestAnEventPageThatFailsDoesNotHoldUpTheRun(t *testing.T) {
 	}
 	if c := e.count(t, "event_reads WHERE event_id = $1 AND error <> ''", ev); c != 1 {
 		t.Errorf("%d failed reads recorded, want 1", c)
+	}
+}
+
+// A check that still runs when Tim stops the run finishes, but queues no
+// reads for the stopped run. The events wait for the next run.
+func TestAStoppedRunQueuesNothingMore(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	src := e.addSource(t, "/events", "active")
+	run, _, err := e.p.RunNow(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped, err := e.p.StopRun(ctx, run); err != nil || !stopped {
+		t.Fatalf("stop: %v %v", stopped, err)
+	}
+	if got := e.one(t, `SELECT ended FROM runs WHERE id = $1`, run); got != "stopped" {
+		t.Errorf("a run stopped by hand ended as %q", got)
+	}
+	// The check that was running when the stop came.
+	if err := e.p.CheckSource(ctx, src, run); err != nil {
+		t.Fatal(err)
+	}
+	if c := e.count(t, "jobs WHERE status = 'queued' AND key LIKE $1", fmt.Sprintf("run:%d:%%", run)); c != 0 {
+		t.Errorf("%d jobs queued for the stopped run", c)
+	}
+	if c := e.count(t, "events WHERE people_read_at IS NULL"); c != 2 {
+		t.Errorf("%d events wait for the next run, want 2", c)
+	}
+}
+
+// Each new person remembers the run that found them, so a run can say how
+// many new people and fits it brought. A person found again keeps their
+// first run.
+func TestPeopleRememberTheRunThatFoundThem(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	run := runOnce(t, e)
+	if c := e.count(t, "people WHERE first_run_id = $1", run); c != 2 {
+		t.Errorf("%d people found by the run, want 2", c)
+	}
+	if c := e.count(t, "people WHERE first_run_id = $1 AND fit <> 'other'", run); c != 1 {
+		t.Errorf("%d fits found by the run, want 1", c)
+	}
+	e.pool.Exec(t.Context(), `UPDATE sources SET next_check_at = NULL`)
+	e.pool.Exec(t.Context(), `UPDATE events SET people_read_at = NULL`)
+	second := runOnce(t, e)
+	if c := e.count(t, "people WHERE first_run_id = $1", second); c != 0 {
+		t.Errorf("%d people moved to the second run", c)
+	}
+
+	// Founders from a portfolio's imprints count for their run too.
+	e2 := setup(t, "")
+	portfolioSite(t, e2)
+	run2 := runOnce(t, e2)
+	if c := e2.count(t, "people WHERE first_run_id = $1 AND fit = 'founder'", run2); c != 3 {
+		t.Errorf("%d founders from lookups remember their run, want 3", c)
+	}
+}
+
+// A nightly run cut short, like make crawl stopped with Ctrl-C, ends as
+// stopped, and its queued work does not wait for anyone.
+func TestACancelledNightlyRunEndsAsStopped(t *testing.T) {
+	e := setup(t, "")
+	for i := range 3 {
+		e.addSource(t, fmt.Sprintf("/s%d", i), "active")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	err := e.p.Nightly(ctx, cancelling{cancel})
+	if err == nil {
+		t.Fatal("a cancelled run must say so")
+	}
+	if got := e.one(t, `SELECT ended || ' ' || (finished_at IS NOT NULL)::text FROM runs`); got != "stopped true" {
+		t.Errorf("the cancelled run ended as %v", got)
+	}
+	if c := e.count(t, "jobs WHERE status = 'queued' AND key LIKE 'run:%'"); c != 0 {
+		t.Errorf("%d jobs of the cancelled run still queued", c)
+	}
+}
+
+// cancelling is a worker that is stopped before it gets to anything.
+type cancelling struct{ cancel context.CancelFunc }
+
+func (c cancelling) RunUntilIdle(ctx context.Context) error {
+	c.cancel()
+	return ctx.Err()
+}
+
+// A nightly run that gets through everything ends as finished.
+func TestANightlyRunEndsAsFinished(t *testing.T) {
+	e := setup(t, "")
+	e.addSource(t, "/s0", "active")
+	w := &queue.Worker{Queue: e.p.Queue, Handlers: e.p.Handlers(), Concurrency: 2, PollInterval: 10 * time.Millisecond}
+	if err := e.p.Nightly(t.Context(), w); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT ended FROM runs`); got != "finished" {
+		t.Errorf("the nightly run ended as %q", got)
+	}
+}
+
+// People are scored by the fit rubric as the run finds them: here the
+// model says Karl runs the evening. Everyone the rubric has not scored
+// yet is scored when the next run starts.
+func TestPeopleAreScoredByTheRubric(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	e.p.Reader = &fakeReader{}
+	eventPageSite(t, e)
+	e.addSource(t, "/events", "active")
+	runOnce(t, e)
+	if got := e.one(t, `SELECT p.fit_score || ' ' || s.signal || ': ' || s.passage || ' (' || s.found_in || ')'
+		FROM people p JOIN person_signals s ON s.person_id = p.id WHERE p.full_name = 'Karl Kontrolle'`); got != "1 runs_events: Durch den Abend führt Karl Kontrolle. (model)" {
+		t.Errorf("Karl: %v", got)
+	}
+	if c := e.count(t, "people WHERE rubric = 0"); c != 0 {
+		t.Errorf("%d people found by the run are not scored", c)
+	}
+
+	var id int64
+	e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, headline) VALUES ('Mia Beispiel', 'mia beispiel', 'Yoga-Lehrerin, Studio Beispiel') RETURNING id`).Scan(&id)
+	run, _ := e.p.StartRun(ctx, "manual")
+	if _, err := e.p.EnqueueDue(ctx, run); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT fit_score || ' ' || (SELECT string_agg(signal, ',') FROM person_signals WHERE person_id = $1) FROM people WHERE id = $1`, id); got != "1 works_with_people" {
+		t.Errorf("Mia after the next run started: %v", got)
+	}
+}
+
+// Founders from a portfolio's imprints run their company, and are backed
+// by the programme that lists it, so they come out even.
+func TestPortfolioFoundersAreScored(t *testing.T) {
+	e := setup(t, "")
+	portfolioSite(t, e)
+	runOnce(t, e)
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT p.full_name || ' ' || p.fit_score || ' ' || string_agg(CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal, ',' ORDER BY s.is_for DESC, s.signal)
+		FROM people p JOIN person_signals s ON s.person_id = p.id GROUP BY p.id ORDER BY p.full_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Lena Musterfrau 0 +owner_operator,-backed",
+		"Mara Beispielfrau 0 +owner_operator,-backed",
+		"Tom Testmann 0 +owner_operator,-backed",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("scores:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+// A lookup reads the startup's about page for the fit rubric: what it says
+// about the people the imprint names, and, when one person runs it and the
+// page speaks as "ich", that they run it themselves. The model reads the
+// page too. A sentence with a phone number is never kept. All invented.
+func TestLookupsReadTheAboutPage(t *testing.T) {
+	e := setup(t, "")
+	e.p.Reader = &fakeReader{}
+	e.site.set("/portfolio", `<main><h1>Our startups</h1><a href="http://studio-beispiel.test/">Studio Beispiel</a></main>`)
+	e.site.set("http://studio-beispiel.test/", `<html><body><h1>Studio Beispiel</h1>
+<nav><a href="/ueber-mich">Über mich</a></nav><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://studio-beispiel.test/ueber-mich", `<html><body><h1>Über mich</h1>
+<p>Ich bin Mara Beispielfrau und gebe seit zehn Jahren Yoga-Kurse in Dortmund.</p>
+<p>Das Studio habe ich ohne Investoren aufgebaut.</p>
+<p>Ihr Buch über den Atem erschien 2025.</p>
+<p>Ruf mich an, ich berate dich gern: 0231 1234567.</p></body></html>`)
+	e.site.set("http://studio-beispiel.test/impressum", `<html><body><p>Studio Beispiel UG (haftungsbeschränkt), 44137 Dortmund</p>
+<p>Geschäftsführerin: Mara Beispielfrau</p></body></html>`)
+	if _, err := e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Beispiel Hub', 'portfolio', $1, 'candidate')`,
+		e.site.srv.URL+"/portfolio"); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal || ' (' || s.found_in || '): ' || s.passage
+		FROM person_signals s JOIN people p ON p.id = s.person_id WHERE p.full_name = 'Mara Beispielfrau'
+		ORDER BY s.is_for DESC, s.signal`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"+author (model): Ihr Buch über den Atem erschien 2025.",
+		"+bootstrapped (about page): Das Studio habe ich ohne Investoren aufgebaut.",
+		"+owner_operator (imprint): Managing director of Studio Beispiel UG (haftungsbeschränkt), by its imprint. In the portfolio of Beispiel Hub",
+		"+works_with_people (about page): Ich bin Mara Beispielfrau und gebe seit zehn Jahren Yoga-Kurse in Dortmund.",
+		"-backed (portfolio): In the portfolio of Beispiel Hub",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("signals:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if c := e.count(t, "person_signals WHERE passage ~ '[0-9]{4} ?[0-9]{5,}'"); c != 0 {
+		t.Error("a phone number was kept")
+	}
+}
+
+// A directory lists businesses run by people all over Germany, like gyms
+// or coaches. Only those in NRW count: an entry the list places elsewhere
+// is not kept, and one whose imprint gives a postcode elsewhere leads to
+// nobody. Owners are the best case, and nobody here is backed by a
+// startup programme. All invented.
+func TestDirectoryLeadsToOwnersInNRW(t *testing.T) {
+	e := setup(t, "")
+	e.site.set("/gyms", `<html><body><main><h1>Gyms</h1><ul>
+<li><a href="http://beispiel-bjj.test/">Beispiel BJJ</a><br>Musterstraße 1, 50667 Köln</li>
+<li><a href="http://muster-kampfsport.test/">Muster Kampfsport</a> <span>80331 München</span></li>
+<li><a href="http://probe-dojo.test/">Probe Dojo</a></li>
+<li><a href="http://kontrolle-coaching.test/">Kontrolle Coaching</a></li>
+</ul></main></body></html>`)
+	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><nav><a href="/ueber-mich">Über mich</a></nav>
+<footer><a href="/impressum">Impressum</a></footer></body></html>`)
+	e.site.set("http://beispiel-bjj.test/ueber-mich", `<html><body><p>Ich bin Lena Musterfrau, Schwarzgurt und Trainerin, und leite die Akademie seit 2016.</p></body></html>`)
+	e.site.set("http://beispiel-bjj.test/impressum", `<html><body><p>Beispiel BJJ Academy</p><p>Musterstraße 1, 50667 Köln</p><p>Inhaberin: Lena Musterfrau</p></body></html>`)
+	e.site.set("http://probe-dojo.test/impressum", `<html><body><p>Probe Dojo</p><p>Probeweg 2, 80331 München</p><p>Inhaber: Tom Testmann</p></body></html>`)
+	e.site.set("http://probe-dojo.test/", `<html><body><h1>Probe Dojo</h1></body></html>`)
+	e.site.set("http://kontrolle-coaching.test/", `<html><body><h1>Coaching</h1></body></html>`)
+	e.site.set("http://kontrolle-coaching.test/impressum", `<html><body><p>Kontrolle Coaching e.K.</p><p>Hafenstraße 3, 44137 Dortmund</p>
+<p>Inhaberin: Mara Beispielfrau</p></body></html>`)
+	e.site.set("http://muster-kampfsport.test/", `<html><body>never asked</body></html>`)
+	var src int64
+	if err := e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, url, status) VALUES ('Gym list', 'directory', $1, 'candidate') RETURNING id`,
+		e.site.srv.URL+"/gyms").Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+
+	if got := e.one(t, `SELECT startups_found::text FROM source_checks WHERE source_id = $1`, src); got != "3" {
+		t.Errorf("the check kept %v entries, want 3 without the one in München", got)
+	}
+	if c := e.count(t, "organisations WHERE name = 'Muster Kampfsport'"); c != 0 {
+		t.Error("an entry outside NRW was kept")
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.name = 'Probe Dojo'`); got != "outside NRW (80331 München)" {
+		t.Errorf("the lookup outside NRW says %q", got)
+	}
+	rows, err := e.pool.Query(t.Context(), `
+		SELECT p.full_name || ': ' || p.fit_evidence || ' | ' || p.fit_score || ' ' ||
+			(SELECT string_agg(CASE WHEN s.is_for THEN '+' ELSE '-' END || s.signal, ',' ORDER BY s.is_for DESC, s.signal) FROM person_signals s WHERE s.person_id = p.id)
+		FROM people p ORDER BY p.full_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := pgx.CollectRows(rows, pgx.RowTo[string])
+	want := []string{
+		"Lena Musterfrau: Owner of Beispiel BJJ, by its imprint. Listed in Gym list | 3 +athlete,+owner_operator,+works_with_people",
+		"Mara Beispielfrau: Owner of Kontrolle Coaching e.K., by its imprint. Listed in Gym list | 2 +owner_operator,+works_with_people",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("people:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// Events on other stages are kept: a coach's workshop or a breathwork
+// training is where guests are, a sales training still is not.
+func TestTrainingsOnOtherStagesAreKept(t *testing.T) {
+	e := setup(t, "")
+	cfg, err := settings.Load(t.Context(), e.pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules := pipeline.RulesFrom(cfg)
+	for title, want := range map[string]bool{
+		"Atem-Training am Rhein":    true,
+		"BJJ Training und Open Mat": true,
+		"Sales Training für Teams":  false,
+		"Webinar: Resilienz":        false,
+	} {
+		if kept, why := rules.Fit(extract.Event{Title: title, City: "Köln", Format: "in_person"}); kept != want {
+			t.Errorf("%q kept %v (%s), want %v", title, kept, why, want)
+		}
+	}
+}
+
+// fakeSearch answers every query with the same results.
+type fakeSearch struct {
+	mu      sync.Mutex
+	queries []string
+	results []search.Result
+}
+
+func (f *fakeSearch) Name() string { return "tavily" }
+
+func (f *fakeSearch) Search(_ context.Context, q string) ([]search.Result, error) {
+	f.mu.Lock()
+	f.queries = append(f.queries, q)
+	f.mu.Unlock()
+	return f.results, nil
+}
+
+// A search is a source: its results lead to websites, their imprints and
+// their about pages, like a directory, and only NRW counts. LinkedIn,
+// Instagram and platform pages among the results are never followed. All
+// invented.
+func TestSearchesLeadToPeopleInNRW(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fs := &fakeSearch{results: []search.Result{
+		{Title: "Beispiel BJJ Köln – Brazilian Jiu-Jitsu", URL: "http://beispiel-bjj.test/training"},
+		{Title: "Muster Coaching München", URL: "http://muster-coaching.test/"},
+		{Title: "Lena Musterfrau | LinkedIn", URL: "https://www.linkedin.com/in/lena-musterfrau/"},
+		{Title: "beispielbjj on Instagram", URL: "https://www.instagram.com/beispielbjj/"},
+		{Title: "Beispiel BJJ | Facebook", URL: "https://www.facebook.com/beispielbjj"},
+		{Title: "Beispiel BJJ, the same site again", URL: "http://beispiel-bjj.test/kontakt"},
+	}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fs}, Now: func() time.Time { return now }}
+	e.site.set("http://beispiel-bjj.test/", `<html><body><h1>Beispiel BJJ</h1><footer><a href="/impressum">Impressum</a>
+		<a href="https://www.instagram.com/beispielbjj/">Instagram</a><a href="https://x.com/share">Teilen</a></footer></body></html>`)
+	e.site.set("http://beispiel-bjj.test/impressum", `<html><body><p>Beispiel BJJ</p><p>Musterweg 1, 50667 Köln</p><p>Inhaber: Tom Testmann</p></body></html>`)
+	e.site.set("http://muster-coaching.test/", `<html><body><h1>Coaching</h1></body></html>`)
+	e.site.set("http://muster-coaching.test/impressum", `<html><body><p>Angaben gemäß § 5 TMG</p><p>Mara Beispielfrau</p><p>Beispielstraße 2, 80331 München</p></body></html>`)
+	var src int64
+	if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, query, status, city) VALUES ('BJJ Gym Köln', 'search_query', 'BJJ Gym Köln', 'candidate', 'Köln') RETURNING id`).Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	run := runOnce(t, e)
+
+	if strings.Join(fs.queries, "|") != "BJJ Gym Köln" {
+		t.Errorf("searches %q", fs.queries)
+	}
+	if got := e.one(t, `SELECT startups_found || ' ' || mode FROM source_checks WHERE source_id = $1 AND run_id = $2`, src, run); got != "2 search" {
+		t.Errorf("the search's check: %v", got)
+	}
+	if got := e.one(t, `SELECT string_agg(website, ' ' ORDER BY website) FROM organisations`); got != "http://beispiel-bjj.test/ http://muster-coaching.test/" {
+		t.Errorf("websites kept: %v", got)
+	}
+	if got := e.one(t, `SELECT p.full_name || ': ' || p.fit_evidence FROM people p`); got != "Tom Testmann: Owner of Beispiel BJJ Köln, by its imprint. Found by the search BJJ Gym Köln" {
+		t.Errorf("people: %v", got)
+	}
+	// He runs the gym alone, so the Instagram its site links is a way to
+	// reach him, for Tim to confirm. The share button is no profile.
+	if got := e.one(t, `SELECT string_agg(platform || ' ' || handle || ' ' || review, ', ') FROM profiles`); got != "instagram beispielbjj open" {
+		t.Errorf("profiles: %v", got)
+	}
+	if got := e.one(t, `SELECT l.note FROM startup_lookups l JOIN organisations o ON o.id = l.organisation_id WHERE o.website LIKE '%muster-coaching%'`); got != "outside NRW (80331 München)" {
+		t.Errorf("the coach in München: %v", got)
+	}
+	if got := e.one(t, `SELECT status FROM sources WHERE id = $1`, src); got == "candidate" {
+		t.Error("a search that found websites stays a candidate")
+	}
+	if c := e.count(t, "search_calls"); c != 1 {
+		t.Errorf("%d searches counted, want 1", c)
+	}
+}
+
+// An owner found through two websites in the same city is one person, who
+// runs both. The same name in another city is someone else. All invented.
+func TestOneOwnerOfTwoWebsitesIsOnePerson(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fs := &fakeSearch{results: []search.Result{
+		{Title: "Beispiel BJJ Köln", URL: "http://beispiel-bjj.test/"},
+		{Title: "Testmann Coaching", URL: "http://testmann-coaching.test/"},
+		{Title: "Probe Yoga Bonn", URL: "http://probe-yoga.test/"},
+	}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fs}, Now: func() time.Time { return now }}
+	for site, imprint := range map[string]string{
+		"beispiel-bjj":      "<p>Beispiel BJJ</p><p>Musterweg 1, 50667 Köln</p><p>Inhaber: Tom Testmann</p>",
+		"testmann-coaching": "<p>Testmann Coaching</p><p>Musterweg 3, 50667 Köln</p><p>Inhaber: Tom Testmann</p>",
+		"probe-yoga":        "<p>Probe Yoga</p><p>Probeweg 5, 53111 Bonn</p><p>Inhaber: Tom Testmann</p>",
+	} {
+		e.site.set("http://"+site+".test/", `<html><body><h1>Willkommen</h1><footer><a href="/impressum">Impressum</a></footer></body></html>`)
+		e.site.set("http://"+site+".test/impressum", "<html><body>"+imprint+"</body></html>")
+	}
+	if _, err := e.pool.Exec(ctx, `INSERT INTO sources (name, kind, query, status, city) VALUES ('Coach Köln', 'search_query', 'Coach Köln', 'candidate', 'Köln')`); err != nil {
+		t.Fatal(err)
+	}
+	runOnce(t, e)
+
+	got := e.one(t, `
+		SELECT string_agg(p.city || ': ' || (SELECT string_agg(o.name, ', ' ORDER BY o.name) FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id), ' | ' ORDER BY p.city)
+		FROM people p WHERE p.full_name = 'Tom Testmann'`)
+	if got != "Bonn: Probe Yoga Bonn | Köln: Beispiel BJJ Köln, Testmann Coaching" {
+		t.Errorf("people named Tom Testmann: %v", got)
+	}
+}
+
+// Without a search provider, a search waits and nothing fails.
+func TestSearchesWaitWithoutAProvider(t *testing.T) {
+	e := setup(t, "")
+	e.pool.Exec(t.Context(), `INSERT INTO sources (name, kind, query, status) VALUES ('Yoga Köln', 'search_query', 'Yoga Köln', 'candidate')`)
+	run := runOnce(t, e)
+	if c := e.count(t, "source_checks WHERE run_id = $1", run); c != 0 {
+		t.Errorf("%d checks without a search provider", c)
 	}
 }

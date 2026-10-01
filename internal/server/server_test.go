@@ -358,6 +358,10 @@ func TestPrivateAPI(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &stats); err != nil {
 		t.Fatalf("stats: %v %s", err, body)
 	}
+	// The search budgets, spent this month. The test has no keys.
+	if !strings.Contains(body, `"searches":[{"provider":"exa","used":0,"budget":1000,"set":false},{"provider":"tavily","used":0,"budget":1000,"set":false},{"provider":"brave","used":0,"budget":1000,"set":false}]`) {
+		t.Errorf("searches in the stats: %s", body)
+	}
 	if stats.Totals.People != 1 || stats.Totals.EventsKeptUpcoming != 1 || stats.Totals.Profiles != 1 || stats.Totals.Sources["active"] != 1 {
 		t.Errorf("stats totals %+v", stats.Totals)
 	}
@@ -382,7 +386,7 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	// A title that says founder makes a founder, and the counts show every
 	// filter, so an empty one never hides the rest.
-	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
 		t.Errorf("founders: %s", body)
 	}
 	var pid, prof int64
@@ -536,6 +540,17 @@ func TestPeopleShowWhetherTheirStartupIsActive(t *testing.T) {
 	if !strings.Contains(body, `"state":"active"`) || !strings.Contains(body, `"company":"Active GmbH"`) || !strings.Contains(body, `"note":"a note"`) {
 		t.Errorf("activity missing: %s", body)
 	}
+
+	// A person's sheet links each business's website and imprint, where
+	// Tim finds how to reach them. No address or number is stored.
+	e.pool.Exec(ctx, `UPDATE organisations SET website = 'https://active.example/', imprint_url = 'https://active.example/impressum' WHERE name = 'Active GmbH'`)
+	var cem2 int64
+	e.pool.QueryRow(ctx, `SELECT id FROM people WHERE full_name = 'Cem Current'`).Scan(&cem2)
+	code, body = e.do(t, "GET", "/api/people/"+itoa(cem2), "")
+	flat := strings.ReplaceAll(body, " ", "")
+	if code != 200 || !strings.Contains(flat, `"website":"https://active.example/"`) || !strings.Contains(flat, `"imprint_url":"https://active.example/impressum"`) {
+		t.Errorf("the business's website and imprint on the sheet: %d %s", code, body)
+	}
 }
 
 // A source Tim retires by hand is not checked again until he sets it back.
@@ -555,5 +570,331 @@ func TestARetiredSourceStaysRetired(t *testing.T) {
 	}
 	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(id), `{"status":"active"}`); code != 200 || !strings.Contains(body, `"next_check_at":null`) {
 		t.Errorf("set back to active: %d %s", code, body)
+	}
+}
+
+// A run says its true state and what it brought: new people, new fits,
+// startups looked up and what failed.
+func TestRunsSayHowTheyEnded(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	run := func(ended string, finished bool) int64 {
+		var id int64
+		var at any
+		if finished {
+			at = now
+		}
+		if err := e.pool.QueryRow(ctx, `INSERT INTO runs (kind, started_at, finished_at, ended) VALUES ('manual', $1, $2, $3) RETURNING id`,
+			now, at, ended).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	finished, stopped, restart, going := run("", false), run("stopped", true), run("restart", true), run("", false)
+	exec(`INSERT INTO jobs (kind, key, run_after, created_at, updated_at) VALUES ('check_source', 'run:' || $1::bigint || ':source:1', $2, $2, $2)`, going, now)
+	exec(`INSERT INTO people (full_name, normalised_name, fit, first_run_id) VALUES ('Mia Beispiel', 'mia beispiel', 'founder', $1), ('Ole Muster', 'ole muster', 'other', $1)`, finished)
+	exec(`INSERT INTO organisations (name, normalised_name) VALUES ('Probe Labs', 'probe labs')`)
+	exec(`INSERT INTO startup_lookups (run_id, organisation_id, url, error, looked_up_at) SELECT $1, id, 'https://probe.example/', 'get https://probe.example/: context deadline exceeded', $2 FROM organisations WHERE name = 'Probe Labs'`, finished, now)
+
+	code, body := e.do(t, "GET", "/api/runs", "")
+	if code != 200 {
+		t.Fatalf("runs: %d %s", code, body)
+	}
+	var got struct {
+		Runs []struct {
+			ID            int64  `json:"id"`
+			State         string `json:"state"`
+			FitsNew       int    `json:"fits_new"`
+			LookupsFailed int    `json:"lookups_failed"`
+		} `json:"runs"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]string{finished: "finished", stopped: "stopped", restart: "interrupted", going: "going"}
+	for _, r := range got.Runs {
+		if want[r.ID] != r.State {
+			t.Errorf("run %d is %q, want %q", r.ID, r.State, want[r.ID])
+		}
+		if r.ID == finished && (r.FitsNew != 1 || r.LookupsFailed != 1) {
+			t.Errorf("the finished run brought %d fits and %d failed lookups, want 1 and 1", r.FitsNew, r.LookupsFailed)
+		}
+	}
+	if len(got.Runs) != 4 {
+		t.Errorf("%d runs, want 4", len(got.Runs))
+	}
+}
+
+// A run's failures are grouped by source, each with the reason in plain
+// words and the one action that fixes it. Reads and lookups that failed
+// are grouped by reason.
+func TestRunFailuresInPlainWords(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := e.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	var run int64
+	e.pool.QueryRow(ctx, `INSERT INTO runs (kind, started_at, finished_at, ended) VALUES ('nightly', $1, $1, 'finished') RETURNING id`, now).Scan(&run)
+	source := func(name, status string) int64 {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, url, status) VALUES ($1, 'listing', $2, $3) RETURNING id`,
+			name, "https://"+strings.ToLower(strings.ReplaceAll(name, " ", "-"))+".example/events", status).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	gone, robots, slow, flaky := source("Beispiel Treff", "retired"), source("Muster Salon", "manual"), source("Probe Abend", "active"), source("Kontroll Runde", "active")
+	check := func(src int64, status int, msg string, at time.Time, r any) {
+		exec(`INSERT INTO source_checks (run_id, source_id, http_status, error, checked_at) VALUES ($1, $2, $3, $4, $5)`, r, src, status, msg, at)
+	}
+	check(gone, 404, "get https://beispiel-treff.example/events: status 404", now, run)
+	check(robots, 0, "https://muster-salon.example/events: disallowed by robots.txt", now, run)
+	check(slow, 0, `get "https://probe-abend.example/events": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`, now, run)
+	// This one failed in its last three checks, so it is worth retiring.
+	for i := range 2 {
+		check(flaky, 503, "get https://kontroll-runde.example/events: status 503", now.Add(-time.Duration(i+1)*24*time.Hour), nil)
+	}
+	check(flaky, 503, "get https://kontroll-runde.example/events: status 503", now, run)
+	var ev int64
+	e.pool.QueryRow(ctx, `SELECT id FROM events LIMIT 1`).Scan(&ev)
+	for range 2 {
+		exec(`INSERT INTO event_reads (run_id, event_id, url, error, read_at) VALUES ($1, $2, 'https://example.org/e/129',
+			'no language model answers. Is Docker Model Runner on? Turn it on with: docker desktop enable model-runner (dial tcp: connection refused)', $3)`, run, ev, now)
+	}
+
+	code, body := e.do(t, "GET", fmt.Sprintf("/api/runs/%d", run), "")
+	if code != 200 {
+		t.Fatalf("run: %d %s", code, body)
+	}
+	var got struct {
+		Failures []struct {
+			What   string `json:"what"`
+			Source *struct {
+				Name   string `json:"name"`
+				Status string `json:"status"`
+			} `json:"source"`
+			Reason string `json:"reason"`
+			Action string `json:"action"`
+			Count  int    `json:"count"`
+			Detail string `json:"detail"`
+		} `json:"failures"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, f := range got.Failures {
+		name := ""
+		if f.Source != nil {
+			name = f.Source.Name + " (" + f.Source.Status + ")"
+		}
+		lines = append(lines, fmt.Sprintf("%s %s: %s, %d, action %q", f.What, name, f.Reason, f.Count, f.Action))
+		if f.Detail == "" {
+			t.Errorf("%s %s has no detail", f.What, name)
+		}
+	}
+	want := []string{
+		`check Beispiel Treff (retired): The page is gone, 1, action ""`,
+		`check Kontroll Runde (active): The site had an error of its own, HTTP 503, three checks in a row, 1, action "retire"`,
+		`check Muster Salon (manual): robots.txt does not allow the bot, 1, action ""`,
+		`check Probe Abend (active): The site did not answer in time, 1, action "check"`,
+		`read : The language model did not answer. Is Docker Model Runner on?, 2, action ""`,
+	}
+	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
+		t.Errorf("failures:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+// People sort by fit, with the rubric's signals and their passages, and
+// the good fits have a filter of their own.
+func TestPeopleByFit(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	for _, p := range []struct{ name, headline string }{
+		{"Mia Beispiel", "Yoga-Lehrerin und Inhaberin, Studio Beispiel"},
+		{"Ole Muster", "Head of Innovation, Beispiel Versicherung"},
+		{"Ida Probe", "Life Coach"},
+	} {
+		if _, err := e.pool.Exec(ctx, `INSERT INTO people (full_name, normalised_name, headline, created_at) VALUES ($1, lower($1), $2, $3)`, p.name, p.headline, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+		t.Fatal(err)
+	}
+	code, body := e.do(t, "GET", "/api/people?sort=fit", "")
+	if code != 200 {
+		t.Fatalf("people by fit: %d %s", code, body)
+	}
+	var got struct {
+		People []struct {
+			Name     string `json:"name"`
+			FitScore int    `json:"fit_score"`
+			Signals  []struct {
+				Key, Label, Passage string
+				For                 bool `json:"for"`
+			} `json:"signals"`
+		} `json:"people"`
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	var order []string
+	for _, p := range got.People {
+		order = append(order, fmt.Sprintf("%s %d", p.Name, p.FitScore))
+	}
+	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 0, Ole Muster -1" {
+		t.Errorf("order: %s", strings.Join(order, ", "))
+	}
+	if s := got.People[0].Signals; len(s) != 2 || s[0].Label != "Works with people" || !s[0].For || s[0].Passage != "Yoga-Lehrerin und Inhaberin, Studio Beispiel" {
+		t.Errorf("Mia's signals %+v", s)
+	}
+	if got.Counts["fits"] != 2 {
+		t.Errorf("%d good fits, want 2", got.Counts["fits"])
+	}
+	if _, body := e.do(t, "GET", "/api/people?filter=fits", ""); strings.Contains(body, "Ole Muster") || !strings.Contains(body, "Ida Probe") {
+		t.Errorf("good fits: %s", body)
+	}
+}
+
+// A source says what its page lists: events, startups or businesses.
+func TestSourcesSayWhatTheyList(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	code, body := e.do(t, "POST", "/api/sources", `{"url":"https://gyms.example/liste","lists":"businesses"}`)
+	if code != 201 || !strings.Contains(body, `"kind":"directory"`) {
+		t.Fatalf("add a directory: %d %s", code, body)
+	}
+	var src struct{ ID int64 }
+	json.Unmarshal([]byte(body), &src)
+	for lists, kind := range map[string]string{"startups": "portfolio", "events": "listing", "businesses": "directory"} {
+		code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"lists":"`+lists+`"}`)
+		if code != 200 || !strings.Contains(body, `"kind":"`+kind+`"`) {
+			t.Errorf("lists %s: %d %s", lists, code, body)
+		}
+	}
+	// The older way still works.
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"portfolio":true}`); code != 200 || !strings.Contains(body, `"kind":"portfolio"`) {
+		t.Errorf("portfolio true: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"url":"https://other.example/","lists":"recipes"}`); code != 400 {
+		t.Errorf("an unknown list: %d, want 400", code)
+	}
+}
+
+// A search is added like a page. Its results are businesses, and it cannot
+// be switched to list events.
+func TestAddASearch(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	code, body := e.do(t, "POST", "/api/sources", `{"query":"  Yoga Studio   Bochum "}`)
+	if code != 201 || !strings.Contains(body, `"kind":"search_query"`) || !strings.Contains(body, `"query":"Yoga Studio Bochum"`) ||
+		!strings.Contains(body, `"city":"Bochum"`) || !strings.Contains(body, `"url":null`) {
+		t.Fatalf("add a search: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"query":"yoga studio bochum"}`); code != 409 {
+		t.Errorf("the same search twice: %d, want 409", code)
+	}
+	var src struct{ ID int64 }
+	json.Unmarshal([]byte(body), &src)
+	if code, _ := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"lists":"events"}`); code != 400 {
+		t.Errorf("a search switched to events: %d, want 400", code)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, startups_found, events_found) VALUES ($1, 0, 0)`, src.ID)
+	if code, body := e.do(t, "GET", "/api/sources?q=bochum", ""); code != 200 || !strings.Contains(body, "The last check found no businesses") {
+		t.Errorf("a search in the list: %d %s", code, body)
+	}
+}
+
+// Keeping or skipping a person is one click and undone by another. Each
+// decision remembers the person's signals, so the counts per signal
+// survive when a skipped person is deleted later. The stats say how often
+// each signal was kept or skipped, and how the top 20 by fit were decided.
+func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	ids := map[string]int64{}
+	for _, p := range []struct{ name, headline string }{
+		{"Mia Beispiel", "Yoga-Lehrerin und Inhaberin, Studio Beispiel"},
+		{"Ole Muster", "Head of Innovation, Beispiel Versicherung"},
+		{"Ida Probe", "Life Coach"},
+	} {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, headline) VALUES ($1, lower($1), $2) RETURNING id`, p.name, p.headline).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[p.name] = id
+	}
+	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+		t.Fatal(err)
+	}
+	decide := func(name, decision string) string {
+		t.Helper()
+		code, body := e.do(t, "PATCH", "/api/people/"+itoa(ids[name]), `{"decision":"`+decision+`"}`)
+		if code != 200 {
+			t.Fatalf("%s %s: %d %s", decision, name, code, body)
+		}
+		return body
+	}
+	if body := decide("Mia Beispiel", "kept"); !strings.Contains(body, `"decision":"kept"`) {
+		t.Errorf("kept: %s", body)
+	}
+	decide("Ole Muster", "skipped")
+	decide("Ida Probe", "kept")
+	if body := decide("Ida Probe", ""); !strings.Contains(body, `"decision":""`) {
+		t.Errorf("undone: %s", body)
+	}
+	if code, _ := e.do(t, "PATCH", "/api/people/"+itoa(ids["Ida Probe"]), `{"decision":"maybe"}`); code != 400 {
+		t.Errorf("an unknown decision: %d, want 400", code)
+	}
+	// Skipped people are deleted after a while. Their decision still counts.
+	e.pool.Exec(ctx, `DELETE FROM people WHERE id = $1`, ids["Ole Muster"])
+
+	code, body := e.do(t, "GET", "/api/stats", "")
+	if code != 200 {
+		t.Fatalf("stats: %d %s", code, body)
+	}
+	var got struct {
+		Fit struct {
+			Signals []struct {
+				Key           string
+				Label         string
+				Kept, Skipped int
+			} `json:"signals"`
+			Top struct{ Size, Kept, Skipped, Open int } `json:"top"`
+		} `json:"fit"`
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]string{}
+	for _, s := range got.Fit.Signals {
+		counts[s.Key] = fmt.Sprintf("%d/%d", s.Kept, s.Skipped)
+	}
+	for key, want := range map[string]string{"works_with_people": "1/0", "owner_operator": "1/0", "corporate": "0/1", "author": "0/0"} {
+		if counts[key] != want {
+			t.Errorf("%s kept/skipped %s, want %s", key, counts[key], want)
+		}
+	}
+	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Works with people" {
+		t.Errorf("every signal of the rubric, in its order: %+v", got.Fit.Signals)
+	}
+	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {
+		t.Errorf("top by fit %+v, want Mia kept, Ida and Lea open", top)
 	}
 }

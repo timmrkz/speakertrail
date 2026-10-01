@@ -15,12 +15,12 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SeedsAdded != 17 {
+	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.SeedsAdded != 17 {
 		t.Fatalf("first import: %s", res)
 	}
 
 	counts := map[string]int{}
-	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources GROUP BY status`)
+	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources WHERE kind <> 'search_query' GROUP BY status`)
 	for rows.Next() {
 		var s string
 		var n int
@@ -28,7 +28,7 @@ func TestImportStartingData(t *testing.T) {
 		counts[s] = n
 	}
 	rows.Close()
-	want := map[string]int{"active": 17, "probation": 21, "candidate": 58, "manual": 5, "retired": 7}
+	want := map[string]int{"active": 17, "probation": 21, "candidate": 72, "manual": 18, "retired": 7}
 	for s, n := range want {
 		if counts[s] != n {
 			t.Errorf("%d %s sources, want %d", counts[s], s, n)
@@ -43,10 +43,15 @@ func TestImportStartingData(t *testing.T) {
 		{`SELECT kind FROM sources WHERE url = 'https://luma.com/theofflineclubcologne'`, "calendar_luma"},
 		{`SELECT status FROM sources WHERE name = 'TEDxKoeln'`, "retired"},
 		{`SELECT kind FROM sources WHERE name = 'Gateway startups'`, "portfolio"},
+		{`SELECT kind || ' ' || city FROM sources WHERE name = 'DGfC coaches near Köln'`, "directory Köln"},
+		{`SELECT kind || ' ' || city FROM sources WHERE name = 'Literaturhaus Bonn'`, "calendar_ical Bonn"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'directory' AND status = 'candidate'`, int32(13)},
 		{`SELECT status FROM sources WHERE name = 'PechaKucha Night Köln'`, "manual"},
 		{`SELECT city FROM sources WHERE name = 'Fuckup Nights Cologne'`, "Köln"},
 		{`SELECT count(*)::int FROM sources WHERE name IN ('Frauen gründen anders', 'Kölner Vorbildunternehmerinnen')`, int32(2)},
 		{`SELECT count(*)::int FROM seeds WHERE processed_at IS NULL`, int32(2)},
+		{`SELECT status || ' ' || city || ' ' || category FROM sources WHERE query = 'BJJ Gym Köln'`, "candidate Köln Search"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'search_query' AND city = ''`, int32(0)},
 	}
 	for _, c := range checks {
 		var got any
@@ -65,7 +70,7 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded != 0 || res.SeedsAdded != 0 {
+	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 {
 		t.Errorf("second import added rows: %s", res)
 	}
 	var status string

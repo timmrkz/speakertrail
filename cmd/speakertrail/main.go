@@ -28,6 +28,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/llm"
 	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/queue"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/server"
 	"github.com/timmrkz/speakertrail/internal/settings"
 	"github.com/timmrkz/speakertrail/web"
@@ -159,6 +160,16 @@ func engine(ctx context.Context, pool *pgxpool.Pool) (*pipeline.Pipeline, func()
 		p.Reader = model
 		slog.Info("language model reads event pages", "model", model.Model, "url", model.URL)
 	}
+	// Searches go through the providers whose keys are set, each within its
+	// monthly budget.
+	if providers := search.FromEnv(); len(providers) > 0 {
+		p.Search = &search.Pool{DB: pool, Providers: providers}
+		var names []string
+		for _, pr := range providers {
+			names = append(names, pr.Name())
+		}
+		slog.Info("searches through", "providers", strings.Join(names, ", "))
+	}
 	cleanup := func() {
 		if browser != nil {
 			browser.Close()
@@ -204,6 +215,13 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 		} else if n > 0 {
 			slog.Info("ended runs the app was working on when it stopped", "runs", n)
 		}
+		// People the current fit rubric has not scored yet, like everyone
+		// after the rubric changed, are scored before anyone looks.
+		if n, err := pipeline.ScoreStale(ctx, pool); err != nil {
+			return err
+		} else if n > 0 {
+			slog.Info("people scored by the fit rubric", "people", n)
+		}
 		go func() {
 			if err := newWorker(p, 4).Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
 				slog.Error("background worker stopped", "error", err)
@@ -215,7 +233,11 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 	if ui == nil {
 		slog.Warn("the interface is not built into this binary, run npm run build in web/ first")
 	}
-	h := server.New(server.Options{Pool: pool, Pipeline: p, UI: ui, PasswordHash: cfg.UIPasswordHash, SessionSecret: cfg.SessionSecret})
+	searches := p.Search
+	if searches == nil {
+		searches = &search.Pool{DB: pool}
+	}
+	h := server.New(server.Options{Pool: pool, Pipeline: p, Searches: searches, UI: ui, PasswordHash: cfg.UIPasswordHash, SessionSecret: cfg.SessionSecret})
 	srv := &http.Server{Addr: ":" + cfg.Port, Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -246,7 +268,7 @@ func runNightly(ctx context.Context, cfg config.Config, args []string) error {
 			if err != nil {
 				return err
 			}
-			if res.SourcesAdded+res.SeedsAdded > 0 {
+			if res.SourcesAdded+res.SearchesAdded+res.SeedsAdded > 0 {
 				slog.Info("starting data imported", "result", res.String())
 			}
 		}
@@ -292,11 +314,12 @@ func runFetch(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("fetch", flag.ContinueOnError)
 	browser := fs.Bool("browser", false, "load the page in the headless browser")
 	save := fs.String("save", "", "write the page to this file")
+	lists := fs.String("lists", "events", "what the page lists: events, startups or businesses")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if fs.NArg() != 1 {
-		return errors.New("usage: speakertrail fetch [-browser] [-save file] <url>")
+	if fs.NArg() != 1 || (*lists != "events" && *lists != "startups" && *lists != "businesses") {
+		return errors.New("usage: speakertrail fetch [-browser] [-save file] [-lists events|startups|businesses] <url>")
 	}
 	opts := fetch.Options{Contact: "https://github.com/timmrkz/speakertrail"}
 	if *browser {
@@ -318,6 +341,10 @@ func runFetch(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	if *lists != "events" {
+		printEntries(page, *lists == "businesses")
+		return nil
+	}
 	res := extract.Extract(extract.Page{URL: page.FinalURL, ContentType: page.ContentType, Body: page.Body})
 	fmt.Printf("%s %d, %s, %d bytes, %d events, looks like a JavaScript shell: %v\n",
 		page.Mode, page.Status, page.Duration.Round(time.Millisecond), len(page.Body), len(res.Events), fetch.LooksLikeJSShell(page))
@@ -334,6 +361,40 @@ func runFetch(ctx context.Context, args []string) error {
 		fmt.Println("link:", l)
 	}
 	return nil
+}
+
+// printEntries shows what a check of a portfolio or a directory would keep
+// from one page: each entry, its website or its page on the list's own
+// site, and for a directory whether its postcode lies in NRW.
+func printEntries(page *fetch.Page, directory bool) {
+	base := page.FinalURL
+	if base == "" {
+		base = page.URL
+	}
+	pp := extract.Portfolio(page.Body, base)
+	fmt.Printf("%s %d, %s, %d bytes, %d entries, %d more pages, looks like a JavaScript shell: %v\n",
+		page.Mode, page.Status, page.Duration.Round(time.Millisecond), len(page.Body), len(pp.Startups), len(pp.More), fetch.LooksLikeJSShell(page))
+	for _, s := range pp.Startups {
+		where := s.Website
+		if where == "" {
+			where = s.Page
+		}
+		nrw := ""
+		if directory {
+			switch {
+			case s.Postcode == "":
+				nrw = "  (no postcode on the list, the imprint decides)"
+			case extract.InNRW(s.Postcode):
+				nrw = "  NRW " + s.Postcode
+			default:
+				nrw = "  outside NRW " + s.Postcode + ", not kept"
+			}
+		}
+		fmt.Printf("- %s  %s%s\n", s.Name, where, nrw)
+	}
+	for _, m := range pp.More {
+		fmt.Println("more:", m)
+	}
 }
 
 func runHashPassword() error {

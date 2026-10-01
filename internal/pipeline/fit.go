@@ -21,7 +21,7 @@ func RulesFrom(s settings.Settings) FitRules {
 	return FitRules{
 		Region:    s.Region(),
 		KeepWords: s.Strings("keep_words", []string{"founder", "gründer", "pitch", "meetup", "sport", "maker"}),
-		DropWords: s.Strings("drop_words", []string{"webinar", "training", "sales"}),
+		DropWords: s.Strings("drop_words", []string{"webinar", "sales"}),
 	}
 }
 

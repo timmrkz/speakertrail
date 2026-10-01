@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // All companies, people and addresses here are invented.
@@ -100,6 +101,56 @@ Kontrolle Keramik
 33602 Bielefeld`,
 			city: "Bielefeld", directors: []string{"Karla Kontrolle"}, young: true,
 		},
+		"a coach names only herself": {
+			text: `Impressum
+Angaben gemäß § 5 TMG:
+Herausgeberin & Verantwortliche für den Inhalt:
+Lena Musterfrau, Dipl.-Psych. ( DGfC )
+Engelbertstr. 5, 50674 Köln
+Telefon: 0221 000000`,
+			city: "Köln", directors: []string{"Lena Musterfrau"}, young: true,
+		},
+		"a yoga teacher right after § 5": {
+			text: `Angaben gemäß § 5 DDG
+Tom Testmann
+Yoga und Achtsamkeit
+Beispielweg 3
+44137 Dortmund`,
+			city: "Dortmund", directors: []string{"Tom Testmann"}, young: true,
+		},
+		"a studio that names only itself": {
+			text: `Angaben gemäß § 5 TMG
+Bewegungsraum Muster
+Beispielweg 3
+44137 Dortmund`,
+			city: "Dortmund",
+		},
+		"a company's person responsible for content is no owner": {
+			text: `Angaben gemäß § 5 TMG
+Beispiel Fitness GmbH
+Musterstraße 1, 50667 Köln
+Verantwortlich für den Inhalt: Tom Testmann`,
+			company: "Beispiel Fitness GmbH", form: "GmbH", city: "Köln",
+		},
+		"an insurer's legal form is not the practice's": {
+			text: `Impressum
+Angaben gemäß § 5 TMG:
+Mara Beispielfrau
+Heilpraktikerin für Psychotherapie
+Beispielweg 7, 48143 Münster
+Berufshaftpflichtversicherung:
+Muster Sachversicherung AG, Musterplatz 1, 44139 Dortmund`,
+			city: "Münster", directors: []string{"Mara Beispielfrau"}, young: true,
+		},
+		"the postcode on a line of its own": {
+			text: `Impressum
+Studio Beispiel
+Sülzburgstraße 104
+50937
+Köln-Sülz
+Inhaberin: Mara Beispielfrau`,
+			city: "Köln-Sülz", directors: []string{"Mara Beispielfrau"}, young: true,
+		},
 	} {
 		im := ParseImprint(tc.text)
 		if im.Company != tc.company || im.LegalForm != tc.form || im.City != tc.city {
@@ -160,6 +211,20 @@ func TestStartupLinks(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Errorf("startup %d: %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+// A website's name that starts with an umlaut or a dash stays whole text.
+func TestStartupNameFromHostWithUmlauts(t *testing.T) {
+	for host, want := range map[string]string{
+		"ärztehaus-beispiel.example": "Ärztehaus Beispiel",
+		"über-muster.example":        "Über Muster",
+		"–probe.example":             "–probe",
+		"beispiel-robotics.example":  "Beispiel Robotics",
+	} {
+		if got := startupName("", host); got != want || !utf8.ValidString(got) {
+			t.Errorf("%s: %q, want %q", host, got, want)
 		}
 	}
 }

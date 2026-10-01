@@ -4,7 +4,7 @@
 // claims a job with FOR UPDATE SKIP LOCKED and holds it by a lease, not by an
 // open transaction, so no transaction stays open while a job runs. A failed
 // job is retried after 1 minute, 10 minutes and 1 hour, and stops after 5
-// attempts.
+// attempts, or after the attempts the job itself was given.
 package queue
 
 import (
@@ -73,6 +73,8 @@ type Job struct {
 	Key      string
 	Payload  json.RawMessage
 	Attempts int
+	// MaxAttempts is how often this job runs before it stays failed.
+	MaxAttempts int
 }
 
 // NewJob describes a job to enqueue.
@@ -82,6 +84,9 @@ type NewJob struct {
 	Payload any
 	// RunAfter delays the job. The zero value means now.
 	RunAfter time.Time
+	// MaxAttempts is how often the job runs before it stays failed. Zero
+	// takes the queue's default.
+	MaxAttempts int
 }
 
 // Enqueue adds a job and reports whether it was added. A job with the same
@@ -106,19 +111,20 @@ func (q *Queue) Enqueue(ctx context.Context, j NewJob) (bool, error) {
 	}
 	var id int64
 	err := q.pool.QueryRow(ctx, `
-		INSERT INTO jobs (kind, key, payload, run_after, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $5)
+		INSERT INTO jobs (kind, key, payload, run_after, max_attempts, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NULLIF($6, 0), $5, $5)
 		ON CONFLICT (kind, key) DO UPDATE SET
 			payload = EXCLUDED.payload,
 			status = 'queued',
 			attempts = 0,
+			max_attempts = EXCLUDED.max_attempts,
 			run_after = EXCLUDED.run_after,
 			locked_until = NULL,
 			last_error = '',
 			updated_at = EXCLUDED.updated_at
 		WHERE jobs.status IN ('done', 'failed')
 		RETURNING id`,
-		j.Kind, j.Key, payload, runAfter, now).Scan(&id)
+		j.Kind, j.Key, payload, runAfter, now, j.MaxAttempts).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -137,7 +143,7 @@ func (q *Queue) Claim(ctx context.Context) (*Job, error) {
 	if _, err := q.pool.Exec(ctx, `
 		UPDATE jobs SET status = 'failed', locked_until = NULL, updated_at = $1,
 			last_error = CASE WHEN last_error = '' THEN 'lease expired' ELSE last_error END
-		WHERE status = 'running' AND locked_until < $1 AND attempts >= $2`,
+		WHERE status = 'running' AND locked_until < $1 AND attempts >= COALESCE(max_attempts, $2)`,
 		now, q.opts.MaxAttempts); err != nil {
 		return nil, fmt.Errorf("claim: expire leases: %w", err)
 	}
@@ -151,8 +157,8 @@ func (q *Queue) Claim(ctx context.Context) (*Job, error) {
 			ORDER BY run_after, id
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED)
-		RETURNING id, kind, key, payload, attempts`,
-		now, now.Add(q.opts.Lease)).Scan(&j.ID, &j.Kind, &j.Key, &j.Payload, &j.Attempts)
+		RETURNING id, kind, key, payload, attempts, COALESCE(max_attempts, $3)`,
+		now, now.Add(q.opts.Lease), q.opts.MaxAttempts).Scan(&j.ID, &j.Kind, &j.Key, &j.Payload, &j.Attempts, &j.MaxAttempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -182,7 +188,11 @@ func (q *Queue) Fail(ctx context.Context, j *Job, cause error) error {
 	if cause != nil {
 		msg = cause.Error()
 	}
-	if j.Attempts >= q.opts.MaxAttempts {
+	limit := j.MaxAttempts
+	if limit <= 0 {
+		limit = q.opts.MaxAttempts
+	}
+	if j.Attempts >= limit {
 		return q.finish(ctx, j, `
 			UPDATE jobs SET status = 'failed', locked_until = NULL, last_error = $3, updated_at = $4
 			WHERE id = $1 AND status = 'running' AND attempts = $2`,

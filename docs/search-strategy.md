@@ -2,7 +2,8 @@
 
 A brief for the next stage of the engine. It says who makes a good guest,
 where such people are found in NRW, how the engine tells them apart, and in
-which order to build it. No code yet.
+which order to build it. What is built so far is under
+[Where it stands](#where-it-stands).
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
@@ -30,6 +31,14 @@ The guests who worked, and the ones in the pipeline, share a pattern:
 | 4 | switched from tech to emotional coaching | coach, career switch, cares about people |
 
 Names stay out of this file, because the repository is public.
+
+The first searches found the right kind of people, owners of studios and
+gyms, but most of them are not on LinkedIn. Someone who fits but cannot be
+reached there does not help. LinkedIn is where people talk about their
+ideas, their convictions and their business, and where Tim has reached
+guests before. Instagram accounts are often quiet or all show. So the aim
+is people who fit **and are on LinkedIn**, best of all people who write
+there.
 
 ## Who fits
 
@@ -86,6 +95,45 @@ passage, for and against. The People screen sorts by it and shows why.
 There is no hidden number.
 
 ## Where they are found in NRW
+
+### Searches
+
+A fixed list of sources is not enough. Most of these people are on no
+list and on no stage. They have a website with an imprint, and a search
+finds it, the way Tim would search "BJJ Gym Köln" himself.
+
+A **search** is a source like any other: a query instead of a page. Its
+results are websites, each followed to its imprint and about page, like a
+directory's entries, and only NRW counts. The starting searches are eight
+kinds of people who fit, in the eleven biggest cities of NRW:
+
+- BJJ gyms, combat sports schools, CrossFit boxes
+- yoga studios, personal trainers
+- life coaches, couples coaching, nutrition advice
+
+Tim adds more on Sources, by typing a search instead of a web address.
+
+Search providers stand behind one interface, in `internal/search`. Why
+not Google itself: its robots.txt forbids bots on `/search`, and it blocks
+automated searches within a few requests. The providers are:
+
+- **Exa**, the one to start with. Its free plan needs no card and gives
+  $10 a month, about 1,400 searches at 10 results each.
+- **Tavily**, whose free plan has 1,000 searches a month. Its sign-up may
+  ask for a card.
+- **Brave**, whose monthly credit covers about 1,000. It needs a card.
+
+One is enough, because a run takes only three searches. Those with a key
+are used together: each search goes to the one with the largest share of
+its budget left, and to the next when it fails. Every call counts, also a
+failed one, because it may be billed. Once a budget in Settings is spent,
+the engine stops calling that provider. Another provider is one more type
+with a `Search` method.
+
+A search brings up to 20 websites, 10 from Exa. A run takes three due searches, and a
+search runs again after 30 days, both set in Settings. Platforms and list
+sites like Yelp, Gelbe Seiten or Eventbrite are left out of the results,
+LinkedIn and Instagram always.
 
 ### Events
 
@@ -185,6 +233,40 @@ Small batches, each one tested on Tim's Mac before the next.
 5. **Find on Instagram.**
 6. **Learning from keeps and skips.**
 7. **Weekly suggestions**, once the experiment works.
+8. **Searches**, added once the fixed sources proved too narrow: most
+   people who fit are on no list, but a search finds their website.
+
+## Where it stands
+
+Built, in the order above:
+
+0. **The workspace.** People updates by itself while a run goes, newest on
+   top. Runs show their true state, what they brought and what failed, in
+   plain words with the action that fixes it. Events moved under More.
+1. **The rubric**, in `internal/rubric`, over everyone found so far, with
+   People sorted by it and every reason shown with its passage. One
+   addition to the signals above: a startup's founders found through an
+   accelerator's portfolio are *backed by a startup programme*, a signal
+   against, because the imprint's one or two managing directors alone
+   would put every portfolio founder at the top.
+2. **About pages in lookups**, read by the rules and the local model.
+4. **Directories** as a kind of source, with only NRW counting by postcode.
+5. **Find on Instagram**, Instagram's keyword search in Tim's browser.
+6. **Keeps and skips** on each person, counted per signal on Overview and
+   in the report, with how the top 20 by fit were decided.
+3. **The starting list of new sources**, 27 of them, each checked by hand
+   for robots.txt and terms. Those that forbid automated access are
+   manual sources.
+8. **Searches**, with Exa, Tavily and Brave, see
+   [Searches](#searches). Overview shows how much of each budget this
+   month has spent.
+
+Waiting:
+
+- **A key.** Searches wait until `EXA_API_KEY`, `TAVILY_API_KEY` or
+  `BRAVE_SEARCH_API_KEY` is set, see the README.
+- **Searches that learn.** Which searches bring people Tim keeps, and new
+  searches made from what those people have in common.
 
 ## First an experiment
 

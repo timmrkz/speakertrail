@@ -820,6 +820,29 @@ func TestAddASearch(t *testing.T) {
 	}
 }
 
+// A post search counts the people in NRW who wrote the posts it found.
+// It can be checked by hand like any search.
+func TestAPostSearchCountsPeople(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	var id int64
+	if err := e.pool.QueryRow(t.Context(), `INSERT INTO sources (name, kind, query, status) VALUES ('Neues Studio #köln', 'post_search', 'Neues Studio #köln', 'active') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, people_found, startups_found, events_found) VALUES ($1, 3, 0, 0)`, id)
+	if code, body := e.do(t, "GET", "/api/sources?q=studio", ""); code != 200 || !strings.Contains(body, `"kind":"post_search"`) ||
+		!strings.Contains(body, `"people_found":3`) || !strings.Contains(body, `"health":"ok"`) {
+		t.Errorf("a post search in the list: %d %s", code, body)
+	}
+	e.pool.Exec(t.Context(), `INSERT INTO source_checks (source_id, people_found, startups_found, events_found) VALUES ($1, 0, 0, 0)`, id)
+	if code, body := e.do(t, "GET", "/api/sources?q=studio", ""); code != 200 || !strings.Contains(body, "The last check found no people in NRW") {
+		t.Errorf("a post search that found nobody: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources/"+itoa(id)+"/check", ""); code == 404 {
+		t.Error("a post search cannot be checked by hand")
+	}
+}
+
 // Keeping or skipping a person is one click and undone by another. Each
 // decision remembers the person's signals, so the counts per signal
 // survive when a skipped person is deleted later. The stats say how often

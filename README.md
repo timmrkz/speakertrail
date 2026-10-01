@@ -10,15 +10,16 @@ It is one Go binary with the web interface built in.
 | `speakertrail nightly` | Checks every due source once, then exits. This is the scheduled job |
 | `speakertrail worker` | Works on queued jobs until stopped |
 | `speakertrail migrate` | Applies database migrations. Every other command does this too |
-| `speakertrail import` | Loads the starting sources from the brief and the starting searches. Safe to repeat |
+| `speakertrail import` | Loads the starting sources from the brief, the starting searches and post searches. Safe to repeat |
 | `speakertrail fetch <url>` | Shows what the engine finds on one page. `-browser` loads it with JavaScript, `-save file` keeps the page, `-lists businesses` shows what a directory check would keep, with each entry's postcode |
 | `speakertrail people <url>...` | Who is on stage on event pages, by the rules and by the local language model. `-file` reads saved pages |
 | `speakertrail hash-password` | Prints the hash for `UI_PASSWORD_HASH` |
 
 ## How it works
 
-1. **Schedule.** Each night the due sources are queued: active and probation sources, retired ones whose recheck is due, up to 10 new candidates, and 3 due searches when a search provider has a key.
+1. **Schedule.** Each night the due sources are queued: active and probation sources, retired ones whose recheck is due, up to 10 new candidates, 3 due searches when a search provider has a key, and 2 due post searches when Exa has one.
 2. **Search.** A search like "BJJ Gym Köln" goes to Exa, Tavily or Brave, whichever has the most of its monthly budget left. Each website it finds is followed to its imprint, and its owner counts when the business is in NRW. One provider is enough. Several can be used at the same time, and a provider without a key is left out.
+   A post search like "Ein Jahr selbstständig #köln" goes to Exa only. It finds LinkedIn posts of the last three months, reads their authors' profiles from Exa's index, and keeps the authors who live in NRW, each with the post that brought them.
 3. **Fetch.** Plain HTTP first, with an honest User-Agent and robots.txt respected, at most 1 request every 5 seconds per website. When a page is an empty JavaScript shell, the headless browser loads it instead, and the source remembers that. LinkedIn and Instagram are never requested, not even by the browser.
 4. **Extract.** iCal feeds, schema.org Event data, then adapters for Luma, Meetup and Eventbrite. Names come only from clearly marked lines like "Speaker: ..." or "Jury: ...".
 5. **Read.** With the local language model, a run also reads each upcoming event's own page and finds who is on stage, with the passage that shows it, and whether the page says they founded or run something. Without the model this step is left out.
@@ -40,7 +41,7 @@ The source list, the fit rules and every number live in the Settings screen.
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/server` | The JSON API and the login, described in `docs/api.md` |
 | `internal/queue` | Job queue in Postgres with retries and the per-website limit |
-| `internal/importer` | The starting data from the brief, and the starting searches |
+| `internal/importer` | The starting data from the brief, and the starting searches and post searches |
 | `internal/db` | Migrations |
 | `web` | The interface, Svelte 5 with TypeScript |
 | `deploy` | Scaleway and plan B |
@@ -72,7 +73,7 @@ test` runs all tests.
 | `SESSION_SECRET` | The login, at least 16 characters |
 | `PORT` | `serve`, default 8080 |
 | `CHROME_PATH` | Optional, the Chromium to use |
-| `EXA_API_KEY` | Searches through Exa, optional. Its free plan needs no card and covers about 1,400 a month |
+| `EXA_API_KEY` | Searches and post searches through Exa, optional. Its free plan needs no card and covers about 1,400 calls a month |
 | `TAVILY_API_KEY` | Searches through Tavily, optional. Its free plan has 1,000 a month |
 | `BRAVE_SEARCH_API_KEY` | Searches through Brave, optional. Its monthly credit covers about 1,000, and it needs a card |
 | `ANTHROPIC_API_KEY` | Language model features, later |
@@ -88,7 +89,7 @@ The cloud environment runs `scripts/cloud-setup.sh` as its setup script. At the 
 
 ## Rules the code keeps
 
-- No request ever goes to linkedin.com or instagram.com. Profile links only come from event pages and, later, search results.
+- No request ever goes to linkedin.com or instagram.com. Profile links come from event pages, websites and post searches, whose profiles Exa reads from its own index.
 - robots.txt is respected. A site that refuses the bot becomes a Manual source.
 - No email addresses or phone numbers are stored. People are shown to the public only when the `public_show_people` setting is on.
 - Stored pages are deleted after 30 days.

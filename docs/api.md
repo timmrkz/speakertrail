@@ -145,7 +145,7 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
       "id": 3, "name": "Startplatz events", "kind": "listing", "url": "https://www.startplatz.de/events", "query": null,
       "category": "Venue and organiser", "city": "Köln", "status": "active", "fetch_mode": "auto", "notes": "",
       "last_checked_at": "...", "next_check_at": "...", "checks": 4, "empty_checks_in_row": 0, "points": 0,
-      "last_check": { "events_found": 7, "startups_found": 0, "http_status": 200, "mode": "http", "error": "" },
+      "last_check": { "events_found": 7, "startups_found": 0, "people_found": 0, "http_status": 200, "mode": "http", "error": "" },
       "health": "ok", "health_note": "",
       "discovered_from": "Imported from the brief"
     }
@@ -160,6 +160,8 @@ A check of a portfolio stores each startup its page links to, with its website, 
 A directory works the same way, with two differences. Directories are national, so only NRW counts: an entry whose postcode on the list lies outside NRW is not kept, and a lookup whose imprint gives no postcode in NRW takes nobody, noted as "outside NRW (80331 München)". And an owner, "Inhaber", is the best case, so businesses from directories are looked up before startups from portfolios. A first and last name that two imprints in the same city give is one person, who runs both businesses.
 
 A search, kind `search_query`, has a `query` and no `url`. Its check asks a search provider, keeps one website per host, leaves out LinkedIn, Instagram, platforms and list sites like Yelp or Eventbrite, and stores each website as a business, like a directory's entry. Only NRW counts, by the imprint's postcode. Each search goes to the provider with the largest share of its budget left, and to the next one when it fails. Once every budget is spent, or when no provider has a key, searches wait. A run takes `searches_per_run` due searches, and a search runs again after `search_check_days`. Its health counts `startups_found`, the websites it kept.
+
+A post search, kind `post_search`, also has a `query` and no `url`, like "Ein Jahr selbstständig #köln". Its check asks Exa, the only provider that can, for LinkedIn posts published in the last `post_search_days`. A post's link names its author, and the authors' profiles are then read from Exa's index in one more call, never live, so the engine never requests LinkedIn. Only authors whose profile places them in NRW are kept, each as a person with the profile, confirmed, and the post that brought them, its link, first line and date. Someone already known through that profile is not added twice. A post search counts two calls against Exa's budget, the search and the lookup. A run takes `post_searches_per_run` due post searches, and a post search runs again after `post_search_check_days`. Without Exa, post searches wait. Its health counts `people_found`, the people in NRW it found.
 
 `POST /api/sources` with `{"url": "...", "name": "optional", "lists": "events"}` adds a candidate source and answers it with 201. `lists` is `events`, `startups` for a portfolio or `businesses` for a directory. `"portfolio": true` still means startups. A link to one event on Meetup, Luma or Eventbrite adds the calendar it belongs to. LinkedIn, Instagram and Facebook answer 400, an address that is already a source 409.
 

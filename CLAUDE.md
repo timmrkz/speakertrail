@@ -91,6 +91,9 @@ messages, pull request text, code comments and chat replies.
   about page, for who runs it.
   A **search** is a source that asks a search provider, like "BJJ Gym
   Köln", and its results are websites to look up.
+  A **post search** is a source that asks Exa for LinkedIn posts, like
+  "Ein Jahr selbstständig #köln", and its results are the people in NRW
+  who wrote them.
   A **run** is one pass over the due sources, nightly or started by hand. A
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An

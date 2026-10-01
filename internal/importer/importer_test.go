@@ -15,12 +15,12 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.SeedsAdded != 17 {
+	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.PostSearchesAdded != 42 || res.SeedsAdded != 17 {
 		t.Fatalf("first import: %s", res)
 	}
 
 	counts := map[string]int{}
-	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources WHERE kind <> 'search_query' GROUP BY status`)
+	rows, _ := pool.Query(ctx, `SELECT status, count(*) FROM sources WHERE kind NOT IN ('search_query', 'post_search') GROUP BY status`)
 	for rows.Next() {
 		var s string
 		var n int
@@ -51,6 +51,8 @@ func TestImportStartingData(t *testing.T) {
 		{`SELECT count(*)::int FROM sources WHERE name IN ('Frauen gründen anders', 'Kölner Vorbildunternehmerinnen')`, int32(2)},
 		{`SELECT count(*)::int FROM seeds WHERE processed_at IS NULL`, int32(2)},
 		{`SELECT status || ' ' || city || ' ' || category FROM sources WHERE query = 'BJJ Gym Köln'`, "candidate Köln Search"},
+		{`SELECT kind || ' ' || city || ' ' || category FROM sources WHERE query = 'Mein Weg vom Angestellten zum Coach #düsseldorf'`, "post_search Düsseldorf Post search"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'post_search' AND city = ''`, int32(6)},
 		{`SELECT count(*)::int FROM sources WHERE kind = 'search_query' AND city = ''`, int32(0)},
 	}
 	for _, c := range checks {
@@ -70,7 +72,7 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 {
+	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.PostSearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 || res.PostSearchesKept != 42 {
 		t.Errorf("second import added rows: %s", res)
 	}
 	var status string

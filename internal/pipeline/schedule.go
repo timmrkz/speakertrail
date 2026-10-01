@@ -111,6 +111,24 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		}
 		ids = append(ids, searches...)
 	}
+	// Due post searches, when a provider can find posts. Each brings up to
+	// 10 posts and one lookup of their authors.
+	if p.Search != nil && p.Search.FindsPosts() {
+		rows, err := p.Pool.Query(ctx, `
+			SELECT id FROM sources
+			WHERE kind = 'post_search' AND query IS NOT NULL AND status IN ('candidate', 'probation', 'active')
+			  AND (next_check_at IS NULL OR next_check_at <= $1)
+			ORDER BY next_check_at NULLS FIRST, points DESC, id
+			LIMIT $2`, now, cfg.Int("post_searches_per_run", 2))
+		if err != nil {
+			return 0, err
+		}
+		posts, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		if err != nil {
+			return 0, err
+		}
+		ids = append(ids, posts...)
+	}
 	for _, id := range ids {
 		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
 			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id), MaxAttempts: runAttempts,

@@ -274,12 +274,15 @@ function sourceOut(m: MockSource): Source {
   const { last_found, last_mode, last_error, last_http, checked_hours_ago, ...rest } = m
   const checked = checked_hours_ago === null ? null : hoursAgo(checked_hours_ago)
   const every = m.status === 'retired' ? 28 * 24 : 24
+  // What the last check counted, as the server does: businesses for a
+  // portfolio, a directory or a search, people for a post search.
+  const lists = m.kind === 'post_search' ? 'people' : ['portfolio', 'directory', 'search_query'].includes(m.kind) ? 'startups' : 'events'
   return {
     ...rest,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
-      events_found: m.kind === 'portfolio' || m.kind === 'directory' ? 0 : last_found, startups_found: m.kind === 'portfolio' || m.kind === 'directory' ? last_found : 0,
+      events_found: lists === 'events' ? last_found : 0, startups_found: lists === 'startups' ? last_found : 0, people_found: lists === 'people' ? last_found : 0,
       http_status: last_http, mode: last_mode, error: last_error,
     },
   }

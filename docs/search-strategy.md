@@ -192,10 +192,10 @@ signals against. **Writes on LinkedIn**, with the date of the last post,
 becomes a signal for a good fit. A profile without a post in a year is a
 signal against.
 
-What is kept of a profile is what the data model already holds: the
-name, the headline, the place, the profile link, and the post that
-brought the person, with its date. Likes and comments are read only for
-their dates and never stored.
+What is kept of a profile: the name, the headline, the place and the
+profile link. Of the post that brought the person: its link, its first
+line and its date, in `person_posts`. Nothing else of a profile or a
+post is stored.
 
 Costs, from the tests: a search is $0.007, a profile lookup $0.001. One
 active person in NRW costs about $0.005 to $0.01. Exa's free $10 a month
@@ -329,14 +329,20 @@ Built, in the order above:
 8. **Searches**, with Exa, Tavily and Brave, see
    [Searches](#searches). Overview shows how much of each budget this
    month has spent.
+9. **Post searches**, the first part of
+   [Active on LinkedIn](#active-on-linkedin). 42 starting post searches,
+   six kinds of story in seven places, two in each run. Each one is due
+   again after 14 days.
 
 Waiting:
 
 - **A key.** Searches wait until `EXA_API_KEY`, `TAVILY_API_KEY` or
   `BRAVE_SEARCH_API_KEY` is set, see the README.
-- **Active on LinkedIn**, tested with Exa, not built yet.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.
+- **Writes on LinkedIn** as a rubric signal, the second part of
+  [Active on LinkedIn](#active-on-linkedin). Adding a post search in
+  Sources, and the post on the person's sheet.
 
 ## First an experiment
 

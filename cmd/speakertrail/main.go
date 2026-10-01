@@ -268,7 +268,7 @@ func runNightly(ctx context.Context, cfg config.Config, args []string) error {
 			if err != nil {
 				return err
 			}
-			if res.SourcesAdded+res.SearchesAdded+res.SeedsAdded > 0 {
+			if res.SourcesAdded+res.SearchesAdded+res.PostSearchesAdded+res.SeedsAdded > 0 {
 				slog.Info("starting data imported", "result", res.String())
 			}
 		}

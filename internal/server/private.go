@@ -418,7 +418,7 @@ const sourceJSON = `json_build_object(
 	'last_checked_at', s.last_checked_at, 'next_check_at', s.next_check_at, 'checks', s.checks,
 	'empty_checks_in_row', s.empty_checks_in_row, 'points', s.points,
 	'last_check', CASE WHEN lc.id IS NULL THEN NULL ELSE json_build_object(
-		'events_found', lc.events_found, 'startups_found', lc.startups_found,
+		'events_found', lc.events_found, 'startups_found', lc.startups_found, 'people_found', lc.people_found,
 		'http_status', lc.http_status, 'mode', lc.mode, 'error', lc.error) END,
 	'health', CASE
 		WHEN s.status = 'manual' THEN 'warning'
@@ -431,9 +431,9 @@ const sourceJSON = `json_build_object(
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' ELSE 'events' END
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' WHEN 'post_search' THEN 'people in NRW' ELSE 'events' END
 		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
+			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' WHEN 'post_search' THEN ' people in NRW' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
@@ -441,12 +441,12 @@ const sourceJSON = `json_build_object(
 		NULLIF(s.discovered_note, '')))`
 
 // A check found events, or startups and businesses when the source is a
-// portfolio, a directory or a search.
+// portfolio, a directory or a search, or people when it is a post search.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind = 'post_search' THEN c.people_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
 	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
-		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found ELSE c.events_found END AS found
+		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind = 'post_search' THEN c.people_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
@@ -659,7 +659,7 @@ func (s *Server) checkSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var exists bool
-	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND (url IS NOT NULL OR kind = 'search_query'))`, id).Scan(&exists); err != nil {
+	if err := s.opts.Pool.QueryRow(r.Context(), `SELECT EXISTS (SELECT 1 FROM sources WHERE id = $1 AND (url IS NOT NULL OR kind IN ('search_query', 'post_search')))`, id).Scan(&exists); err != nil {
 		s.internal(w, r, err)
 		return
 	}

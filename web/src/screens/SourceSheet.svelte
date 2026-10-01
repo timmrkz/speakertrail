@@ -101,7 +101,7 @@
         <dt>Last check</dt>
         <dd>{source.last_checked_at ? `${fmtDateTime(source.last_checked_at)}, ${fmtAgo(source.last_checked_at)}` : 'Never'}</dd>
         {#if source.last_check}
-          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : source.kind === 'directory' ? plural(source.last_check.startups_found, 'business in NRW', 'businesses in NRW') : source.kind === 'search_query' ? plural(source.last_check.startups_found, 'business', 'businesses') : plural(source.last_check.events_found, 'event')}</dd>
+          <dt>Found</dt><dd>{source.kind === 'portfolio' ? plural(source.last_check.startups_found, 'startup') : source.kind === 'directory' ? plural(source.last_check.startups_found, 'business in NRW', 'businesses in NRW') : source.kind === 'search_query' ? plural(source.last_check.startups_found, 'business', 'businesses') : source.kind === 'post_search' ? plural(source.last_check.people_found, 'person in NRW', 'people in NRW') : plural(source.last_check.events_found, 'event')}</dd>
           <dt>Fetched with</dt><dd>{source.last_check.mode}{source.last_check.http_status ? `, HTTP ${source.last_check.http_status}` : ''}</dd>
           {#if source.last_check.error}<dt>Error</dt><dd class="err">{source.last_check.error}</dd>{/if}
         {/if}

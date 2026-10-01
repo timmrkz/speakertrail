@@ -40,6 +40,9 @@ guests before. Instagram accounts are often quiet or all show. So the aim
 is people who fit **and are on LinkedIn**, best of all people who write
 there.
 
+A test with Exa on 30 September 2026 showed how to find them. See
+[Active on LinkedIn](#active-on-linkedin).
+
 ## Who fits
 
 **The core idea: people who work with people.** Their work is face to face,
@@ -134,6 +137,61 @@ A search brings up to 20 websites, 10 from Exa. A run takes three due searches, 
 search runs again after 30 days, both set in Settings. Platforms and list
 sites like Yelp, Gelbe Seiten or Eventbrite are left out of the results,
 LinkedIn and Instagram always.
+
+### Active on LinkedIn
+
+A person who fits but never posts on LinkedIn is hard to reach there. So
+the engine looks for people who **write** on LinkedIn, in NRW, now. It
+never opens LinkedIn for that. Exa has public LinkedIn profiles and posts
+in its index, and the engine asks Exa, only from that index, never with a
+live fetch. An unknown profile costs nothing and counts as not found.
+
+What the test on 30 September 2026 found, with 18 searches and about 140
+profile lookups for about $0.26 in all:
+
+- **Profile searches** like "Inhaberin Yoga Studio Köln", limited to
+  `linkedin.com/in`, find people who fit, in NRW: 56 of 60. Each comes
+  with jobs, company, place and dates as data, enough for the rubric.
+  BJJ was the weakest and brought martial arts in general.
+- **Most of them do not post.** A profile's full text lists its recent
+  posts, comments and likes with dates. Only 11 of the 60 had posted in
+  the last six months, 14 in the last year.
+- **Post searches** limited to `linkedin.com/posts` find people who write
+  about exactly what fits: quitting a job, the first year on their own,
+  from employee to coach. Every post has a date, so the person is active
+  by definition. But a post does not say where its author lives.
+- **The author's profile says it.** A post's link names its author, and
+  looking up the profile costs $0.001. 32 of 40 authors were found, the
+  rest were company pages. Without a place in the search, only 7 of the
+  32 lived in NRW, about NRW's share of the German speaking world.
+- **A place in the query helps, a place required in the text does not.**
+  With `#köln` in the query, 6 of 9 authors lived in NRW, with "in Köln"
+  4 of 7. Requiring "Köln" in the post's text brought 1 of 6.
+
+So, two ways to the same goal, both kept to NRW by the author's profile:
+
+1. **Posts first.** A post search with a place in the query, like
+   "Ein Jahr eigenes Studio, was ich gelernt habe #köln", only posts of
+   the last three months. Each author's profile is looked up, and only
+   authors in NRW count. The post is the reason they appear, with its
+   date and link.
+2. **Profiles, then activity.** The profile searches as in the test,
+   then each profile's full text, and only people who posted in the last
+   six months count.
+
+The rubric reads the profile: works with people, owner, coach, and the
+signals against. **Writes on LinkedIn**, with the date of the last post,
+becomes a signal for a good fit. A profile without a post in a year is a
+signal against.
+
+What is kept of a profile is what the data model already holds: the
+name, the headline, the place, the profile link, and the post that
+brought the person, with its date. Likes and comments are read only for
+their dates and never stored.
+
+Costs, from the test: a search is $0.007, a profile lookup $0.001. One
+active person in NRW costs about $0.005 through posts and $0.01 through
+profiles. Exa's free $10 a month is enough for well over 1,000.
 
 ### Events
 
@@ -235,6 +293,9 @@ Small batches, each one tested on Tim's Mac before the next.
 7. **Weekly suggestions**, once the experiment works.
 8. **Searches**, added once the fixed sources proved too narrow: most
    people who fit are on no list, but a search finds their website.
+9. **Active on LinkedIn**, see [Active on LinkedIn](#active-on-linkedin):
+   post searches with the author's place, then profile searches with the
+   activity check, then the rubric signal for writing on LinkedIn.
 
 ## Where it stands
 
@@ -265,6 +326,7 @@ Waiting:
 
 - **A key.** Searches wait until `EXA_API_KEY`, `TAVILY_API_KEY` or
   `BRAVE_SEARCH_API_KEY` is set, see the README.
+- **Active on LinkedIn**, tested with Exa, not built yet.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.
 

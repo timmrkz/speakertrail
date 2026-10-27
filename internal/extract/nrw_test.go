@@ -53,3 +53,42 @@ func TestOneBlockOfEntriesHasNoPostcode(t *testing.T) {
 		}
 	}
 }
+
+// Places as LinkedIn profiles give them, from the test with Exa.
+func TestPlaceInNRW(t *testing.T) {
+	for place, want := range map[string]string{
+		"Cologne, North Rhine-Westphalia, Germany": "Köln",
+		"Pulheim, North Rhine-Westphalia, Germany": "Pulheim",
+		"Kamen, North Rhine-Westphalia, Germany":   "Kamen",
+		"Münster, North Rhine-Westphalia, Germany": "Münster",
+		"Cologne Bonn Region":                      "Köln",
+		"Greater Dusseldorf Area":                  "Düsseldorf",
+		"Ruhr Region":                              "",
+		"North Rhine-Westphalia, Germany":          "",
+		"Düsseldorf, Germany":                      "Düsseldorf",
+		"Berlin Metropolitan Area":                 "-",
+		"Munich, Bavaria, Germany":                 "-",
+		"Münster, Hesse, Germany":                  "-",
+		"Fulda, Hesse, Germany":                    "-",
+		"Osnabrück Land":                           "-",
+		"Vienna, Vienna, Austria":                  "-",
+		"Blumenstein, Berne, Switzerland":          "-",
+		"Germany":                                  "-",
+		"":                                         "-",
+		"Greater Copenhagen Region":                "-",
+		"Hessen, Germany":                          "-",
+		"Hamburg, Hamburg, Germany":                "-",
+		"Wittlich, Rhineland-Palatinate, Germany":  "-",
+		"Greater Munich Metropolitan Area":         "-",
+		"Greater Hamburg Area":                     "-",
+	} {
+		city, ok := PlaceInNRW(place)
+		got := city
+		if !ok {
+			got = "-"
+		}
+		if got != want {
+			t.Errorf("PlaceInNRW(%q) = %q, %v, want %q", place, city, ok, want)
+		}
+	}
+}

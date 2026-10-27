@@ -77,9 +77,62 @@ func (p *Pool) Usage(ctx context.Context) ([]Use, error) {
 // the next one when it fails. It returns the results and the provider
 // that gave them.
 func (p *Pool) Search(ctx context.Context, query string) ([]Result, string, error) {
+	var res []Result
+	from, err := p.try(ctx, query, p.Providers, func(pr Provider) (n int, err error) {
+		res, err = pr.Search(ctx, query)
+		return len(res), err
+	})
+	return res, from, err
+}
+
+// FindsPosts reports whether a provider that can find LinkedIn posts has
+// a key.
+func (p *Pool) FindsPosts() bool {
+	return len(p.postFinders()) > 0
+}
+
+// Posts finds LinkedIn posts published since a time, on a provider that
+// can, within its budget.
+func (p *Pool) Posts(ctx context.Context, query string, since time.Time) ([]Post, string, error) {
+	var res []Post
+	from, err := p.try(ctx, query, p.postFinders(), func(pr Provider) (n int, err error) {
+		res, err = pr.(PostFinder).Posts(ctx, query, since)
+		return len(res), err
+	})
+	return res, from, err
+}
+
+// Profiles reads LinkedIn profiles from a provider's index. All of them
+// together are one call against its budget.
+func (p *Pool) Profiles(ctx context.Context, urls []string) ([]Profile, string, error) {
+	if len(urls) == 0 {
+		return nil, "", nil
+	}
+	var res []Profile
+	from, err := p.try(ctx, fmt.Sprintf("%d profiles", len(urls)), p.postFinders(), func(pr Provider) (n int, err error) {
+		res, err = pr.(PostFinder).Profiles(ctx, urls)
+		return len(res), err
+	})
+	return res, from, err
+}
+
+func (p *Pool) postFinders() []Provider {
+	var out []Provider
+	for _, pr := range p.Providers {
+		if _, ok := pr.(PostFinder); ok {
+			out = append(out, pr)
+		}
+	}
+	return out
+}
+
+// try makes one call on the provider with the largest share of its budget
+// left, and on the next one when it fails. Every call is counted before
+// it is made, also a failed one, because it may be billed.
+func (p *Pool) try(ctx context.Context, query string, providers []Provider, call func(Provider) (int, error)) (string, error) {
 	usage, err := p.Usage(ctx)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 	left := map[string]float64{}
 	for _, u := range usage {
@@ -87,7 +140,7 @@ func (p *Pool) Search(ctx context.Context, query string) ([]Result, string, erro
 			left[u.Provider] = float64(u.Budget-u.Used) / float64(u.Budget)
 		}
 	}
-	order := slices.Clone(p.Providers)
+	order := slices.Clone(providers)
 	slices.SortStableFunc(order, func(a, b Provider) int {
 		switch la, lb := left[a.Name()], left[b.Name()]; {
 		case la > lb:
@@ -101,32 +154,32 @@ func (p *Pool) Search(ctx context.Context, query string) ([]Result, string, erro
 	for _, pr := range order {
 		id, ok, err := p.reserve(ctx, pr.Name(), query)
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
 		if !ok {
 			continue
 		}
-		res, err := pr.Search(ctx, query)
+		n, err := call(pr)
 		msg := ""
 		if err != nil {
 			msg = err.Error()
 			errs = append(errs, err)
 		}
-		// Record the outcome even when the search was cancelled.
+		// Record the outcome even when the call was cancelled.
 		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-		_, rerr := p.DB.Exec(rctx, `UPDATE search_calls SET results = $2, error = $3 WHERE id = $1`, id, len(res), msg)
+		_, rerr := p.DB.Exec(rctx, `UPDATE search_calls SET results = $2, error = $3 WHERE id = $1`, id, n, msg)
 		cancel()
 		if rerr != nil {
-			return nil, "", rerr
+			return "", rerr
 		}
 		if err == nil {
-			return res, pr.Name(), nil
+			return pr.Name(), nil
 		}
 	}
 	if len(errs) > 0 {
-		return nil, "", errors.Join(errs...)
+		return "", errors.Join(errs...)
 	}
-	return nil, "", ErrNoBudget
+	return "", ErrNoBudget
 }
 
 // reserve counts a call against a provider's budget before it is made,

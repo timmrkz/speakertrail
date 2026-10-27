@@ -16,7 +16,7 @@ export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'portfolio' | 'directory'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'post_search' | 'portfolio' | 'directory'
 // What a source's page lists: events, startups for a portfolio, or
 // businesses run by people for a directory.
 export type SourceLists = 'events' | 'startups' | 'businesses'
@@ -201,6 +201,8 @@ export interface LastCheck {
   // For a portfolio or a directory: the startups or businesses its page
   // lists, in NRW for a directory.
   startups_found: number
+  // For a post search: the people in NRW who wrote the posts it found.
+  people_found: number
   http_status: number
   mode: string
   error: string

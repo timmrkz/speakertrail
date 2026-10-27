@@ -44,15 +44,7 @@ func (p *Pipeline) checkSearch(ctx context.Context, src Source, runID int64) err
 		return nil
 	}
 	if err != nil {
-		rec.err = err.Error()
-		rec.duration = p.now().Sub(start)
-		if err := p.recordCheck(ctx, src, runID, rec); err != nil {
-			return err
-		}
-		// The provider failed, not the search. It is tried again tomorrow.
-		_, err := p.Pool.Exec(ctx, `UPDATE sources SET last_checked_at = $2, next_check_at = $3 WHERE id = $1`,
-			src.ID, start, start.Add(cfg.Days("active_check_interval_days", 1)))
-		return err
+		return p.searchFailed(ctx, src, runID, cfg, rec, err)
 	}
 	rec.status = 200
 	return p.storeEntries(ctx, src, runID, cfg, searchEntries(results), rec)

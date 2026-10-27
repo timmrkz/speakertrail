@@ -40,6 +40,9 @@ guests before. Instagram accounts are often quiet or all show. So the aim
 is people who fit **and are on LinkedIn**, best of all people who write
 there.
 
+A test with Exa on 30 September 2026 showed how to find them. See
+[Active on LinkedIn](#active-on-linkedin).
+
 ## Who fits
 
 **The core idea: people who work with people.** Their work is face to face,
@@ -134,6 +137,69 @@ A search brings up to 20 websites, 10 from Exa. A run takes three due searches, 
 search runs again after 30 days, both set in Settings. Platforms and list
 sites like Yelp, Gelbe Seiten or Eventbrite are left out of the results,
 LinkedIn and Instagram always.
+
+### Active on LinkedIn
+
+A person who fits but never posts on LinkedIn is hard to reach there. So
+the engine looks for people who **write** on LinkedIn, in NRW, now. It
+never opens LinkedIn for that. Exa has public LinkedIn profiles and posts
+in its index, and the engine asks Exa, only from that index, never with a
+live fetch. An unknown profile costs nothing and counts as not found.
+
+What the tests on 30 September and 1 October 2026 found, with 22
+searches and about 170 profile lookups for about $0.31 in all:
+
+- **Profile searches** like "Inhaberin Yoga Studio Köln", limited to
+  `linkedin.com/in`, find people who fit, in NRW: 56 of 60. Each comes
+  with jobs, company, place and dates as data, enough for the rubric.
+  BJJ was the weakest and brought martial arts in general.
+- **Most of them do not post.** A profile's full text lists its recent
+  posts, comments and likes with dates. Only 11 of the 60 had posted in
+  the last six months, 14 in the last year.
+- **Post searches** limited to `linkedin.com/posts` find people who write
+  about exactly what fits: quitting a job, the first year on their own,
+  from employee to coach. Every post has a date, so the person is active
+  by definition. But a post does not say where its author lives.
+- **The author's profile says it.** A post's link names its author, and
+  looking up the profile costs $0.001. 32 of 40 authors were found, the
+  rest were company pages. Without a place in the search, only 7 of the
+  32 lived in NRW, about NRW's share of the German speaking world.
+- **A place in the query helps, a place required in the text does not.**
+  With `#köln` in the query, 6 of 9 authors lived in NRW, with "in Köln"
+  4 of 7. Requiring "Köln" in the post's text brought 1 of 6.
+
+- **Posts aimed at a kind of person work for some kinds.** A second test
+  on 1 October aimed post searches at yoga, BJJ, life coaching and
+  personal training. Life coaches in Düsseldorf worked well, 5 of 6
+  authors in NRW. BJJ and yoga brought mostly posts by gyms and studios
+  as companies, and trainers mostly from elsewhere: 9 of 27 authors in
+  NRW in all.
+
+**One way: posts.** Both ways cost a fraction of a cent per active person,
+so the cost does not decide. Posts win because everyone they find is
+active, and the post is the reason to talk. A post search has a place in
+the query, like "Ein Jahr eigenes Studio, was ich gelernt habe #köln",
+and takes only posts of the last three months. Each author's profile is
+looked up, and only authors in NRW count. Company pages are left out.
+The post is why a person appears, with its date and link.
+
+Profile searches with the activity check stay a fallback, only if posts
+keep missing a kind of person Tim wants, like owners of gyms whose
+studio posts instead of them.
+
+The rubric reads the profile: works with people, owner, coach, and the
+signals against. **Writes on LinkedIn**, with the date of the last post,
+becomes a signal for a good fit. A profile without a post in a year is a
+signal against.
+
+What is kept of a profile: the name, the headline, the place and the
+profile link. Of the post that brought the person: its link, its first
+line and its date, in `person_posts`. Nothing else of a profile or a
+post is stored.
+
+Costs, from the tests: a search is $0.007, a profile lookup $0.001. One
+active person in NRW costs about $0.005 to $0.01. Exa's free $10 a month
+is enough for well over 1,000.
 
 ### Events
 
@@ -235,6 +301,9 @@ Small batches, each one tested on Tim's Mac before the next.
 7. **Weekly suggestions**, once the experiment works.
 8. **Searches**, added once the fixed sources proved too narrow: most
    people who fit are on no list, but a search finds their website.
+9. **Active on LinkedIn**, see [Active on LinkedIn](#active-on-linkedin):
+   post searches with the author's place, then the rubric signal for
+   writing on LinkedIn.
 
 ## Where it stands
 
@@ -260,6 +329,10 @@ Built, in the order above:
 8. **Searches**, with Exa, Tavily and Brave, see
    [Searches](#searches). Overview shows how much of each budget this
    month has spent.
+9. **Post searches**, the first part of
+   [Active on LinkedIn](#active-on-linkedin). 42 starting post searches,
+   six kinds of story in seven places, two in each run. Each one is due
+   again after 14 days.
 
 Waiting:
 
@@ -267,6 +340,9 @@ Waiting:
   `BRAVE_SEARCH_API_KEY` is set, see the README.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.
+- **Writes on LinkedIn** as a rubric signal, the second part of
+  [Active on LinkedIn](#active-on-linkedin). Adding a post search in
+  Sources, and the post on the person's sheet.
 
 ## First an experiment
 

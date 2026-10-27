@@ -132,8 +132,11 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 	if err != nil {
 		return err
 	}
-	if src.Kind == "search_query" {
+	switch src.Kind {
+	case "search_query":
 		return p.checkSearch(ctx, src, runID)
+	case "post_search":
+		return p.checkPostSearch(ctx, src, runID)
 	}
 	if src.URL == "" || src.Status == "manual" {
 		return nil

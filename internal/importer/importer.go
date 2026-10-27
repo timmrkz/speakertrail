@@ -27,16 +27,20 @@ var seedsCSV string
 //go:embed data/searches.csv
 var searchesCSV string
 
+//go:embed data/post_searches.csv
+var postSearchesCSV string
+
 // Result counts what an import did.
 type Result struct {
 	SourcesAdded, SourcesKept, SourcesSkipped int
 	SearchesAdded, SearchesKept               int
+	PostSearchesAdded, PostSearchesKept       int
 	SeedsAdded, SeedsKept                     int
 }
 
 func (r Result) String() string {
-	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. searches: %d added, %d already there. seeds: %d added, %d already there",
-		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SearchesAdded, r.SearchesKept, r.SeedsAdded, r.SeedsKept)
+	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. searches: %d added, %d already there. post searches: %d added, %d already there. seeds: %d added, %d already there",
+		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SearchesAdded, r.SearchesKept, r.PostSearchesAdded, r.PostSearchesKept, r.SeedsAdded, r.SeedsKept)
 }
 
 // Import loads the starting data.
@@ -119,6 +123,29 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 			res.SearchesAdded++
 		} else {
 			res.SearchesKept++
+		}
+	}
+
+	// The starting post searches: stories of people who fit, like a first
+	// year on their own, with a place in NRW in the query. Each waits until
+	// a provider that finds posts has a key.
+	posts, err := readCSV(postSearchesCSV)
+	if err != nil {
+		return res, fmt.Errorf("post_searches.csv: %w", err)
+	}
+	for _, s := range posts {
+		q := s["query"]
+		tag, err := pool.Exec(ctx, `
+			INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
+			VALUES ($1, 'post_search', $1, 'Post search', $2, 'candidate', 'Imported from the starting post searches')
+			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
+		if err != nil {
+			return res, fmt.Errorf("post search %q: %w", q, err)
+		}
+		if tag.RowsAffected() == 1 {
+			res.PostSearchesAdded++
+		} else {
+			res.PostSearchesKept++
 		}
 	}
 

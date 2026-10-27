@@ -247,6 +247,11 @@ export function buildSources(): MockSource[] {
     status: 'candidate', fetch_mode: 'auto', notes: '', checks: 1, empty_checks_in_row: 0, points: 1, health: 'ok', health_note: '',
     discovered_from: 'Imported from the starting searches', last_found: 14, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.3,
   })
+  out.push({
+    id: 27, name: 'Ein Jahr selbstständig, was ich gelernt habe #köln', kind: 'post_search', url: null, query: 'Ein Jahr selbstständig, was ich gelernt habe #köln',
+    category: 'Post search', city: 'Köln', status: 'active', fetch_mode: 'auto', notes: '', checks: 1, empty_checks_in_row: 0, points: 1, health: 'ok', health_note: '',
+    discovered_from: 'Imported from the starting post searches', last_found: 4, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.3,
+  })
   return out
 }
 

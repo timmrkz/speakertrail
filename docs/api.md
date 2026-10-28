@@ -176,7 +176,7 @@ A person in `GET /api/people` carries the fit rubric's verdict, see [search-stra
 ```json
 { "fit_score": 1, "signals": [
   { "key": "works_with_people", "label": "Works with people", "for": true, "passage": "Yoga-Lehrerin, Studio Beispiel", "found_in": "title" },
-  { "key": "owner_operator", "label": "Runs it themselves", "for": true, "passage": "Inhaberin des Studios", "found_in": "model" },
+  { "key": "owner_operator", "label": "Runs their own business", "for": true, "passage": "Inhaberin des Studios", "found_in": "model" },
   { "key": "backed", "label": "Backed by a startup programme", "for": false, "passage": "In the portfolio of Beispiel Hub", "found_in": "portfolio" } ] }
 ```
 

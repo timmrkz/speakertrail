@@ -15,7 +15,7 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.PostSearchesAdded != 42 || res.SeedsAdded != 17 {
+	if res.SourcesAdded < 100 || res.SourcesSkipped != 1 || res.SearchesAdded != 88 || res.PostSearchesAdded != 70 || res.SeedsAdded != 17 {
 		t.Fatalf("first import: %s", res)
 	}
 
@@ -52,7 +52,10 @@ func TestImportStartingData(t *testing.T) {
 		{`SELECT count(*)::int FROM seeds WHERE processed_at IS NULL`, int32(2)},
 		{`SELECT status || ' ' || city || ' ' || category FROM sources WHERE query = 'BJJ Gym Köln'`, "candidate Köln Search"},
 		{`SELECT kind || ' ' || city || ' ' || category FROM sources WHERE query = 'Mein Weg vom Angestellten zum Coach #düsseldorf'`, "post_search Düsseldorf Post search"},
-		{`SELECT count(*)::int FROM sources WHERE kind = 'post_search' AND city = ''`, int32(6)},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'post_search' AND city = ''`, int32(10)},
+		// Post searches aimed at younger people are run first.
+		{`SELECT string_agg(DISTINCT points::text, ',') FROM sources WHERE kind = 'post_search' AND query LIKE 'Mit 25 selbstständig%'`, "1"},
+		{`SELECT count(*)::int FROM sources WHERE kind = 'post_search' AND points > 0`, int32(28)},
 		{`SELECT count(*)::int FROM sources WHERE kind = 'search_query' AND city = ''`, int32(0)},
 	}
 	for _, c := range checks {
@@ -72,7 +75,7 @@ func TestImportStartingData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.PostSearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 || res.PostSearchesKept != 42 {
+	if res.SourcesAdded != 0 || res.SearchesAdded != 0 || res.PostSearchesAdded != 0 || res.SeedsAdded != 0 || res.SearchesKept != 88 || res.PostSearchesKept != 70 {
 		t.Errorf("second import added rows: %s", res)
 	}
 	var status string

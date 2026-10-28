@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -68,10 +69,43 @@ func setup(t *testing.T) env {
 		SessionSecret: "0123456789abcdef0123456789abcdef", Now: func() time.Time { return now }})
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	jar, _ := cookiejar.New(nil)
-	e := env{pool: pool, srv: srv, pipe: pipe, c: &http.Client{Jar: jar}}
+	e := env{pool: pool, srv: srv, pipe: pipe, c: &http.Client{Jar: &jar{}}}
 	e.seed(t)
 	return e
+}
+
+// jar keeps the server's cookies by name. Unlike net/http/cookiejar it
+// does not compare their expiry with the wall clock, because the server
+// runs on the tests' clock. A session cookie set on the tests' day would
+// otherwise expire for real 30 days later, and every login with it.
+type jar struct {
+	mu      sync.Mutex
+	cookies map[string]*http.Cookie
+}
+
+func (j *jar) SetCookies(_ *url.URL, cookies []*http.Cookie) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	if j.cookies == nil {
+		j.cookies = map[string]*http.Cookie{}
+	}
+	for _, c := range cookies {
+		if c.MaxAge < 0 {
+			delete(j.cookies, c.Name)
+			continue
+		}
+		j.cookies[c.Name] = c
+	}
+}
+
+func (j *jar) Cookies(*url.URL) []*http.Cookie {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	var out []*http.Cookie
+	for _, c := range j.cookies {
+		out = append(out, &http.Cookie{Name: c.Name, Value: c.Value})
+	}
+	return out
 }
 
 // seed stores two events through the real resolver, one kept in Köln with
@@ -732,7 +766,7 @@ func TestPeopleByFit(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+	if _, err := pipeline.ScoreStale(ctx, e.pool, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	code, body := e.do(t, "GET", "/api/people?sort=fit", "")
@@ -757,14 +791,15 @@ func TestPeopleByFit(t *testing.T) {
 	for _, p := range got.People {
 		order = append(order, fmt.Sprintf("%s %d", p.Name, p.FitScore))
 	}
-	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 0, Ole Muster -1" {
+	// Lea Beispiel, a founder, runs her own business.
+	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 1, Ole Muster -1" {
 		t.Errorf("order: %s", strings.Join(order, ", "))
 	}
 	if s := got.People[0].Signals; len(s) != 2 || s[0].Label != "Works with people" || !s[0].For || s[0].Passage != "Yoga-Lehrerin und Inhaberin, Studio Beispiel" {
 		t.Errorf("Mia's signals %+v", s)
 	}
-	if got.Counts["fits"] != 2 {
-		t.Errorf("%d good fits, want 2", got.Counts["fits"])
+	if got.Counts["fits"] != 3 {
+		t.Errorf("%d good fits, want 3", got.Counts["fits"])
 	}
 	if _, body := e.do(t, "GET", "/api/people?filter=fits", ""); strings.Contains(body, "Ole Muster") || !strings.Contains(body, "Ida Probe") {
 		t.Errorf("good fits: %s", body)
@@ -863,7 +898,7 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 		}
 		ids[p.name] = id
 	}
-	if _, err := pipeline.ScoreStale(ctx, e.pool); err != nil {
+	if _, err := pipeline.ScoreStale(ctx, e.pool, time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	decide := func(name, decision string) string {
@@ -914,7 +949,7 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 			t.Errorf("%s kept/skipped %s, want %s", key, counts[key], want)
 		}
 	}
-	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Works with people" {
+	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Likely under 30" {
 		t.Errorf("every signal of the rubric, in its order: %+v", got.Fit.Signals)
 	}
 	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {

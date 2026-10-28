@@ -76,9 +76,11 @@ const progressJSON = `WITH j AS (
 		(SELECT avg(duration_ms) FROM (SELECT duration_ms FROM startup_lookups ORDER BY id DESC LIMIT 100) x) AS lookup_ms,
 		-- Each check queues reads of its new events, so the run expects as
 		-- many per check as checks brought lately, up to the setting.
+		-- Lately is the 14 days up to the newest check, so weeks without a
+		-- run do not wipe out what is known.
 		LEAST(COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'event_pages_per_check'), 3),
-			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > now() - interval '14 days')::numeric
-				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > now() - interval '14 days'), 0), 0)) AS reads_per_check,
+			COALESCE((SELECT count(*) FROM event_reads WHERE read_at > (SELECT max(checked_at) FROM source_checks) - interval '14 days')::numeric
+				/ NULLIF((SELECT count(*) FROM source_checks WHERE checked_at > (SELECT max(checked_at) FROM source_checks) - interval '14 days'), 0), 0)) AS reads_per_check,
 		-- Each check of a portfolio, a directory or a search queues up to
 		-- this many lookups.
 		COALESCE((SELECT (value #>> '{}')::numeric FROM settings WHERE key = 'startups_per_run'), 10) AS lookups_per_portfolio),

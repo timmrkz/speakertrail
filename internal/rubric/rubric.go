@@ -12,12 +12,13 @@ package rubric
 import (
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 1
+const Version = 2
 
 // Where a passage comes from.
 const (
@@ -29,7 +30,13 @@ const (
 	FromPortfolio = "portfolio"
 	FromAbout     = "about page"
 	FromModel     = "model"
+	FromPost      = "LinkedIn post"
+	FromProfile   = "LinkedIn profile"
 )
+
+// QuietAfter is how long after their last post a person no longer writes
+// on LinkedIn.
+const QuietAfter = 365 * 24 * time.Hour
 
 // Def is one signal of the rubric.
 type Def struct {
@@ -50,13 +57,15 @@ func words(expr string) *regexp.Regexp {
 // Defs is the rubric, signals for first. The words cover German and
 // English, the languages of pages in NRW.
 var Defs = []Def{
+	{Key: "young", For: true, Label: "Likely under 30",
+		Means: "is probably younger than 30, by the years of their education and first jobs"},
 	{Key: "works_with_people", For: true, Label: "Works with people",
 		Means:   "coaches, teaches, trains, treats or counsels people face to face, or runs a gym, studio or academy where people train",
 		pattern: words(`\w*coach(?:in|es|ing)?|mentor(?:in)?|\w*trainer(?:in)?|lehrer(?:in)?|teacher|dozent(?:in)?|instructor|übungsleiter(?:in)?|yoga\w*|pilates|physiotherapeut(?:in)?|ergotherapeut(?:in)?|ernährungsberater(?:in)?|heilpraktiker(?:in)?|hebamme|counsell?or|begleitet menschen|bjj|jiu[- ]?jitsu|kampfsport\w*|boxing|boxen|dojo|crossfit|gym|fitness\w*|tanzschule`),
 		unless:  words(`agile coach|scrum|sales[- ]?trainer|vertriebstrainer`)},
-	{Key: "owner_operator", For: true, Label: "Runs it themselves",
+	{Key: "owner_operator", For: true, Label: "Runs their own business",
 		Means:   "owns and runs a small business, studio, gym or practice themselves, with a small team",
-		pattern: words(`inhaber(?:in)?|owner|besitzer(?:in)?|einzelunternehmer(?:in)?|e\.\s?k\.|selbstständig\w*|selbständig\w*|freiberuflich\w*|in eigener praxis|eigene[nrs]? (?:praxis|studio|schule|gym|laden|betrieb|café|cafe)`),
+		pattern: words(`inhaber(?:in)?|unternehmensinhaber(?:in)?|owner|besitzer(?:in)?|einzelunternehmer(?:in)?|e\.\s?k\.|selbstständig\w*|selbständig\w*|freiberuflich\w*|freiberufler(?:in)?|freelance\w*|self[- ]employed|in eigener praxis|eigene[nrs]? (?:praxis|studio|schule|gym|laden|betrieb|café|cafe)|(?:co-?)?founder|(?:mit)?gründer(?:in|:in|\*in)?|co-?gründer(?:in)?`),
 		unless:  words(`product owner|process owner|business owner at`)},
 	{Key: "bootstrapped", For: true, Label: "Built it from own means",
 		Means:   "built the business from their own means, without investors",
@@ -76,6 +85,8 @@ var Defs = []Def{
 		pattern: words(`quereinst\w*|career (?:change|switch)|changed careers|switched careers|neuorientierung|beruflich neu \w+|umgesattelt|sattelte um`)},
 	{Key: "still_active", For: true, Label: "Still active",
 		Means: "what they run shows recent signs of life"},
+	{Key: "writes_on_linkedin", For: true, Label: "Writes on LinkedIn",
+		Means: "wrote a post on LinkedIn in the last year"},
 
 	{Key: "funded", For: false, Label: "Raised money",
 		Means:   "raised money from investors: funding rounds, Series A, backed by investors",
@@ -98,6 +109,8 @@ var Defs = []Def{
 		Means: "listed in the portfolio of an accelerator, incubator or startup programme"},
 	{Key: "inactive", For: false, Label: "No longer active",
 		Means: "what they run is being wound up or gone"},
+	{Key: "quiet_on_linkedin", For: false, Label: "Quiet on LinkedIn",
+		Means: "their last known post on LinkedIn is more than a year old"},
 }
 
 var byKey = func() map[string]*Def {
@@ -141,6 +154,12 @@ type Company struct {
 	Note string
 }
 
+// Post is the newest post on LinkedIn a person is known to have written.
+type Post struct {
+	Title     string
+	Published time.Time
+}
+
 // Person is everything known about a person that the rubric reads.
 type Person struct {
 	Headline    string
@@ -151,6 +170,22 @@ type Person struct {
 	// page, by the rules or by the language model, with where they come
 	// from. Unknown keys and empty passages are left out.
 	Found []Signal
+	// LastPost is their newest known post on LinkedIn, if any. Without one
+	// nothing is known about their writing, which is no signal either way.
+	LastPost *Post
+	// Name is the person's name, to tell a company named after them.
+	Name string
+	// CurrentRoles are the roles their confirmed LinkedIn profile says they
+	// hold now, like "Inhaberin, Studio Beispiel · Yogalehrerin".
+	CurrentRoles string
+	// BornAbout is the year they were likely born, by their profile's
+	// education and jobs, with the step that shows it, see BornAbout.
+	// Zero when the profile does not say.
+	BornAbout int
+	AgeReason string
+	// Now is when the person is scored, to tell how old the post is, and
+	// how old they are.
+	Now time.Time
 }
 
 type text struct{ where, s string }
@@ -175,6 +210,10 @@ func Signals(p Person) []Signal {
 		if a.Evidence != "" {
 			texts = append(texts, text{FromEventPage, a.Evidence})
 		}
+	}
+	roles := splitRoles(p.CurrentRoles)
+	for _, r := range roles {
+		texts = append(texts, text{FromProfile, r})
 	}
 
 	found := map[string]Signal{}
@@ -234,6 +273,30 @@ func Signals(p Person) []Signal {
 		}
 	}
 
+	// A company named after them is theirs, like "Coach, Erika Beispiel
+	// Coaching".
+	for _, r := range roles {
+		if _, org, ok := strings.Cut(r, ", "); ok && namedAfter(org, p.Name) {
+			add("owner_operator", r, FromProfile)
+			break
+		}
+	}
+
+	// The years on their profile point to their age. It is a guess, and
+	// says so, and an older person is not counted against.
+	if p.BornAbout > 0 && p.AgeReason != "" && p.Now.Year()-p.BornAbout < YoungUntil {
+		add("young", agePassage(p.BornAbout, p.AgeReason, p.Now.Year()), FromProfile)
+	}
+
+	// A post is dated, so it says for certain whether they write there now.
+	if lp := p.LastPost; lp != nil && !lp.Published.IsZero() {
+		key := "writes_on_linkedin"
+		if p.Now.Sub(lp.Published) > QuietAfter {
+			key = "quiet_on_linkedin"
+		}
+		add(key, postPassage(*lp), FromPost)
+	}
+
 	for _, s := range p.Found {
 		where := s.Where
 		if where == "" {
@@ -262,6 +325,52 @@ func Score(signals []Signal) int {
 		}
 	}
 	return n
+}
+
+// splitRoles splits the roles a profile says someone holds now.
+func splitRoles(roles string) []string {
+	var out []string
+	for _, r := range strings.Split(roles, " · ") {
+		if r = strings.TrimSpace(r); r != "" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// largeForm finds the legal form of a large company, which a family's
+// name does not make theirs.
+var largeForm = words(`ag|se|kgaa|group|gruppe|holding|konzern`)
+
+// namedAfter tells whether a small company carries the person's family
+// name.
+func namedAfter(org, name string) bool {
+	if largeForm.MatchString(org) {
+		return false
+	}
+	parts := strings.Fields(name)
+	if len(parts) < 2 {
+		return false
+	}
+	last := parts[len(parts)-1]
+	if len([]rune(last)) < 3 {
+		return false
+	}
+	return words(regexp.QuoteMeta(last)).MatchString(org)
+}
+
+// postPassage dates a post and quotes its first line. A line with
+// something like a phone number is left out, so the date still counts.
+func postPassage(lp Post) string {
+	out := "Last post on " + lp.Published.Format("2 January 2006")
+	title := strings.TrimSpace(lp.Title)
+	if title == "" || contact.MatchString(title) {
+		return out
+	}
+	if r := []rune(title); len(r) > maxPassage-len(out)-4 {
+		title = strings.TrimSpace(string(r[:maxPassage-len(out)-5])) + "…"
+	}
+	return out + ": “" + title + "”"
 }
 
 // contact finds an email address or a phone number. A passage with one is

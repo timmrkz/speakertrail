@@ -128,7 +128,8 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 
 	// The starting post searches: stories of people who fit, like a first
 	// year on their own, with a place in NRW in the query. Each waits until
-	// a provider that finds posts has a key.
+	// a provider that finds posts has a key. Those aimed at younger people
+	// carry a point, so they are run first.
 	posts, err := readCSV(postSearchesCSV)
 	if err != nil {
 		return res, fmt.Errorf("post_searches.csv: %w", err)
@@ -136,9 +137,9 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 	for _, s := range posts {
 		q := s["query"]
 		tag, err := pool.Exec(ctx, `
-			INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
-			VALUES ($1, 'post_search', $1, 'Post search', $2, 'candidate', 'Imported from the starting post searches')
-			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
+			INSERT INTO sources (name, kind, query, category, city, status, discovered_note, points)
+			VALUES ($1, 'post_search', $1, 'Post search', $2, 'candidate', 'Imported from the starting post searches', COALESCE(NULLIF($3, '')::numeric, 0))
+			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q), s["points"])
 		if err != nil {
 			return res, fmt.Errorf("post search %q: %w", q, err)
 		}

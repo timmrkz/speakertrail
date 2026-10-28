@@ -14,8 +14,10 @@ import (
 
 // scoreInput loads what the rubric reads about each person: their title,
 // the founder passage, their appearances with the passages that put them
-// on stage, what they founded as lookups saw it, and what pages that are
-// not kept said about them, like an about page or the model's read.
+// on stage, what they founded as lookups saw it, what pages that are not
+// kept said about them, like an about page or the model's read, their
+// newest post on LinkedIn, and what their confirmed LinkedIn profile
+// says: how old they likely are and the roles they hold now.
 const scoreInput = `
 	SELECT p.id, p.headline, p.fit_evidence,
 		(SELECT COALESCE(json_agg(json_build_object('Role', a.role, 'Event', e.title, 'Evidence', a.evidence) ORDER BY e.starts_at, e.id), '[]')
@@ -28,12 +30,20 @@ const scoreInput = `
 				ORDER BY o.id), '[]')
 			FROM affiliations af JOIN organisations o ON o.id = af.organisation_id WHERE af.person_id = p.id AND af.role = 'founder'),
 		(SELECT COALESCE(json_agg(json_build_object('Key', m.signal, 'Passage', m.passage, 'Where', m.found_in) ORDER BY m.found_at, m.signal), '[]')
-			FROM page_signals m WHERE m.person_id = p.id)
+			FROM page_signals m WHERE m.person_id = p.id),
+		(SELECT json_build_object('Title', pp.title, 'Published', pp.published_at)
+			FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at IS NOT NULL
+			ORDER BY pp.published_at DESC, pp.id DESC LIMIT 1),
+		(SELECT json_build_object('BornAbout', COALESCE(pr.born_about, 0), 'AgeReason', pr.age_reason, 'CurrentRoles', pr.current_roles)
+			FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+				AND (pr.born_about IS NOT NULL OR pr.current_roles <> '')
+			ORDER BY pr.last_seen_at DESC, pr.id DESC LIMIT 1),
+		p.full_name
 	FROM people p WHERE p.id = ANY($1)`
 
-// ScorePeople runs the rubric over the given people and stores their
-// signals and score, in one short transaction.
-func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
+// ScorePeople runs the rubric over the given people as of now and stores
+// their signals and score, in one short transaction.
+func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.Time) error {
 	if len(ids) == 0 {
 		return nil
 	}
@@ -48,9 +58,9 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 	var all []scored
 	for rows.Next() {
 		var id int64
-		var in rubric.Person
-		var apps, companies, found []byte
-		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found); err != nil {
+		in := rubric.Person{Now: now}
+		var apps, companies, found, post, profile []byte
+		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found, &post, &profile, &in.Name); err != nil {
 			rows.Close()
 			return err
 		}
@@ -66,6 +76,18 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 			rows.Close()
 			return fmt.Errorf("page signals of %d: %w", id, err)
 		}
+		if post != nil {
+			if err := json.Unmarshal(post, &in.LastPost); err != nil {
+				rows.Close()
+				return fmt.Errorf("last post of %d: %w", id, err)
+			}
+		}
+		if profile != nil {
+			if err := json.Unmarshal(profile, &in); err != nil {
+				rows.Close()
+				return fmt.Errorf("profile of %d: %w", id, err)
+			}
+		}
 		all = append(all, scored{id, rubric.Signals(in)})
 	}
 	rows.Close()
@@ -73,6 +95,12 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64) error {
 		return err
 	}
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		// Checks side by side score the same person. The second waits here
+		// for the first, then replaces its signals, rather than both adding
+		// the same ones.
+		if _, err := tx.Exec(ctx, `SELECT id FROM people WHERE id = ANY($1) ORDER BY id FOR UPDATE`, ids); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM person_signals WHERE person_id = ANY($1)`, ids); err != nil {
 			return err
 		}
@@ -103,12 +131,25 @@ func pageSignal(ctx context.Context, db execer, personID int64, signal, passage,
 // scoreBatch is how many people one transaction scores.
 const scoreBatch = 200
 
-// ScoreStale scores everyone the current rubric has not scored yet, a
-// batch at a time, and returns how many it scored.
-func ScoreStale(ctx context.Context, pool *pgxpool.Pool) (int, error) {
+// staleQuery finds people the current rubric has not scored yet, people
+// who still write on LinkedIn by their score while their newest post has
+// grown older than a year since, and people under 30 by their score who
+// have turned 30 since.
+const staleQuery = `
+	SELECT id FROM people p WHERE rubric <> $1
+	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'writes_on_linkedin')
+	       AND NOT EXISTS (SELECT 1 FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at >= $3))
+	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'young')
+	       AND NOT EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+	           AND pr.born_about > $4::int - $5::int))
+	ORDER BY id LIMIT $2`
+
+// ScoreStale scores everyone whose score is out of date as of now, a batch
+// at a time, and returns how many it scored.
+func ScoreStale(ctx context.Context, pool *pgxpool.Pool, now time.Time) (int, error) {
 	n := 0
 	for {
-		rows, err := pool.Query(ctx, `SELECT id FROM people WHERE rubric <> $1 ORDER BY id LIMIT $2`, rubric.Version, scoreBatch)
+		rows, err := pool.Query(ctx, staleQuery, rubric.Version, scoreBatch, now.Add(-rubric.QuietAfter), now.Year(), rubric.YoungUntil)
 		if err != nil {
 			return n, err
 		}
@@ -119,7 +160,7 @@ func ScoreStale(ctx context.Context, pool *pgxpool.Pool) (int, error) {
 		if len(ids) == 0 {
 			return n, nil
 		}
-		if err := ScorePeople(ctx, pool, ids); err != nil {
+		if err := ScorePeople(ctx, pool, ids, now); err != nil {
 			return n, err
 		}
 		n += len(ids)
@@ -133,7 +174,7 @@ func (p *Pipeline) score(ctx context.Context, ids []int64) {
 	if len(ids) == 0 {
 		return
 	}
-	if err := ScorePeople(ctx, p.Pool, ids); err != nil {
+	if err := ScorePeople(ctx, p.Pool, ids, p.now()); err != nil {
 		p.log().Warn("scoring people failed", "people", len(ids), "error", err)
 		if _, err := p.Pool.Exec(context.WithoutCancel(ctx), `UPDATE people SET rubric = 0 WHERE id = ANY($1)`, ids); err != nil {
 			p.log().Warn("marking people for scoring failed", "error", err)

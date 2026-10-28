@@ -3,6 +3,7 @@ package rubric_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/timmrkz/speakertrail/internal/rubric"
 )
@@ -188,5 +189,46 @@ func TestNoContactDetailsInPassages(t *testing.T) {
 	s := rubric.Signals(rubric.Person{Headline: "Coach, Telefon 0221 1234567", Found: []rubric.Signal{{Key: "author", Passage: "Buch bestellen: buch@example.test"}}})
 	if len(s) != 0 {
 		t.Errorf("signals with contact details: %+v", s)
+	}
+}
+
+// A dated post says whether someone writes on LinkedIn now. Without a
+// known post nothing is said either way. All invented.
+func TestLinkedInPosts(t *testing.T) {
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		name string
+		post *rubric.Post
+		want string
+	}{
+		{"no post known", nil, ""},
+		{"a post without a date", &rubric.Post{Title: "Ein Jahr selbstständig"}, ""},
+		{"a post this autumn", &rubric.Post{Title: "Ein Jahr selbstständig", Published: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
+			"+writes_on_linkedin (LinkedIn post): Last post on 14 September 2026: “Ein Jahr selbstständig”"},
+		{"a post just under a year old", &rubric.Post{Title: "Mein Weg zum Coach", Published: now.Add(-364 * 24 * time.Hour)},
+			"+writes_on_linkedin (LinkedIn post): Last post on 29 October 2025: “Mein Weg zum Coach”"},
+		{"a post more than a year old", &rubric.Post{Title: "Mein Weg zum Coach", Published: time.Date(2025, 8, 1, 0, 0, 0, 0, time.UTC)},
+			"-quiet_on_linkedin (LinkedIn post): Last post on 1 August 2025: “Mein Weg zum Coach”"},
+		{"a first line with a number like a phone's", &rubric.Post{Title: "Kurse 2025 / 2026 im Studio", Published: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
+			"+writes_on_linkedin (LinkedIn post): Last post on 14 September 2026"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			for _, s := range rubric.Signals(rubric.Person{LastPost: c.post, Now: now}) {
+				sign := "+"
+				if !s.For {
+					sign = "-"
+				}
+				got = append(got, sign+s.Key+" ("+s.Where+"): "+s.Passage)
+			}
+			if strings.Join(got, "\n") != c.want {
+				t.Errorf("signals %q, want %q", got, c.want)
+			}
+		})
+	}
+	long := &rubric.Post{Title: strings.Repeat("Was ich im ersten Jahr gelernt habe ", 8), Published: now}
+	s := rubric.Signals(rubric.Person{LastPost: long, Now: now})
+	if len(s) != 1 || len([]rune(s[0].Passage)) > 160 || !strings.HasSuffix(s[0].Passage, "…”") {
+		t.Errorf("a long first line: %+v", s)
 	}
 }

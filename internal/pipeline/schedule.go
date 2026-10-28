@@ -60,7 +60,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	}
 	// Everyone the current rubric has not scored yet, like all people
 	// after the rubric changed.
-	if n, err := ScoreStale(ctx, p.Pool); err != nil {
+	if n, err := ScoreStale(ctx, p.Pool, p.now()); err != nil {
 		return 0, err
 	} else if n > 0 {
 		p.log().Info("people scored by the fit rubric", "people", n)

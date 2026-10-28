@@ -88,6 +88,7 @@ Signals for a good fit:
 | **Athlete:** competes or competed | about page, belt or title, club pages |
 | **Career switch** towards people | about page |
 | **Still active** | the signs of life the lookup reads today |
+| **Writes on LinkedIn:** a post in the last year | the post a post search found, with its date |
 
 Signals against:
 
@@ -96,6 +97,7 @@ Signals against:
   company
 - a large team, or a company without a person behind it
 - enterprise software sold to other companies
+- quiet on LinkedIn: the last known post is more than a year old
 
 Scoring is kept simple and readable: a list of signals, each with its
 passage, for and against. The People screen sorts by it and shows why.
@@ -342,6 +344,11 @@ Built, in the order above:
    [Active on LinkedIn](#active-on-linkedin). 42 starting post searches,
    six kinds of story in seven places, two in each run. Each one is due
    again after 14 days.
+10. **Writes on LinkedIn**, a rubric signal for, with the date and first
+   line of the newest post. Once that post is more than a year old, the
+   person is scored again at the start of a run and the signal becomes
+   *Quiet on LinkedIn*, against. Someone without a known post gets
+   neither.
 
 Waiting:
 
@@ -349,9 +356,8 @@ Waiting:
   `BRAVE_SEARCH_API_KEY` is set, see the README.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.
-- **Writes on LinkedIn** as a rubric signal, the second part of
-  [Active on LinkedIn](#active-on-linkedin). Adding a post search in
-  Sources, and the post on the person's sheet.
+- **The rest of [Active on LinkedIn](#active-on-linkedin):** adding a
+  post search in Sources, and the post on the person's sheet.
 - **Younger owners**, next, see
   [Next: younger owners](#next-younger-owners).
 

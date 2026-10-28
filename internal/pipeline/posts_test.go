@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/pipeline"
 	"github.com/timmrkz/speakertrail/internal/search"
 )
 
@@ -117,6 +118,27 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	}
 	if got := e.one(t, `SELECT string_agg(p.full_name || ': ' || pp.title || ' ' || to_char(pp.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), ' | ' ORDER BY p.full_name) FROM person_posts pp JOIN people p ON p.id = pp.person_id`); got != "Erika Beispiel: Unser Studio ist eröffnet 2026-09-14 | Max Probe: Ich habe gekündigt 2026-09-10" {
 		t.Errorf("posts kept: %v", got)
+	}
+	// Writing on LinkedIn counts for a fit, with the post as its passage.
+	signals := `SELECT string_agg(p.full_name || ': ' || s.signal || ' (' || s.found_in || ') ' || s.passage, ' | ' ORDER BY p.full_name, s.signal)
+		FROM person_signals s JOIN people p ON p.id = s.person_id WHERE s.signal LIKE '%linkedin'`
+	if got := e.one(t, signals); got != "Erika Beispiel: writes_on_linkedin (LinkedIn post) Last post on 14 September 2026: “Unser Studio ist eröffnet”"+
+		" | Max Probe: writes_on_linkedin (LinkedIn post) Last post on 10 September 2026: “Ich habe gekündigt”" {
+		t.Errorf("signals: %v", got)
+	}
+	// A year on without a new post, they are scored again, and quiet.
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(0, 11, 0)); err != nil || n != 0 {
+		t.Errorf("scored again after eleven months: %d, %v", n, err)
+	}
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(1, 0, 0)); err != nil || n != 2 {
+		t.Errorf("scored again after a year: %d, %v", n, err)
+	}
+	if got := e.one(t, signals); got != "Erika Beispiel: quiet_on_linkedin (LinkedIn post) Last post on 14 September 2026: “Unser Studio ist eröffnet”"+
+		" | Max Probe: quiet_on_linkedin (LinkedIn post) Last post on 10 September 2026: “Ich habe gekündigt”" {
+		t.Errorf("signals a year on: %v", got)
+	}
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(1, 0, 0)); err != nil || n != 0 {
+		t.Errorf("scored again twice: %d, %v", n, err)
 	}
 	if got := e.one(t, `SELECT status || ' ' || to_char(next_check_at - last_checked_at, 'DD') FROM sources WHERE id = $1`, src); got != "active 13" {
 		t.Errorf("the post search after it found people: %v", got)

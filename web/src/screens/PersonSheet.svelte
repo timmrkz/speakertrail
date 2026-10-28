@@ -36,7 +36,7 @@
   const FOUND_IN: Record<string, string> = {
     title: 'from their title', 'event page': 'from an event page', event: 'from an event they host', imprint: 'from the imprint',
     lookup: 'from a lookup of their website', portfolio: 'from a startup portfolio', 'about page': "from their website's about page",
-    model: 'read by the language model',
+    model: 'read by the language model', 'LinkedIn post': 'from their newest LinkedIn post',
   }
   let past = $derived((person.data?.appearances ?? []).filter((a) => a.event.starts_at < now).reverse())
 

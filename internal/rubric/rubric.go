@@ -12,12 +12,13 @@ package rubric
 import (
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 )
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 1
+const Version = 2
 
 // Where a passage comes from.
 const (
@@ -29,7 +30,12 @@ const (
 	FromPortfolio = "portfolio"
 	FromAbout     = "about page"
 	FromModel     = "model"
+	FromPost      = "LinkedIn post"
 )
+
+// QuietAfter is how long after their last post a person no longer writes
+// on LinkedIn.
+const QuietAfter = 365 * 24 * time.Hour
 
 // Def is one signal of the rubric.
 type Def struct {
@@ -76,6 +82,8 @@ var Defs = []Def{
 		pattern: words(`quereinst\w*|career (?:change|switch)|changed careers|switched careers|neuorientierung|beruflich neu \w+|umgesattelt|sattelte um`)},
 	{Key: "still_active", For: true, Label: "Still active",
 		Means: "what they run shows recent signs of life"},
+	{Key: "writes_on_linkedin", For: true, Label: "Writes on LinkedIn",
+		Means: "wrote a post on LinkedIn in the last year"},
 
 	{Key: "funded", For: false, Label: "Raised money",
 		Means:   "raised money from investors: funding rounds, Series A, backed by investors",
@@ -98,6 +106,8 @@ var Defs = []Def{
 		Means: "listed in the portfolio of an accelerator, incubator or startup programme"},
 	{Key: "inactive", For: false, Label: "No longer active",
 		Means: "what they run is being wound up or gone"},
+	{Key: "quiet_on_linkedin", For: false, Label: "Quiet on LinkedIn",
+		Means: "their last known post on LinkedIn is more than a year old"},
 }
 
 var byKey = func() map[string]*Def {
@@ -141,6 +151,12 @@ type Company struct {
 	Note string
 }
 
+// Post is the newest post on LinkedIn a person is known to have written.
+type Post struct {
+	Title     string
+	Published time.Time
+}
+
 // Person is everything known about a person that the rubric reads.
 type Person struct {
 	Headline    string
@@ -151,6 +167,11 @@ type Person struct {
 	// page, by the rules or by the language model, with where they come
 	// from. Unknown keys and empty passages are left out.
 	Found []Signal
+	// LastPost is their newest known post on LinkedIn, if any. Without one
+	// nothing is known about their writing, which is no signal either way.
+	LastPost *Post
+	// Now is when the person is scored, to tell how old the post is.
+	Now time.Time
 }
 
 type text struct{ where, s string }
@@ -234,6 +255,15 @@ func Signals(p Person) []Signal {
 		}
 	}
 
+	// A post is dated, so it says for certain whether they write there now.
+	if lp := p.LastPost; lp != nil && !lp.Published.IsZero() {
+		key := "writes_on_linkedin"
+		if p.Now.Sub(lp.Published) > QuietAfter {
+			key = "quiet_on_linkedin"
+		}
+		add(key, postPassage(*lp), FromPost)
+	}
+
 	for _, s := range p.Found {
 		where := s.Where
 		if where == "" {
@@ -262,6 +292,20 @@ func Score(signals []Signal) int {
 		}
 	}
 	return n
+}
+
+// postPassage dates a post and quotes its first line. A line with
+// something like a phone number is left out, so the date still counts.
+func postPassage(lp Post) string {
+	out := "Last post on " + lp.Published.Format("2 January 2006")
+	title := strings.TrimSpace(lp.Title)
+	if title == "" || contact.MatchString(title) {
+		return out
+	}
+	if r := []rune(title); len(r) > maxPassage-len(out)-4 {
+		title = strings.TrimSpace(string(r[:maxPassage-len(out)-5])) + "…"
+	}
+	return out + ": “" + title + "”"
 }
 
 // contact finds an email address or a phone number. A passage with one is

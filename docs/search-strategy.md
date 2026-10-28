@@ -67,6 +67,10 @@ about what they say in public. Coaches are in.
 
 **Only NRW** for now, because the conversations are recorded in person.
 
+**Younger, and running their own thing.** Best under 30, and running
+their own business, startup, academy, practice or studio. These two weigh
+the same. See [Next: younger owners](#next-younger-owners).
+
 ## Signals the engine can read
 
 Every signal comes with the passage that shows it, like the founder rule
@@ -304,6 +308,11 @@ Small batches, each one tested on Tim's Mac before the next.
 9. **Active on LinkedIn**, see [Active on LinkedIn](#active-on-linkedin):
    post searches with the author's place, then the rubric signal for
    writing on LinkedIn.
+10. **Younger owners**, see [Next: younger owners](#next-younger-owners):
+    an age indicator and *runs their own business*, both from the
+    profile, with the same weight.
+11. **Learning from the funnel**: which searches bring people Tim
+    contacts, who reply, and who record.
 
 ## Where it stands
 
@@ -343,6 +352,8 @@ Waiting:
 - **Writes on LinkedIn** as a rubric signal, the second part of
   [Active on LinkedIn](#active-on-linkedin). Adding a post search in
   Sources, and the post on the person's sheet.
+- **Younger owners**, next, see
+  [Next: younger owners](#next-younger-owners).
 
 ## First an experiment
 
@@ -379,6 +390,41 @@ Tim reviews on People while runs go. What that needs:
     one action that fixes it, like retiring the source
   - Start and Stop answer at once and never leave the screen in between
   - the same state on every screen, the phone included, without a refresh
+
+## Next: younger owners
+
+Decided with Tim on 27 October 2026.
+
+**Why.** The podcast's guests come from Tim's LinkedIn. Connecting with
+people in his area is easy. The funnel thins out on the way to a
+recording, and he is running out of new contacts. So the engine's job is
+a steady flow of new people to connect with on LinkedIn.
+
+**What counts, in order:**
+
+1. **NRW.** It stays the limit, by the profile's place. No distance
+   filter around the studio for now.
+2. **Younger, best under 30**, and **runs their own business**: a
+   founder, owner, coach, practice, academy or studio. Both weigh the
+   same.
+3. The archetypes in [Who fits](#who-fits).
+
+**Age is an indicator, never a filter.** A profile rarely gives an age.
+Exa's profile data has education and job dates. A degree finished in the
+last eight years or so, or a first job about as recent, points to under
+30. It becomes a signal for, with the dates that show it, like every
+other signal. Nobody is dropped for it, and a guess is labelled as one.
+
+**Runs their own business** is read from the profile's current roles:
+"Founder", "Inhaber", "Gründerin", "selbstständig", "Owner" at a small
+company, or their own name as the company. A corporate title at a large
+company counts against, as it already does.
+
+**Then the funnel teaches the engine.** People already carry Tim's
+steps: contacted, replied, call, yes, recorded. The engine counts these
+per search and per signal. Searches whose people Tim contacts and who
+reply run more often, those whose people he skips are retired, and new
+searches are made from what the best contacts have in common.
 
 ## How we know it works
 

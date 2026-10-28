@@ -15,8 +15,9 @@ import (
 // scoreInput loads what the rubric reads about each person: their title,
 // the founder passage, their appearances with the passages that put them
 // on stage, what they founded as lookups saw it, what pages that are not
-// kept said about them, like an about page or the model's read, and their
-// newest post on LinkedIn.
+// kept said about them, like an about page or the model's read, their
+// newest post on LinkedIn, and how old their confirmed LinkedIn profile
+// says they likely are.
 const scoreInput = `
 	SELECT p.id, p.headline, p.fit_evidence,
 		(SELECT COALESCE(json_agg(json_build_object('Role', a.role, 'Event', e.title, 'Evidence', a.evidence) ORDER BY e.starts_at, e.id), '[]')
@@ -32,7 +33,10 @@ const scoreInput = `
 			FROM page_signals m WHERE m.person_id = p.id),
 		(SELECT json_build_object('Title', pp.title, 'Published', pp.published_at)
 			FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at IS NOT NULL
-			ORDER BY pp.published_at DESC, pp.id DESC LIMIT 1)
+			ORDER BY pp.published_at DESC, pp.id DESC LIMIT 1),
+		(SELECT json_build_object('BornAbout', pr.born_about, 'AgeReason', pr.age_reason)
+			FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed' AND pr.born_about IS NOT NULL
+			ORDER BY pr.last_seen_at DESC, pr.id DESC LIMIT 1)
 	FROM people p WHERE p.id = ANY($1)`
 
 // ScorePeople runs the rubric over the given people as of now and stores
@@ -53,8 +57,8 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.
 	for rows.Next() {
 		var id int64
 		in := rubric.Person{Now: now}
-		var apps, companies, found, post []byte
-		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found, &post); err != nil {
+		var apps, companies, found, post, age []byte
+		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found, &post, &age); err != nil {
 			rows.Close()
 			return err
 		}
@@ -76,6 +80,12 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.
 				return fmt.Errorf("last post of %d: %w", id, err)
 			}
 		}
+		if age != nil {
+			if err := json.Unmarshal(age, &in); err != nil {
+				rows.Close()
+				return fmt.Errorf("age of %d: %w", id, err)
+			}
+		}
 		all = append(all, scored{id, rubric.Signals(in)})
 	}
 	rows.Close()
@@ -83,6 +93,12 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.
 		return err
 	}
 	return pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+		// Checks side by side score the same person. The second waits here
+		// for the first, then replaces its signals, rather than both adding
+		// the same ones.
+		if _, err := tx.Exec(ctx, `SELECT id FROM people WHERE id = ANY($1) ORDER BY id FOR UPDATE`, ids); err != nil {
+			return err
+		}
 		if _, err := tx.Exec(ctx, `DELETE FROM person_signals WHERE person_id = ANY($1)`, ids); err != nil {
 			return err
 		}
@@ -113,13 +129,17 @@ func pageSignal(ctx context.Context, db execer, personID int64, signal, passage,
 // scoreBatch is how many people one transaction scores.
 const scoreBatch = 200
 
-// staleQuery finds people the current rubric has not scored yet, and
-// people who still write on LinkedIn by their score while their newest
-// post has grown older than a year since.
+// staleQuery finds people the current rubric has not scored yet, people
+// who still write on LinkedIn by their score while their newest post has
+// grown older than a year since, and people under 30 by their score who
+// have turned 30 since.
 const staleQuery = `
 	SELECT id FROM people p WHERE rubric <> $1
 	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'writes_on_linkedin')
 	       AND NOT EXISTS (SELECT 1 FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at >= $3))
+	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'young')
+	       AND NOT EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+	           AND pr.born_about > $4::int - $5::int))
 	ORDER BY id LIMIT $2`
 
 // ScoreStale scores everyone whose score is out of date as of now, a batch
@@ -127,7 +147,7 @@ const staleQuery = `
 func ScoreStale(ctx context.Context, pool *pgxpool.Pool, now time.Time) (int, error) {
 	n := 0
 	for {
-		rows, err := pool.Query(ctx, staleQuery, rubric.Version, scoreBatch, now.Add(-rubric.QuietAfter))
+		rows, err := pool.Query(ctx, staleQuery, rubric.Version, scoreBatch, now.Add(-rubric.QuietAfter), now.Year(), rubric.YoungUntil)
 		if err != nil {
 			return n, err
 		}

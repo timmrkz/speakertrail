@@ -230,7 +230,9 @@
   /* A kept person's initials turn green, a skipped person steps back. */
   .avatar.kept { background: var(--good-soft); color: var(--good); }
   .person.skipped { opacity: .55; }
-  .signals { font-size: 12px; font-weight: 500; }
+  /* Relative, so the hidden words of signals cut off at the end stay inside
+     the row and never widen the page. */
+  .signals { font-size: 12px; font-weight: 500; position: relative; }
   .signals .for { color: var(--good); }
   .signals .against { color: var(--bad); }
   /* The sign says it without colour. Screen readers get the words instead. */

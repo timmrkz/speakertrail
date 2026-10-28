@@ -32,6 +32,21 @@ type Profile struct {
 	// Location is the place the profile gives, like "Cologne, North
 	// Rhine-Westphalia, Germany" or "Ruhr Region".
 	Location string
+	// Career is the jobs and the education the index lists, with their
+	// years. Only what they show is kept: an age indicator and the roles
+	// held now, never the list itself.
+	Career []Step
+}
+
+// Step is one job or one education in a profile.
+type Step struct {
+	// Education is true for a school or a degree, false for a job.
+	Education bool
+	// Title is the job's title or the degree, Org the company or school.
+	Title, Org string
+	// From and To are years, zero when the index does not say. A job
+	// without an end is held now.
+	From, To int
 }
 
 // PostFinder is a provider that finds LinkedIn posts and reads their
@@ -106,8 +121,18 @@ func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
 			Entities []struct {
 				Type       string `json:"type"`
 				Properties struct {
-					Name     string `json:"name"`
-					Location string `json:"location"`
+					Name        string `json:"name"`
+					Location    string `json:"location"`
+					WorkHistory []struct {
+						Title   string    `json:"title"`
+						Dates   *exaDates `json:"dates"`
+						Company exaNamed  `json:"company"`
+					} `json:"workHistory"`
+					EducationHistory []struct {
+						Degree      string    `json:"degree"`
+						Dates       *exaDates `json:"dates"`
+						Institution exaNamed  `json:"institution"`
+					} `json:"educationHistory"`
 				} `json:"properties"`
 			} `json:"entities"`
 		} `json:"results"`
@@ -124,6 +149,22 @@ func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
 					p.Name = strings.TrimSpace(en.Properties.Name)
 				}
 				p.Location = strings.TrimSpace(en.Properties.Location)
+				for _, w := range en.Properties.WorkHistory {
+					from, to := w.Dates.years()
+					// A job without a start says neither when nor whether
+					// it is held now.
+					if from == 0 {
+						continue
+					}
+					p.Career = append(p.Career, Step{Title: strings.TrimSpace(w.Title), Org: strings.TrimSpace(w.Company.Name), From: from, To: to})
+				}
+				for _, ed := range en.Properties.EducationHistory {
+					from, to := ed.Dates.years()
+					if from == 0 && to == 0 {
+						continue
+					}
+					p.Career = append(p.Career, Step{Education: true, Title: strings.TrimSpace(ed.Degree), Org: strings.TrimSpace(ed.Institution.Name), From: from, To: to})
+				}
 				break
 			}
 		}
@@ -134,6 +175,49 @@ func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
 		res = append(res, p)
 	}
 	return res, nil
+}
+
+type exaNamed struct {
+	Name string `json:"name"`
+}
+
+// exaDates are a step's dates in Exa's index, like "2019-10-01" or
+// "2019", with no end for a job held now.
+type exaDates struct {
+	From *string `json:"from"`
+	To   *string `json:"to"`
+}
+
+// years reads the years of a step, zero where they are not known.
+func (d *exaDates) years() (from, to int) {
+	if d == nil {
+		return 0, 0
+	}
+	if d.From != nil {
+		from = yearOf(*d.From)
+	}
+	if d.To != nil {
+		to = yearOf(*d.To)
+	}
+	return from, to
+}
+
+// yearOf is the year a date starts with, or zero.
+func yearOf(date string) int {
+	if len(date) < 4 {
+		return 0
+	}
+	y := 0
+	for _, c := range date[:4] {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		y = y*10 + int(c-'0')
+	}
+	if y < 1940 || y > 2100 {
+		return 0
+	}
+	return y
 }
 
 // contentsURL is Exa's contents endpoint, beside the search endpoint a

@@ -31,6 +31,7 @@ const (
 	FromAbout     = "about page"
 	FromModel     = "model"
 	FromPost      = "LinkedIn post"
+	FromProfile   = "LinkedIn profile"
 )
 
 // QuietAfter is how long after their last post a person no longer writes
@@ -56,6 +57,8 @@ func words(expr string) *regexp.Regexp {
 // Defs is the rubric, signals for first. The words cover German and
 // English, the languages of pages in NRW.
 var Defs = []Def{
+	{Key: "young", For: true, Label: "Likely under 30",
+		Means: "is probably younger than 30, by the years of their education and first jobs"},
 	{Key: "works_with_people", For: true, Label: "Works with people",
 		Means:   "coaches, teaches, trains, treats or counsels people face to face, or runs a gym, studio or academy where people train",
 		pattern: words(`\w*coach(?:in|es|ing)?|mentor(?:in)?|\w*trainer(?:in)?|lehrer(?:in)?|teacher|dozent(?:in)?|instructor|übungsleiter(?:in)?|yoga\w*|pilates|physiotherapeut(?:in)?|ergotherapeut(?:in)?|ernährungsberater(?:in)?|heilpraktiker(?:in)?|hebamme|counsell?or|begleitet menschen|bjj|jiu[- ]?jitsu|kampfsport\w*|boxing|boxen|dojo|crossfit|gym|fitness\w*|tanzschule`),
@@ -170,7 +173,13 @@ type Person struct {
 	// LastPost is their newest known post on LinkedIn, if any. Without one
 	// nothing is known about their writing, which is no signal either way.
 	LastPost *Post
-	// Now is when the person is scored, to tell how old the post is.
+	// BornAbout is the year they were likely born, by their profile's
+	// education and jobs, with the step that shows it, see BornAbout.
+	// Zero when the profile does not say.
+	BornAbout int
+	AgeReason string
+	// Now is when the person is scored, to tell how old the post is, and
+	// how old they are.
 	Now time.Time
 }
 
@@ -253,6 +262,12 @@ func Signals(p Person) []Signal {
 		if strings.Contains(c.Note, "(AG)") || strings.Contains(c.Note, "(SE)") {
 			add("large_company", c.Name+": "+c.Note, FromLookup)
 		}
+	}
+
+	// The years on their profile point to their age. It is a guess, and
+	// says so, and an older person is not counted against.
+	if p.BornAbout > 0 && p.AgeReason != "" && p.Now.Year()-p.BornAbout < YoungUntil {
+		add("young", agePassage(p.BornAbout, p.AgeReason, p.Now.Year()), FromProfile)
 	}
 
 	// A post is dated, so it says for certain whether they write there now.

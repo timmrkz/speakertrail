@@ -2,12 +2,14 @@ package pipeline_test
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/pipeline"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/search"
 )
 
@@ -66,7 +68,12 @@ func newFakePosts() *fakePosts {
 		},
 		profiles: map[string]search.Profile{
 			"https://www.linkedin.com/in/erika-beispiel": {URL: "https://www.linkedin.com/in/erika-beispiel", Name: "Erika Beispiel",
-				Headline: "Yogalehrerin und Inhaberin", Location: "Cologne, North Rhine-Westphalia, Germany"},
+				Headline: "Yogalehrerin und Inhaberin", Location: "Cologne, North Rhine-Westphalia, Germany",
+				Career: []search.Step{
+					{Title: "Inhaberin", Org: "Beispiel Yoga", From: 2023},
+					{Title: "Werkstudentin", Org: "Muster GmbH", From: 2019, To: 2022},
+					{Education: true, Title: "Bachelor of Arts", Org: "Beispiel Hochschule", From: 2018, To: 2022},
+				}},
 			"https://www.linkedin.com/in/max-probe": {URL: "https://www.linkedin.com/in/max-probe", Name: "Max Probe", Location: "Ruhr Region"},
 			"https://www.linkedin.com/in/lena-muster": {URL: "https://www.linkedin.com/in/lena-muster", Name: "Lena Muster",
 				Headline: "Coach", Location: "Berlin, Berlin, Germany"},
@@ -119,6 +126,14 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	if got := e.one(t, `SELECT string_agg(p.full_name || ': ' || pp.title || ' ' || to_char(pp.published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD'), ' | ' ORDER BY p.full_name) FROM person_posts pp JOIN people p ON p.id = pp.person_id`); got != "Erika Beispiel: Unser Studio ist eröffnet 2026-09-14 | Max Probe: Ich habe gekündigt 2026-09-10" {
 		t.Errorf("posts kept: %v", got)
 	}
+	// Of a profile's jobs and education, only her likely age with the step
+	// that shows it and the roles she holds now are kept.
+	if got := e.one(t, `SELECT string_agg(handle || ': ' || COALESCE(born_about::text, '-') || ' ' || age_reason || ' | ' || current_roles, ', ' ORDER BY handle) FROM profiles`); got != "erika-beispiel: 1999 Bachelor from 2018 | Inhaberin, Beispiel Yoga, max-probe: -  | " {
+		t.Errorf("profiles kept: %q", got)
+	}
+	if got := e.one(t, `SELECT passage || ' (' || found_in || ')' FROM person_signals WHERE signal = 'young'`); got != "Bachelor from 2018, so about 27 (LinkedIn profile)" {
+		t.Errorf("likely under 30: %v", got)
+	}
 	// Writing on LinkedIn counts for a fit, with the post as its passage.
 	signals := `SELECT string_agg(p.full_name || ': ' || s.signal || ' (' || s.found_in || ') ' || s.passage, ' | ' ORDER BY p.full_name, s.signal)
 		FROM person_signals s JOIN people p ON p.id = s.person_id WHERE s.signal LIKE '%linkedin'`
@@ -140,6 +155,19 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(1, 0, 0)); err != nil || n != 0 {
 		t.Errorf("scored again twice: %d, %v", n, err)
 	}
+	// Turned 30, she is scored again once and no longer likely under 30.
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(2, 0, 0)); err != nil || n != 0 {
+		t.Errorf("scored again at 29: %d, %v", n, err)
+	}
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(3, 0, 0)); err != nil || n != 1 {
+		t.Errorf("scored again at 30: %d, %v", n, err)
+	}
+	if c := e.count(t, "person_signals WHERE signal = 'young'"); c != 0 {
+		t.Errorf("%d likely under 30 at 30", c)
+	}
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(3, 0, 0)); err != nil || n != 0 {
+		t.Errorf("scored again twice at 30: %d, %v", n, err)
+	}
 	if got := e.one(t, `SELECT status || ' ' || to_char(next_check_at - last_checked_at, 'DD') FROM sources WHERE id = $1`, src); got != "active 13" {
 		t.Errorf("the post search after it found people: %v", got)
 	}
@@ -156,6 +184,24 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	}
 }
 
+// syncBuffer collects log lines from several goroutines.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 // Two post searches run side by side and find the same author. She is one
 // person.
 func TestPostSearchesSideBySideFindOnePerson(t *testing.T) {
@@ -163,6 +209,8 @@ func TestPostSearchesSideBySideFindOnePerson(t *testing.T) {
 	ctx := t.Context()
 	fp := newFakePosts()
 	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fp}, Now: func() time.Time { return now }}
+	var logs syncBuffer
+	e.p.Log = slog.New(slog.NewTextHandler(&logs, nil))
 	var ids []int64
 	for _, q := range []string{"Ein Jahr selbstständig #köln", "Neues Studio #köln", "Mein Weg #köln", "Gekündigt #ruhrgebiet"} {
 		var id int64
@@ -185,6 +233,13 @@ func TestPostSearchesSideBySideFindOnePerson(t *testing.T) {
 	}
 	if c := e.count(t, "person_posts"); c != 2 {
 		t.Errorf("%d posts kept, want 2", c)
+	}
+	// Each check scored them, side by side, and none of the scores failed.
+	if strings.Contains(logs.String(), "scoring people failed") {
+		t.Errorf("scoring failed:\n%s", logs.String())
+	}
+	if c := e.count(t, "people WHERE rubric <> $1", rubric.Version); c != 0 {
+		t.Errorf("%d people not scored", c)
 	}
 }
 

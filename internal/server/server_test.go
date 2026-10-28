@@ -948,7 +948,7 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 			t.Errorf("%s kept/skipped %s, want %s", key, counts[key], want)
 		}
 	}
-	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Works with people" {
+	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Likely under 30" {
 		t.Errorf("every signal of the rubric, in its order: %+v", got.Fit.Signals)
 	}
 	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {

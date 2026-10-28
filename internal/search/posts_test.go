@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -80,7 +81,12 @@ func exaPostServer(t *testing.T, searches, contents *atomic.Int32) *httptest.Ser
 			}
 			fmt.Fprint(w, `{"results":[
 				{"title":"Erika Beispiel","url":"https://www.linkedin.com/in/erika-beispiel","text":"# Erika Beispiel\n\nYogalehrerin und Inhaberin | Beispiel Yoga\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n120 connections • 130 followers\n\n## About",
-				 "entities":[{"type":"person","properties":{"name":"Erika Beispiel","location":"Cologne, North Rhine-Westphalia, Germany"}}]},
+				 "entities":[{"type":"person","properties":{"name":"Erika Beispiel","location":"Cologne, North Rhine-Westphalia, Germany",
+				  "workHistory":[{"title":"Inhaberin","location":null,"dates":{"from":"2023-04-01","to":null},"company":{"id":null,"name":"Beispiel Yoga"}},
+				    {"title":"Werkstudentin","dates":{"from":"2019-10-01","to":"2022-03-01"},"company":{"name":"Muster GmbH"}},
+				    {"title":"Yogalehrerin","dates":null,"company":{"name":"Probe Studio"}}],
+				  "educationHistory":[{"degree":"Bachelor of Arts","dates":{"from":"2018","to":"2022"},"institution":{"id":null,"name":"Beispiel Hochschule"}},
+				    {"degree":"Yoga Teacher Training","dates":{"from":null,"to":null},"institution":{"name":"Probe Ashram"}}],"research":null}}]},
 				{"title":"Max Probe","url":"https://www.linkedin.com/in/max-probe","text":"# Max Probe\n\nRuhr Region (DE)\n\n58 connections • 61 followers"},
 				{"title":"Lena Muster","url":"https://www.linkedin.com/in/lena-muster","text":"# Lena Muster\n\nCoach für Neuanfänge\n\n12 connections • 12 followers"}],
 				"statuses":[{"id":"https://www.linkedin.com/in/unbekannt","status":"error","error":{"httpStatusCode":404,"tag":"ENTITY_NOT_FOUND"}}],
@@ -116,11 +122,16 @@ func TestExaPosts(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantP := []search.Profile{
-		{URL: "https://www.linkedin.com/in/erika-beispiel", Name: "Erika Beispiel", Headline: "Yogalehrerin und Inhaberin | Beispiel Yoga", Location: "Cologne, North Rhine-Westphalia, Germany"},
+		{URL: "https://www.linkedin.com/in/erika-beispiel", Name: "Erika Beispiel", Headline: "Yogalehrerin und Inhaberin | Beispiel Yoga", Location: "Cologne, North Rhine-Westphalia, Germany",
+			Career: []search.Step{
+				{Title: "Inhaberin", Org: "Beispiel Yoga", From: 2023},
+				{Title: "Werkstudentin", Org: "Muster GmbH", From: 2019, To: 2022},
+				{Education: true, Title: "Bachelor of Arts", Org: "Beispiel Hochschule", From: 2018, To: 2022},
+			}},
 		{URL: "https://www.linkedin.com/in/max-probe", Name: "Max Probe", Location: "Ruhr Region"},
 		{URL: "https://www.linkedin.com/in/lena-muster", Name: "Lena Muster", Headline: "Coach für Neuanfänge"},
 	}
-	if !slices.Equal(profiles, wantP) {
+	if !reflect.DeepEqual(profiles, wantP) {
 		t.Errorf("profiles\n%+v\nwant\n%+v", profiles, wantP)
 	}
 	if s.Load() != 1 || c.Load() != 1 {

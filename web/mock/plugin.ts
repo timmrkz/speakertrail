@@ -200,9 +200,12 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   const add = (key: string, label: string, isFor: boolean, passage: string, found_in: string) => {
     if (!out.some((x) => x.key === key)) out.push({ key, label, for: isFor, passage, found_in })
   }
+  // Some invented people have a profile with dates, some a recent post.
+  if (p.id % 4 === 0) add('young', 'Likely under 30', true, `Bachelor from ${2015 + (p.id % 6)}, so about ${26 - (p.id % 6)}`, 'LinkedIn profile')
   for (const [re, key, label, isFor] of MOCK_RUBRIC) if (re.test(p.headline)) add(key, label, isFor, p.headline, 'title')
   const hosted = apps.find((a) => a.role === 'host' || a.role === 'moderator')
   if (hosted) add('runs_events', 'Runs their own events', true, `Hosts "${hosted.event.title}"`, 'event')
+  if (p.id % 5 === 0) add('writes_on_linkedin', 'Writes on LinkedIn', true, 'Last post on 14 October 2026: “Ein Jahr selbstständig, was ich gelernt habe”', 'LinkedIn post')
   if (p.id >= 900) {
     add('owner_operator', 'Runs it themselves', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
     add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
@@ -214,7 +217,9 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
 function fitStats(s: State): Stats['fit'] {
   const list = s.people.map((p) => personList(s, p))
   const labels = new Map<string, [string, boolean]>()
+  labels.set('young', ['Likely under 30', true])
   for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
+  labels.set('writes_on_linkedin', ['Writes on LinkedIn', true])
   labels.set('backed', ['Backed by a startup programme', false])
   const signals = [...labels].map(([key, [label, isFor]]) => ({
     key, label, for: isFor,

@@ -80,6 +80,7 @@ Signals for a good fit:
 
 | Signal | Where it shows |
 | --- | --- |
+| **Likely under 30** | the years of education and first jobs on the LinkedIn profile, see [Next: younger owners](#next-younger-owners) |
 | **Works with people:** coaches, teaches, trains, treats, counsels | titles, about pages, course and class pages |
 | **Owner-operator:** runs it themselves, small team | imprint names an owner ("Inhaber") or one or two managing directors, the site speaks as "ich" |
 | **Bootstrapped:** built from own means, no investors named | about page, interviews, no funding news |
@@ -199,7 +200,10 @@ becomes a signal for a good fit. A profile without a post in a year is a
 signal against.
 
 What is kept of a profile: the name, the headline, the place and the
-profile link. Of the post that brought the person: its link, its first
+profile link. Of its jobs and education only two things: the year the
+person was likely born, with the one step that shows it, like "Bachelor
+from 2018", and the roles they hold now, like "Inhaberin, Studio
+Beispiel". Of the post that brought the person: its link, its first
 line and its date, in `person_posts`. Nothing else of a profile or a
 post is stored.
 
@@ -349,6 +353,9 @@ Built, in the order above:
    person is scored again at the start of a run and the signal becomes
    *Quiet on LinkedIn*, against. Someone without a known post gets
    neither.
+11. **Likely under 30**, a rubric signal for, from the years on the
+   profile of everyone a post search finds. See
+   [Next: younger owners](#next-younger-owners) for how it is guessed.
 
 Waiting:
 
@@ -420,6 +427,30 @@ Exa's profile data has education and job dates. A degree finished in the
 last eight years or so, or a first job about as recent, points to under
 30. It becomes a signal for, with the dates that show it, like every
 other signal. Nobody is dropped for it, and a guess is labelled as one.
+
+How the guess works, in `internal/rubric/age.go`. Each step on the
+profile that says something about age gives a year of birth, as if the
+person were as old as most people in Germany are at that step:
+
+| Step | Age at its start | Age at its end |
+| --- | --- | --- |
+| School, like the Abitur | | 19 |
+| Apprenticeship | 17 | 20 |
+| Bachelor, or a degree of unknown kind | 19 | 22 |
+| Master or Diplom | 23 | 25 |
+| Doctorate | 26 | 29 |
+| Student job, internship | 19 | |
+| Apprentice | 17 | |
+| First other job | 22 | |
+
+The earliest year counts, because a late degree makes someone look
+younger than they are and an early start never does. Jobs count only
+when the profile lists two or more, because a single job held now is no
+first job. An MBA, a course or a certificate says nothing, since they
+come at any age. The passage is that one step and the age it gives, like
+"Bachelor from 2018, so about 27", shown as a guess from the LinkedIn
+profile. Under 30 is a signal for. Older is not counted against. Whoever
+turns 30 is scored again at the start of the next run.
 
 **Runs their own business** is read from the profile's current roles:
 "Founder", "Inhaber", "Gründerin", "selbstständig", "Owner" at a small

@@ -82,7 +82,7 @@ Signals for a good fit:
 | --- | --- |
 | **Likely under 30** | the years of education and first jobs on the LinkedIn profile, see [Next: younger owners](#next-younger-owners) |
 | **Works with people:** coaches, teaches, trains, treats, counsels | titles, about pages, course and class pages |
-| **Owner-operator:** runs it themselves, small team | imprint names an owner ("Inhaber") or one or two managing directors, the site speaks as "ich" |
+| **Owner-operator:** runs it themselves, small team | imprint names an owner ("Inhaber") or one or two managing directors, the site speaks as "ich", the roles held now on the LinkedIn profile |
 | **Bootstrapped:** built from own means, no investors named | about page, interviews, no funding news |
 | **Runs their own events:** workshops, seminars, open mats, meetups, retreats | event pages where they are host or organiser, not only speaker |
 | **Author:** has written a book | about page, reading events, publisher pages |
@@ -356,6 +356,12 @@ Built, in the order above:
 11. **Likely under 30**, a rubric signal for, from the years on the
    profile of everyone a post search finds. See
    [Next: younger owners](#next-younger-owners) for how it is guessed.
+12. **Runs their own business**, read from the roles a confirmed
+   LinkedIn profile says someone holds now, like "Inhaberin, Studio
+   Beispiel", "Gründerin" or "Freelance Designerin", or a small company
+   named after them. A founder counts as running their own business, a
+   corporate title in those roles counts against. All other signals read
+   the roles too, like *Author* for "Autorin, Probe Verlag".
 
 Waiting:
 

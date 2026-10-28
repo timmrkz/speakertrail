@@ -16,8 +16,8 @@ import (
 // the founder passage, their appearances with the passages that put them
 // on stage, what they founded as lookups saw it, what pages that are not
 // kept said about them, like an about page or the model's read, their
-// newest post on LinkedIn, and how old their confirmed LinkedIn profile
-// says they likely are.
+// newest post on LinkedIn, and what their confirmed LinkedIn profile
+// says: how old they likely are and the roles they hold now.
 const scoreInput = `
 	SELECT p.id, p.headline, p.fit_evidence,
 		(SELECT COALESCE(json_agg(json_build_object('Role', a.role, 'Event', e.title, 'Evidence', a.evidence) ORDER BY e.starts_at, e.id), '[]')
@@ -34,9 +34,11 @@ const scoreInput = `
 		(SELECT json_build_object('Title', pp.title, 'Published', pp.published_at)
 			FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at IS NOT NULL
 			ORDER BY pp.published_at DESC, pp.id DESC LIMIT 1),
-		(SELECT json_build_object('BornAbout', pr.born_about, 'AgeReason', pr.age_reason)
-			FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed' AND pr.born_about IS NOT NULL
-			ORDER BY pr.last_seen_at DESC, pr.id DESC LIMIT 1)
+		(SELECT json_build_object('BornAbout', COALESCE(pr.born_about, 0), 'AgeReason', pr.age_reason, 'CurrentRoles', pr.current_roles)
+			FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+				AND (pr.born_about IS NOT NULL OR pr.current_roles <> '')
+			ORDER BY pr.last_seen_at DESC, pr.id DESC LIMIT 1),
+		p.full_name
 	FROM people p WHERE p.id = ANY($1)`
 
 // ScorePeople runs the rubric over the given people as of now and stores
@@ -57,8 +59,8 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.
 	for rows.Next() {
 		var id int64
 		in := rubric.Person{Now: now}
-		var apps, companies, found, post, age []byte
-		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found, &post, &age); err != nil {
+		var apps, companies, found, post, profile []byte
+		if err := rows.Scan(&id, &in.Headline, &in.FitEvidence, &apps, &companies, &found, &post, &profile, &in.Name); err != nil {
 			rows.Close()
 			return err
 		}
@@ -80,10 +82,10 @@ func ScorePeople(ctx context.Context, pool *pgxpool.Pool, ids []int64, now time.
 				return fmt.Errorf("last post of %d: %w", id, err)
 			}
 		}
-		if age != nil {
-			if err := json.Unmarshal(age, &in); err != nil {
+		if profile != nil {
+			if err := json.Unmarshal(profile, &in); err != nil {
 				rows.Close()
-				return fmt.Errorf("age of %d: %w", id, err)
+				return fmt.Errorf("profile of %d: %w", id, err)
 			}
 		}
 		all = append(all, scored{id, rubric.Signals(in)})

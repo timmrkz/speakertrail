@@ -71,6 +71,7 @@ func newFakePosts() *fakePosts {
 				Headline: "Yogalehrerin und Inhaberin", Location: "Cologne, North Rhine-Westphalia, Germany",
 				Career: []search.Step{
 					{Title: "Inhaberin", Org: "Beispiel Yoga", From: 2023},
+					{Title: "Autorin", Org: "Probe Verlag", From: 2024},
 					{Title: "Werkstudentin", Org: "Muster GmbH", From: 2019, To: 2022},
 					{Education: true, Title: "Bachelor of Arts", Org: "Beispiel Hochschule", From: 2018, To: 2022},
 				}},
@@ -128,8 +129,12 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	}
 	// Of a profile's jobs and education, only her likely age with the step
 	// that shows it and the roles she holds now are kept.
-	if got := e.one(t, `SELECT string_agg(handle || ': ' || COALESCE(born_about::text, '-') || ' ' || age_reason || ' | ' || current_roles, ', ' ORDER BY handle) FROM profiles`); got != "erika-beispiel: 1999 Bachelor from 2018 | Inhaberin, Beispiel Yoga, max-probe: -  | " {
+	if got := e.one(t, `SELECT string_agg(handle || ': ' || COALESCE(born_about::text, '-') || ' ' || age_reason || ' | ' || current_roles, ', ' ORDER BY handle) FROM profiles`); got != "erika-beispiel: 1999 Bachelor from 2018 | Inhaberin, Beispiel Yoga · Autorin, Probe Verlag, max-probe: -  | " {
 		t.Errorf("profiles kept: %q", got)
+	}
+	// The roles she holds now are read by the rubric.
+	if got := e.one(t, `SELECT passage || ' (' || found_in || ')' FROM person_signals WHERE signal = 'author'`); got != "Autorin, Probe Verlag (LinkedIn profile)" {
+		t.Errorf("author: %v", got)
 	}
 	if got := e.one(t, `SELECT passage || ' (' || found_in || ')' FROM person_signals WHERE signal = 'young'`); got != "Bachelor from 2018, so about 27 (LinkedIn profile)" {
 		t.Errorf("likely under 30: %v", got)

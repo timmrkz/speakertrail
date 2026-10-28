@@ -791,14 +791,15 @@ func TestPeopleByFit(t *testing.T) {
 	for _, p := range got.People {
 		order = append(order, fmt.Sprintf("%s %d", p.Name, p.FitScore))
 	}
-	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 0, Ole Muster -1" {
+	// Lea Beispiel, a founder, runs her own business.
+	if strings.Join(order, ", ") != "Mia Beispiel 2, Ida Probe 1, Lea Beispiel 1, Ole Muster -1" {
 		t.Errorf("order: %s", strings.Join(order, ", "))
 	}
 	if s := got.People[0].Signals; len(s) != 2 || s[0].Label != "Works with people" || !s[0].For || s[0].Passage != "Yoga-Lehrerin und Inhaberin, Studio Beispiel" {
 		t.Errorf("Mia's signals %+v", s)
 	}
-	if got.Counts["fits"] != 2 {
-		t.Errorf("%d good fits, want 2", got.Counts["fits"])
+	if got.Counts["fits"] != 3 {
+		t.Errorf("%d good fits, want 3", got.Counts["fits"])
 	}
 	if _, body := e.do(t, "GET", "/api/people?filter=fits", ""); strings.Contains(body, "Ole Muster") || !strings.Contains(body, "Ida Probe") {
 		t.Errorf("good fits: %s", body)

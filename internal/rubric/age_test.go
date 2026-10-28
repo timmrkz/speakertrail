@@ -1,6 +1,7 @@
 package rubric_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -55,5 +56,38 @@ func TestYoung(t *testing.T) {
 	}
 	if s := rubric.Signals(rubric.Person{BornAbout: 1996, AgeReason: "First job from 2018", Now: now}); len(s) != 0 {
 		t.Errorf("about 30: %+v", s)
+	}
+}
+
+// The roles a profile says someone holds now show whether they run their
+// own business. All invented.
+func TestCurrentRoles(t *testing.T) {
+	for _, c := range []struct {
+		name, roles, want string
+	}{
+		{"an owner", "Inhaberin, Studio Beispiel", "+owner_operator: Inhaberin, Studio Beispiel"},
+		{"a founder", "Gründerin, Probe Labs", "+owner_operator: Gründerin, Probe Labs"},
+		{"a company named after her", "Systemischer Coach, Erika Beispiel Coaching", "+works_with_people: Systemischer Coach, Erika Beispiel Coaching | +owner_operator: Systemischer Coach, Erika Beispiel Coaching"},
+		{"a freelancer", "Freelance Designerin", "+owner_operator: Freelance Designerin"},
+		{"a corporate title, at a company that shares her name", "Head of Marketing, Beispiel AG", "-corporate: Head of Marketing, Beispiel AG"},
+		{"a product owner", "Product Owner, Muster GmbH", ""},
+		{"the second of two roles", "Teamleiterin, Muster GmbH · Mitgründerin, Probe Yoga", "+works_with_people: Mitgründerin, Probe Yoga | +owner_operator: Mitgründerin, Probe Yoga"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			for _, s := range rubric.Signals(rubric.Person{Name: "Erika Beispiel", CurrentRoles: c.roles}) {
+				sign := "+"
+				if !s.For {
+					sign = "-"
+				}
+				if s.Where != "LinkedIn profile" {
+					t.Errorf("%s found in %q", s.Key, s.Where)
+				}
+				got = append(got, sign+s.Key+": "+s.Passage)
+			}
+			if g := strings.Join(got, " | "); g != c.want {
+				t.Errorf("signals %q, want %q", g, c.want)
+			}
+		})
 	}
 }

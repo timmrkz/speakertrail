@@ -187,7 +187,7 @@ function appearancesOf(s: State, id: number): Appearance[] {
 // people: their title, the events they host and where lookups found them.
 const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
   [/coach|trainer|lehrer|teacher|yoga|kampfsport|bjj|psychologist|run club/i, 'works_with_people', 'Works with people', true],
-  [/inhaber|owner|runs the/i, 'owner_operator', 'Runs it themselves', true],
+  [/inhaber|owner|runs the|founder|gründer/i, 'owner_operator', 'Runs their own business', true],
   [/organiser|host at|runs the/i, 'runs_events', 'Runs their own events', true],
   [/autor|author/i, 'author', 'Author', true],
   [/athlete|athlet/i, 'athlete', 'Athlete', true],
@@ -207,7 +207,7 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   if (hosted) add('runs_events', 'Runs their own events', true, `Hosts "${hosted.event.title}"`, 'event')
   if (p.id % 5 === 0) add('writes_on_linkedin', 'Writes on LinkedIn', true, 'Last post on 14 October 2026: “Ein Jahr selbstständig, was ich gelernt habe”', 'LinkedIn post')
   if (p.id >= 900) {
-    add('owner_operator', 'Runs it themselves', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
+    add('owner_operator', 'Runs their own business', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
     add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
   }
   return out.sort((a, b) => Number(b.for) - Number(a.for))

@@ -362,6 +362,14 @@ Built, in the order above:
    named after them. A founder counts as running their own business, a
    corporate title in those roles counts against. All other signals read
    the roles too, like *Author* for "Autorin, Probe Verlag".
+13. **Post searches aimed at younger people**, 28 more: "Mit 25
+   selbstständig", "Direkt nach dem Studium gegründet", "Als Werkstudent
+   angefangen, jetzt eigene Firma" and "Studium abgebrochen und mein
+   eigenes Business gestartet", each in the seven places. They carry a
+   point, so runs take them before the first 42. A live check on 28
+   October 2026 found that the first post searches bring people aged 35
+   to 55, none of 8 under 30. These four brought 9 of 24 under 30, and
+   17 of 24 ran their own business.
 
 Waiting:
 

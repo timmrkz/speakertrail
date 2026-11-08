@@ -180,7 +180,7 @@ Schreib mir an mara@studio-beispiel.test, ich bin Autorin.`
 	for _, s := range rubric.About(page, "Tom Testmann", false) {
 		got = append(got, s.Key+": "+s.Passage)
 	}
-	if strings.Join(got, "\n") != "corporate: Unser Team: Tom Testmann ist Head of Sales." {
+	if strings.Join(got, "\n") != "corporate: Unser Team: Tom Testmann ist Head of Sales.\nadvisor: Unser Team: Tom Testmann ist Head of Sales." {
 		t.Errorf("about Tom: %v", got)
 	}
 }
@@ -204,13 +204,13 @@ func TestLinkedInPosts(t *testing.T) {
 		{"no post known", nil, ""},
 		{"a post without a date", &rubric.Post{Title: "Ein Jahr selbstständig"}, ""},
 		{"a post this autumn", &rubric.Post{Title: "Ein Jahr selbstständig", Published: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
-			"+writes_on_linkedin (LinkedIn post): Last post on 14 September 2026: “Ein Jahr selbstständig”"},
-		{"a post just under a year old", &rubric.Post{Title: "Mein Weg zum Coach", Published: now.Add(-364 * 24 * time.Hour)},
-			"+writes_on_linkedin (LinkedIn post): Last post on 29 October 2025: “Mein Weg zum Coach”"},
-		{"a post more than a year old", &rubric.Post{Title: "Mein Weg zum Coach", Published: time.Date(2025, 8, 1, 0, 0, 0, 0, time.UTC)},
+			"+active_on_linkedin (LinkedIn post): Last post on 14 September 2026: “Ein Jahr selbstständig”"},
+		{"a post just under six months old", &rubric.Post{Title: "Mein Weg zum Coach", Published: now.Add(-182 * 24 * time.Hour)},
+			"+active_on_linkedin (LinkedIn post): Last post on 29 April 2026: “Mein Weg zum Coach”"},
+		{"a post more than six months old", &rubric.Post{Title: "Mein Weg zum Coach", Published: time.Date(2025, 8, 1, 0, 0, 0, 0, time.UTC)},
 			"-quiet_on_linkedin (LinkedIn post): Last post on 1 August 2025: “Mein Weg zum Coach”"},
 		{"a first line with a number like a phone's", &rubric.Post{Title: "Kurse 2025 / 2026 im Studio", Published: time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)},
-			"+writes_on_linkedin (LinkedIn post): Last post on 14 September 2026"},
+			"+active_on_linkedin (LinkedIn post): Last post on 14 September 2026"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var got []string

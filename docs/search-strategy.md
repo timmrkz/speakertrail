@@ -3,11 +3,79 @@
 A brief for the next stage of the engine. It says who makes a good guest,
 where such people are found in NRW, how the engine tells them apart, and in
 which order to build it. What is built so far is under
-[Where it stands](#where-it-stands).
+[Where it stands](#where-it-stands). Since 8 November 2026 runs take only
+profile searches, see [Profile searches only](#profile-searches-only).
+The sections after it describe the wider engine, which is paused.
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
 conversation.
+
+## Profile searches only
+
+Decided with Tim on 8 November 2026, after testing the engine as it was.
+A run then did everything at once: it crawled event pages at one request
+every 5 seconds per website, read events with the local model and looked
+up imprints. It ran for 7 or 8 minutes and did not finish. Many of the
+people it suggested could not be found on LinkedIn, and the one with a
+confirmed profile was a management consultant, shown as a good fit.
+
+So the engine has one way in now, the one that worked from the start:
+people who are on LinkedIn and active there.
+
+**A profile search** is a source that asks Exa for LinkedIn profiles of a
+kind of person in a place, like "Yogalehrerin Köln" or "Gen Z Unternehmer
+NRW". It is one call to Exa, which reads its own index and never
+LinkedIn itself, so a run of ten takes well under a minute. Exa answers
+with the profile's headline, place, roles, education and the dates of its
+latest posts, comments and reactions.
+
+**Only who passes every one of these is kept**, nobody else is stored:
+
+1. **A LinkedIn profile**, so Tim can reach the person in one click.
+2. **Lives in NRW**, by the profile's place.
+3. **Active on LinkedIn**: a post, comment or reaction in the last six
+   months (`profile_active_days`, 183).
+4. **Runs their own business**: owner, founder, self-employed, freelance,
+   managing partner, or a small company named after them, read from the
+   headline and the roles held now.
+5. **Not ruled out**: consultants, agencies, law and tax offices,
+   recruiters, sales, politicians, therapists, large companies and
+   corporate titles. A sales trainer or a psychological counsellor is
+   not ruled out.
+
+Everyone kept is scored with the rubric as before, with **Likely under
+30** on top, guessed from the years on the profile, see
+[Next: younger owners](#next-younger-owners).
+
+**The starting profile searches**, 64 of them, in
+`internal/importer/data/profile_searches.csv`:
+
+- 24 aimed at younger people, run first: "Gen Z Unternehmer", "Gründerin
+  direkt nach dem Studium", "junger Gründer" and "Gründer unter 30", in
+  Köln, Düsseldorf, Bonn, Essen, Dortmund and NRW.
+- 40 for the archetypes in [Who fits](#who-fits): personal trainers,
+  martial arts schools, yoga studios, life coaches, nutrition advisers,
+  gym owners, physiotherapy practices and dance schools, in the five
+  cities.
+
+A run takes the ten that are due (`profile_searches_per_run`), each asks
+for 25 profiles (`profile_search_results`) and is due again after 30 days
+(`profile_search_check_days`).
+
+**Paused, not deleted**: events, portfolios, directories, website
+searches, lookups, reads by the local model and post searches. The
+calendar stays online but does not update. The setting
+`profile_searches_only` brings them back.
+
+A live check on 8 November 2026: "Personal Trainer Düsseldorf" gave 25
+profiles, of which 7 passed. "Gen Z Unternehmer NRW" kept 8, five of them
+likely under 30. "Gründerin direkt nach dem Studium Düsseldorf" kept 7,
+three likely under 30.
+
+**Next**, in this order: a simpler workspace with three screens, People,
+Searches and Settings. Then the funnel, keep, contacted, replied,
+recorded, steers which profile searches run more often.
 
 ## What we learned
 
@@ -89,7 +157,7 @@ Signals for a good fit:
 | **Athlete:** competes or competed | about page, belt or title, club pages |
 | **Career switch** towards people | about page |
 | **Still active** | the signs of life the lookup reads today |
-| **Writes on LinkedIn:** a post in the last year | the post a post search found, with its date |
+| **Active on LinkedIn:** a post, comment or reaction in the last six months | the newest activity on the profile, or the post a post search found, with its date |
 
 Signals against:
 
@@ -195,9 +263,9 @@ keep missing a kind of person Tim wants, like owners of gyms whose
 studio posts instead of them.
 
 The rubric reads the profile: works with people, owner, coach, and the
-signals against. **Writes on LinkedIn**, with the date of the last post,
-becomes a signal for a good fit. A profile without a post in a year is a
-signal against.
+signals against. **Active on LinkedIn**, a post, comment or reaction in
+the last six months, with its date, becomes a signal for a good fit. A
+profile quiet for longer is a signal against.
 
 What is kept of a profile: the name, the headline, the place and the
 profile link. Of its jobs and education only two things: the year the
@@ -348,7 +416,7 @@ Built, in the order above:
    [Active on LinkedIn](#active-on-linkedin). 42 starting post searches,
    six kinds of story in seven places, two in each run. Each one is due
    again after 14 days.
-10. **Writes on LinkedIn**, a rubric signal for, with the date and first
+10. **Writes on LinkedIn**, since renamed Active on LinkedIn, a rubric signal for, with the date and first
    line of the newest post. Once that post is more than a year old, the
    person is scored again at the start of a run and the signal becomes
    *Quiet on LinkedIn*, against. Someone without a known post gets
@@ -370,6 +438,11 @@ Built, in the order above:
    October 2026 found that the first post searches bring people aged 35
    to 55, none of 8 under 30. These four brought 9 of 24 under 30, and
    17 of 24 ran their own business.
+14. **Profile searches only**, see
+   [Profile searches only](#profile-searches-only). Everything else is
+   paused. The signal Writes on LinkedIn became **Active on LinkedIn**, a
+   post, comment or reaction in the last six months, and a new signal
+   against, **Consultant, agency or office**, rules people out.
 
 Waiting:
 

@@ -91,3 +91,62 @@ func TestCurrentRoles(t *testing.T) {
 		})
 	}
 }
+
+// A guest runs their own business, and nothing rules them out. All
+// invented.
+func TestGuest(t *testing.T) {
+	for _, c := range []struct {
+		name, headline, roles string
+		ok                    bool
+		why                   string
+	}{
+		{"a trainer on her own", "Personal Trainerin", "Personal Trainerin, Selbstständig", true, ""},
+		{"a founder, with an @", "Gründerin @ Studio Beispiel", "Founder & Managing Director, Studio Beispiel", true, ""},
+		{"the managing partner of his gym", "", "Geschäftsführender Gesellschafter, Probe Gym GmbH", true, ""},
+		{"a management consultant who founded his firm", "Management Consultant | Strategy", "Founder, Beispiel Consulting", false, "Consultant, agency or office"},
+		{"an Unternehmensberater", "Unternehmensberater und Gründer", "Inhaber, Muster Beratung", false, "Consultant, agency or office"},
+		{"a candidate for parliament", "Landtagskandidat Köln", "Gründer, Probe Events", false, "Consultant, agency or office"},
+		{"a psychological counsellor is no consultant", "Psychologische Beraterin und Coach", "Inhaberin, Praxis Beispiel", true, ""},
+		{"a nutrition coach is no consultant", "Ernährungsberaterin", "Selbstständige Ernährungsberaterin", true, ""},
+		{"a trainer employed by a club", "Athletiktrainer", "Athletiktrainer, Probe Sportverein", false, "Does not run their own business"},
+		{"a head of marketing", "Head of Marketing", "Gründerin, Nebenprojekt Beispiel", false, "Corporate title"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ok, why := rubric.Guest(rubric.Signals(rubric.Person{Name: "Erika Beispiel", Headline: c.headline, CurrentRoles: c.roles}))
+			if ok != c.ok || why != c.why {
+				t.Errorf("guest %v (%q), want %v (%q)", ok, why, c.ok, c.why)
+			}
+		})
+	}
+}
+
+// A profile's activity counts like a post, and the newer of the two wins.
+func TestActiveOnLinkedIn(t *testing.T) {
+	now := time.Date(2026, 11, 8, 12, 0, 0, 0, time.UTC)
+	post := &rubric.Post{Title: "Ein Jahr selbstständig", Published: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)}
+	for _, c := range []struct {
+		name   string
+		active time.Time
+		post   *rubric.Post
+		want   string
+	}{
+		{"active last week", time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC), nil, "+active_on_linkedin: Last active on 1 November 2026"},
+		{"quiet since spring", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), nil, "-quiet_on_linkedin: Last active on 1 March 2026"},
+		{"active after an old post", time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), post, "+active_on_linkedin: Last active on 1 October 2026"},
+		{"an old post and no activity", time.Time{}, post, "-quiet_on_linkedin: Last post on 1 March 2026: “Ein Jahr selbstständig”"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			for _, s := range rubric.Signals(rubric.Person{LastActive: c.active, LastPost: c.post, Now: now}) {
+				sign := "+"
+				if !s.For {
+					sign = "-"
+				}
+				got = append(got, sign+s.Key+": "+s.Passage)
+			}
+			if g := strings.Join(got, " | "); g != c.want {
+				t.Errorf("signals %q, want %q", g, c.want)
+			}
+		})
+	}
+}

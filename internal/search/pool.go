@@ -116,6 +116,17 @@ func (p *Pool) Profiles(ctx context.Context, urls []string) ([]Profile, string, 
 	return res, from, err
 }
 
+// People finds LinkedIn profiles that match a query, on a provider that
+// can, within its budget.
+func (p *Pool) People(ctx context.Context, query string, results int) ([]Profile, string, error) {
+	var res []Profile
+	from, err := p.try(ctx, query, p.postFinders(), func(pr Provider) (n int, err error) {
+		res, err = pr.(PostFinder).People(ctx, query, results)
+		return len(res), err
+	})
+	return res, from, err
+}
+
 func (p *Pool) postFinders() []Provider {
 	var out []Provider
 	for _, pr := range p.Providers {

@@ -2,6 +2,7 @@ package pipeline_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type fakePosts struct {
 	lookups  [][]string
 	posts    []search.Post
 	profiles map[string]search.Profile
+	people   []search.Profile
 }
 
 func (f *fakePosts) Name() string { return "exa" }
@@ -45,6 +47,13 @@ func (f *fakePosts) Profiles(_ context.Context, urls []string) ([]search.Profile
 		}
 	}
 	return out, nil
+}
+
+func (f *fakePosts) People(_ context.Context, q string, results int) ([]search.Profile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.queries = append(f.queries, fmt.Sprintf("people %s, %d", q, results))
+	return f.people, nil
 }
 
 func post(author, slug, title string, day int) search.Post {
@@ -139,16 +148,16 @@ func TestPostSearchesFindActivePeopleInNRW(t *testing.T) {
 	if got := e.one(t, `SELECT passage || ' (' || found_in || ')' FROM person_signals WHERE signal = 'young'`); got != "Bachelor from 2018, so about 27 (LinkedIn profile)" {
 		t.Errorf("likely under 30: %v", got)
 	}
-	// Writing on LinkedIn counts for a fit, with the post as its passage.
+	// Being active on LinkedIn counts for a fit, with the post as its passage.
 	signals := `SELECT string_agg(p.full_name || ': ' || s.signal || ' (' || s.found_in || ') ' || s.passage, ' | ' ORDER BY p.full_name, s.signal)
 		FROM person_signals s JOIN people p ON p.id = s.person_id WHERE s.signal LIKE '%linkedin'`
-	if got := e.one(t, signals); got != "Erika Beispiel: writes_on_linkedin (LinkedIn post) Last post on 14 September 2026: “Unser Studio ist eröffnet”"+
-		" | Max Probe: writes_on_linkedin (LinkedIn post) Last post on 10 September 2026: “Ich habe gekündigt”" {
+	if got := e.one(t, signals); got != "Erika Beispiel: active_on_linkedin (LinkedIn post) Last post on 14 September 2026: “Unser Studio ist eröffnet”"+
+		" | Max Probe: active_on_linkedin (LinkedIn post) Last post on 10 September 2026: “Ich habe gekündigt”" {
 		t.Errorf("signals: %v", got)
 	}
-	// A year on without a new post, they are scored again, and quiet.
-	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(0, 11, 0)); err != nil || n != 0 {
-		t.Errorf("scored again after eleven months: %d, %v", n, err)
+	// Half a year on without a new post, they are scored again, and quiet.
+	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(0, 5, 0)); err != nil || n != 0 {
+		t.Errorf("scored again after five months: %d, %v", n, err)
 	}
 	if n, err := pipeline.ScoreStale(ctx, e.pool, now.AddDate(1, 0, 0)); err != nil || n != 2 {
 		t.Errorf("scored again after a year: %d, %v", n, err)

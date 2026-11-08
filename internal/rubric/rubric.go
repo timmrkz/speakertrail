@@ -18,7 +18,7 @@ import (
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 2
+const Version = 3
 
 // Where a passage comes from.
 const (
@@ -34,9 +34,9 @@ const (
 	FromProfile   = "LinkedIn profile"
 )
 
-// QuietAfter is how long after their last post a person no longer writes
-// on LinkedIn.
-const QuietAfter = 365 * 24 * time.Hour
+// QuietAfter is how long after their last post, comment or reaction a
+// person no longer counts as active on LinkedIn.
+const QuietAfter = 183 * 24 * time.Hour
 
 // Def is one signal of the rubric.
 type Def struct {
@@ -65,7 +65,7 @@ var Defs = []Def{
 		unless:  words(`agile coach|scrum|sales[- ]?trainer|vertriebstrainer`)},
 	{Key: "owner_operator", For: true, Label: "Runs their own business",
 		Means:   "owns and runs a small business, studio, gym or practice themselves, with a small team",
-		pattern: words(`inhaber(?:in)?|unternehmensinhaber(?:in)?|owner|besitzer(?:in)?|einzelunternehmer(?:in)?|e\.\s?k\.|selbstständig\w*|selbständig\w*|freiberuflich\w*|freiberufler(?:in)?|freelance\w*|self[- ]employed|in eigener praxis|eigene[nrs]? (?:praxis|studio|schule|gym|laden|betrieb|café|cafe)|(?:co-?)?founder|(?:mit)?gründer(?:in|:in|\*in)?|co-?gründer(?:in)?`),
+		pattern: words(`inhaber(?:in)?|unternehmensinhaber(?:in)?|owner|besitzer(?:in)?|einzelunternehmer(?:in)?|e\.\s?k\.|selbstständig\w*|selbständig\w*|freiberuflich\w*|freiberufler(?:in)?|freelance\w*|self[- ]employed|in eigener praxis|eigene[nrs]? (?:praxis|studio|schule|gym|laden|betrieb|café|cafe)|(?:co-?)?founder|(?:mit)?gründer(?:in|:in|\*in)?|co-?gründer(?:in)?|geschäftsführende[rn]? gesellschafter(?:in)?|gesellschafter(?:in)?|geschäftsführer(?:in)?|geschäftsführung`),
 		unless:  words(`product owner|process owner|business owner at`)},
 	{Key: "bootstrapped", For: true, Label: "Built it from own means",
 		Means:   "built the business from their own means, without investors",
@@ -85,8 +85,8 @@ var Defs = []Def{
 		pattern: words(`quereinst\w*|career (?:change|switch)|changed careers|switched careers|neuorientierung|beruflich neu \w+|umgesattelt|sattelte um`)},
 	{Key: "still_active", For: true, Label: "Still active",
 		Means: "what they run shows recent signs of life"},
-	{Key: "writes_on_linkedin", For: true, Label: "Writes on LinkedIn",
-		Means: "wrote a post on LinkedIn in the last year"},
+	{Key: "active_on_linkedin", For: true, Label: "Active on LinkedIn",
+		Means: "posted, commented or reacted on LinkedIn in the last six months"},
 
 	{Key: "funded", For: false, Label: "Raised money",
 		Means:   "raised money from investors: funding rounds, Series A, backed by investors",
@@ -110,7 +110,11 @@ var Defs = []Def{
 	{Key: "inactive", For: false, Label: "No longer active",
 		Means: "what they run is being wound up or gone"},
 	{Key: "quiet_on_linkedin", For: false, Label: "Quiet on LinkedIn",
-		Means: "their last known post on LinkedIn is more than a year old"},
+		Means: "nothing on LinkedIn in the last six months"},
+	{Key: "advisor", For: false, Label: "Consultant, agency or office",
+		Means:   "works as a consultant, in an agency, a law or tax office, in sales or recruiting, or in politics, rather than with people face to face",
+		pattern: words(`(?:unternehmens|management|strategie|it-?|steuer|finanz|vermögens|versicherungs|personal|immobilien|business-?|digital-?)berater(?:in)?|unternehmensberatung|consultant|consulting|beratungsunternehmen|agentur\w*|agency|kanzlei|rechtsanwält\w*|rechtsanwalt|anwält\w*|steuerberat\w*|wirtschaftsprüf\w*|recruit\w*|headhunt\w*|personalvermittl\w*|makler(?:in)?|vertrieb\w*|account executive|sales|politiker(?:in)?|landtag\w*|bundestag\w*|abgeordnete[rn]?|kandidat(?:in)?|bürgermeister(?:in)?|ratsmitglied|fraktion\w*`),
+		unless:  words(`ernährungsberater(?:in)?|lebensberater(?:in)?|sales[- ]?trainer|vertriebstrainer`)},
 }
 
 var byKey = func() map[string]*Def {
@@ -183,6 +187,9 @@ type Person struct {
 	// Zero when the profile does not say.
 	BornAbout int
 	AgeReason string
+	// LastActive is the newest post, comment or reaction their profile
+	// shows, zero when it shows none.
+	LastActive time.Time
 	// Now is when the person is scored, to tell how old the post is, and
 	// how old they are.
 	Now time.Time
@@ -288,9 +295,21 @@ func Signals(p Person) []Signal {
 		add("young", agePassage(p.BornAbout, p.AgeReason, p.Now.Year()), FromProfile)
 	}
 
-	// A post is dated, so it says for certain whether they write there now.
-	if lp := p.LastPost; lp != nil && !lp.Published.IsZero() {
-		key := "writes_on_linkedin"
+	// A post or a profile's activity is dated, so it says for certain
+	// whether they are active there now. The newer of the two counts.
+	lp := p.LastPost
+	if lp != nil && lp.Published.IsZero() {
+		lp = nil
+	}
+	switch {
+	case !p.LastActive.IsZero() && (lp == nil || p.LastActive.After(lp.Published)):
+		key := "active_on_linkedin"
+		if p.Now.Sub(p.LastActive) > QuietAfter {
+			key = "quiet_on_linkedin"
+		}
+		add(key, "Last active on "+p.LastActive.Format("2 January 2006"), FromProfile)
+	case lp != nil:
+		key := "active_on_linkedin"
 		if p.Now.Sub(lp.Published) > QuietAfter {
 			key = "quiet_on_linkedin"
 		}
@@ -374,8 +393,9 @@ func postPassage(lp Post) string {
 }
 
 // contact finds an email address or a phone number. A passage with one is
-// never kept, because contact details are never stored.
-var contact = regexp.MustCompile(`@|\+?\d[\d /().-]{6,}\d`)
+// never kept, because contact details are never stored. A bare "@", like
+// "Founder @ Studio Beispiel", is no address.
+var contact = regexp.MustCompile(`[\w.+-]+@[\w-]+\.[\w.-]+|\+?\d[\d /().-]{6,}\d`)
 
 // firstPerson finds a page speaking as "ich", like a sole trader's.
 var firstPerson = words(`ich|mich|mir|mein\w*|i|my|me`)
@@ -498,4 +518,28 @@ func passage(s string, i, j int) string {
 		cut += "…"
 	}
 	return cut
+}
+
+// ruledOut are the signals that leave a person out as a guest, whatever
+// else they show.
+var ruledOut = []string{"advisor", "corporate", "large_company", "therapist", "inactive"}
+
+// Guest tells whether a person's signals show someone who runs their own
+// business and nothing that rules them out. When not, it says why.
+func Guest(signals []Signal) (ok bool, why string) {
+	owner := false
+	for _, s := range signals {
+		if s.Key == "owner_operator" {
+			owner = true
+		}
+		for _, k := range ruledOut {
+			if s.Key == k {
+				return false, byKey[k].Label
+			}
+		}
+	}
+	if !owner {
+		return false, "Does not run their own business"
+	}
+	return true, ""
 }

@@ -95,6 +95,11 @@ func setup(t *testing.T, robots string) env {
 	})
 	p := &pipeline.Pipeline{Pool: pool, Fetcher: fetch.New(fetch.Options{Client: &http.Client{Transport: lo, Timeout: 10 * time.Second}}),
 		Queue: q, Now: func() time.Time { return now }}
+	// The paused kinds of source keep their tests. Profile searches turn
+	// the pause back on, see profiles_test.go.
+	if _, err := pool.Exec(t.Context(), `UPDATE settings SET value = 'false' WHERE key = 'profile_searches_only'`); err != nil {
+		t.Fatal(err)
+	}
 	return env{pool: pool, p: p, site: s}
 }
 

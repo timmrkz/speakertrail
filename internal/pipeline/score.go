@@ -34,9 +34,10 @@ const scoreInput = `
 		(SELECT json_build_object('Title', pp.title, 'Published', pp.published_at)
 			FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at IS NOT NULL
 			ORDER BY pp.published_at DESC, pp.id DESC LIMIT 1),
-		(SELECT json_build_object('BornAbout', COALESCE(pr.born_about, 0), 'AgeReason', pr.age_reason, 'CurrentRoles', pr.current_roles)
+		(SELECT json_build_object('BornAbout', COALESCE(pr.born_about, 0), 'AgeReason', pr.age_reason, 'CurrentRoles', pr.current_roles,
+				'LastActive', pr.last_active_at)
 			FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
-				AND (pr.born_about IS NOT NULL OR pr.current_roles <> '')
+				AND (pr.born_about IS NOT NULL OR pr.current_roles <> '' OR pr.last_active_at IS NOT NULL)
 			ORDER BY pr.last_seen_at DESC, pr.id DESC LIMIT 1),
 		p.full_name
 	FROM people p WHERE p.id = ANY($1)`
@@ -132,13 +133,15 @@ func pageSignal(ctx context.Context, db execer, personID int64, signal, passage,
 const scoreBatch = 200
 
 // staleQuery finds people the current rubric has not scored yet, people
-// who still write on LinkedIn by their score while their newest post has
-// grown older than a year since, and people under 30 by their score who
+// who are still active on LinkedIn by their score while their newest post
+// and activity have grown older than six months since, and people under 30 by their score who
 // have turned 30 since.
 const staleQuery = `
 	SELECT id FROM people p WHERE rubric <> $1
-	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'writes_on_linkedin')
-	       AND NOT EXISTS (SELECT 1 FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at >= $3))
+	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'active_on_linkedin')
+	       AND NOT EXISTS (SELECT 1 FROM person_posts pp WHERE pp.person_id = p.id AND pp.published_at >= $3)
+	       AND NOT EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+	           AND pr.last_active_at >= $3))
 	   OR (EXISTS (SELECT 1 FROM person_signals s WHERE s.person_id = p.id AND s.signal = 'young')
 	       AND NOT EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
 	           AND pr.born_about > $4::int - $5::int))

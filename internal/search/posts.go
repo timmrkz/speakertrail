@@ -36,6 +36,9 @@ type Profile struct {
 	// years. Only what they show is kept: an age indicator and the roles
 	// held now, never the list itself.
 	Career []Step
+	// LastActive is the date of the newest post, comment or reaction the
+	// profile shows, zero when it shows none.
+	LastActive time.Time
 }
 
 // Step is one job or one education in a profile.
@@ -59,6 +62,8 @@ type PostFinder interface {
 	// Profiles reads profiles by their links. One the index does not hold
 	// is left out.
 	Profiles(ctx context.Context, urls []string) ([]Profile, error)
+	// People finds profiles of people who match a query.
+	People(ctx context.Context, query string, results int) ([]Profile, error)
 }
 
 // Posts asks Exa's index for LinkedIn posts. It reads nothing live.
@@ -114,34 +119,100 @@ func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
 	req.Header.Set("x-api-key", e.Key)
 	req.Header.Set("Content-Type", "application/json")
 	var out struct {
-		Results []struct {
-			Title    string `json:"title"`
-			URL      string `json:"url"`
-			Text     string `json:"text"`
-			Entities []struct {
-				Type       string `json:"type"`
-				Properties struct {
-					Name        string `json:"name"`
-					Location    string `json:"location"`
-					WorkHistory []struct {
-						Title   string    `json:"title"`
-						Dates   *exaDates `json:"dates"`
-						Company exaNamed  `json:"company"`
-					} `json:"workHistory"`
-					EducationHistory []struct {
-						Degree      string    `json:"degree"`
-						Dates       *exaDates `json:"dates"`
-						Institution exaNamed  `json:"institution"`
-					} `json:"educationHistory"`
-				} `json:"properties"`
-			} `json:"entities"`
-		} `json:"results"`
+		Results []exaProfile `json:"results"`
 	}
 	if err := call(e.Client, req, e.Name(), &out); err != nil {
 		return nil, err
 	}
-	res := make([]Profile, 0, len(out.Results))
-	for _, r := range out.Results {
+	return profilesOf(out.Results), nil
+}
+
+// People asks Exa's index for LinkedIn profiles of people who match a
+// query, like "Personal Trainer Düsseldorf", with what each profile says:
+// the place, the jobs and education, and its latest activity. It reads
+// nothing live.
+func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile, error) {
+	body, _ := json.Marshal(map[string]any{
+		"query": query, "category": "people", "numResults": results,
+		// Enough of the text to reach the activity, which comes last.
+		"contents": map[string]any{"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never"},
+	})
+	var out struct {
+		Results []exaProfile `json:"results"`
+	}
+	// Exa's people search fails now and then with an internal error that
+	// is gone a moment later, so it is asked once more after one.
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, orDefault(e.URL, "https://api.exa.ai/search"), bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("x-api-key", e.Key)
+		req.Header.Set("Content-Type", "application/json")
+		err = call(e.Client, req, e.Name(), &out)
+		if err == nil {
+			break
+		}
+		if attempt > 0 || !strings.Contains(err.Error(), " answered 5") {
+			return nil, err
+		}
+		select {
+		case <-time.After(e.retryWait()):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	var res []Profile
+	for _, p := range profilesOf(out.Results) {
+		// The people category holds other sites' pages of people too.
+		if u, err := url.Parse(p.URL); err == nil && strings.HasSuffix(strings.ToLower(u.Hostname()), "linkedin.com") && strings.HasPrefix(u.Path, "/in/") {
+			res = append(res, p)
+		}
+	}
+	return res, nil
+}
+
+// retryWait is how long People waits before it asks again.
+func (e *Exa) retryWait() time.Duration {
+	if e.RetryWait > 0 {
+		return e.RetryWait
+	}
+	return 3 * time.Second
+}
+
+// exaProfile is a LinkedIn profile as Exa's index answers it.
+type exaProfile struct {
+	Title    string `json:"title"`
+	URL      string `json:"url"`
+	Text     string `json:"text"`
+	Entities []struct {
+		Type       string `json:"type"`
+		Properties struct {
+			Name        string `json:"name"`
+			Location    string `json:"location"`
+			WorkHistory []struct {
+				Title   string    `json:"title"`
+				Dates   *exaDates `json:"dates"`
+				Company exaNamed  `json:"company"`
+			} `json:"workHistory"`
+			EducationHistory []struct {
+				Degree      string    `json:"degree"`
+				Dates       *exaDates `json:"dates"`
+				Institution exaNamed  `json:"institution"`
+			} `json:"educationHistory"`
+		} `json:"properties"`
+	} `json:"entities"`
+}
+
+// activityDate finds the date of one entry in a profile's activity, like
+// "[2026-07-22 · Kommentar zu …]".
+var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
+
+// profilesOf reads the profiles of Exa's answer. One without a name is
+// left out.
+func profilesOf(results []exaProfile) []Profile {
+	res := make([]Profile, 0, len(results))
+	for _, r := range results {
 		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title)}
 		for _, en := range r.Entities {
 			if en.Type == "person" {
@@ -169,12 +240,17 @@ func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
 			}
 		}
 		p.Headline, p.Location = profileLines(r.Text, p.Location)
+		for _, m := range activityDate.FindAllStringSubmatch(r.Text, -1) {
+			if t, err := time.Parse("2006-01-02", m[1]); err == nil && t.After(p.LastActive) {
+				p.LastActive = t
+			}
+		}
 		if p.Name == "" {
 			continue
 		}
 		res = append(res, p)
 	}
-	return res, nil
+	return res
 }
 
 type exaNamed struct {

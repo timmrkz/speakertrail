@@ -46,6 +46,8 @@ func exaPostServer(t *testing.T, searches, contents *atomic.Int32) *httptest.Ser
 			searches.Add(1)
 			var body struct {
 				Query          string   `json:"query"`
+				Category       string   `json:"category"`
+				NumResults     int      `json:"numResults"`
 				IncludeDomains []string `json:"includeDomains"`
 				Start          string   `json:"startPublishedDate"`
 				Contents       struct {
@@ -54,6 +56,20 @@ func exaPostServer(t *testing.T, searches, contents *atomic.Int32) *httptest.Ser
 			}
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Error(err)
+			}
+			if body.Category == "people" {
+				if body.Contents.Livecrawl != "never" || body.NumResults != 25 {
+					t.Errorf("exa people search %+v", body)
+				}
+				// A profile with its activity last, and a page that is no
+				// LinkedIn profile.
+				fmt.Fprint(w, `{"results":[
+					{"title":"Lea Probe","url":"https://de.linkedin.com/in/lea-probe","text":"# Lea Probe\n\nPersonal Trainerin | Selbstständig\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n300 connections\n\n## Activity\n\n- [2026-06-02 · Gefällt mir: Ein Beitrag](https://www.linkedin.com/posts/x)\n- [2026-10-30 · Kommentar: Starker Kurs!](https://www.linkedin.com/posts/y)",
+					 "entities":[{"type":"person","properties":{"name":"Lea Probe","location":"Cologne, North Rhine-Westphalia, Germany",
+					   "workHistory":[{"title":"Personal Trainerin","dates":{"from":"2023-01-01","to":null},"company":{"name":"Selbstständig"}}],"educationHistory":[]}}]},
+					{"title":"Probe Fitness Team","url":"https://probe-fitness.example/team","text":"Unser Team"}],
+					"costDollars":{"total":0.007}}`)
+				return
 			}
 			if body.IncludeDomains == nil {
 				// A website search, as in exaServer.
@@ -136,6 +152,55 @@ func TestExaPosts(t *testing.T) {
 	}
 	if s.Load() != 1 || c.Load() != 1 {
 		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
+	}
+}
+
+func TestExaPeople(t *testing.T) {
+	var s, c atomic.Int32
+	srv := exaPostServer(t, &s, &c)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	people, err := exa.People(t.Context(), "Personal Trainer Köln", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []search.Profile{{
+		URL: "https://de.linkedin.com/in/lea-probe", Name: "Lea Probe", Headline: "Personal Trainerin | Selbstständig",
+		Location: "Cologne, North Rhine-Westphalia, Germany", Career: []search.Step{{Title: "Personal Trainerin", Org: "Selbstständig", From: 2023}},
+		LastActive: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC),
+	}}
+	if !reflect.DeepEqual(people, want) {
+		t.Errorf("people\n%+v\nwant\n%+v", people, want)
+	}
+	if s.Load() != 1 || c.Load() != 0 {
+		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
+	}
+}
+
+// Exa sometimes fails on its side for a moment. A profile search asks once
+// more before it gives up, and a second failure is an error.
+func TestExaPeopleAsksAgainOnce(t *testing.T) {
+	for _, fails := range []int32{1, 2} {
+		var s, c, failed atomic.Int32
+		inner := exaPostServer(t, &s, &c)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if failed.Add(1) <= fails {
+				http.Error(w, `{"error":"INTERNAL_ERROR"}`, http.StatusInternalServerError)
+				return
+			}
+			inner.Config.Handler.ServeHTTP(w, r)
+		}))
+		t.Cleanup(srv.Close)
+		exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search", RetryWait: time.Millisecond}
+		people, err := exa.People(t.Context(), "Personal Trainer Köln", 25)
+		switch {
+		case fails == 1 && (err != nil || len(people) != 1):
+			t.Errorf("after one failure: %d people, %v", len(people), err)
+		case fails == 2 && err == nil:
+			t.Errorf("after two failures no error")
+		}
+		if failed.Load() != 2 {
+			t.Errorf("%d failures: %d calls, want 2", fails, failed.Load())
+		}
 	}
 }
 

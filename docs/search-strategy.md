@@ -68,10 +68,14 @@ searches, lookups, reads by the local model and post searches. The
 calendar stays online but does not update. The setting
 `profile_searches_only` brings them back.
 
-A live check on 8 November 2026: "Personal Trainer Düsseldorf" gave 25
-profiles, of which 7 passed. "Gen Z Unternehmer NRW" kept 8, five of them
-likely under 30. "Gründerin direkt nach dem Studium Düsseldorf" kept 7,
-three likely under 30.
+A live check on 8 November 2026, two runs of ten profile searches, each
+run done in 4 seconds. The first took the ten aimed at younger people in
+Köln, Düsseldorf and Bonn and kept 67 people, all with a confirmed
+LinkedIn profile, 35 of them likely under 30. The second took personal
+trainers, martial arts schools, yoga studios, life coaches and gym owners
+in Köln and Düsseldorf and kept 52 more, owners of gyms, studios and
+practices, most of them between 30 and 50. A founder who writes
+"former founder" is no longer counted as running a business.
 
 **The workspace** has three screens now:
 

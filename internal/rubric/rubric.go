@@ -66,7 +66,7 @@ var Defs = []Def{
 	{Key: "owner_operator", For: true, Label: "Runs their own business",
 		Means:   "owns and runs a small business, studio, gym or practice themselves, with a small team",
 		pattern: words(`inhaber(?:in)?|unternehmensinhaber(?:in)?|owner|besitzer(?:in)?|einzelunternehmer(?:in)?|e\.\s?k\.|selbstständig\w*|selbständig\w*|freiberuflich\w*|freiberufler(?:in)?|freelance\w*|self[- ]employed|in eigener praxis|eigene[nrs]? (?:praxis|studio|schule|gym|laden|betrieb|café|cafe)|(?:co-?)?founder|(?:mit)?gründer(?:in|:in|\*in)?|co-?gründer(?:in)?|geschäftsführende[rn]? gesellschafter(?:in)?|gesellschafter(?:in)?|geschäftsführer(?:in)?|geschäftsführung`),
-		unless:  words(`product owner|process owner|business owner at`)},
+		unless:  words(`product owner|process owner|business owner at|(?:former|ex-?) (?:co-?)?founder|ex-(?:co-?)?founder|ehemalige[rn]? (?:mit)?gründer(?:in)?`)},
 	{Key: "bootstrapped", For: true, Label: "Built it from own means",
 		Means:   "built the business from their own means, without investors",
 		pattern: words(`bootstrapp\w*|ohne investor(?:en)?|ohne fremdkapital|eigenfinanziert|aus eigene[rn] (?:kraft|mitteln|tasche)|self[- ]funded|selbst finanziert`)},

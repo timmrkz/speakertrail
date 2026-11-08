@@ -110,6 +110,8 @@ func TestGuest(t *testing.T) {
 		{"a nutrition coach is no consultant", "Ernährungsberaterin", "Selbstständige Ernährungsberaterin", true, ""},
 		{"a trainer employed by a club", "Athletiktrainer", "Athletiktrainer, Probe Sportverein", false, "Does not run their own business"},
 		{"a head of marketing", "Head of Marketing", "Gründerin, Nebenprojekt Beispiel", false, "Corporate title"},
+		{"a former founder", "Former founder & software engineer", "Software Engineer, Probe Labs", false, "Does not run their own business"},
+		{"an ehemaliger Gründer", "Ehemaliger Gründer, jetzt Produktmanager", "", false, "Does not run their own business"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			ok, why := rubric.Guest(rubric.Signals(rubric.Person{Name: "Erika Beispiel", Headline: c.headline, CurrentRoles: c.roles}))

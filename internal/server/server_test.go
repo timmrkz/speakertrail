@@ -70,6 +70,11 @@ func setup(t *testing.T) env {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	e := env{pool: pool, srv: srv, pipe: pipe, c: &http.Client{Jar: &jar{}}}
+	// Most tests find people on event pages, which runs only take with
+	// this off.
+	if _, err := pool.Exec(t.Context(), `UPDATE settings SET value = 'false' WHERE key = 'profile_searches_only'`); err != nil {
+		t.Fatal(err)
+	}
 	e.seed(t)
 	return e
 }
@@ -420,7 +425,7 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	// A title that says founder makes a founder, and the counts show every
 	// filter, so an empty one never hides the rest.
-	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"young":0,"kept":0,"skipped":0,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
 		t.Errorf("founders: %s", body)
 	}
 	var pid, prof int64
@@ -954,5 +959,98 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 	}
 	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {
 		t.Errorf("top by fit %+v, want Mia kept, Ida and Lea open", top)
+	}
+}
+
+// While runs take only profile searches, People shows whom they found,
+// the likely youngest first, with what the profile says, and whoever Tim
+// kept before. A profile search is added, paused and counts its people.
+func TestPeopleFromProfileSearches(t *testing.T) {
+	e := setup(t)
+	e.login(t)
+	ctx := t.Context()
+	e.pool.Exec(ctx, `UPDATE settings SET value = 'true' WHERE key = 'profile_searches_only'`)
+	code, body := e.do(t, "POST", "/api/sources", `{"query":" Yogalehrerin  Köln ","kind":"profile_search"}`)
+	if code != 201 || !strings.Contains(body, `"kind":"profile_search"`) || !strings.Contains(body, `"category":"Profile search"`) || !strings.Contains(body, `"points":2`) {
+		t.Fatalf("add a profile search: %d %s", code, body)
+	}
+	var src struct{ ID int64 }
+	json.Unmarshal([]byte(body), &src)
+	if code, _ := e.do(t, "POST", "/api/sources", `{"query":"yogalehrerin köln","kind":"profile_search"}`); code != 409 {
+		t.Errorf("the same profile search twice: %d, want 409", code)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"query":"Yogalehrerin Köln"}`); code != 201 {
+		t.Errorf("the same words as a website search: %d, want 201", code)
+	}
+	if code, _ := e.do(t, "POST", "/api/sources", `{"query":"x","kind":"post_search"}`); code != 400 {
+		t.Errorf("another kind: %d, want 400", code)
+	}
+	for i, p := range []struct {
+		name string
+		born int
+	}{{"Ida Probe", 1990}, {"Mia Beispiel", 2001}, {"Ole Muster", 0}} {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, headline, city) VALUES ($1, lower($1), 'Yogalehrerin | Selbstständig', 'Köln') RETURNING id`, p.name).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		var born any
+		if p.born > 0 {
+			born = p.born
+		}
+		if _, err := e.pool.Exec(ctx, `INSERT INTO profiles (person_id, platform, url, review, found_via, born_about, age_reason, current_roles, last_active_at)
+			VALUES ($1, 'linkedin', $2, 'confirmed', 'profile search', $3, 'Bachelor from 2020', 'Yogalehrerin, Selbstständig', $4)`,
+			id, "https://www.linkedin.com/in/x-"+itoa(id), born, now.AddDate(0, 0, -i-1)); err != nil {
+			t.Fatal(err)
+		}
+		e.pool.Exec(ctx, `INSERT INTO sightings (source_id, person_id, checked_at, is_new) VALUES ($1, $2, now(), true)`, src.ID, id)
+	}
+	e.pool.Exec(ctx, `UPDATE people SET podcast_status = 'contacted' WHERE full_name = 'Ida Probe'`)
+
+	code, body = e.do(t, "GET", "/api/people?sort=young", "")
+	var got struct {
+		People []struct {
+			Name     string
+			LinkedIn *struct {
+				BornAbout  *int   `json:"born_about"`
+				AgeReason  string `json:"age_reason"`
+				Roles      string
+				LastActive string `json:"last_active"`
+			}
+		}
+		Counts map[string]int
+	}
+	if err := json.Unmarshal([]byte(body), &got); code != 200 || err != nil {
+		t.Fatalf("people: %d %v %s", code, err, body)
+	}
+	var names []string
+	for _, p := range got.People {
+		names = append(names, p.Name)
+	}
+	// Lea Beispiel, found on an event page, is left out.
+	if strings.Join(names, ", ") != "Mia Beispiel, Ida Probe, Ole Muster" {
+		t.Fatalf("people youngest first: %v", names)
+	}
+	if l := got.People[0].LinkedIn; l == nil || l.BornAbout == nil || *l.BornAbout != 2001 || l.AgeReason != "Bachelor from 2020" ||
+		l.Roles != "Yogalehrerin, Selbstständig" || !strings.HasPrefix(l.LastActive, "2026-") {
+		t.Errorf("what the profile says: %+v", l)
+	}
+	if got.Counts["all"] != 3 || got.Counts["young"] != 1 || got.Counts["kept"] != 1 {
+		t.Errorf("counts: %v", got.Counts)
+	}
+	if _, body := e.do(t, "GET", "/api/people?filter=young", ""); !strings.Contains(body, "Mia Beispiel") || strings.Contains(body, "Ida Probe") {
+		t.Errorf("likely under 30: %s", body)
+	}
+
+	e.pool.Exec(ctx, `INSERT INTO source_checks (source_id, people_found, startups_found, events_found) VALUES ($1, 3, 0, 0)`, src.ID)
+	code, body = e.do(t, "GET", "/api/sources?kind=profile_search", "")
+	if code != 200 || !strings.Contains(body, `"people":3`) || !strings.Contains(body, `"people_kept":1`) || !strings.Contains(body, `"health":"ok"`) ||
+		strings.Contains(body, `"kind":"search_query"`) {
+		t.Errorf("profile searches: %d %s", code, body)
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"status":"retired"}`); code != 200 || !strings.Contains(body, `"status":"retired"`) {
+		t.Errorf("pause a profile search: %d %s", code, body)
+	}
+	if code, body := e.do(t, "PATCH", "/api/sources/"+itoa(src.ID), `{"status":"candidate"}`); code != 200 || !strings.Contains(body, `"status":"candidate"`) {
+		t.Errorf("resume a profile search: %d %s", code, body)
 	}
 }

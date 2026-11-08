@@ -249,6 +249,13 @@ var personJSON = `json_build_object(
 		WHERE a.person_id = p.id AND e.starts_at >= $1 ORDER BY e.starts_at LIMIT 1),
 	'profiles', (SELECT COALESCE(json_agg(json_build_object('id', pr.id, 'platform', pr.platform, 'url', pr.url, 'review', pr.review) ORDER BY pr.platform), '[]')
 		FROM profiles pr WHERE pr.person_id = p.id),
+	-- What the confirmed LinkedIn profile says: the likely year of birth
+	-- with the step that shows it, the roles held now and the newest post,
+	-- comment or reaction.
+	'linkedin', (SELECT json_build_object('born_about', pr.born_about, 'age_reason', pr.age_reason,
+			'roles', pr.current_roles, 'last_active', pr.last_active_at)
+		FROM profiles pr WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed'
+		ORDER BY pr.last_active_at DESC NULLS LAST, pr.id LIMIT 1),
 	'activity', (SELECT json_build_object('state', o.activity, 'since', o.last_sign_at, 'note', o.activity_note, 'company', o.name)
 		FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
 		WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''
@@ -277,9 +284,12 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		// The best fits first: most signals for, fewest against. Among the
 		// same, the newest. The skipped come last.
 		"fit": "p.podcast_status = 'skipped', p.fit_score DESC, p.created_at DESC, p.id DESC",
+		// The likely youngest first, those without a guess after them. The
+		// skipped come last.
+		"young": "p.podcast_status = 'skipped', p.born_about DESC NULLS LAST, p.fit_score DESC, p.created_at DESC, p.id DESC",
 	}[q.Get("sort")]
 	if order == "" {
-		fail(w, http.StatusBadRequest, "sort must be next, new, name or fit")
+		fail(w, http.StatusBadRequest, "sort must be young, next, new, name or fit")
 		return
 	}
 	filter := map[string]string{
@@ -289,11 +299,20 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
 		"founder":  "p.fit = 'founder'",
 		"fits":     "p.fit_score > 0 AND p.podcast_status <> 'skipped'",
+		"young":    "p.born_about > $4::int - 30",
+		"kept":     "p.podcast_status NOT IN ('new', 'known', 'skipped')",
+		"skipped":  "p.podcast_status = 'skipped'",
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, fits, upcoming, profile or founder")
+		fail(w, http.StatusBadRequest, "filter must be all, young, kept, skipped, fits, upcoming, profile or founder")
 		return
 	}
+	cfg, err := settings.Load(r.Context(), s.opts.Pool)
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
+	now := s.opts.Now()
 	// counts says how many people each filter shows for the same search, so
 	// a filter that shows nobody never hides that others were found.
 	s.sendQuery(w, r, http.StatusOK, `
@@ -304,18 +323,27 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 				-- went quiet or are gone. Nothing known counts as unknown.
 				COALESCE((SELECT min(`+activityRank+`) FROM affiliations af JOIN organisations o ON o.id = af.organisation_id
 					WHERE af.person_id = p.id AND af.role = 'founder' AND o.activity <> ''), 2) AS activity_rank
+				, (SELECT max(pr.born_about) FROM profiles pr
+					WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed') AS born_about
 			FROM people p
-			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%'))
+			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')
+			  -- While runs take only profile searches, People shows only
+			  -- whom they found, and whoever Tim kept before.
+			  AND (NOT $3 OR p.podcast_status NOT IN ('new', 'known', 'skipped')
+				OR EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.found_via = 'profile search')))
 		SELECT json_build_object(
 			'people', (SELECT COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]') FROM base p WHERE `+filter+`),
 			'counts', (SELECT json_build_object(
 				'all', count(*),
+				'young', count(*) FILTER (WHERE p.born_about > $4::int - 30),
+				'kept', count(*) FILTER (WHERE p.podcast_status NOT IN ('new', 'known', 'skipped')),
+				'skipped', count(*) FILTER (WHERE p.podcast_status = 'skipped'),
 				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
 				'fits', count(*) FILTER (WHERE p.fit_score > 0 AND p.podcast_status <> 'skipped'),
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,
-		s.opts.Now().Add(-12*time.Hour), likeSafe(q.Get("q")))
+		now.Add(-12*time.Hour), likeSafe(q.Get("q")), cfg.Bool("profile_searches_only", true), now.Year())
 }
 
 func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {
@@ -419,6 +447,10 @@ const sourceJSON = `json_build_object(
 	'status', s.status, 'fetch_mode', s.fetch_mode, 'notes', s.notes,
 	'last_checked_at', s.last_checked_at, 'next_check_at', s.next_check_at, 'checks', s.checks,
 	'empty_checks_in_row', s.empty_checks_in_row, 'points', s.points,
+	-- Everyone the source ever found, and how many of them Tim kept.
+	'people', (SELECT count(DISTINCT si.person_id) FROM sightings si WHERE si.source_id = s.id),
+	'people_kept', (SELECT count(DISTINCT si.person_id) FROM sightings si JOIN people x ON x.id = si.person_id
+		WHERE si.source_id = s.id AND x.podcast_status NOT IN ('new', 'known', 'skipped')),
 	'last_check', CASE WHEN lc.id IS NULL THEN NULL ELSE json_build_object(
 		'events_found', lc.events_found, 'startups_found', lc.startups_found, 'people_found', lc.people_found,
 		'http_status', lc.http_status, 'mode', lc.mode, 'error', lc.error) END,
@@ -433,9 +465,9 @@ const sourceJSON = `json_build_object(
 		WHEN s.status = 'manual' THEN 'Followed by hand. The engine does not check it'
 		WHEN lc.id IS NULL THEN ''
 		WHEN lc.error <> '' THEN lc.error
-		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' WHEN 'post_search' THEN 'people in NRW' ELSE 'events' END
+		WHEN lc.found = 0 THEN 'The last check found no ' || CASE s.kind WHEN 'portfolio' THEN 'startups' WHEN 'directory' THEN 'businesses in NRW' WHEN 'search_query' THEN 'businesses' WHEN 'post_search' THEN 'people in NRW' WHEN 'profile_search' THEN 'people who fit' ELSE 'events' END
 		WHEN prev.avg_found >= 4 AND lc.found < prev.avg_found * 0.3 THEN
-			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' WHEN 'post_search' THEN ' people in NRW' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
+			'Found ' || lc.found || CASE s.kind WHEN 'portfolio' THEN ' startups' WHEN 'directory' THEN ' businesses' WHEN 'search_query' THEN ' businesses' WHEN 'post_search' THEN ' people in NRW' WHEN 'profile_search' THEN ' people who fit' ELSE ' events' END || ', usually about ' || round(prev.avg_found)
 		ELSE '' END,
 	'discovered_from', COALESCE(
 		(SELECT 'From the starting list: ' || left(input, 80) FROM seeds WHERE id = s.discovered_from_seed_id),
@@ -445,10 +477,10 @@ const sourceJSON = `json_build_object(
 // A check found events, or startups and businesses when the source is a
 // portfolio, a directory or a search, or people when it is a post search.
 const sourceFrom = `FROM sources s
-	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind = 'post_search' THEN c.people_found ELSE c.events_found END AS found
+	LEFT JOIN LATERAL (SELECT *, CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind IN ('post_search', 'profile_search') THEN c.people_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id ORDER BY c.checked_at DESC, c.id DESC LIMIT 1) lc ON true
 	LEFT JOIN LATERAL (SELECT avg(found) AS avg_found FROM (
-		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind = 'post_search' THEN c.people_found ELSE c.events_found END AS found
+		SELECT CASE WHEN s.kind IN ('portfolio', 'directory', 'search_query') THEN c.startups_found WHEN s.kind IN ('post_search', 'profile_search') THEN c.people_found ELSE c.events_found END AS found
 		FROM source_checks c WHERE c.source_id = s.id AND c.id <> lc.id AND c.error = ''
 		ORDER BY c.checked_at DESC LIMIT 4) p) prev ON true`
 
@@ -458,9 +490,9 @@ func (s *Server) sources(w http.ResponseWriter, r *http.Request) {
 		SELECT json_build_object('sources', COALESCE(json_agg(`+sourceJSON+`
 			ORDER BY array_position(ARRAY['active','probation','candidate','manual','retired'], s.status), s.points DESC, s.name), '[]'))
 		`+sourceFrom+`
-		WHERE ($1 = '' OR s.status = $1)
+		WHERE ($1 = '' OR s.status = $1) AND ($3 = '' OR s.kind = $3)
 		  AND ($2 = '' OR s.name ILIKE '%' || $2 || '%' OR s.url ILIKE '%' || $2 || '%' OR s.query ILIKE '%' || $2 || '%' OR s.city ILIKE '%' || $2 || '%' OR s.notes ILIKE '%' || $2 || '%')`,
-		q.Get("status"), likeSafe(q.Get("q")))
+		q.Get("status"), likeSafe(q.Get("q")), q.Get("kind"))
 }
 
 func (s *Server) sendSource(w http.ResponseWriter, r *http.Request, status int, id int64) {
@@ -483,12 +515,19 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 		// Query adds a search instead of a page: its results are
 		// businesses, each followed to its imprint.
 		Query string `json:"query"`
+		// Kind profile_search makes the query a profile search, which asks
+		// Exa for LinkedIn profiles.
+		Kind string `json:"kind"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
+	if body.Kind != "" && body.Kind != "search_query" && body.Kind != "profile_search" {
+		fail(w, http.StatusBadRequest, "kind must be search_query or profile_search")
+		return
+	}
 	if q := strings.Join(strings.Fields(body.Query), " "); q != "" {
-		s.addSearch(w, r, q, strings.TrimSpace(body.Name))
+		s.addSearch(w, r, q, strings.TrimSpace(body.Name), body.Kind)
 		return
 	}
 	if body.Portfolio && body.Lists == "" {
@@ -543,7 +582,7 @@ func (s *Server) addSource(w http.ResponseWriter, r *http.Request) {
 
 // addSearch adds a search as a source. It runs in the next run that has a
 // search provider.
-func (s *Server) addSearch(w http.ResponseWriter, r *http.Request, query, name string) {
+func (s *Server) addSearch(w http.ResponseWriter, r *http.Request, query, name, kind string) {
 	if len([]rune(query)) > 200 {
 		fail(w, http.StatusBadRequest, "A search is at most 200 characters")
 		return
@@ -551,14 +590,21 @@ func (s *Server) addSearch(w http.ResponseWriter, r *http.Request, query, name s
 	if name == "" {
 		name = query
 	}
+	category := "Search"
+	if kind == "profile_search" {
+		category = "Profile search"
+	} else {
+		kind = "search_query"
+	}
+	// Tim's own searches run first.
 	var id int64
 	err := s.opts.Pool.QueryRow(r.Context(), `
-		INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
-		VALUES ($1, 'search_query', $2, 'Search', $3, 'candidate', 'Added by Tim')
-		RETURNING id`, name, query, extract.CityOf(query)).Scan(&id)
+		INSERT INTO sources (name, kind, query, category, city, status, discovered_note, points)
+		VALUES ($1, $4, $2, $5, $3, 'candidate', 'Added by Tim', CASE WHEN $4 = 'profile_search' THEN 2 ELSE 0 END)
+		RETURNING id`, name, query, extract.CityOf(query), kind, category).Scan(&id)
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-		fail(w, http.StatusConflict, "This search is already a source")
+		fail(w, http.StatusConflict, "This search is already there")
 		return
 	}
 	if err != nil {

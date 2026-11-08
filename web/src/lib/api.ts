@@ -16,15 +16,15 @@ export type Review = 'open' | 'confirmed' | 'rejected'
 export type SourceStatus = 'candidate' | 'probation' | 'active' | 'retired' | 'manual'
 export type SourceKind =
   | 'listing' | 'calendar_luma' | 'calendar_meetup' | 'calendar_eventbrite' | 'calendar_ical'
-  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'post_search' | 'portfolio' | 'directory'
+  | 'organiser_page' | 'profile_page' | 'newsletter' | 'search_query' | 'post_search' | 'profile_search' | 'portfolio' | 'directory'
 // What a source's page lists: events, startups for a portfolio, or
 // businesses run by people for a directory.
 export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type Decision = '' | 'kept' | 'skipped'
-export type PeopleSort = 'new' | 'fit' | 'next' | 'name'
-export type PeopleFilter = 'all' | 'fits' | 'upcoming' | 'profile' | 'founder'
+export type PeopleSort = 'young' | 'new' | 'fit' | 'next' | 'name'
+export type PeopleFilter = 'all' | 'young' | 'kept' | 'skipped' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -167,6 +167,18 @@ export interface Person {
   // For a founder: how their startup looked at its last lookup, the most
   // alive one when there are several. Null when nobody looked.
   activity: { state: Activity; since: string | null; note: string; company: string } | null
+  // What the confirmed LinkedIn profile says. Null without one.
+  linkedin: LinkedInFacts | null
+}
+
+export interface LinkedInFacts {
+  // The likely year of birth, and the step on the profile that shows it.
+  born_about: number | null
+  age_reason: string
+  // The roles held now, like "Gründerin, Studio Beispiel".
+  roles: string
+  // The newest post, comment or reaction.
+  last_active: string | null
 }
 
 export interface Appearance {
@@ -202,6 +214,7 @@ export interface LastCheck {
   // lists, in NRW for a directory.
   startups_found: number
   // For a post search: the people in NRW who wrote the posts it found.
+  // For a profile search: the people it kept.
   people_found: number
   http_status: number
   mode: string
@@ -228,6 +241,9 @@ export interface Source {
   health: Health
   health_note: string
   discovered_from: string
+  // Everyone the source ever found, and how many of them Tim kept.
+  people: number
+  people_kept: number
 }
 
 // lists switches what a source's page is read as.
@@ -390,10 +406,11 @@ export const api = {
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes?: string; decision?: Decision }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
-  sources: (q: { status?: string; q?: string } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
+  sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
   addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
     request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), lists }),
   addSearch: (query: string) => request<Source>('POST', '/api/sources', { query }),
+  addProfileSearch: (query: string) => request<Source>('POST', '/api/sources', { query, kind: 'profile_search' }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),

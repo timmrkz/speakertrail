@@ -96,11 +96,13 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `PATCH /api/events/{id}` with `{"fit": "kept" | "dropped", "fit_reason": "optional"}` answers the updated event.
 
-`GET /api/people?q=&sort=next|new|name&filter=all|upcoming|profile|founder`
+`GET /api/people?q=&sort=young|next|new|name|fit&filter=all|young|kept|skipped|fits|upcoming|profile|founder`
 
-The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
+The answer is `{"people": [...], "counts": {"all": 57, "young": 9, "kept": 4, "skipped": 6, "founder": 3, "fits": 20, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
 
-`sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
+While `profile_searches_only` is on, the list holds only people a profile search found, and whoever Tim kept before. Everyone else stays in the database but is not shown.
+
+`sort=young` orders by the likely year of birth from the confirmed LinkedIn profile, the youngest first, people without a guess after them and the skipped last. `filter=young` keeps those likely under 30, `kept` those Tim kept, at any step after, and `skipped` those he skipped. `sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
 
 ```json
 {
@@ -109,11 +111,14 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
       "id": 7, "name": "Lea Beispiel", "known_as": "", "headline": "Founder, Beispiel GmbH", "city": "Köln",
       "fit": "founder", "first_seen": "2026-09-25T03:12:00Z", "appearances": 2,
       "next_appearance": { "event_id": 12, "title": "Rheinland Pitch #129", "starts_at": "2026-09-28T16:00:00Z", "city": "Köln", "role": "pitch" },
-      "profiles": [{ "id": 4, "platform": "linkedin", "url": "https://www.linkedin.com/in/example", "review": "open" }]
+      "profiles": [{ "id": 4, "platform": "linkedin", "url": "https://www.linkedin.com/in/example", "review": "confirmed" }],
+      "linkedin": { "born_about": 2000, "age_reason": "Bachelor from 2019", "roles": "Gründerin, Beispiel GmbH", "last_active": "2026-10-30T00:00:00Z" }
     }
   ]
 }
 ```
+
+`linkedin` is what the confirmed LinkedIn profile says, null without one: the likely year of birth and the step that shows it, null and empty without a guess, the roles held now, and the date of the newest post, comment or reaction, null when unknown.
 
 `GET /api/people/{id}` answers one person with the list fields plus:
 
@@ -136,7 +141,9 @@ The answer is `{"people": [...], "counts": {"all": 57, "founder": 3, "upcoming":
 
 `PATCH /api/profiles/{id}` with `{"review": "open" | "confirmed" | "rejected"}` answers 204.
 
-`GET /api/sources?status=&q=`
+`GET /api/sources?status=&q=&kind=`
+
+`kind` keeps only sources of that kind, like `profile_search`. Each source also has `people`, everyone it ever found, and `people_kept`, how many of them Tim kept.
 
 ```json
 {
@@ -169,6 +176,8 @@ A profile search, kind `profile_search`, also has a `query` and no `url`, like "
 
 `POST /api/sources` with `{"query": "BJJ Gym Köln"}` adds a search instead, a candidate source of kind `search_query`, and answers it with 201. Its name is the query unless `name` is given. A search that is already a source answers 409, whatever its case.
 
+`POST /api/sources` with `{"query": "Yogalehrerin Köln", "kind": "profile_search"}` adds a profile search, which runs before the starting ones. The same words can be a search and a profile search. A profile search that is already there answers 409. `PATCH /api/sources/{id}` with `{"status": "retired"}` pauses it and `{"status": "candidate"}` brings it back.
+
 `PATCH /api/sources/{id}` with any of `{"status", "fetch_mode", "notes", "name", "lists"}` answers the updated source. `lists` switches what the page is read as, and the source is checked in the next run. A search has no page, so `lists` on a search answers 400.
 
 `POST /api/sources/{id}/check` queues a check now in its own run of kind `check` and answers 202 with `{"run_id": 7}`.
@@ -184,7 +193,7 @@ A person in `GET /api/people` carries the fit rubric's verdict, see [search-stra
 
 `decision` is `kept`, `skipped`, or empty when Tim has not decided. `PATCH /api/people/{id}` with `{"decision": "kept"}` keeps a person, `"skipped"` skips them and `""` undoes either. Each decision is recorded with the signals the person had then, and still counts after a skipped person is deleted. Skipped people come last in `fit` order and are not among the good fits.
 
-`sort` is `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
+`sort` is `young` for the likely youngest first, `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `young`, `kept`, `skipped`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
 
 A person also carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
 

@@ -157,6 +157,7 @@ export const KIND_LABEL: Record<string, string> = {
   newsletter: 'Newsletter',
   search_query: 'Search',
   post_search: 'Post search',
+  profile_search: 'Profile search',
   portfolio: 'Portfolio',
   directory: 'Directory',
 }

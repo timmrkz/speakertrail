@@ -73,9 +73,23 @@ profiles, of which 7 passed. "Gen Z Unternehmer NRW" kept 8, five of them
 likely under 30. "Gründerin direkt nach dem Studium Düsseldorf" kept 7,
 three likely under 30.
 
-**Next**, in this order: a simpler workspace with three screens, People,
-Searches and Settings. Then the funnel, keep, contacted, replied,
-recorded, steers which profile searches run more often.
+**The workspace** has three screens now:
+
+- **People**, with the Run button. Only people a profile search found,
+  and whoever Tim kept before, the likely youngest first. Each row says
+  about how old the person is and when they were last active on
+  LinkedIn. Filters: all, under 30, kept, skipped.
+- **Searches**, the profile searches. Add one, pause one, see how many
+  people each found and how many of them Tim kept. A search Tim adds runs
+  before the starting ones.
+- **Settings**, those for profile searches first, the paused engine's
+  behind one click.
+
+Events, sources, runs and the overview are out of the navigation while
+the rest of the engine is paused.
+
+**Next**: the funnel, keep, contacted, replied, recorded, steers which
+profile searches run more often.
 
 ## What we learned
 

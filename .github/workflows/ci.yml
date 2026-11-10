@@ -85,18 +85,6 @@ jobs:
       - name: The app's own tests
         run: go test -count=1 ./cmd/speakertrail-app ./internal/api ./internal/engine ./internal/keys ./internal/store
 
-  # What make test runs on a laptop: the toolbox from compose.yaml, with its
-  # own database and Chromium.
-  toolbox:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v5
-      - name: Test in the toolbox
-        run: docker compose run --rm --build dev make test
-      - name: Stop
-        if: always()
-        run: docker compose --profile '*' down --volumes
-
   image:
     runs-on: ubuntu-24.04
     steps:

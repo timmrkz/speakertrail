@@ -12,7 +12,7 @@ COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/nod
 RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
  && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
  && apt-get update \
- && apt-get install -y --no-install-recommends chromium \
+ && apt-get install -y --no-install-recommends chromium libgtk-4-dev libwebkitgtk-6.0-dev \
  && rm -rf /var/lib/apt/lists/*
 ENV CHROME_NO_SANDBOX=1 \
     SPEAKERTRAIL_IN_DOCKER=1

@@ -53,6 +53,9 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      # The app's window is a webview, which on Linux is GTK and WebKit.
+      - name: GTK and WebKit
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Format
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
       - name: Vet
@@ -60,6 +63,18 @@ jobs:
       # The runner has Google Chrome, which the browser tests use.
       - name: Test
         run: make unit
+
+  # The app on the machine it is for. Tim's Mac is Apple silicon, and so is
+  # this runner.
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Build the app
+        run: go build -o bin/speakertrail-app ./cmd/speakertrail-app
 
   # What make test runs on a laptop: the toolbox from compose.yaml, with its
   # own database and Chromium.

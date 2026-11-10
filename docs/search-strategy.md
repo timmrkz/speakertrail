@@ -42,7 +42,8 @@ latest posts, comments and reactions.
 5. **Not ruled out**: consultants, agencies, law and tax offices,
    recruiters, sales, politicians, therapists, large companies and
    corporate titles. A sales trainer or a psychological counsellor is
-   not ruled out.
+   not ruled out. Nor left out by one of Tim's exclusions, like "Online
+   Marketing", see [Connections steer the searches](#connections-steer-the-searches).
 
 Everyone kept is scored with the rubric as before, with **Likely under
 30** on top, guessed from the years on the profile, see
@@ -89,8 +90,9 @@ practices, most of them between 30 and 50. A founder who writes
   about how old the person is and when they were last active on
   LinkedIn. Filters: all, under 30, connected.
 - **Searches**, the profile searches. Add one, pause one, see how many
-  people each found and how many of them Tim kept. A search Tim adds runs
-  before the starting ones.
+  people each found and how many of them Tim connected with, those that
+  led to the most connections on top. A search Tim adds runs before the
+  starting ones. The exclusions sit here too, behind one click.
 - **Settings**, those for profile searches first, the paused engine's
   behind one click.
 
@@ -121,6 +123,26 @@ takes, in this order, `RankSearches` in `internal/pipeline/rank.go`:
 
 The Searches screen shows the same: those that led to the most
 connections on top, with how many, then those that found the most people.
+
+**Exclusions.** Some searches brought mostly online and LinkedIn
+marketing experts, and Tim wants more kinds of people. An **exclusion**
+is a word or phrase, like "Online Marketing". A profile search leaves out
+anyone whose headline or current roles contain one, and People hides
+those found before, unless Tim connected with them. They stay in the
+database, so removing an exclusion brings them back. A phrase matches at
+the start of a word, in any case and whatever stands between its words,
+so "Online Marketing" also leaves out "Online-Marketing-Expertin" and
+"#onlinemarketing", see `rubric.Excluded`. Six to start with: Online
+Marketing, Social Media Marketing, Performance Marketing, Personal
+Branding, LinkedIn and Sichtbarkeit. Tim edits them on the Searches
+screen, which also says how many people each one hides.
+
+A live check on 10 November 2026, ten founder searches, half of them the
+new English ones, and two archetype searches: 85 people kept, 46 of them
+likely under 30. 8 of the 85 had words like marketing, social media,
+content or Sichtbarkeit in their headline, so the marketing experts Tim
+saw may come from particular searches. The counts per exclusion will
+show it.
 
 **Founders in English.** Many young founders write "Founder", not
 "Gründer". 18 starting searches ask for "young founder", "founder under

@@ -97,6 +97,8 @@ messages, pull request text, code comments and chat replies.
   A **profile search** is a source that asks Exa for LinkedIn profiles,
   like "Yogalehrerin Köln", and keeps the people in NRW who were active
   lately and run their own business. Runs take only these for now.
+  An **exclusion** is a word or phrase, like "Online Marketing", that
+  leaves a person out of profile searches and People.
   A **run** is one pass over the due sources, nightly or started by hand. A
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An

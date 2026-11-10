@@ -101,6 +101,7 @@ function createState() {
     const rows: [string, string, string, number | null, string, number, number][] = [
       ['Lea Probe', 'Personal Trainerin | Selbstständig', 'Köln', 2000, 'Bachelor from 2019', 3, 101],
       ['Tom Muster', 'Gründer @ Probe Gym', 'Düsseldorf', 1986, 'First job from 2008', 40, 102],
+      ['Sara Probe', 'Gründerin | Online-Marketing für Coaches', 'Köln', 1998, 'Bachelor from 2017', 5, 104],
       ['Mia Beispiel', 'Yogalehrerin mit eigenem Studio', 'Bonn', 1999, 'Bachelor from 2018', 9, 103],
       ['Jan Probst', 'Gen Z Unternehmer | Gründer von Probst Media', 'Essen', 2003, 'School until 2022', 1, 104],
       ['Nora Muster', 'Ernährungsberaterin, eigene Praxis', 'Dortmund', null, '', 21, 105],
@@ -154,7 +155,9 @@ function createState() {
     runs,
     checks,
     settings: buildSettings(),
-    nextId: { source: 200 },
+    exclusions: ['Online Marketing', 'Social Media Marketing', 'Performance Marketing', 'Personal Branding', 'LinkedIn', 'Sichtbarkeit']
+      .map((phrase, i) => ({ id: i + 1, phrase })),
+    nextId: { source: 200, exclusion: 100 },
   }
 }
 
@@ -369,6 +372,36 @@ interface Out {
 }
 type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>, loggedIn: boolean) => Out | undefined
 
+// Like rubric.Excluded on the server: a phrase matches at the start of a
+// word, whatever stands between its words, or written as one word.
+function words(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+}
+function excludedBy(text: string, phrases: string[]): string | null {
+  const t = ' ' + words(text).join(' ')
+  for (const p of phrases) {
+    const w = words(p)
+    if (w.length && (t.includes(' ' + w.join(' ')) || t.includes(' ' + w.join('')))) return p
+  }
+  return null
+}
+// Whom the exclusions hide, and how many each, never someone connected.
+function hiddenBy(s: State): Map<number, string> {
+  const phrases = s.exclusions.map((x) => x.phrase)
+  const out = new Map<number, string>()
+  for (const p of s.people) {
+    const by = p.connected ? null : excludedBy(`${p.headline} ${p.linkedin?.roles ?? ''}`, phrases)
+    if (by) out.set(p.id, by)
+  }
+  return out
+}
+function exclusionsOf(s: State) {
+  const hidden = [...hiddenBy(s).values()]
+  return [...s.exclusions]
+    .sort((a, b) => a.phrase.toLowerCase().localeCompare(b.phrase.toLowerCase()))
+    .map((x) => ({ ...x, people: hidden.filter((p) => p === x.phrase).length }))
+}
+
 const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
@@ -435,7 +468,8 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     // Like the server while runs take only profile searches: whom they
     // found, and whoever Tim connected with.
     const only = s.settings.find((x) => x.key === 'profile_searches_only')?.value !== false
-    let list = s.people.filter((p) => !only || p.linkedin || p.connected).map((p) => personList(s, p))
+    const hidden = hiddenBy(s)
+    let list = s.people.filter((p) => !hidden.has(p.id) && (!only || p.linkedin || p.connected)).map((p) => personList(s, p))
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
@@ -495,6 +529,22 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
       .sort((a, b) => Number(a.status === 'retired') - Number(b.status === 'retired') || b.points - a.points || a.name.localeCompare(b.name))
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
+  }],
+  ['GET', /^\/api\/exclusions$/, (s) => ok(exclusionsOf(s))],
+  ['POST', /^\/api\/exclusions$/, (s, _m, _q, b) => {
+    const phrase = words(String(b.phrase ?? '')).length ? String(b.phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ') : ''
+    if (!phrase) return err(400, 'Enter a word or phrase, like Online Marketing')
+    if (phrase.length > 60) return err(400, 'An exclusion is at most 60 characters')
+    if (s.exclusions.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())) return err(409, 'This exclusion is already there')
+    const id = s.nextId.exclusion++
+    s.exclusions.push({ id, phrase })
+    return { status: 201, body: exclusionsOf(s).find((x) => x.id === id) }
+  }],
+  ['DELETE', /^\/api\/exclusions\/(\d+)$/, (s, m) => {
+    const i = s.exclusions.findIndex((x) => x.id === Number(m[1]))
+    if (i < 0) return err(404, 'Not found')
+    s.exclusions.splice(i, 1)
+    return { status: 204 }
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
     const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''

@@ -1064,3 +1064,71 @@ func TestPeopleFromProfileSearches(t *testing.T) {
 		t.Errorf("resume a profile search: %d %s", code, body)
 	}
 }
+
+// An exclusion hides whoever's headline or roles contain it, unless Tim
+// connected with them. Removing it brings them back.
+func TestExclusionsHidePeople(t *testing.T) {
+	e := setup(t)
+	ctx := t.Context()
+	e.login(t)
+	e.pool.Exec(ctx, `UPDATE settings SET value = 'false' WHERE key = 'profile_searches_only'`)
+	for _, p := range []struct{ name, headline, status string }{
+		{"Nina Probe", "Gründerin | Online-Marketing für Coaches", "new"},
+		{"Eva Muster", "Inhaberin, Muster Agentur für Onlinemarketing", "connected"},
+		{"Kai Beispiel", "Personal Trainer | Selbstständig", "new"},
+	} {
+		if _, err := e.pool.Exec(ctx, `INSERT INTO people (full_name, normalised_name, headline, podcast_status) VALUES ($1, lower($1), $2, $3)`, p.name, p.headline, p.status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	names := func() string {
+		t.Helper()
+		_, body := e.do(t, "GET", "/api/people?sort=name", "")
+		var got struct{ People []struct{ Name string } }
+		json.Unmarshal([]byte(body), &got)
+		var n []string
+		for _, p := range got.People {
+			n = append(n, p.Name)
+		}
+		return strings.Join(n, ", ")
+	}
+	if got := names(); strings.Contains(got, "Nina Probe") || !strings.Contains(got, "Eva Muster") || !strings.Contains(got, "Kai Beispiel") {
+		t.Errorf("people with the starting exclusions: %s", got)
+	}
+	code, body := e.do(t, "GET", "/api/exclusions", "")
+	var list []struct {
+		ID     int64
+		Phrase string
+		People int
+	}
+	if err := json.Unmarshal([]byte(body), &list); code != 200 || err != nil || len(list) != 6 {
+		t.Fatalf("exclusions: %d %v %s", code, err, body)
+	}
+	var online int64
+	for _, x := range list {
+		if x.Phrase == "Online Marketing" {
+			online = x.ID
+			if x.People != 1 {
+				t.Errorf("Online Marketing hides %d, want 1", x.People)
+			}
+		}
+	}
+	if code, _ := e.do(t, "DELETE", "/api/exclusions/"+itoa(online), "{}"); code != 204 {
+		t.Errorf("remove: %d", code)
+	}
+	if got := names(); !strings.Contains(got, "Nina Probe") {
+		t.Errorf("people after removing it: %s", got)
+	}
+	if code, body := e.do(t, "POST", "/api/exclusions", `{"phrase":"  online -  marketing "}`); code != 201 || !strings.Contains(body, `"phrase":"online marketing"`) || !strings.Contains(body, `"people":1`) {
+		t.Errorf("add: %d %s", code, body)
+	}
+	if code, _ := e.do(t, "POST", "/api/exclusions", `{"phrase":"Online Marketing"}`); code != 409 {
+		t.Errorf("the same twice: %d, want 409", code)
+	}
+	if code, _ := e.do(t, "POST", "/api/exclusions", `{"phrase":" - "}`); code != 400 {
+		t.Errorf("no word: %d, want 400", code)
+	}
+	if got := names(); strings.Contains(got, "Nina Probe") {
+		t.Errorf("people after adding it again: %s", got)
+	}
+}

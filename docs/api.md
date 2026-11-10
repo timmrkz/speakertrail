@@ -100,6 +100,8 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 The answer is `{"people": [...], "counts": {"all": 57, "young": 9, "connected": 4, "founder": 3, "fits": 20, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
 
+People whom one of Tim's exclusions leaves out are not in the list or the counts, unless Tim connected with them, see [Exclusions](#exclusions).
+
 While `profile_searches_only` is on, the list holds only people a profile search found, and whoever Tim connected with before. Everyone else stays in the database but is not shown.
 
 `sort=young` orders by the likely year of birth from the confirmed LinkedIn profile, the youngest first, people without a guess after them. `filter=young` keeps those likely under 30, and `connected` those Tim connected with, at any step after. `sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
@@ -260,3 +262,13 @@ Each check is:
 `GET /api/settings` answers `{"settings": [{"key", "value", "description", "updated_at"}]}`.
 
 `PATCH /api/settings/{key}` with `{"value": <any JSON>}` answers the updated setting.
+
+## Exclusions
+
+An exclusion is a word or phrase, like "Online Marketing". A profile search leaves out anyone whose headline or current roles contain one, and `GET /api/people` hides those found before, unless Tim connected with them. A phrase matches at the start of a word, in any case, whatever stands between its words, and also written as one word: "Online Marketing" matches "Online-Marketing-Expertin" and "#onlinemarketing", but "Coach" does not match "Lifecoach".
+
+`GET /api/exclusions` answers `[{"id": 1, "phrase": "Online Marketing", "people": 3}]`, in the order of the phrases. `people` is how many people it hides now. Someone two exclusions match counts for the first.
+
+`POST /api/exclusions` with `{"phrase": "Personal Branding"}` adds one and answers it with `201`. The phrase keeps its words, with single spaces between them, at most 60 characters. The same phrase twice answers `409`, one without a word `400`.
+
+`DELETE /api/exclusions/{id}` removes one and answers `204`. The people it hid come back.

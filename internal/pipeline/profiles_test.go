@@ -37,6 +37,10 @@ func newFakePeople() *fakePosts {
 		// A management consultant who founded his firm.
 		{URL: in("max-beispiel"), Name: "Max Beispiel", Headline: "Management Consultant | Strategy & Transformation", Location: "Köln",
 			LastActive: lastWeek, Career: []search.Step{{Title: "Founder", Org: "Beispiel Consulting", From: 2019}}},
+		// A founder in online marketing, left out by one of Tim's
+		// exclusions.
+		{URL: in("nina-probe"), Name: "Nina Probe", Headline: "Gründerin | Online-Marketing für Coaches", Location: "Köln",
+			LastActive: lastWeek, Career: []search.Step{{Title: "Gründerin", Org: "Probe Sichtbar", From: 2023}}},
 		// A trainer employed by a club.
 		{URL: in("mia-muster"), Name: "Mia Muster", Headline: "Athletiktrainerin", Location: "Essen, North Rhine-Westphalia, Germany",
 			LastActive: lastWeek, Career: []search.Step{{Title: "Athletiktrainerin", Org: "Probe Sportverein", From: 2021}}},

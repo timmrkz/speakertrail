@@ -246,6 +246,16 @@ export interface Source {
   people_connected: number
 }
 
+// An exclusion is a word or phrase, like "Online Marketing". Profile
+// searches leave out anyone whose headline or roles contain it, and People
+// hides those found before, unless Tim connected with them. people is how
+// many it hides now.
+export interface Exclusion {
+  id: number
+  phrase: string
+  people: number
+}
+
 // lists switches what a source's page is read as.
 export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { lists?: SourceLists }
 
@@ -414,6 +424,9 @@ export const api = {
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
+  exclusions: () => request<Exclusion[]>('GET', '/api/exclusions'),
+  addExclusion: (phrase: string) => request<Exclusion>('POST', '/api/exclusions', { phrase }),
+  deleteExclusion: (id: number) => request<void>('DELETE', `/api/exclusions/${id}`, {}),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),

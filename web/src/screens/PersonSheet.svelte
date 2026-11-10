@@ -287,7 +287,7 @@
   .head-text { display: grid; gap: 3px; min-width: 0; }
   .decide { margin-top: 6px; }
   /* Room for Connected, so the button keeps its width. */
-  .decide .btn { min-width: 8.4em; justify-content: center; }
+  .decide .btn { min-width: 9.2em; justify-content: center; }
   .head-text h2 { font-size: 19px; }
   .head-text p { overflow-wrap: anywhere; }
   .apps { display: grid; gap: 8px; }

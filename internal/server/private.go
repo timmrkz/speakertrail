@@ -311,6 +311,13 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.opts.Now()
+	// Whom Tim's exclusions leave out. They stay in the database, so
+	// removing an exclusion brings them back.
+	hidden, _, err := s.hidden(r.Context())
+	if err != nil {
+		s.internal(w, r, err)
+		return
+	}
 	// counts says how many people each filter shows for the same search, so
 	// a filter that shows nobody never hides that others were found.
 	s.sendQuery(w, r, http.StatusOK, `
@@ -324,7 +331,8 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 				, (SELECT max(pr.born_about) FROM profiles pr
 					WHERE pr.person_id = p.id AND pr.platform = 'linkedin' AND pr.review = 'confirmed') AS born_about
 			FROM people p
-			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')
+			WHERE NOT (p.id = ANY($5::bigint[]))
+			  AND ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')
 			  -- While runs take only profile searches, People shows only
 			  -- whom they found, and whoever Tim connected with before.
 			  AND (NOT $3 OR `+isConnected+`
@@ -340,7 +348,7 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,
-		now.Add(-12*time.Hour), likeSafe(q.Get("q")), cfg.Bool("profile_searches_only", true), now.Year())
+		now.Add(-12*time.Hour), likeSafe(q.Get("q")), cfg.Bool("profile_searches_only", true), now.Year(), hidden)
 }
 
 func (s *Server) sendPerson(w http.ResponseWriter, r *http.Request, id int64) {

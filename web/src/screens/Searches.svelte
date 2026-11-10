@@ -4,6 +4,7 @@
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
+  import Exclusions from '../lib/components/Exclusions.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
@@ -110,6 +111,8 @@
   </form>
   {#if addError}<p id="search-err" class="field-error" role="alert">{addError}</p>{/if}
 
+  <Exclusions />
+
   {#if searches.error && !searches.data}
     <EmptyState icon="alert" tone="bad" title="Could not load the searches" text={searches.error}>
       <button class="btn" type="button" onclick={() => reload++}><Icon name="refresh" />Try again</button>
@@ -131,7 +134,7 @@
           <li class="search" class:paused={s.status === 'retired'}>
             <span class="what">
               <b class="ellipsis">{s.query}</b>
-              <span class="ellipsis sub">{#if s.people_connected}<span class="connected">{s.people_connected} connected</span> · {/if}{line(s)}</span>
+              <span class="ellipsis sub">{#if s.people_connected}<span class="connected">{s.people_connected} connected</span>{' · '}{/if}{line(s)}</span>
               {#if s.health === 'error' || s.health === 'warning'}
                 <span class="ellipsis note" class:bad={s.health === 'error'} title={s.health_note}>{s.health_note}</span>
               {/if}

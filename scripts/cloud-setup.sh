@@ -13,6 +13,9 @@
 # - installs Go 1.27, downloaded from the Go module proxy
 # - puts Chromium on the PATH, where chromedp looks for it
 # - creates a local database role and database for development and tests
+# - installs GTK 4 and WebKitGTK 6, which the app's window compiles against
+#   on Linux. The window cannot be opened here, but its code builds and its
+#   tests run
 #
 # Postgres is not left running, because running processes are not cached.
 # scripts/session-start.sh starts it in every session.
@@ -76,8 +79,21 @@ setup_postgres() {
 	echo "role and database $DB_NAME are ready"
 }
 
+install_webview() {
+	if pkg-config --exists gtk4 webkitgtk-6.0 2>/dev/null; then
+		echo "GTK 4 and WebKitGTK 6 are already there"
+		return 0
+	fi
+	local apt=(apt-get -o DPkg::Lock::Timeout=180 -o Acquire::Retries=3 -q)
+	"${apt[@]}" update || echo "Some package sources could not be reached, continuing"
+	DEBIAN_FRONTEND=noninteractive "${apt[@]}" install -y --no-install-recommends \
+		pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
+}
+
 install_go >/tmp/speakertrail-setup-go.log 2>&1 &
 go_job=$!
+install_webview >/tmp/speakertrail-setup-webview.log 2>&1 &
+webview_job=$!
 
 if link_chromium >/tmp/speakertrail-setup-chromium.log 2>&1; then
 	log "Chromium ready: $(tail -n 1 /tmp/speakertrail-setup-chromium.log)"
@@ -95,5 +111,11 @@ if wait "$go_job"; then
 else
 	log "Go failed, see /tmp/speakertrail-setup-go.log:"
 	tail -n 20 /tmp/speakertrail-setup-go.log
+fi
+if wait "$webview_job"; then
+	log "GTK 4 and WebKitGTK 6 ready, for the app's window"
+else
+	log "GTK and WebKitGTK failed, see /tmp/speakertrail-setup-webview.log:"
+	tail -n 20 /tmp/speakertrail-setup-webview.log
 fi
 exit 0

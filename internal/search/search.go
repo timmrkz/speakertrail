@@ -85,6 +85,9 @@ type Exa struct {
 	// URL is the endpoint. Tests set it.
 	URL    string
 	Client *http.Client
+	// RetryWait is how long People waits before it asks again after Exa
+	// failed on its side. Tests set it.
+	RetryWait time.Duration
 }
 
 func (e *Exa) Name() string { return "exa" }

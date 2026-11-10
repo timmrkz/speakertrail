@@ -137,6 +137,8 @@ func (p *Pipeline) CheckSource(ctx context.Context, sourceID, runID int64) error
 		return p.checkSearch(ctx, src, runID)
 	case "post_search":
 		return p.checkPostSearch(ctx, src, runID)
+	case "profile_search":
+		return p.checkProfileSearch(ctx, src, runID)
 	}
 	if src.URL == "" || src.Status == "manual" {
 		return nil

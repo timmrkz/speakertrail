@@ -3,11 +3,97 @@
 A brief for the next stage of the engine. It says who makes a good guest,
 where such people are found in NRW, how the engine tells them apart, and in
 which order to build it. What is built so far is under
-[Where it stands](#where-it-stands).
+[Where it stands](#where-it-stands). Since 8 November 2026 runs take only
+profile searches, see [Profile searches only](#profile-searches-only).
+The sections after it describe the wider engine, which is paused.
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
 conversation.
+
+## Profile searches only
+
+Decided with Tim on 8 November 2026, after testing the engine as it was.
+A run then did everything at once: it crawled event pages at one request
+every 5 seconds per website, read events with the local model and looked
+up imprints. It ran for 7 or 8 minutes and did not finish. Many of the
+people it suggested could not be found on LinkedIn, and the one with a
+confirmed profile was a management consultant, shown as a good fit.
+
+So the engine has one way in now, the one that worked from the start:
+people who are on LinkedIn and active there.
+
+**A profile search** is a source that asks Exa for LinkedIn profiles of a
+kind of person in a place, like "Yogalehrerin Köln" or "Gen Z Unternehmer
+NRW". It is one call to Exa, which reads its own index and never
+LinkedIn itself, so a run of ten takes well under a minute. Exa answers
+with the profile's headline, place, roles, education and the dates of its
+latest posts, comments and reactions.
+
+**Only who passes every one of these is kept**, nobody else is stored:
+
+1. **A LinkedIn profile**, so Tim can reach the person in one click.
+2. **Lives in NRW**, by the profile's place.
+3. **Active on LinkedIn**: a post, comment or reaction in the last six
+   months (`profile_active_days`, 183).
+4. **Runs their own business**: owner, founder, self-employed, freelance,
+   managing partner, or a small company named after them, read from the
+   headline and the roles held now.
+5. **Not ruled out**: consultants, agencies, law and tax offices,
+   recruiters, sales, politicians, therapists, large companies and
+   corporate titles. A sales trainer or a psychological counsellor is
+   not ruled out.
+
+Everyone kept is scored with the rubric as before, with **Likely under
+30** on top, guessed from the years on the profile, see
+[Next: younger owners](#next-younger-owners).
+
+**The starting profile searches**, 64 of them, in
+`internal/importer/data/profile_searches.csv`:
+
+- 24 aimed at younger people, run first: "Gen Z Unternehmer", "Gründerin
+  direkt nach dem Studium", "junger Gründer" and "Gründer unter 30", in
+  Köln, Düsseldorf, Bonn, Essen, Dortmund and NRW.
+- 40 for the archetypes in [Who fits](#who-fits): personal trainers,
+  martial arts schools, yoga studios, life coaches, nutrition advisers,
+  gym owners, physiotherapy practices and dance schools, in the five
+  cities.
+
+A run takes the ten that are due (`profile_searches_per_run`), each asks
+for 25 profiles (`profile_search_results`) and is due again after 30 days
+(`profile_search_check_days`).
+
+**Paused, not deleted**: events, portfolios, directories, website
+searches, lookups, reads by the local model and post searches. The
+calendar stays online but does not update. The setting
+`profile_searches_only` brings them back.
+
+A live check on 8 November 2026, two runs of ten profile searches, each
+run done in 4 seconds. The first took the ten aimed at younger people in
+Köln, Düsseldorf and Bonn and kept 67 people, all with a confirmed
+LinkedIn profile, 35 of them likely under 30. The second took personal
+trainers, martial arts schools, yoga studios, life coaches and gym owners
+in Köln and Düsseldorf and kept 52 more, owners of gyms, studios and
+practices, most of them between 30 and 50. A founder who writes
+"former founder" is no longer counted as running a business.
+
+**The workspace** has three screens now:
+
+- **People**, with the Run button. Only people a profile search found,
+  and whoever Tim kept before, the likely youngest first. Each row says
+  about how old the person is and when they were last active on
+  LinkedIn. Filters: all, under 30, kept, skipped.
+- **Searches**, the profile searches. Add one, pause one, see how many
+  people each found and how many of them Tim kept. A search Tim adds runs
+  before the starting ones.
+- **Settings**, those for profile searches first, the paused engine's
+  behind one click.
+
+Events, sources, runs and the overview are out of the navigation while
+the rest of the engine is paused.
+
+**Next**: the funnel, keep, contacted, replied, recorded, steers which
+profile searches run more often.
 
 ## What we learned
 
@@ -80,14 +166,16 @@ Signals for a good fit:
 
 | Signal | Where it shows |
 | --- | --- |
+| **Likely under 30** | the years of education and first jobs on the LinkedIn profile, see [Next: younger owners](#next-younger-owners) |
 | **Works with people:** coaches, teaches, trains, treats, counsels | titles, about pages, course and class pages |
-| **Owner-operator:** runs it themselves, small team | imprint names an owner ("Inhaber") or one or two managing directors, the site speaks as "ich" |
+| **Owner-operator:** runs it themselves, small team | imprint names an owner ("Inhaber") or one or two managing directors, the site speaks as "ich", the roles held now on the LinkedIn profile |
 | **Bootstrapped:** built from own means, no investors named | about page, interviews, no funding news |
 | **Runs their own events:** workshops, seminars, open mats, meetups, retreats | event pages where they are host or organiser, not only speaker |
 | **Author:** has written a book | about page, reading events, publisher pages |
 | **Athlete:** competes or competed | about page, belt or title, club pages |
 | **Career switch** towards people | about page |
 | **Still active** | the signs of life the lookup reads today |
+| **Active on LinkedIn:** a post, comment or reaction in the last six months | the newest activity on the profile, or the post a post search found, with its date |
 
 Signals against:
 
@@ -96,6 +184,7 @@ Signals against:
   company
 - a large team, or a company without a person behind it
 - enterprise software sold to other companies
+- quiet on LinkedIn: the last known post is more than a year old
 
 Scoring is kept simple and readable: a list of signals, each with its
 passage, for and against. The People screen sorts by it and shows why.
@@ -192,12 +281,15 @@ keep missing a kind of person Tim wants, like owners of gyms whose
 studio posts instead of them.
 
 The rubric reads the profile: works with people, owner, coach, and the
-signals against. **Writes on LinkedIn**, with the date of the last post,
-becomes a signal for a good fit. A profile without a post in a year is a
-signal against.
+signals against. **Active on LinkedIn**, a post, comment or reaction in
+the last six months, with its date, becomes a signal for a good fit. A
+profile quiet for longer is a signal against.
 
 What is kept of a profile: the name, the headline, the place and the
-profile link. Of the post that brought the person: its link, its first
+profile link. Of its jobs and education only two things: the year the
+person was likely born, with the one step that shows it, like "Bachelor
+from 2018", and the roles they hold now, like "Inhaberin, Studio
+Beispiel". Of the post that brought the person: its link, its first
 line and its date, in `person_posts`. Nothing else of a profile or a
 post is stored.
 
@@ -342,6 +434,33 @@ Built, in the order above:
    [Active on LinkedIn](#active-on-linkedin). 42 starting post searches,
    six kinds of story in seven places, two in each run. Each one is due
    again after 14 days.
+10. **Writes on LinkedIn**, since renamed Active on LinkedIn, a rubric signal for, with the date and first
+   line of the newest post. Once that post is more than a year old, the
+   person is scored again at the start of a run and the signal becomes
+   *Quiet on LinkedIn*, against. Someone without a known post gets
+   neither.
+11. **Likely under 30**, a rubric signal for, from the years on the
+   profile of everyone a post search finds. See
+   [Next: younger owners](#next-younger-owners) for how it is guessed.
+12. **Runs their own business**, read from the roles a confirmed
+   LinkedIn profile says someone holds now, like "Inhaberin, Studio
+   Beispiel", "Gründerin" or "Freelance Designerin", or a small company
+   named after them. A founder counts as running their own business, a
+   corporate title in those roles counts against. All other signals read
+   the roles too, like *Author* for "Autorin, Probe Verlag".
+13. **Post searches aimed at younger people**, 28 more: "Mit 25
+   selbstständig", "Direkt nach dem Studium gegründet", "Als Werkstudent
+   angefangen, jetzt eigene Firma" and "Studium abgebrochen und mein
+   eigenes Business gestartet", each in the seven places. They carry a
+   point, so runs take them before the first 42. A live check on 28
+   October 2026 found that the first post searches bring people aged 35
+   to 55, none of 8 under 30. These four brought 9 of 24 under 30, and
+   17 of 24 ran their own business.
+14. **Profile searches only**, see
+   [Profile searches only](#profile-searches-only). Everything else is
+   paused. The signal Writes on LinkedIn became **Active on LinkedIn**, a
+   post, comment or reaction in the last six months, and a new signal
+   against, **Consultant, agency or office**, rules people out.
 
 Waiting:
 
@@ -349,9 +468,8 @@ Waiting:
   `BRAVE_SEARCH_API_KEY` is set, see the README.
 - **Searches that learn.** Which searches bring people Tim keeps, and new
   searches made from what those people have in common.
-- **Writes on LinkedIn** as a rubric signal, the second part of
-  [Active on LinkedIn](#active-on-linkedin). Adding a post search in
-  Sources, and the post on the person's sheet.
+- **The rest of [Active on LinkedIn](#active-on-linkedin):** adding a
+  post search in Sources, and the post on the person's sheet.
 - **Younger owners**, next, see
   [Next: younger owners](#next-younger-owners).
 
@@ -414,6 +532,30 @@ Exa's profile data has education and job dates. A degree finished in the
 last eight years or so, or a first job about as recent, points to under
 30. It becomes a signal for, with the dates that show it, like every
 other signal. Nobody is dropped for it, and a guess is labelled as one.
+
+How the guess works, in `internal/rubric/age.go`. Each step on the
+profile that says something about age gives a year of birth, as if the
+person were as old as most people in Germany are at that step:
+
+| Step | Age at its start | Age at its end |
+| --- | --- | --- |
+| School, like the Abitur | | 19 |
+| Apprenticeship | 17 | 20 |
+| Bachelor, or a degree of unknown kind | 19 | 22 |
+| Master or Diplom | 23 | 25 |
+| Doctorate | 26 | 29 |
+| Student job, internship | 19 | |
+| Apprentice | 17 | |
+| First other job | 22 | |
+
+The earliest year counts, because a late degree makes someone look
+younger than they are and an early start never does. Jobs count only
+when the profile lists two or more, because a single job held now is no
+first job. An MBA, a course or a certificate says nothing, since they
+come at any age. The passage is that one step and the age it gives, like
+"Bachelor from 2018, so about 27", shown as a guess from the LinkedIn
+profile. Under 30 is a signal for. Older is not counted against. Whoever
+turns 30 is scored again at the start of the next run.
 
 **Runs their own business** is read from the profile's current roles:
 "Founder", "Inhaber", "Gründerin", "selbstständig", "Owner" at a small

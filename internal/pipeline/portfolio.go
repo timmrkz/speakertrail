@@ -158,6 +158,8 @@ func (p *Pipeline) advancePortfolio(ctx context.Context, src Source, cfg setting
 		interval = cfg.Days("search_check_days", 30)
 	case "post_search":
 		interval = cfg.Days("post_search_check_days", 14)
+	case "profile_search":
+		interval = cfg.Days("profile_search_check_days", 30)
 	}
 	if status == "retired" {
 		interval = cfg.Days("retired_recheck_days", 28)

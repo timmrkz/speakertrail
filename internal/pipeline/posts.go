@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/timmrkz/speakertrail/internal/extract"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/settings"
 )
@@ -150,12 +151,17 @@ func (p *Pipeline) resolvePoster(ctx context.Context, tx pgx.Tx, src Source, run
 	if err != nil {
 		return 0, false, err
 	}
+	born, ageReason, roles := career(prof.Career)
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO profiles (person_id, platform, url, handle, headline, review, found_via, source_id, first_seen_at, last_seen_at)
-		VALUES ($1, 'linkedin', $2, $3, $4, 'confirmed', 'post search', $5, $6, $6)
+		INSERT INTO profiles (person_id, platform, url, handle, headline, review, found_via, source_id, first_seen_at, last_seen_at,
+			born_about, age_reason, current_roles)
+		VALUES ($1, 'linkedin', $2, $3, $4, 'confirmed', 'post search', $5, $6, $6, $7, $8, $9)
 		ON CONFLICT (platform, url) DO UPDATE SET last_seen_at = EXCLUDED.last_seen_at,
-			headline = CASE WHEN EXCLUDED.headline <> '' THEN EXCLUDED.headline ELSE profiles.headline END`,
-		id, profile, handleOf(profile), prof.Headline, src.ID, at); err != nil {
+			headline = CASE WHEN EXCLUDED.headline <> '' THEN EXCLUDED.headline ELSE profiles.headline END,
+			born_about = COALESCE(EXCLUDED.born_about, profiles.born_about),
+			age_reason = CASE WHEN EXCLUDED.born_about IS NOT NULL THEN EXCLUDED.age_reason ELSE profiles.age_reason END,
+			current_roles = CASE WHEN EXCLUDED.current_roles <> '' THEN EXCLUDED.current_roles ELSE profiles.current_roles END`,
+		id, profile, handleOf(profile), prof.Headline, src.ID, at, born, ageReason, roles); err != nil {
 		return 0, false, err
 	}
 	var published *time.Time
@@ -169,6 +175,33 @@ func (p *Pipeline) resolvePoster(ctx context.Context, tx pgx.Tx, src Source, run
 		return 0, false, err
 	}
 	return id, isNew, sight(ctx, tx, src.ID, at, "person_id", id, isNew)
+}
+
+// maxRoles is how many roles held now are kept of a profile.
+const maxRoles = 3
+
+// career reads what is kept of a profile's jobs and education: the year
+// the person was likely born with the step that shows it, nil when it
+// does not say, and the roles they hold now, like "Inhaberin, Studio
+// Beispiel · Yogalehrerin". Nothing else of it is stored.
+func career(steps []search.Step) (born *int, reason, roles string) {
+	in := make([]rubric.Step, 0, len(steps))
+	var now []string
+	for _, s := range steps {
+		in = append(in, rubric.Step{Education: s.Education, Title: s.Title, Org: s.Org, From: s.From, To: s.To})
+		if s.Education || s.To != 0 || s.Title == "" || len(now) == maxRoles {
+			continue
+		}
+		role := s.Title
+		if s.Org != "" {
+			role += ", " + s.Org
+		}
+		now = append(now, role)
+	}
+	if y, why := rubric.BornAbout(in); y > 0 {
+		born, reason = &y, why
+	}
+	return born, reason, strings.Join(now, " · ")
 }
 
 // postEvidence says why a person appears: the post they wrote, and the

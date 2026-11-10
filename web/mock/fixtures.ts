@@ -252,6 +252,28 @@ export function buildSources(): MockSource[] {
     category: 'Post search', city: 'Köln', status: 'active', fetch_mode: 'auto', notes: '', checks: 1, empty_checks_in_row: 0, points: 1, health: 'ok', health_note: '',
     discovered_from: 'Imported from the starting post searches', last_found: 4, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.3,
   })
+  // Profile searches, the one kind runs take now. The paused one shows how
+  // a paused search looks, the last one has not run yet.
+  const profile: [number, string, number | null, SourceStatus, number, Health, string][] = [
+    [101, 'Personal Trainer Köln', 4, 'active', 0, 'ok', ''],
+    [102, 'Fitnessstudio Inhaber Düsseldorf', 2, 'active', 0, 'ok', ''],
+    [103, 'Yoga Studio Inhaberin Bonn', 3, 'active', 0, 'ok', ''],
+    [104, 'Gen Z Unternehmer Essen', 5, 'active', 1, 'ok', ''],
+    [105, 'Ernährungsberaterin Dortmund', 0, 'probation', 0, 'warning', 'The last check found no people who fit'],
+    [106, 'Kampfsportschule Köln', 2, 'active', 0, 'ok', ''],
+    [107, 'Gründerin direkt nach dem Studium Düsseldorf', 3, 'active', 1, 'ok', ''],
+    [108, 'Tanzschule Inhaberin Essen', 1, 'retired', 0, 'ok', ''],
+    [109, 'Gründer unter 30 Dortmund', null, 'candidate', 1, 'never', ''],
+  ]
+  for (const [id, query, found, status, points, health, note] of profile) {
+    const city = ['Köln', 'Düsseldorf', 'Bonn', 'Essen', 'Dortmund'].find((c) => query.endsWith(c)) ?? ''
+    out.push({
+      id, name: query, kind: 'profile_search', url: null, query, category: 'Profile search', city, status, fetch_mode: 'auto', notes: '',
+      checks: found === null ? 0 : 1, empty_checks_in_row: found === 0 ? 1 : 0, points, health, health_note: note,
+      discovered_from: 'Imported from the starting profile searches', last_found: found, last_mode: 'search', last_error: '', last_http: 200,
+      checked_hours_ago: found === null ? null : lastRun - 0.2 - (id % 5) * 0.01,
+    })
+  }
   return out
 }
 
@@ -325,6 +347,11 @@ export function buildSettings(): Setting[] {
     ['search_check_days', 30, 'Days between two runs of the same search'],
     ['claude_monthly_budget_eur', 4, 'Monthly cap for Claude API calls, in euros'],
     ['voice_guide', '', 'How Tim writes, used when drafting posts'],
+    ['profile_searches_per_run', 10, 'Due profile searches a run takes. Each is one call to Exa'],
+    ['profile_search_results', 25, 'Profiles one profile search asks for'],
+    ['profile_search_check_days', 30, 'Days between two runs of the same profile search'],
+    ['profile_active_days', 183, 'Days within which a person must have been active on LinkedIn to be kept'],
+    ['profile_searches_only', true, 'Runs take only profile searches. Events, portfolios, directories, website and post searches are paused'],
   ]
   return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))
 }

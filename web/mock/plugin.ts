@@ -45,6 +45,10 @@ interface PersonRow {
   profiles: Profile[]
   affiliations: PersonDetail['affiliations']
   decision?: Decision
+  // What the confirmed LinkedIn profile says, for people a profile search
+  // found.
+  linkedin?: Person['linkedin']
+  searchId?: number
 }
 
 function createState() {
@@ -91,6 +95,28 @@ function createState() {
     }))
   }
 
+  // Invented people as profile searches find them: on LinkedIn, in NRW,
+  // active lately and running their own business.
+  function foundByProfileSearches(): PersonRow[] {
+    const rows: [string, string, string, number | null, string, number, number][] = [
+      ['Lea Probe', 'Personal Trainerin | Selbstständig', 'Köln', 2000, 'Bachelor from 2019', 3, 101],
+      ['Tom Muster', 'Gründer @ Probe Gym', 'Düsseldorf', 1986, 'First job from 2008', 40, 102],
+      ['Mia Beispiel', 'Yogalehrerin mit eigenem Studio', 'Bonn', 1999, 'Bachelor from 2018', 9, 103],
+      ['Jan Probst', 'Gen Z Unternehmer | Gründer von Probst Media', 'Essen', 2003, 'School until 2022', 1, 104],
+      ['Nora Muster', 'Ernährungsberaterin, eigene Praxis', 'Dortmund', null, '', 21, 105],
+      ['Emil Beispiel', 'Inhaber, Beispiel Kampfsport Akademie', 'Köln', 1994, 'Bachelor from 2013', 60, 106],
+      ['Lina Probe', 'Gründerin direkt nach dem Studium · Probe Interiors', 'Düsseldorf', 1998, 'Master from 2021', 12, 107],
+      ['Paul Muster', 'Life Coach | Selbstständig seit 2021', 'Bonn', 1991, 'Bachelor from 2010', 100, 101],
+    ]
+    return rows.map(([name, headline, city, born, reason, activeDaysAgo, searchId], i) => ({
+      id: 1000 + i, name, headline, city, fit: 'founder' as const, first_seen: hoursAgo(2 + i * 9), notes: '',
+      profiles: [{ id: 10000 + i, platform: 'linkedin' as const, url: `https://www.linkedin.com/in/example-${1000 + i}`, review: 'confirmed' as const }],
+      affiliations: [], searchId,
+      decision: i === 1 ? 'kept' as const : undefined,
+      linkedin: { born_about: born, age_reason: reason, roles: headline.replace(' | ', ', '), last_active: hoursAgo(activeDaysAgo * 24) },
+    }))
+  }
+
   const events: PrivateEvent[] = EVENT_SEEDS.map((e, i) => {
     const day = addDays(today, e.day)
     const firstSeen = hoursAgo(Math.max(5, (Math.min(e.day, 0) + 12 - (i % 9)) * 24 + 5))
@@ -123,12 +149,12 @@ function createState() {
   const { runs, checks } = buildRuns(sources)
   return {
     events,
-    people: [...people.values(), ...lookedUp()],
+    people: [...people.values(), ...lookedUp(), ...foundByProfileSearches()],
     sources,
     runs,
     checks,
     settings: buildSettings(),
-    nextId: { source: 100 },
+    nextId: { source: 200 },
   }
 }
 
@@ -187,7 +213,7 @@ function appearancesOf(s: State, id: number): Appearance[] {
 // people: their title, the events they host and where lookups found them.
 const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
   [/coach|trainer|lehrer|teacher|yoga|kampfsport|bjj|psychologist|run club/i, 'works_with_people', 'Works with people', true],
-  [/inhaber|owner|runs the/i, 'owner_operator', 'Runs it themselves', true],
+  [/inhaber|owner|runs the|founder|gründer/i, 'owner_operator', 'Runs their own business', true],
   [/organiser|host at|runs the/i, 'runs_events', 'Runs their own events', true],
   [/autor|author/i, 'author', 'Author', true],
   [/athlete|athlet/i, 'athlete', 'Athlete', true],
@@ -200,11 +226,17 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   const add = (key: string, label: string, isFor: boolean, passage: string, found_in: string) => {
     if (!out.some((x) => x.key === key)) out.push({ key, label, for: isFor, passage, found_in })
   }
+  // Some invented people have a profile with dates, some a recent post.
+  const year = new Date().getFullYear()
+  if (p.linkedin?.born_about && year - p.linkedin.born_about < 30) add('young', 'Likely under 30', true, `${p.linkedin.age_reason}, so about ${year - p.linkedin.born_about}`, 'LinkedIn profile')
+  else if (!p.linkedin && p.id % 4 === 0) add('young', 'Likely under 30', true, `Bachelor from ${2015 + (p.id % 6)}, so about ${26 - (p.id % 6)}`, 'LinkedIn profile')
   for (const [re, key, label, isFor] of MOCK_RUBRIC) if (re.test(p.headline)) add(key, label, isFor, p.headline, 'title')
   const hosted = apps.find((a) => a.role === 'host' || a.role === 'moderator')
   if (hosted) add('runs_events', 'Runs their own events', true, `Hosts "${hosted.event.title}"`, 'event')
-  if (p.id >= 900) {
-    add('owner_operator', 'Runs it themselves', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
+  if (p.linkedin?.last_active) add('active_on_linkedin', 'Active on LinkedIn', true, `Last active on ${new Date(p.linkedin.last_active).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}`, 'LinkedIn profile')
+  else if (p.id % 5 === 0) add('active_on_linkedin', 'Active on LinkedIn', true, 'Last active on 14 October 2026', 'LinkedIn profile')
+  if (p.id >= 900 && p.id < 1000) {
+    add('owner_operator', 'Runs their own business', true, `${p.headline.replace(', ', ' of ')}, by its imprint. In the portfolio of Beispiel Hub`, 'imprint')
     add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
   }
   return out.sort((a, b) => Number(b.for) - Number(a.for))
@@ -214,7 +246,9 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
 function fitStats(s: State): Stats['fit'] {
   const list = s.people.map((p) => personList(s, p))
   const labels = new Map<string, [string, boolean]>()
+  labels.set('young', ['Likely under 30', true])
   for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
+  labels.set('active_on_linkedin', ['Active on LinkedIn', true])
   labels.set('backed', ['Backed by a startup programme', false])
   const signals = [...labels].map(([key, [label, isFor]]) => ({
     key, label, for: isFor,
@@ -241,6 +275,7 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
+    linkedin: p.linkedin ?? null,
     // Founders of a startup come with what its lookup saw, like the server.
     activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
@@ -264,21 +299,26 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
       seen.set(src.id, { source_id: src.id, source: src.name, checked_at: hoursAgo(ms?.checked_hours_ago ?? 5) })
     }
   }
-  const fit_evidence = p.id >= 900
+  const search = p.searchId ? s.sources.find((x) => x.id === p.searchId) : undefined
+  if (search) seen.set(search.id, { source_id: search.id, source: search.name, checked_at: hoursAgo(search.checked_hours_ago ?? 5) })
+  const fit_evidence = search ? `Found by the profile search ${search.name}` : p.id >= 900
     ? `Managing director of ${p.affiliations[0].organisation}, by its imprint. In the portfolio of Gateway startups`
     : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
   return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()] }
 }
 
-function sourceOut(m: MockSource): Source {
+function sourceOut(m: MockSource, s?: State): Source {
   const { last_found, last_mode, last_error, last_http, checked_hours_ago, ...rest } = m
   const checked = checked_hours_ago === null ? null : hoursAgo(checked_hours_ago)
   const every = m.status === 'retired' ? 28 * 24 : 24
   // What the last check counted, as the server does: businesses for a
   // portfolio, a directory or a search, people for a post search.
-  const lists = m.kind === 'post_search' ? 'people' : ['portfolio', 'directory', 'search_query'].includes(m.kind) ? 'startups' : 'events'
+  const lists = m.kind === 'post_search' || m.kind === 'profile_search' ? 'people' : ['portfolio', 'directory', 'search_query'].includes(m.kind) ? 'startups' : 'events'
+  const found = s ? s.people.filter((p) => p.searchId === m.id) : []
   return {
     ...rest,
+    people: found.length || (m.kind === 'profile_search' && last_found ? last_found : 0),
+    people_kept: found.filter((p) => p.decision === 'kept').length,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
@@ -393,21 +433,33 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const needle = (q.get('q') ?? '').toLowerCase()
     const sort = q.get('sort') || 'next'
     const filter = q.get('filter') || 'all'
-    let list = s.people.map((p) => personList(s, p))
+    // Like the server while runs take only profile searches: whom they
+    // found, and whoever Tim kept.
+    const only = s.settings.find((x) => x.key === 'profile_searches_only')?.value !== false
+    let list = s.people.filter((p) => !only || p.linkedin || p.decision === 'kept').map((p) => personList(s, p))
+    const year = new Date().getFullYear()
+    const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
+      young: list.filter(young).length,
+      kept: list.filter((p) => p.decision === 'kept').length,
+      skipped: list.filter((p) => p.decision === 'skipped').length,
       fits: list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped').length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
     }
+    if (filter === 'young') list = list.filter(young)
+    if (filter === 'kept') list = list.filter((p) => p.decision === 'kept')
+    if (filter === 'skipped') list = list.filter((p) => p.decision === 'skipped')
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
     if (filter === 'fits') list = list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped')
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
     else if (sort === 'fit') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
+    else if (sort === 'young') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || (b.linkedin?.born_about ?? 0) - (a.linkedin?.born_about ?? 0) || b.fit_score - a.fit_score)
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.
@@ -438,21 +490,25 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/sources$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
     const status = q.get('status')
+    const kind = q.get('kind')
     const list = s.sources
       .filter((x) => !status || x.status === status)
+      .filter((x) => !kind || x.kind === kind)
       .filter((x) => !needle || `${x.name} ${x.url ?? ''} ${x.query ?? ''} ${x.city}`.toLowerCase().includes(needle))
-      .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name))
-      .map(sourceOut)
+      .sort((a, b) => Number(a.status === 'retired') - Number(b.status === 'retired') || b.points - a.points || a.name.localeCompare(b.name))
+      .map((x) => sourceOut(x, s))
     return ok({ sources: list })
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
     const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''
+    const kind = b.kind === 'profile_search' ? 'profile_search' : 'search_query'
+    if (b.kind !== undefined && b.kind !== 'profile_search' && b.kind !== 'search_query') return err(400, 'kind must be search_query or profile_search')
     if (query) {
-      if (s.sources.some((x) => x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'This search is already a source')
+      if (s.sources.some((x) => x.kind === kind && x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'This search is already there')
       const city = ['Köln', 'Düsseldorf', 'Dortmund', 'Essen', 'Duisburg', 'Bochum', 'Wuppertal', 'Bielefeld', 'Bonn', 'Münster', 'Aachen'].find((c) => query.includes(c)) ?? ''
       const m: MockSource = {
-        id: s.nextId.source++, name: query, kind: 'search_query', url: null, query,
-        category: 'Search', city, status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: 0,
+        id: s.nextId.source++, name: query, kind, url: null, query,
+        category: kind === 'profile_search' ? 'Profile search' : 'Search', city, status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: kind === 'profile_search' ? 2 : 0,
         health: 'never', health_note: '', discovered_from: 'Added by Tim', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
       }
       s.sources.push(m)
@@ -478,7 +534,7 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     if (typeof b.notes === 'string') src.notes = b.notes
     if (typeof b.name === 'string') src.name = b.name
     if (typeof b.lists === 'string') src.kind = b.lists === 'startups' ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing'
-    return ok(sourceOut(src))
+    return ok(sourceOut(src, s))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {
     const src = s.sources.find((x) => x.id === Number(m[1]))

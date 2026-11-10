@@ -30,17 +30,22 @@ var searchesCSV string
 //go:embed data/post_searches.csv
 var postSearchesCSV string
 
+//go:embed data/profile_searches.csv
+var profileSearchesCSV string
+
 // Result counts what an import did.
 type Result struct {
 	SourcesAdded, SourcesKept, SourcesSkipped int
 	SearchesAdded, SearchesKept               int
 	PostSearchesAdded, PostSearchesKept       int
+	ProfileSearchesAdded, ProfileSearchesKept int
 	SeedsAdded, SeedsKept                     int
 }
 
 func (r Result) String() string {
-	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. searches: %d added, %d already there. post searches: %d added, %d already there. seeds: %d added, %d already there",
-		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SearchesAdded, r.SearchesKept, r.PostSearchesAdded, r.PostSearchesKept, r.SeedsAdded, r.SeedsKept)
+	return fmt.Sprintf("sources: %d added, %d already there, %d without an address skipped. searches: %d added, %d already there. post searches: %d added, %d already there. profile searches: %d added, %d already there. seeds: %d added, %d already there",
+		r.SourcesAdded, r.SourcesKept, r.SourcesSkipped, r.SearchesAdded, r.SearchesKept, r.PostSearchesAdded, r.PostSearchesKept,
+		r.ProfileSearchesAdded, r.ProfileSearchesKept, r.SeedsAdded, r.SeedsKept)
 }
 
 // Import loads the starting data.
@@ -115,7 +120,7 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 		tag, err := pool.Exec(ctx, `
 			INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
 			VALUES ($1, 'search_query', $1, 'Search', $2, 'candidate', 'Imported from the starting searches')
-			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
+			ON CONFLICT (kind, lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
 		if err != nil {
 			return res, fmt.Errorf("search %q: %w", q, err)
 		}
@@ -128,7 +133,7 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 
 	// The starting post searches: stories of people who fit, like a first
 	// year on their own, with a place in NRW in the query. Each waits until
-	// a provider that finds posts has a key.
+	// a provider that finds posts has a key. Runs do not take them for now.
 	posts, err := readCSV(postSearchesCSV)
 	if err != nil {
 		return res, fmt.Errorf("post_searches.csv: %w", err)
@@ -138,7 +143,7 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 		tag, err := pool.Exec(ctx, `
 			INSERT INTO sources (name, kind, query, category, city, status, discovered_note)
 			VALUES ($1, 'post_search', $1, 'Post search', $2, 'candidate', 'Imported from the starting post searches')
-			ON CONFLICT (lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
+			ON CONFLICT (kind, lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q))
 		if err != nil {
 			return res, fmt.Errorf("post search %q: %w", q, err)
 		}
@@ -146,6 +151,29 @@ func Import(ctx context.Context, pool *pgxpool.Pool) (Result, error) {
 			res.PostSearchesAdded++
 		} else {
 			res.PostSearchesKept++
+		}
+	}
+
+	// The starting profile searches: a kind of person who fits and a place
+	// in NRW, like "Personal Trainer Köln". Those aimed at younger people
+	// carry a point, so runs take them first.
+	profiles, err := readCSV(profileSearchesCSV)
+	if err != nil {
+		return res, fmt.Errorf("profile_searches.csv: %w", err)
+	}
+	for _, s := range profiles {
+		q := s["query"]
+		tag, err := pool.Exec(ctx, `
+			INSERT INTO sources (name, kind, query, category, city, status, discovered_note, points)
+			VALUES ($1, 'profile_search', $1, 'Profile search', $2, 'candidate', 'Imported from the starting profile searches', COALESCE(NULLIF($3, '')::numeric, 0))
+			ON CONFLICT (kind, lower(query)) WHERE query IS NOT NULL DO NOTHING`, q, extract.CityOf(q), s["points"])
+		if err != nil {
+			return res, fmt.Errorf("profile search %q: %w", q, err)
+		}
+		if tag.RowsAffected() == 1 {
+			res.ProfileSearchesAdded++
+		} else {
+			res.ProfileSearchesKept++
 		}
 	}
 

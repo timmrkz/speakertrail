@@ -12,21 +12,18 @@
   import Sources from './Sources.svelte'
   import Runs from './Runs.svelte'
   import Settings from './Settings.svelte'
-  import More from './More.svelte'
+  import Searches from './Searches.svelte'
   import NotFound from './NotFound.svelte'
 
   type Item = { href: string; label: string; icon: IconName }
-  // People and runs come first, because Tim reviews people while runs go.
-  // Events stay, as a source of people and for the calendar, further down.
+  // Three screens: the people the profile searches found, with the Run
+  // button, the searches themselves, and the settings. Events, sources and
+  // runs are paused with the rest of the engine and left out.
   const NAV: Item[] = [
-    { href: '/app', label: 'Overview', icon: 'overview' },
     { href: '/app/people', label: 'People', icon: 'people' },
-    { href: '/app/runs', label: 'Runs', icon: 'runs' },
-    { href: '/app/sources', label: 'Sources', icon: 'sources' },
-    { href: '/app/events', label: 'Events', icon: 'events' },
+    { href: '/app/searches', label: 'Searches', icon: 'search' },
     { href: '/app/settings', label: 'Settings', icon: 'settings' },
   ]
-  const TABS = NAV.slice(0, 4)
 
   // Check the session once. Any later 401 also lands on the login.
   let ready = $state(false)
@@ -47,10 +44,14 @@
   })
   let going = $derived(runWatch.run !== null)
 
+  // The workspace opens on People.
+  $effect(() => {
+    if (router.path === '/app' || router.path === '/app/') navigate('/app/people', { replace: true })
+  })
+
   function current(href: string): boolean {
-    return href === '/app' ? router.path === '/app' : router.under(href)
+    return router.under(href)
   }
-  let moreActive = $derived(['/app/events', '/app/settings', '/app/more'].some((h) => router.under(h)))
 
   async function logout() {
     try {
@@ -66,12 +67,12 @@
 {#if ready}
   <div class="app">
     <aside class="side" aria-label="Workspace">
-      <Brand href="/app" sub="Workspace" />
+      <Brand href="/app/people" sub="Workspace" />
       <nav class="nav" aria-label="Main">
         {#each NAV as item (item.href)}
           <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
             <Icon name={item.icon} /><span>{item.label}</span>
-            {#if item.href === '/app/runs' && going}<span class="dot busy" title="A run is going"></span>{/if}
+            {#if item.href === '/app/people' && going}<span class="dot busy" title="A run is going"></span>{/if}
           </a>
         {/each}
       </nav>
@@ -83,32 +84,31 @@
     </aside>
 
     <main id="main" class="main">
-      {#if router.path === '/app'}
-        <Overview />
-      {:else if router.under('/app/events')}
-        <Events />
-      {:else if router.under('/app/people')}
+      {#if router.under('/app/people')}
         <People />
-      {:else if router.under('/app/sources')}
-        <Sources />
+      {:else if router.under('/app/searches')}
+        <Searches />
+      {:else if router.path === '/app/settings'}
+        <Settings {logout} />
       {:else if router.under('/app/runs')}
         <Runs />
-      {:else if router.path === '/app/settings'}
-        <Settings />
-      {:else if router.path === '/app/more'}
-        <More {logout} />
+      {:else if router.under('/app/events')}
+        <Events />
+      {:else if router.under('/app/sources')}
+        <Sources />
+      {:else if router.path === '/app/overview'}
+        <Overview />
       {:else}
         <NotFound embedded />
       {/if}
     </main>
 
     <nav class="tabbar" aria-label="Main">
-      {#each TABS as item (item.href)}
+      {#each NAV as item (item.href)}
         <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
-          <span class="tab-icon"><Icon name={item.icon} size={22} />{#if item.href === '/app/runs' && going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>{item.label}</span>
+          <span class="tab-icon"><Icon name={item.icon} size={22} />{#if item.href === '/app/people' && going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>{item.label}</span>
         </a>
       {/each}
-      <a href="/app/more" aria-current={moreActive ? 'page' : undefined}><Icon name="more" size={22} /><span>More</span></a>
     </nav>
   </div>
 {/if}
@@ -140,7 +140,7 @@
     .side { display: none; }
     .main { padding: 16px var(--gutter) calc(88px + env(safe-area-inset-bottom, 0px)); }
     .tabbar {
-      display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
       background: var(--surface); border-top: 1px solid var(--line);
       padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
     }

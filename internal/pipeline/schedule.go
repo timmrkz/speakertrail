@@ -50,9 +50,8 @@ func (p *Pipeline) ended(ctx context.Context, runID int64) (bool, error) {
 // going. A source whose check failed is due again in the next run.
 const runAttempts = 1
 
-// EnqueueDue queues a check for every source that is due, the first checks
-// of a limited number of new candidates, the open seeds and the pruning.
-// It returns the number of sources queued.
+// EnqueueDue queues a check for every profile search that is due, up to
+// the setting, and the pruning. It returns the number of searches queued.
 func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	cfg, err := settings.Load(ctx, p.Pool)
 	if err != nil {
@@ -60,7 +59,7 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	}
 	// Everyone the current rubric has not scored yet, like all people
 	// after the rubric changed.
-	if n, err := ScoreStale(ctx, p.Pool); err != nil {
+	if n, err := ScoreStale(ctx, p.Pool, p.now()); err != nil {
 		return 0, err
 	} else if n > 0 {
 		p.log().Info("people scored by the fit rubric", "people", n)
@@ -74,6 +73,74 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		fmt.Sprint(runID), now, KindCheckSource, KindReadEvent, KindLookUp); err != nil {
 		return 0, err
 	}
+	// A run takes only profile searches, the one way it finds people now.
+	// Events, portfolios, directories, website searches and post searches
+	// are paused: their sources stay as they are, and no run checks them
+	// until the setting is turned off. See docs/search-strategy.md.
+	onlyProfiles := cfg.Bool("profile_searches_only", true)
+	var ids []int64
+	if onlyProfiles {
+		if p.Search != nil && p.Search.FindsPosts() {
+			rows, err := p.Pool.Query(ctx, `
+				SELECT id FROM sources
+				WHERE kind = 'profile_search' AND query IS NOT NULL AND status IN ('candidate', 'probation', 'active')
+				  AND (next_check_at IS NULL OR next_check_at <= $1)
+				ORDER BY next_check_at NULLS FIRST, points DESC, id
+				LIMIT $2`, now, cfg.Int("profile_searches_per_run", 10))
+			if err != nil {
+				return 0, err
+			}
+			if ids, err = pgx.CollectRows(rows, pgx.RowTo[int64]); err != nil {
+				return 0, err
+			}
+		}
+	} else {
+		var err error
+		if ids, err = p.dueSources(ctx, cfg, now); err != nil {
+			return 0, err
+		}
+	}
+	for _, id := range ids {
+		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
+			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id), MaxAttempts: runAttempts,
+			Payload: CheckPayload{SourceID: id, RunID: runID},
+		}); err != nil {
+			return 0, err
+		}
+	}
+	if !onlyProfiles {
+		seeds, err := p.Pool.Query(ctx, `SELECT id FROM seeds WHERE processed_at IS NULL ORDER BY id`)
+		if err != nil {
+			return 0, err
+		}
+		seedIDs, err := pgx.CollectRows(seeds, pgx.RowTo[int64])
+		if err != nil {
+			return 0, err
+		}
+		for _, id := range seedIDs {
+			if err := p.EnqueueSeed(ctx, id); err != nil {
+				return 0, err
+			}
+		}
+		// Events whose page has not been read yet, from earlier runs too.
+		if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 10)); err != nil {
+			return 0, err
+		}
+		// Startups from portfolios whose imprint was not looked up yet.
+		if _, err := p.enqueueLookUps(ctx, runID, 0, cfg.Int("startups_per_run", 10)); err != nil {
+			return 0, err
+		}
+	}
+	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
+// dueSources are the sources a run checks while the other kinds are not
+// paused: due sources, new candidates, website searches and post
+// searches, each up to its setting.
+func (p *Pipeline) dueSources(ctx context.Context, cfg settings.Settings, now time.Time) ([]int64, error) {
 	rows, err := p.Pool.Query(ctx, `
 		(SELECT id FROM sources
 		 WHERE url IS NOT NULL AND status IN ('active', 'probation', 'retired')
@@ -87,11 +154,11 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 		 ORDER BY kind IN ('portfolio', 'directory') DESC, checks, created_at, id
 		 LIMIT $2)`, now, cfg.Int("new_candidates_per_run", 5), cfg.Int("sources_per_run", 15))
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	// Due searches, when a search provider is set up. Each brings up to 20
 	// websites to look up, so a run takes only a few.
@@ -103,11 +170,11 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 			ORDER BY next_check_at NULLS FIRST, points DESC, id
 			LIMIT $2`, now, cfg.Int("searches_per_run", 3))
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		searches, err := pgx.CollectRows(rows, pgx.RowTo[int64])
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		ids = append(ids, searches...)
 	}
@@ -121,48 +188,15 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 			ORDER BY next_check_at NULLS FIRST, points DESC, id
 			LIMIT $2`, now, cfg.Int("post_searches_per_run", 2))
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		posts, err := pgx.CollectRows(rows, pgx.RowTo[int64])
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		ids = append(ids, posts...)
 	}
-	for _, id := range ids {
-		if _, err := p.Queue.Enqueue(ctx, queue.NewJob{
-			Kind: KindCheckSource, Key: fmt.Sprintf("run:%d:source:%d", runID, id), MaxAttempts: runAttempts,
-			Payload: CheckPayload{SourceID: id, RunID: runID},
-		}); err != nil {
-			return 0, err
-		}
-	}
-
-	seeds, err := p.Pool.Query(ctx, `SELECT id FROM seeds WHERE processed_at IS NULL ORDER BY id`)
-	if err != nil {
-		return 0, err
-	}
-	seedIDs, err := pgx.CollectRows(seeds, pgx.RowTo[int64])
-	if err != nil {
-		return 0, err
-	}
-	for _, id := range seedIDs {
-		if err := p.EnqueueSeed(ctx, id); err != nil {
-			return 0, err
-		}
-	}
-	// Events whose page has not been read yet, from earlier runs too.
-	if _, err := p.enqueueReads(ctx, runID, 0, p.readLimit(cfg, "event_pages_per_run", 10)); err != nil {
-		return 0, err
-	}
-	// Startups from portfolios whose imprint was not looked up yet.
-	if _, err := p.enqueueLookUps(ctx, runID, 0, cfg.Int("startups_per_run", 10)); err != nil {
-		return 0, err
-	}
-	if _, err := p.Queue.Enqueue(ctx, queue.NewJob{Kind: KindPrune, Key: "prune:" + now.Format("2006-01-02")}); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
+	return ids, nil
 }
 
 // RunNow starts a run by hand: every due source, as the nightly run would

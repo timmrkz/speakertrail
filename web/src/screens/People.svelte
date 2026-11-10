@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
-  import { ACTIVITY_TONE, activityText, fmtDay, initials, plural, ROLE_LABEL } from '../lib/format'
+  import { fmtDay, initials, plural } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import { runWatch } from '../lib/run.svelte'
@@ -14,21 +14,22 @@
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import PersonSheet from './PersonSheet.svelte'
+  import RunSheet from './RunSheet.svelte'
 
   let q = $state('')
   let query = $state('')
-  // A new person is what Tim looks at first, so the list opens on everyone,
-  // newest on top, unless he chose another order on this device.
-  const SORTS: PeopleSort[] = ['new', 'fit', 'next', 'name']
+  // The likely youngest come first, unless Tim chose another order on this
+  // device.
+  const SORTS: PeopleSort[] = ['young', 'new', 'fit', 'name']
   let sort = $state<PeopleSort>(savedSort())
   let filter = $state<PeopleFilter>('all')
 
   function savedSort(): PeopleSort {
     try {
       const v = localStorage.getItem('people-sort') as PeopleSort | null
-      return v && SORTS.includes(v) ? v : 'new'
+      return v && SORTS.includes(v) ? v : 'young'
     } catch {
-      return 'new'
+      return 'young'
     }
   }
   $effect(() => {
@@ -89,12 +90,37 @@
   let filters = $derived(
     ([
       { value: 'all', label: 'All' },
-      { value: 'fits', label: 'Good fits' },
-      { value: 'founder', label: 'Founders' },
-      { value: 'upcoming', label: 'Upcoming' },
-      { value: 'profile', label: 'Profile found' },
+      { value: 'young', label: 'Under 30' },
+      { value: 'kept', label: 'Kept' },
+      { value: 'skipped', label: 'Skipped' },
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
   )
+
+  // The run is started and stopped here, where its people show up.
+  let going = $derived(runWatch.run)
+  let runLabel = $derived(
+    runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop the run' : 'Run',
+  )
+  let runOpen = $state<number | null>(null)
+
+  // What the LinkedIn profile says, in one line: the likely age and when
+  // the person was last active there.
+  const year = new Date().getFullYear()
+  function facts(p: Person): string {
+    const l = p.linkedin
+    if (!l) return ''
+    const parts: string[] = []
+    if (l.born_about) parts.push(`about ${year - l.born_about}`)
+    if (l.last_active) parts.push(`active ${fmtDay(l.last_active)}`)
+    return parts.join(' · ')
+  }
+  function factsTitle(p: Person): string {
+    const l = p.linkedin
+    if (!l) return ''
+    return [l.born_about ? `A guess from the LinkedIn profile: ${l.age_reason}` : '', l.roles ? `Now: ${l.roles}` : '']
+      .filter(Boolean)
+      .join('\n')
+  }
   let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
@@ -108,18 +134,23 @@
   <div class="view-head">
     <div>
       <h1>People</h1>
-      <p>Everyone the engine found, on stage or behind a startup.</p>
+      <p>On LinkedIn, in NRW, running their own thing.</p>
     </div>
+    <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
+      disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
+      title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
+      <Icon name={going ? 'close' : 'refresh'} />{runLabel}
+    </button>
   </div>
 
   {#if runWatch.run}
-    <a class="panel run-now" href={runWatch.run.id > 0 ? `/app/runs/${runWatch.run.id}` : '/app/runs'}>
+    <button class="panel run-now" type="button" disabled={runWatch.run.id <= 0} onclick={() => (runOpen = runWatch.run?.id ?? null)}>
       <RunProgress run={runWatch.run} />
-    </a>
+    </button>
   {:else if runWatch.ended}
-    <a class="panel run-now" href="/app/runs/{runWatch.ended.id}">
+    <button class="panel run-now" type="button" onclick={() => (runOpen = runWatch.ended?.id ?? null)}>
       <RunOutcome run={runWatch.ended} />
-    </a>
+    </button>
   {/if}
 
   <div class="filters">
@@ -128,9 +159,9 @@
       <label class="sort">
         <span class="sr-only">Sort by</span>
         <select class="select" bind:value={sort}>
+          <option value="young">Youngest</option>
           <option value="new">Newest</option>
           <option value="fit">Best fit</option>
-          <option value="next">Next appearance</option>
           <option value="name">Name</option>
         </select>
       </label>
@@ -147,10 +178,10 @@
   {:else if !people.data.length}
     <EmptyState
       icon="people"
-      title={filter === 'founder' && !query ? 'No founders yet' : filter === 'fits' && !query ? 'No good fits yet' : 'Nobody here yet'}
+      title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'kept' && !query ? 'Nobody kept yet' : 'Nobody here yet'}
       text={filter !== 'all' && others > 0
-        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'founder' ? 'a founder yet. Founders show up as runs read event pages' : filter === 'fits' ? 'with more signals for a fit than against yet' : 'in this filter'}.`
-        : query ? 'Nobody matches this search.' : 'People show up once the crawler finds them on event pages.'}>
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'kept' ? 'kept yet' : 'in this filter'}.`
+        : query ? 'Nobody matches this search.' : 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
       {/if}
@@ -166,15 +197,9 @@
             <b class="ellipsis name">{p.name}{#if p.decision}<span class="sr-only">, {p.decision}</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
-              <span class="next" class:none={!p.next_appearance && !p.activity}>
-                {#if p.next_appearance}
-                  <Icon name="calendar" size={13} /><span class="ellipsis">{fmtDay(p.next_appearance.starts_at)} · {p.next_appearance.title} · {ROLE_LABEL[p.next_appearance.role] ?? p.next_appearance.role}</span>
-                {:else if p.activity}
-                  <span class="dot-tone {ACTIVITY_TONE[p.activity.state]}" aria-hidden="true"></span><span class="ellipsis" title={p.activity.note}>{activityText(p.activity)}</span>
-                {:else}
-                  No upcoming appearance
-                {/if}
-              </span>
+              {#if facts(p)}
+                <span class="ellipsis facts" title={factsTitle(p)}>{facts(p)}</span>
+              {/if}
               {#if p.signals.length}
                 <span class="signals ellipsis" title={p.signals.map((s) => `${s.for ? 'For' : 'Against'}: ${s.label}`).join('\n')}>
                   {#each p.signals as s, i (s.key)}{#if i}<span class="sep" aria-hidden="true">·</span>{/if}<span class:for={s.for} class:against={!s.for}><span class="sr-only">{s.for ? 'For: ' : 'Against: '}</span>{s.label}</span>{/each}
@@ -183,7 +208,6 @@
             </span>
             <span class="meta">
               <ProfileBadges profiles={p.profiles} />
-              <span class="count num" title="Appearances">{p.appearances}<span class="sr-only"> appearances</span></span>
             </span>
           </a>
         </li>
@@ -196,23 +220,25 @@
   {#key openId}
     <PersonSheet id={openId} onclose={() => navigate('/app/people')} onupdate={updated} />
   {/key}
+{:else if runOpen !== null}
+  {#key runOpen}
+    <RunSheet id={runOpen} onclose={() => (runOpen = null)} />
+  {/key}
 {/if}
 
 <style>
   .filters { display: grid; gap: 10px; }
   .sort { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
-  .run-now { display: block; color: var(--ink); text-decoration: none; padding: 12px 14px; }
-  .run-now:hover { border-color: var(--line-strong); text-decoration: none; }
+  .run-now { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer; }
+  .run-now:hover { border-color: var(--line-strong); }
+  /* Room for the longest label, so the button keeps its width. */
+  .start { min-width: 10.2em; justify-content: center; }
   .new {
     margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px;
     background: var(--accent-soft); color: var(--accent);
   }
   .stale { opacity: .6; }
-  .dot-tone { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
-  .dot-tone.good { background: var(--good); }
-  .dot-tone.warn { background: var(--warn); }
-  .dot-tone.bad { background: var(--bad); }
   .person {
     grid-template-columns: 36px minmax(0, 1fr) auto;
     grid-template-areas: "av name meta" "av who meta";
@@ -223,24 +249,20 @@
   .who { grid-area: who; display: grid; gap: 1px; min-width: 0; }
   .meta { grid-area: meta; }
   .sub { font-size: 13px; color: var(--ink-2); }
-  .next { font-size: 13px; color: var(--accent); display: flex; align-items: center; gap: 5px; min-width: 0; }
-  .next :global(svg) { flex: none; }
-  .next.none { color: var(--ink-3); }
+  .facts { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
   .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
   /* A kept person's initials turn green, a skipped person steps back. */
   .avatar.kept { background: var(--good-soft); color: var(--good); }
   .person.skipped { opacity: .55; }
-  .signals { font-size: 12px; font-weight: 500; }
+  /* Relative, so the hidden words of signals cut off at the end stay inside
+     the row and never widen the page. */
+  .signals { font-size: 12px; font-weight: 500; position: relative; }
   .signals .for { color: var(--good); }
   .signals .against { color: var(--bad); }
   /* The sign says it without colour. Screen readers get the words instead. */
   .signals .for::before { content: "+\2009" / ""; }
   .signals .against::before { content: "\2212\2009" / ""; }
   .signals .sep { color: var(--ink-3); margin: 0 5px; }
-  .count {
-    min-width: 26px; height: 22px; padding: 0 6px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2);
-    font-size: 12px; display: inline-grid; place-items: center;
-  }
   @media (max-width: 520px) {
     .person { padding: 12px 14px; column-gap: 10px; grid-template-areas: "av name meta" "av who who"; }
   }

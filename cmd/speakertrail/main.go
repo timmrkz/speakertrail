@@ -217,7 +217,7 @@ func runServe(ctx context.Context, cfg config.Config, args []string) error {
 		}
 		// People the current fit rubric has not scored yet, like everyone
 		// after the rubric changed, are scored before anyone looks.
-		if n, err := pipeline.ScoreStale(ctx, pool); err != nil {
+		if n, err := pipeline.ScoreStale(ctx, pool, time.Now()); err != nil {
 			return err
 		} else if n > 0 {
 			slog.Info("people scored by the fit rubric", "people", n)
@@ -268,7 +268,7 @@ func runNightly(ctx context.Context, cfg config.Config, args []string) error {
 			if err != nil {
 				return err
 			}
-			if res.SourcesAdded+res.SearchesAdded+res.PostSearchesAdded+res.SeedsAdded > 0 {
+			if res.SourcesAdded+res.SearchesAdded+res.PostSearchesAdded+res.ProfileSearchesAdded+res.SeedsAdded > 0 {
 				slog.Info("starting data imported", "result", res.String())
 			}
 		}

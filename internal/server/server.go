@@ -1,5 +1,5 @@
 // Package server serves the web interface and its JSON API, described in
-// docs/api.md.
+// docs/server-api.md.
 package server
 
 import (

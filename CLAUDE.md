@@ -5,16 +5,15 @@ first change of a session. The user is Tim.
 
 ## The project
 
-Speaker Trail finds in-person events across North Rhine-Westphalia and the
-people who speak, pitch or host at them. A crawler checks a growing list of
-sources every night and learns which ones are worth checking. The front is a
-public event calendar, "Who's on stage in NRW", useful to many people. Behind
-a single login is Tim's workspace: the numbers, the people, the sources and
-the crawl runs.
+Speaker Trail finds people in North Rhine-Westphalia who run their own
+business and could be guests on Tim's podcast, *My First Memory*. It is a
+Mac app, built like Tim's FrameFairy: Go with Wails v3 for the window, the
+Svelte interface built in, and everything it knows in one JSON file in
+`~/Library/Application Support/Speaker Trail`. Runs ask profile searches
+through Exa. No Docker, no database, no server.
 
-It began as a way to find guests for Tim's podcast, *My First Memory*. The
-direction since is a calendar for everyone, kept apart from Tim's LinkedIn,
-which stays about the podcast.
+The public event calendar and the crawler of event pages are paused. Their
+code still sits in the repository and the app does not use it.
 
 ## Where things are
 
@@ -22,17 +21,16 @@ Start with [README.md](README.md). In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
-| fetching, robots.txt, the headless browser | `internal/fetch/` | |
-| events and people out of pages | `internal/extract/` | |
-| source checks, resolving, lifecycle, nightly run | `internal/pipeline/` | |
-| job queue | `internal/queue/` | |
-| HTTP API and login | `internal/server/` | [docs/api.md](docs/api.md) |
+| the app, its window | `cmd/speakertrail-app/` | |
+| the file: people, searches, runs, settings | `internal/store/` | |
+| runs of profile searches | `internal/engine/` | |
+| HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
+| the Exa key in the keychain | `internal/keys/` | |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
-| starting data from the brief | `internal/importer/` | |
-| build, Docker | `Makefile`, `compose.yaml`, `Dockerfile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md), `.claude/skills/docker/` |
+| build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
-| deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
+| paused: server, crawler, queue, Postgres, Docker, deploy | `cmd/speakertrail/`, `internal/server/` and the rest | [docs/server-api.md](docs/server-api.md), `.claude/skills/docker/` |
 
 ## How Tim works
 
@@ -46,11 +44,11 @@ Start with [README.md](README.md). In short:
   the pull request straight away, without being asked, and keep pushing to
   it. The first commit does not have to be worth looking at. It exists so
   the pull request exists, because that is where Tim follows the work.
-- His machine is an M2 Max with 32 GB of memory, on the latest macOS. He
-  does not want apps and tools installed on it. Docker Desktop is the one
-  exception, everything else runs in containers.
-- He tests the interface himself on his phone and his Mac. After each change
-  say exactly what to look at and what should happen.
+- His machine is an M2 Max with 32 GB of memory, on the latest macOS. What
+  the build needs, Go and Node.js, make installs with Homebrew, as it does
+  for FrameFairy. Nothing beyond that, and never as a step he has to do.
+- He tests the app himself on his Mac. After each change say exactly what
+  to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
 - Measurements are metric.
 
@@ -110,8 +108,8 @@ messages, pull request text, code comments and chat replies.
 
 ## Interface rules
 
-- **Phone first.** Tim reviews on his phone. Every screen works at 390 px
-  wide with no sideways scrolling, and the first view of every screen
+- **Narrow first.** The window goes down to 390 px wide. Every screen works
+  there with no sideways scrolling, and the first view of every screen
   answers its main question without scrolling.
 - **The interface is the mechanism, not the machinery.** Every control has
   to earn its place by serving what the person is there to do. What the
@@ -146,17 +144,18 @@ messages, pull request text, code comments and chat replies.
 
 - **Go, latest version.** One module, `go 1.27` in `go.mod`. Upgrade with Go
   releases.
-- **Nothing on Tim's Mac but Docker.** Every tool the project needs, Go,
-  Node.js, Postgres, Chromium and whatever comes later, lives in a container
-  from `compose.yaml` and the `Dockerfile`. A new tool goes into the `dev`
-  stage of the `Dockerfile`, never into instructions for his Mac. Never tell
-  him to `brew install` or `npm install -g` anything.
+- **Built like FrameFairy.** A native Mac app with Wails v3, no Docker, no
+  database process, no server. What the app knows lives in one JSON file,
+  written whole to a new file that then replaces the old one. Secrets live
+  in the macOS keychain, never in a file.
 - **One command.** `make run` goes from a fresh clone to a running app.
-  Nobody should have to remember a second command. On a laptop make drives
-  Docker. Build runners, cloud sessions and the toolbox run the same targets
-  directly, see `DOCKER` in the `Makefile`. Neither make nor the program
-  ever installs anything. A new target works both ways, and CI's `toolbox`
-  job proves the Docker way.
+  Nobody should have to remember a second command. On a Mac make installs
+  what is missing with Homebrew, `scripts/tools.sh`, and nothing else ever
+  installs anything. Never tell Tim to `brew install` or `npm install -g`
+  anything himself. With `CI` set make installs nothing.
+- **It builds on Linux too.** Build runners and cloud sessions build the
+  window against GTK 4 and WebKitGTK 6 and run every test there. CI's
+  `macos` job proves the Mac build, the bundle and the keychain.
 - **No LinkedIn, no Instagram.** The engine never requests them, not even
   for robots.txt, and the headless browser goes through a filter that
   refuses them. `TestNeverRequestsLinkedInOrInstagram` and
@@ -178,35 +177,34 @@ messages, pull request text, code comments and chat replies.
 - **Tests** need no network and never touch a live website. Pages go in
   `testdata/`, with invented people. Run `make test` before every push that
   touches Go. A change only to `web/` or `docs/` runs `make interface`.
-- **Short transactions.** No job holds a transaction open for more than a
-  moment, because long ones break the database's automatic backups.
+- **Short updates.** The file is written on every change, so nothing
+  slow, above all no call to Exa, happens inside `Store.Update`.
 - `gofmt` and `go vet` must pass.
 - The interface is built by make into `web/dist/`, which Go embeds. Only
-  `web/dist/.keep` is in the repository. Never commit build output or
-  `.env`.
-- **The language model runs locally.** It runs on Tim's Mac through Docker
-  Model Runner, with no paid model API, no key and no credit card. The
-  engine works without it and only reads people better with it.
+  `web/dist/.keep` is in the repository. Never commit build output, `.env`
+  or the app's file.
+- **No paid language model.** The paused crawler read pages with a local
+  model through Docker Model Runner. Whatever comes back needs no paid
+  model API, no key and no credit card.
 - Every paid API gets a monthly budget in Settings, and the engine stops
   calling it once the budget is reached.
 
 ## Cloud sessions
 
 Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
-`scripts/cloud-setup.sh`, which provides Go 1.27 and a local Postgres 16.
+`scripts/cloud-setup.sh`, which provides Go 1.27, GTK 4 and WebKitGTK 6 for
+the window, and a local Postgres 16 for the paused server's tests.
 `scripts/session-start.sh` starts Postgres and sets `DATABASE_URL` and
 `TEST_DATABASE_URL` in every session.
 
-- If `go version` does not show 1.27, run `bash scripts/cloud-setup.sh`.
-- `make test` and `make` before pushing anything that touches Go. They run
-  directly here, because `CLAUDE_CODE_REMOTE` is set.
-- Docker works in a session, with limits. Before changing the Docker side,
-  read the skill in `.claude/skills/docker/`.
-- The network is limited to an allowlist set in the environment. Event sites
-  that are not on it cannot be fetched from a session, and the deployed app
-  has no such limit.
-- There is no screen. Interface work goes through the skill in
-  `.claude/skills/interface/`. Read it before changing anything in `web/`.
+- If `go version` does not show 1.27, or `pkg-config --exists gtk4
+  webkitgtk-6.0` fails, run `bash scripts/cloud-setup.sh`.
+- `make test` and `make` before pushing anything that touches Go.
+- The network is limited to an allowlist set in the environment. Exa may
+  not be on it, and tests never call it anyway.
+- There is no screen, and the window cannot open. Interface work goes
+  through the skill in `.claude/skills/interface/`. Read it before changing
+  anything in `web/`.
 
 ## Where guidance goes
 

@@ -656,7 +656,16 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     row.updated_at = new Date().toISOString()
     return ok(row)
   }],
+  // Like the app: whether the Exa key is saved, never the key.
+  ['GET', /^\/api\/keys$/, (s) => ok({ keys: [{ provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: exaKey !== '' }] })],
+  ['PUT', /^\/api\/keys\/exa$/, (_s, _m, _q, b) => {
+    exaKey = String(b.key ?? '').trim()
+    return { status: 204 }
+  }],
 ]
+
+// The mock's Exa key, saved as the app saves it in the keychain.
+let exaKey = 'invented'
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -707,16 +716,16 @@ export function mockApi(): Plugin {
     name: 'speakertrail-mock-api',
     apply: 'serve',
     configureServer(server) {
-      server.config.logger.info(`\n  Mock API on. Log in with the password "${PASSWORD}".\n`)
+      server.config.logger.info(`\n  Mock API on, with invented data.\n`)
       server.middlewares.use(async (rawReq: unknown, rawRes: unknown, next: () => void) => {
         const req = rawReq as Req
         const res = rawRes as Res
         const url = new URL(req.url ?? '/', 'http://mock')
         if (!url.pathname.startsWith('/api/')) return next()
-        const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {}
+        const body = req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT' ? await readBody(req) : {}
         await new Promise((r) => setTimeout(r, DELAY_MS))
-        const cookie = String(req.headers.cookie ?? '')
-        const loggedIn = cookie.split(/;\s*/).includes(SESSION)
+        // The app has no login, so neither has the mock.
+        const loggedIn = true
         const send = (out: Out) => {
           res.statusCode = out.status
           if (out.cookie) res.setHeader('Set-Cookie', out.cookie)

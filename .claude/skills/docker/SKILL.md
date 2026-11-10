@@ -1,9 +1,13 @@
 ---
 name: docker
-description: How to change and test the Docker setup Tim runs on his Mac, from a cloud session. Use for any change to the Makefile's Docker targets, compose.yaml, the Dockerfile, or a new tool the project needs.
+description: How to change and test the paused Docker setup, compose.yaml and the Dockerfile, from a cloud session. Only for the paused server. The Mac app needs no Docker, see docs/BUILD.md.
 ---
 
 # Changing the Docker setup
+
+Paused. The app is a Mac app now and `make` no longer drives Docker. This
+skill is kept for `compose.yaml` and the `Dockerfile` while the paused
+server is in the repository.
 
 Tim runs everything through `make`, which drives `docker compose` on his
 Mac. A cloud session runs the same targets directly. So a change to the

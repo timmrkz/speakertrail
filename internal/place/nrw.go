@@ -1,4 +1,6 @@
-package extract
+// Package place says whether a place lies in North Rhine-Westphalia, and
+// which city it names.
+package place
 
 import (
 	"regexp"

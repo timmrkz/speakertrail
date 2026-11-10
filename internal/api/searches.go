@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
-	"github.com/timmrkz/speakertrail/internal/extract"
+	"github.com/timmrkz/speakertrail/internal/place"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -50,7 +50,7 @@ type searchJSON struct {
 func searchOf(d *store.Data, s *store.Search) searchJSON {
 	out := searchJSON{
 		ID: s.ID, Name: s.Query, Kind: "profile_search", Query: s.Query, Category: "Profile search",
-		City: extract.CityOf(s.Query), Status: s.Status, FetchMode: "auto", Notes: s.Notes,
+		City: place.CityOf(s.Query), Status: s.Status, FetchMode: "auto", Notes: s.Notes,
 		LastCheckedAt: ptrTime(s.LastRun), NextCheckAt: ptrTime(s.NextRun), Checks: s.Runs,
 		EmptyInRow: s.EmptyInRow, Points: s.Points, Health: "never",
 	}

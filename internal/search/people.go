@@ -11,18 +11,6 @@ import (
 	"time"
 )
 
-// Post is a LinkedIn post in a search index. The engine never opens it.
-type Post struct {
-	URL   string
-	Title string
-	// Published is when the post went up, zero when the index does not
-	// say.
-	Published time.Time
-	// Author is the author's profile link, read from the post's link, or
-	// empty when the link names nobody.
-	Author string
-}
-
 // Profile is a LinkedIn profile as a search index holds it. The engine
 // never opens it.
 type Profile struct {
@@ -52,81 +40,6 @@ type Step struct {
 	From, To int
 }
 
-// PostFinder is a provider that finds LinkedIn posts and reads their
-// authors' profiles from its own index, so the engine never requests
-// LinkedIn. Only Exa can.
-type PostFinder interface {
-	Provider
-	// Posts finds posts about the query published since a time.
-	Posts(ctx context.Context, query string, since time.Time) ([]Post, error)
-	// Profiles reads profiles by their links. One the index does not hold
-	// is left out.
-	Profiles(ctx context.Context, urls []string) ([]Profile, error)
-	// People finds profiles of people who match a query.
-	People(ctx context.Context, query string, results int) ([]Profile, error)
-}
-
-// Posts asks Exa's index for LinkedIn posts. It reads nothing live.
-func (e *Exa) Posts(ctx context.Context, query string, since time.Time) ([]Post, error) {
-	body, _ := json.Marshal(map[string]any{
-		"query": query, "type": "auto", "numResults": 10,
-		"includeDomains":     []string{"linkedin.com/posts"},
-		"startPublishedDate": since.UTC().Format(time.RFC3339),
-		"contents":           map[string]any{"text": map[string]any{"maxCharacters": 300}, "livecrawl": "never"},
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, orDefault(e.URL, "https://api.exa.ai/search"), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("x-api-key", e.Key)
-	req.Header.Set("Content-Type", "application/json")
-	var out struct {
-		Results []struct {
-			Title         string `json:"title"`
-			URL           string `json:"url"`
-			PublishedDate string `json:"publishedDate"`
-			Text          string `json:"text"`
-		} `json:"results"`
-	}
-	if err := call(e.Client, req, e.Name(), &out); err != nil {
-		return nil, err
-	}
-	res := make([]Post, 0, len(out.Results))
-	for _, r := range out.Results {
-		p := Post{URL: r.URL, Title: postTitle(r.Title, r.Text), Author: AuthorOf(r.URL)}
-		if t, err := time.Parse(time.RFC3339, r.PublishedDate); err == nil {
-			p.Published = t
-		}
-		res = append(res, p)
-	}
-	return res, nil
-}
-
-// Profiles reads profiles from Exa's index, never live, so LinkedIn is
-// not asked even when the index does not hold one. A profile it does not
-// hold costs nothing and is left out.
-func (e *Exa) Profiles(ctx context.Context, urls []string) ([]Profile, error) {
-	if len(urls) == 0 {
-		return nil, nil
-	}
-	body, _ := json.Marshal(map[string]any{
-		"urls": urls, "text": map[string]any{"maxCharacters": 600}, "livecrawl": "never",
-	})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contentsURL(e.URL), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("x-api-key", e.Key)
-	req.Header.Set("Content-Type", "application/json")
-	var out struct {
-		Results []exaProfile `json:"results"`
-	}
-	if err := call(e.Client, req, e.Name(), &out); err != nil {
-		return nil, err
-	}
-	return profilesOf(out.Results), nil
-}
-
 // People asks Exa's index for LinkedIn profiles of people who match a
 // query, like "Personal Trainer Düsseldorf", with what each profile says:
 // the place, the jobs and education, and its latest activity. It reads
@@ -149,7 +62,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 		}
 		req.Header.Set("x-api-key", e.Key)
 		req.Header.Set("Content-Type", "application/json")
-		err = call(e.Client, req, e.Name(), &out)
+		err = call(e.Client, req, "exa", &out)
 		if err == nil {
 			break
 		}
@@ -296,15 +209,6 @@ func yearOf(date string) int {
 	return y
 }
 
-// contentsURL is Exa's contents endpoint, beside the search endpoint a
-// test sets.
-func contentsURL(searchURL string) string {
-	if searchURL == "" {
-		return "https://api.exa.ai/contents"
-	}
-	return strings.TrimSuffix(searchURL, "/search") + "/contents"
-}
-
 // placeLine is a profile line that gives its place, like "Cologne, North
 // Rhine-Westphalia, Germany (DE)".
 var placeLine = regexp.MustCompile(`^(.+?)\s*\([A-Z]{2}\)$`)
@@ -350,52 +254,4 @@ func profileLines(text, location string) (headline, place string) {
 		headline = lines[0]
 	}
 	return headline, place
-}
-
-// postTitle is a post's first line, without the author's name and the
-// date the index adds, like "Ein Jahr selbstständig. | Erika Beispiel ·
-// LinkedIn · 2026-08-13".
-func postTitle(title, text string) string {
-	t := strings.TrimSpace(title)
-	if t == "" {
-		t = strings.TrimSpace(strings.TrimPrefix(strings.SplitN(strings.TrimSpace(text), "\n", 2)[0], "# "))
-	}
-	if i := strings.LastIndex(t, " | "); i > 0 {
-		t = t[:i]
-	}
-	if i := strings.Index(t, " · "); i > 0 {
-		t = t[:i]
-	}
-	t = strings.TrimSpace(t)
-	if r := []rune(t); len(r) > 200 {
-		t = string(r[:199]) + "…"
-	}
-	return t
-}
-
-// AuthorOf is the profile link of a post's author, read from the post's
-// link: linkedin.com/posts/erika-beispiel_ein-jahr-… was written by
-// linkedin.com/in/erika-beispiel. A link of another shape names nobody.
-func AuthorOf(postURL string) string {
-	u, err := url.Parse(strings.TrimSpace(postURL))
-	if err != nil {
-		return ""
-	}
-	host := strings.ToLower(u.Hostname())
-	if host != "linkedin.com" && !strings.HasSuffix(host, ".linkedin.com") {
-		return ""
-	}
-	rest, ok := strings.CutPrefix(u.EscapedPath(), "/posts/")
-	if !ok {
-		return ""
-	}
-	slug, _, ok := strings.Cut(rest, "_")
-	if !ok || slug == "" || strings.Contains(slug, "/") {
-		return ""
-	}
-	name, err := url.PathUnescape(slug)
-	if err != nil || name == "" {
-		return ""
-	}
-	return "https://www.linkedin.com/in/" + url.PathEscape(name)
 }

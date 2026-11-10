@@ -1,4 +1,4 @@
-package extract
+package place
 
 import "testing"
 
@@ -14,42 +14,6 @@ func TestInNRW(t *testing.T) {
 	} {
 		if got := InNRW(pc); got != want {
 			t.Errorf("InNRW(%q) = %v, want %v", pc, got, want)
-		}
-	}
-}
-
-// A directory lists businesses all over Germany. The postcode next to an
-// entry says where it is, so entries outside NRW never need a lookup.
-// All invented.
-func TestDirectoryEntriesCarryTheirPostcode(t *testing.T) {
-	page := `<html><body><nav><a href="/login">Login</a></nav><main><h1>Gyms</h1><ul>
-<li><a href="https://beispiel-bjj.test/">Beispiel BJJ</a><br>Musterstraße 1, 50667 Köln</li>
-<li><a href="https://muster-kampfsport.test/">Muster Kampfsport</a> <span>80331 München</span></li>
-<li><a href="https://probe-dojo.test/">Probe Dojo</a></li>
-</ul></main></body></html>`
-	got := Portfolio(page, "https://gyms.test/list").Startups
-	want := []Startup{
-		{Name: "Beispiel BJJ", Website: "https://beispiel-bjj.test/", Postcode: "50667"},
-		{Name: "Muster Kampfsport", Website: "https://muster-kampfsport.test/", Postcode: "80331"},
-		{Name: "Probe Dojo", Website: "https://probe-dojo.test/"},
-	}
-	if len(got) != len(want) {
-		t.Fatalf("entries %+v", got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("entry %d: %+v, want %+v", i, got[i], want[i])
-		}
-	}
-}
-
-// Entries in one block together say nothing about each other's postcode.
-func TestOneBlockOfEntriesHasNoPostcode(t *testing.T) {
-	page := `<main><div><a href="https://a-gym.test/">A Gym</a> 50667 Köln <a href="https://b-gym.test/">B Gym</a> 80331 München
-<a href="https://c-gym.test/">C Gym</a> 10115 Berlin <a href="https://d-gym.test/">D Gym</a> 20095 Hamburg</div></main>`
-	for _, s := range Portfolio(page, "https://gyms.test/").Startups {
-		if s.Postcode != "" {
-			t.Errorf("%s got postcode %s from its neighbours", s.Name, s.Postcode)
 		}
 	}
 }

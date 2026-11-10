@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/timmrkz/speakertrail/internal/extract"
+	"github.com/timmrkz/speakertrail/internal/place"
 	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
@@ -286,7 +286,7 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 				continue
 			}
 			seen[profile] = true
-			city, _ := extract.PlaceInNRW(prof.Location)
+			city, _ := place.PlaceInNRW(prof.Location)
 			born, reason, roles := career(prof.Career)
 			p, isNew := d.AddFound(store.Found{
 				URL: profile, Handle: handleOf(profile), Name: prof.Name, Headline: prof.Headline, City: city,
@@ -312,7 +312,7 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 // Guest tells whether a profile shows a possible guest: in NRW, active on
 // LinkedIn since a time, running their own business, and not ruled out.
 func Guest(prof search.Profile, now, activeSince time.Time) bool {
-	if _, inNRW := extract.PlaceInNRW(prof.Location); !inNRW {
+	if _, inNRW := place.PlaceInNRW(prof.Location); !inNRW {
 		return false
 	}
 	if prof.LastActive.Before(activeSince) {

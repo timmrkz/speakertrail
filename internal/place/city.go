@@ -1,4 +1,4 @@
-package extract
+package place
 
 import (
 	"regexp"
@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// NRWCities are the cities the engine recognises in addresses. The region
-// setting decides which of them count.
+// NRWCities are the cities the engine recognises in places and queries.
 var NRWCities = []string{
 	"Köln", "Bonn", "Düsseldorf", "Essen", "Dortmund", "Duisburg", "Bochum", "Aachen", "Münster", "Wuppertal", "Bielefeld",
 	"Gelsenkirchen", "Mönchengladbach", "Krefeld", "Oberhausen", "Hagen", "Hamm", "Mülheim an der Ruhr", "Leverkusen",
@@ -60,19 +59,6 @@ var cityPatterns = func() []struct {
 
 var postcodeCity = regexp.MustCompile(`\b\d{5}\s+([\p{L}][\p{L}.\- ]{1,40})`)
 
-// CanonicalCity maps a city spelling to its German name, or returns it
-// cleaned when it is not a known NRW city.
-func CanonicalCity(s string) string {
-	s = cleanText(s)
-	if s == "" {
-		return ""
-	}
-	if c := CityOf(s); c != "" {
-		return c
-	}
-	return s
-}
-
 // CityOf finds the NRW city named in the given texts, first match wins.
 // It returns the city after a postcode when no known city is named.
 func CityOf(texts ...string) string {
@@ -92,31 +78,4 @@ func CityOf(texts ...string) string {
 		}
 	}
 	return ""
-}
-
-var typeRules = []struct {
-	re  *regexp.Regexp
-	typ string
-}{
-	{regexp.MustCompile(`(?i)\b(?:pitch|pitches|pitching|demo ?day|investor day|elevator)\b`), "pitch"},
-	{regexp.MustCompile(`(?i)\b(?:panel|podiumsdiskussion|podium|diskussionsrunde)\b`), "panel"},
-	{regexp.MustCompile(`(?i)\b(?:conference|konferenz|summit|festival|symposium|kongress|congress|convention|messe|expo|barcamp|hackathon|tagung)\b`), "conference"},
-	{regexp.MustCompile(`(?i)\b(?:workshop|training|seminar|webinar|kurs|course|bootcamp|masterclass|sprechstunde|office hours|beratung)\b`), "workshop"},
-	{regexp.MustCompile(`(?i)\b(?:lauf|run club|running|marathon|yoga|padel|cycling|radtour|sport|fitness|triathlon)\b`), "sport"},
-	{regexp.MustCompile(`(?i)\b(?:talk|talks|vortrag|keynote|lesung|reading|fireside|fuckup|story|stories|creativemornings|impuls|slam)\b`), "talk"},
-	{regexp.MustCompile(`(?i)\b(?:meetup|meet-up|stammtisch|breakfast|frühstück|networking|sundowner|afterwork|after work|treffen|mixer|community)\b`), "meetup"},
-}
-
-// GuessType sorts an event into pitch, panel, conference, workshop, sport,
-// talk, meetup or other, from its title first and its description second.
-func GuessType(text string) string {
-	title, rest, _ := strings.Cut(text, "\n")
-	for _, t := range []string{title, rest} {
-		for _, r := range typeRules {
-			if r.re.MatchString(t) {
-				return r.typ
-			}
-		}
-	}
-	return "other"
 }

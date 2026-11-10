@@ -604,6 +604,9 @@ person were as old as most people in Germany are at that step:
 | Apprentice | 17 | |
 | First other job | 22 | |
 
+An age the headline gives, like "19 year old student" or "23 Jahre
+alt", beats all of these. It is shown as "Headline says 19 in 2026".
+
 The earliest year counts, because a late degree makes someone look
 younger than they are and an early start never does. Jobs count only
 when the profile lists two or more, because a single job held now is no

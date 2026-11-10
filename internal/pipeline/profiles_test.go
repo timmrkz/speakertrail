@@ -198,3 +198,26 @@ func TestRunsTakeTheBestSearchesFirst(t *testing.T) {
 		t.Errorf("searches %q, want the new one and the one that led to a connection", got)
 	}
 }
+
+// An age the headline gives beats the guess from the years on the profile.
+func TestProfileSearchesTakeTheAgeTheHeadlineGives(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fp := &fakePosts{people: []search.Profile{{
+		URL: "https://www.linkedin.com/in/ben-beispiel", Name: "Ben Beispiel", Headline: "19 year old student and founder of Beispiel Labs",
+		Location: "Köln", LastActive: lastWeek, Career: []search.Step{
+			{Title: "Founder", Org: "Beispiel Labs", From: 2025},
+			{Education: true, Title: "Bachelor of Science", Org: "Probe Universität", From: 2020},
+		}}}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fp}, Now: func() time.Time { return now }}
+	var src int64
+	if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, query, status) VALUES ('student founder Köln', 'profile_search', 'student founder Köln', 'candidate') RETURNING id`).Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.p.CheckSource(ctx, src, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT born_about || ' ' || age_reason FROM profiles`); got != "2007 Headline says 19 in 2026" {
+		t.Errorf("age: %v", got)
+	}
+}

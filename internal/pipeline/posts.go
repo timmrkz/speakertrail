@@ -151,7 +151,7 @@ func (p *Pipeline) resolvePoster(ctx context.Context, tx pgx.Tx, src Source, run
 	if err != nil {
 		return 0, false, err
 	}
-	born, ageReason, roles := career(prof.Career)
+	born, ageReason, roles := careerOf(prof, at)
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO profiles (person_id, platform, url, handle, headline, review, found_via, source_id, first_seen_at, last_seen_at,
 			born_about, age_reason, current_roles)
@@ -179,6 +179,17 @@ func (p *Pipeline) resolvePoster(ctx context.Context, tx pgx.Tx, src Source, run
 
 // maxRoles is how many roles held now are kept of a profile.
 const maxRoles = 3
+
+// careerOf is career, except that an age the headline gives, like "19
+// year old student", beats the guess from the years on the profile.
+func careerOf(prof search.Profile, now time.Time) (born *int, reason, roles string) {
+	born, reason, roles = career(prof.Career)
+	if age := rubric.StatedAge(prof.Headline); age > 0 {
+		y := now.Year() - age
+		born, reason = &y, fmt.Sprintf("Headline says %d in %d", age, now.Year())
+	}
+	return born, reason, roles
+}
 
 // career reads what is kept of a profile's jobs and education: the year
 // the person was likely born with the step that shows it, nil when it

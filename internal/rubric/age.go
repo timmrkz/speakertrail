@@ -101,3 +101,21 @@ func BornAbout(steps []Step) (year int, reason string) {
 func agePassage(born int, reason string, year int) string {
 	return fmt.Sprintf("%s, so about %d", reason, year-born)
 }
+
+// statedAge finds an age a person gives themselves, like "19 year old
+// student" or "23 Jahre alt". Not "20 years of experience", and not
+// "30-jährige Erfahrung", which is about experience, not age.
+var statedAge = regexp.MustCompile(`(?i)(?:^|[^\pL\pN])(1[4-9]|[2-6]\d)[ -]?(?:years?[ -]old|y/?o|jahre (?:alt|jung))(?:$|[^\pL\pN])`)
+
+// StatedAge is the age a headline gives, or zero. It beats any guess from
+// the years on the profile. Tim saw "19 year old student" shown as about
+// 25 on 10 November 2026.
+func StatedAge(headline string) int {
+	m := statedAge.FindStringSubmatch(headline)
+	if m == nil {
+		return 0
+	}
+	n := 0
+	fmt.Sscan(m[1], &n)
+	return n
+}

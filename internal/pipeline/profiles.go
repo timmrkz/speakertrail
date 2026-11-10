@@ -132,7 +132,7 @@ func (p *Pipeline) resolveProfile(ctx context.Context, tx pgx.Tx, src Source, ru
 	if err != nil {
 		return 0, false, err
 	}
-	bornAbout, ageReason, roles := career(prof.Career)
+	bornAbout, ageReason, roles := careerOf(prof, at)
 	var lastActive *time.Time
 	if !prof.LastActive.IsZero() {
 		lastActive = &prof.LastActive

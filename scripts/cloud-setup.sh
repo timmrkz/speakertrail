@@ -4,30 +4,17 @@
 # runs as root on Ubuntu 24.04 before a session starts, and its result is
 # cached.
 #
-# The base image already has what Speaker Trail needs besides Go:
-# - PostgreSQL 16 server and client, the same major version as Scaleway
-# - Node.js 22, for building the Svelte interface
-# - Chromium under /opt/pw-browsers, for the headless browser
-#
-# So this script only:
+# The base image already has Node.js 22, for building the Svelte
+# interface. This script only:
 # - installs Go 1.27, downloaded from the Go module proxy
-# - puts Chromium on the PATH, where chromedp looks for it
-# - creates a local database role and database for development and tests
 # - installs GTK 4 and WebKitGTK 6, which the app's window compiles against
 #   on Linux. The window cannot be opened here, but its code builds and its
 #   tests run
-#
-# Postgres is not left running, because running processes are not cached.
-# scripts/session-start.sh starts it in every session.
 #
 # A failed step never stops the session. Its log stays in /tmp, and running
 # this script again inside a session finishes the job.
 
 GO_VERSION=1.27.1
-PG_VERSION=16
-DB_NAME=speakertrail
-DB_USER=speakertrail
-DB_PASSWORD=speakertrail
 
 log() { echo "[speakertrail setup] $*"; }
 
@@ -53,32 +40,6 @@ install_go() {
 	/usr/local/go/bin/go version
 }
 
-link_chromium() {
-	[ -x /opt/pw-browsers/chromium ] || return 1
-	ln -sf /opt/pw-browsers/chromium /usr/local/bin/chromium
-	chromium --version
-}
-
-setup_postgres() {
-	command -v pg_ctlcluster >/dev/null || return 1
-	# Run again inside a session, Postgres already runs. It is left running
-	# then, and only stopped when this script started it.
-	local started=""
-	if ! pg_isready -q -h localhost; then
-		pg_ctlcluster "$PG_VERSION" main start || return 1
-		started=1
-	fi
-	# CREATEDB lets tests create and drop their own throwaway databases.
-	runuser -u postgres -- psql -v ON_ERROR_STOP=1 -q <<-SQL || { [ -z "$started" ] || pg_ctlcluster "$PG_VERSION" main stop; return 1; }
-		SELECT 'CREATE ROLE $DB_USER LOGIN CREATEDB PASSWORD ''$DB_PASSWORD'''
-		WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$DB_USER')\gexec
-		SELECT 'CREATE DATABASE $DB_NAME OWNER $DB_USER'
-		WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$DB_NAME')\gexec
-	SQL
-	[ -z "$started" ] || pg_ctlcluster "$PG_VERSION" main stop
-	echo "role and database $DB_NAME are ready"
-}
-
 install_webview() {
 	if pkg-config --exists gtk4 webkitgtk-6.0 2>/dev/null; then
 		echo "GTK 4 and WebKitGTK 6 are already there"
@@ -95,17 +56,6 @@ go_job=$!
 install_webview >/tmp/speakertrail-setup-webview.log 2>&1 &
 webview_job=$!
 
-if link_chromium >/tmp/speakertrail-setup-chromium.log 2>&1; then
-	log "Chromium ready: $(tail -n 1 /tmp/speakertrail-setup-chromium.log)"
-else
-	log "Chromium not found under /opt/pw-browsers"
-fi
-if setup_postgres >/tmp/speakertrail-setup-postgres.log 2>&1; then
-	log "Postgres $PG_VERSION ready"
-else
-	log "Postgres failed, see /tmp/speakertrail-setup-postgres.log:"
-	tail -n 20 /tmp/speakertrail-setup-postgres.log
-fi
 if wait "$go_job"; then
 	log "Go ready: $(/usr/local/go/bin/go version)"
 else

@@ -15,10 +15,16 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
+	apipkg "github.com/timmrkz/speakertrail/internal/api"
+	"github.com/timmrkz/speakertrail/internal/engine"
+	"github.com/timmrkz/speakertrail/internal/keys"
+	"github.com/timmrkz/speakertrail/internal/search"
+	"github.com/timmrkz/speakertrail/internal/store"
 	"github.com/timmrkz/speakertrail/web"
 )
 
@@ -29,16 +35,24 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	slog.Info("speakertrail starting", "version", version)
 
+	answers, closeDown, err := open()
+	if err != nil {
+		slog.Error("speakertrail cannot start", "error", err)
+		os.Exit(1)
+	}
 	app := application.New(application.Options{
 		Name:        "Speaker Trail",
 		Description: "Finds people in NRW worth a conversation",
 		Assets: application.AssetOptions{
-			Handler: handler(web.Dist(), nil),
+			Handler: handler(web.Dist(), answers),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		Logger: slog.Default(),
+		// A run that goes when the app closes is stopped, and what it did
+		// not get to waits for the next run.
+		OnShutdown: closeDown,
+		Logger:     slog.Default(),
 	})
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Speaker Trail",
@@ -55,6 +69,53 @@ func main() {
 		slog.Error("speakertrail failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// Folder is where the app keeps its file: ~/Library/Application
+// Support/Speaker Trail on a Mac. SPEAKERTRAIL_DIR names another, for a
+// try that should not touch the real one.
+func Folder() (string, error) {
+	if dir := os.Getenv("SPEAKERTRAIL_DIR"); dir != "" {
+		return dir, nil
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(base, "Speaker Trail"), nil
+}
+
+// open reads the app's file, adds the starting searches the first time,
+// ends a run the app closed under, and builds what answers the window.
+func open() (http.Handler, func(), error) {
+	dir, err := Folder()
+	if err != nil {
+		return nil, nil, err
+	}
+	st, err := store.Open(dir, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	slog.Info("the app's file", "path", st.Path())
+	if err := st.Update(func(d *store.Data) error { return d.Start(st.Now()) }); err != nil {
+		return nil, nil, err
+	}
+	exa := keys.NewExa()
+	e := &engine.Engine{Store: st, Finder: func() engine.Finder {
+		if key := exa.Get(); key != "" {
+			return &search.Exa{Key: key}
+		}
+		return nil
+	}}
+	if err := e.Recover(); err != nil {
+		return nil, nil, err
+	}
+	closeDown := func() {
+		if id, _ := e.Going(); id != 0 {
+			e.Stop(id)
+		}
+	}
+	return apipkg.New(st, e, exa, slog.Default()), closeDown, nil
 }
 
 // handler answers everything the window asks for: /api/ goes to api, the

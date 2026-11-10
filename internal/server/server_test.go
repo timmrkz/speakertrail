@@ -425,7 +425,7 @@ func TestPrivateAPI(t *testing.T) {
 	}
 	// A title that says founder makes a founder, and the counts show every
 	// filter, so an empty one never hides the rest.
-	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"young":0,"kept":0,"skipped":0,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
+	if _, body := e.do(t, "GET", "/api/people?filter=founder", ""); !strings.Contains(body, `"counts":{"all":1,"young":0,"connected":0,"founder":1,"fits":0,"upcoming":1,"profile":1}`) || !strings.Contains(body, "Beispiel Robotics") {
 		t.Errorf("founders: %s", body)
 	}
 	var pid, prof int64
@@ -883,11 +883,13 @@ func TestAPostSearchCountsPeople(t *testing.T) {
 	}
 }
 
-// Keeping or skipping a person is one click and undone by another. Each
-// decision remembers the person's signals, so the counts per signal
-// survive when a skipped person is deleted later. The stats say how often
-// each signal was kept or skipped, and how the top 20 by fit were decided.
-func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
+// Marking a person connected is one click and undone by another. Not
+// connected is all the rest, there is no skip. Each connection remembers
+// the person's signals, so the counts per signal survive when the person
+// is deleted later. A person further along the funnel stays there when
+// marked connected again. The stats say how often each signal was
+// connected, and how many of the top 20 by fit.
+func TestConnectionsTeachTheRubric(t *testing.T) {
 	e := setup(t)
 	ctx := t.Context()
 	e.login(t)
@@ -906,26 +908,34 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 	if _, err := pipeline.ScoreStale(ctx, e.pool, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	decide := func(name, decision string) string {
+	connect := func(name string, connected bool) string {
 		t.Helper()
-		code, body := e.do(t, "PATCH", "/api/people/"+itoa(ids[name]), `{"decision":"`+decision+`"}`)
+		code, body := e.do(t, "PATCH", "/api/people/"+itoa(ids[name]), fmt.Sprintf(`{"connected":%t}`, connected))
 		if code != 200 {
-			t.Fatalf("%s %s: %d %s", decision, name, code, body)
+			t.Fatalf("connected %t %s: %d %s", connected, name, code, body)
 		}
 		return body
 	}
-	if body := decide("Mia Beispiel", "kept"); !strings.Contains(body, `"decision":"kept"`) {
-		t.Errorf("kept: %s", body)
+	if body := connect("Mia Beispiel", true); !strings.Contains(body, `"connected":true`) {
+		t.Errorf("connected: %s", body)
 	}
-	decide("Ole Muster", "skipped")
-	decide("Ida Probe", "kept")
-	if body := decide("Ida Probe", ""); !strings.Contains(body, `"decision":""`) {
+	connect("Ole Muster", true)
+	connect("Ida Probe", true)
+	if body := connect("Ida Probe", false); !strings.Contains(body, `"connected":false`) {
 		t.Errorf("undone: %s", body)
 	}
-	if code, _ := e.do(t, "PATCH", "/api/people/"+itoa(ids["Ida Probe"]), `{"decision":"maybe"}`); code != 400 {
-		t.Errorf("an unknown decision: %d, want 400", code)
+	if code, _ := e.do(t, "PATCH", "/api/people/"+itoa(ids["Ida Probe"]), `{"connected":"maybe"}`); code != 400 {
+		t.Errorf("not a yes or no: %d, want 400", code)
 	}
-	// Skipped people are deleted after a while. Their decision still counts.
+	// Further along the funnel stays there.
+	e.pool.Exec(ctx, `UPDATE people SET podcast_status = 'replied' WHERE id = $1`, ids["Mia Beispiel"])
+	connect("Mia Beispiel", true)
+	var status string
+	e.pool.QueryRow(ctx, `SELECT podcast_status FROM people WHERE id = $1`, ids["Mia Beispiel"]).Scan(&status)
+	if status != "replied" {
+		t.Errorf("connected again: %s, want replied", status)
+	}
+	// A person deleted later still counts.
 	e.pool.Exec(ctx, `DELETE FROM people WHERE id = $1`, ids["Ole Muster"])
 
 	code, body := e.do(t, "GET", "/api/stats", "")
@@ -935,36 +945,36 @@ func TestKeepsAndSkipsTeachTheRubric(t *testing.T) {
 	var got struct {
 		Fit struct {
 			Signals []struct {
-				Key           string
-				Label         string
-				Kept, Skipped int
+				Key       string
+				Label     string
+				Connected int
 			} `json:"signals"`
-			Top struct{ Size, Kept, Skipped, Open int } `json:"top"`
+			Top struct{ Size, Connected, Open int } `json:"top"`
 		} `json:"fit"`
 	}
 	if err := json.Unmarshal([]byte(body), &got); err != nil {
 		t.Fatal(err)
 	}
-	counts := map[string]string{}
+	counts := map[string]int{}
 	for _, s := range got.Fit.Signals {
-		counts[s.Key] = fmt.Sprintf("%d/%d", s.Kept, s.Skipped)
+		counts[s.Key] = s.Connected
 	}
-	for key, want := range map[string]string{"works_with_people": "1/0", "owner_operator": "1/0", "corporate": "0/1", "author": "0/0"} {
+	for key, want := range map[string]int{"works_with_people": 1, "owner_operator": 1, "corporate": 1, "author": 0} {
 		if counts[key] != want {
-			t.Errorf("%s kept/skipped %s, want %s", key, counts[key], want)
+			t.Errorf("%s connected %d, want %d", key, counts[key], want)
 		}
 	}
 	if len(got.Fit.Signals) < 10 || got.Fit.Signals[0].Label != "Likely under 30" {
 		t.Errorf("every signal of the rubric, in its order: %+v", got.Fit.Signals)
 	}
-	if top := got.Fit.Top; top.Size != 3 || top.Kept != 1 || top.Skipped != 0 || top.Open != 2 {
-		t.Errorf("top by fit %+v, want Mia kept, Ida and Lea open", top)
+	if top := got.Fit.Top; top.Size != 3 || top.Connected != 1 || top.Open != 2 {
+		t.Errorf("top by fit %+v, want Mia connected, Ida and Lea open", top)
 	}
 }
 
 // While runs take only profile searches, People shows whom they found,
 // the likely youngest first, with what the profile says, and whoever Tim
-// kept before. A profile search is added, paused and counts its people.
+// connected with before. A profile search is added, paused and counts its people.
 func TestPeopleFromProfileSearches(t *testing.T) {
 	e := setup(t)
 	e.login(t)
@@ -1034,7 +1044,7 @@ func TestPeopleFromProfileSearches(t *testing.T) {
 		l.Roles != "Yogalehrerin, Selbstständig" || !strings.HasPrefix(l.LastActive, "2026-") {
 		t.Errorf("what the profile says: %+v", l)
 	}
-	if got.Counts["all"] != 3 || got.Counts["young"] != 1 || got.Counts["kept"] != 1 {
+	if got.Counts["all"] != 3 || got.Counts["young"] != 1 || got.Counts["connected"] != 1 {
 		t.Errorf("counts: %v", got.Counts)
 	}
 	if _, body := e.do(t, "GET", "/api/people?filter=young", ""); !strings.Contains(body, "Mia Beispiel") || strings.Contains(body, "Ida Probe") {
@@ -1043,7 +1053,7 @@ func TestPeopleFromProfileSearches(t *testing.T) {
 
 	e.pool.Exec(ctx, `INSERT INTO source_checks (source_id, people_found, startups_found, events_found) VALUES ($1, 3, 0, 0)`, src.ID)
 	code, body = e.do(t, "GET", "/api/sources?kind=profile_search", "")
-	if code != 200 || !strings.Contains(body, `"people":3`) || !strings.Contains(body, `"people_kept":1`) || !strings.Contains(body, `"health":"ok"`) ||
+	if code != 200 || !strings.Contains(body, `"people":3`) || !strings.Contains(body, `"people_connected":1`) || !strings.Contains(body, `"health":"ok"`) ||
 		strings.Contains(body, `"kind":"search_query"`) {
 		t.Errorf("profile searches: %d %s", code, body)
 	}

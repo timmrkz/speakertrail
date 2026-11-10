@@ -91,8 +91,7 @@
     ([
       { value: 'all', label: 'All' },
       { value: 'young', label: 'Under 30' },
-      { value: 'kept', label: 'Kept' },
-      { value: 'skipped', label: 'Skipped' },
+      { value: 'connected', label: 'Connected' },
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
   )
 
@@ -126,7 +125,7 @@
   // Keep the list in step with changes made in the sheet.
   function updated(p: PersonDetail) {
     if (!people.data) return
-    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, decision: p.decision } : x))
+    people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))
   }
 </script>
 
@@ -178,9 +177,9 @@
   {:else if !people.data.length}
     <EmptyState
       icon="people"
-      title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'kept' && !query ? 'Nobody kept yet' : 'Nobody here yet'}
+      title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'connected' && !query ? 'Nobody connected yet' : 'Nobody here yet'}
       text={filter !== 'all' && others > 0
-        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'kept' ? 'kept yet' : 'in this filter'}.`
+        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'connected' ? 'connected yet' : 'in this filter'}.`
         : query ? 'Nobody matches this search.' : 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'}>
       {#if query || filter !== 'all'}
         <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
@@ -191,10 +190,10 @@
     <ul class="list" class:stale={people.loading}>
       {#each people.data as p (p.id)}
         <li>
-          <a class="row-btn person" class:skipped={p.decision === 'skipped'} href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}
-            title={p.decision === 'kept' ? 'Kept' : p.decision === 'skipped' ? 'Skipped' : undefined}>
-            <span class="avatar" class:kept={p.decision === 'kept'} aria-hidden="true">{initials(p.name)}</span>
-            <b class="ellipsis name">{p.name}{#if p.decision}<span class="sr-only">, {p.decision}</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
+          <a class="row-btn person" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}
+            title={p.connected ? 'Connected' : undefined}>
+            <span class="avatar" class:connected={p.connected} aria-hidden="true">{initials(p.name)}</span>
+            <b class="ellipsis name">{p.name}{#if p.connected}<span class="sr-only">, connected</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
             <span class="who">
               <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
               {#if facts(p)}
@@ -251,9 +250,8 @@
   .sub { font-size: 13px; color: var(--ink-2); }
   .facts { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
   .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
-  /* A kept person's initials turn green, a skipped person steps back. */
-  .avatar.kept { background: var(--good-soft); color: var(--good); }
-  .person.skipped { opacity: .55; }
+  /* A connected person's initials turn green. */
+  .avatar.connected { background: var(--good-soft); color: var(--good); }
   /* Relative, so the hidden words of signals cut off at the end stay inside
      the row and never widen the page. */
   .signals { font-size: 12px; font-weight: 500; position: relative; }

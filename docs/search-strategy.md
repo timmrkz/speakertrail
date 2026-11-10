@@ -86,7 +86,7 @@ practices, most of them between 30 and 50. A founder who writes
 - **People**, with the Run button. Only people a profile search found,
   and whoever Tim kept before, the likely youngest first. Each row says
   about how old the person is and when they were last active on
-  LinkedIn. Filters: all, under 30, kept, skipped.
+  LinkedIn. Filters: all, under 30, connected.
 - **Searches**, the profile searches. Add one, pause one, see how many
   people each found and how many of them Tim kept. A search Tim adds runs
   before the starting ones.

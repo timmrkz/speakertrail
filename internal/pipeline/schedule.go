@@ -479,8 +479,8 @@ func firstURL(s string) string {
 	return ""
 }
 
-// handlePrune deletes stored pages after their retention, old finished
-// jobs, and skipped people after their retention.
+// handlePrune deletes stored pages after their retention, and old
+// finished jobs.
 func (p *Pipeline) handlePrune(ctx context.Context, _ *queue.Job) error {
 	cfg, err := settings.Load(ctx, p.Pool)
 	if err != nil {
@@ -493,7 +493,6 @@ func (p *Pipeline) handlePrune(ctx context.Context, _ *queue.Job) error {
 	}{
 		{`DELETE FROM fetches WHERE fetched_at < $1`, now.Add(-cfg.Days("snapshot_retention_days", 30))},
 		{`DELETE FROM jobs WHERE status = 'done' AND updated_at < $1`, now.Add(-30 * 24 * time.Hour)},
-		{`DELETE FROM people WHERE podcast_status = 'skipped' AND status_changed_at < $1`, now.Add(-cfg.Days("skipped_person_retention_days", 90))},
 	}
 	for _, s := range steps {
 		if _, err := p.Pool.Exec(ctx, s.sql, s.arg); err != nil {

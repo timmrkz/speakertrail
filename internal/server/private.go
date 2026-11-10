@@ -238,8 +238,8 @@ var personJSON = `json_build_object(
 	-- The fit rubric: its signals for first, each with the passage that
 	-- shows it, and the score they add up to.
 	'fit_score', p.fit_score,
-	-- Kept to contact, skipped, or not decided yet.
-	'decision', CASE p.podcast_status WHEN 'new' THEN '' WHEN 'known' THEN '' WHEN 'skipped' THEN 'skipped' ELSE 'kept' END,
+	-- Whether Tim connected with the person.
+	'connected', ` + isConnected + `,
 	'signals', (SELECT COALESCE(json_agg(json_build_object('key', s.signal, 'label', s.label, 'for', s.is_for,
 			'passage', s.passage, 'found_in', s.found_in) ORDER BY s.is_for DESC, ` + signalRank + `), '[]')
 		FROM person_signals s WHERE s.person_id = p.id),
@@ -282,29 +282,27 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 		"new":  "p.created_at DESC, p.id DESC",
 		"name": "p.full_name",
 		// The best fits first: most signals for, fewest against. Among the
-		// same, the newest. The skipped come last.
-		"fit": "p.podcast_status = 'skipped', p.fit_score DESC, p.created_at DESC, p.id DESC",
-		// The likely youngest first, those without a guess after them. The
-		// skipped come last.
-		"young": "p.podcast_status = 'skipped', p.born_about DESC NULLS LAST, p.fit_score DESC, p.created_at DESC, p.id DESC",
+		// same, the newest.
+		"fit": "p.fit_score DESC, p.created_at DESC, p.id DESC",
+		// The likely youngest first, those without a guess after them.
+		"young": "p.born_about DESC NULLS LAST, p.fit_score DESC, p.created_at DESC, p.id DESC",
 	}[q.Get("sort")]
 	if order == "" {
 		fail(w, http.StatusBadRequest, "sort must be young, next, new, name or fit")
 		return
 	}
 	filter := map[string]string{
-		"":         "true",
-		"all":      "true",
-		"upcoming": "next_start IS NOT NULL",
-		"profile":  "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
-		"founder":  "p.fit = 'founder'",
-		"fits":     "p.fit_score > 0 AND p.podcast_status <> 'skipped'",
-		"young":    "p.born_about > $4::int - 30",
-		"kept":     "p.podcast_status NOT IN ('new', 'known', 'skipped')",
-		"skipped":  "p.podcast_status = 'skipped'",
+		"":          "true",
+		"all":       "true",
+		"upcoming":  "next_start IS NOT NULL",
+		"profile":   "EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')",
+		"founder":   "p.fit = 'founder'",
+		"fits":      "p.fit_score > 0",
+		"young":     "p.born_about > $4::int - 30",
+		"connected": isConnected,
 	}[q.Get("filter")]
 	if filter == "" {
-		fail(w, http.StatusBadRequest, "filter must be all, young, kept, skipped, fits, upcoming, profile or founder")
+		fail(w, http.StatusBadRequest, "filter must be all, young, connected, fits, upcoming, profile or founder")
 		return
 	}
 	cfg, err := settings.Load(r.Context(), s.opts.Pool)
@@ -328,18 +326,17 @@ func (s *Server) people(w http.ResponseWriter, r *http.Request) {
 			FROM people p
 			WHERE ($2 = '' OR p.full_name ILIKE '%' || $2 || '%' OR p.headline ILIKE '%' || $2 || '%' OR p.city ILIKE '%' || $2 || '%')
 			  -- While runs take only profile searches, People shows only
-			  -- whom they found, and whoever Tim kept before.
-			  AND (NOT $3 OR p.podcast_status NOT IN ('new', 'known', 'skipped')
+			  -- whom they found, and whoever Tim connected with before.
+			  AND (NOT $3 OR `+isConnected+`
 				OR EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.found_via = 'profile search')))
 		SELECT json_build_object(
 			'people', (SELECT COALESCE(json_agg(`+personJSON+` ORDER BY `+order+`), '[]') FROM base p WHERE `+filter+`),
 			'counts', (SELECT json_build_object(
 				'all', count(*),
 				'young', count(*) FILTER (WHERE p.born_about > $4::int - 30),
-				'kept', count(*) FILTER (WHERE p.podcast_status NOT IN ('new', 'known', 'skipped')),
-				'skipped', count(*) FILTER (WHERE p.podcast_status = 'skipped'),
+				'connected', count(*) FILTER (WHERE `+isConnected+`),
 				'founder', count(*) FILTER (WHERE p.fit = 'founder'),
-				'fits', count(*) FILTER (WHERE p.fit_score > 0 AND p.podcast_status <> 'skipped'),
+				'fits', count(*) FILTER (WHERE p.fit_score > 0),
 				'upcoming', count(*) FILTER (WHERE p.next_start IS NOT NULL),
 				'profile', count(*) FILTER (WHERE EXISTS (SELECT 1 FROM profiles pr WHERE pr.person_id = p.id AND pr.review <> 'rejected')))
 				FROM base p))`,
@@ -379,18 +376,14 @@ func (s *Server) patchPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Notes *string `json:"notes"`
-		// Decision is kept, skipped, or empty to undo either.
-		Decision *string `json:"decision"`
+		// Connected is whether Tim connected with the person on LinkedIn.
+		Connected *bool `json:"connected"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	if body.Decision != nil {
-		if *body.Decision != "" && *body.Decision != "kept" && *body.Decision != "skipped" {
-			fail(w, http.StatusBadRequest, "decision must be kept, skipped or empty")
-			return
-		}
-		found, err := s.decide(r.Context(), id, *body.Decision)
+	if body.Connected != nil {
+		found, err := s.connect(r.Context(), id, *body.Connected)
 		if err != nil {
 			s.internal(w, r, err)
 			return
@@ -447,10 +440,11 @@ const sourceJSON = `json_build_object(
 	'status', s.status, 'fetch_mode', s.fetch_mode, 'notes', s.notes,
 	'last_checked_at', s.last_checked_at, 'next_check_at', s.next_check_at, 'checks', s.checks,
 	'empty_checks_in_row', s.empty_checks_in_row, 'points', s.points,
-	-- Everyone the source ever found, and how many of them Tim kept.
+	-- Everyone the source ever found, and how many of them Tim connected
+	-- with.
 	'people', (SELECT count(DISTINCT si.person_id) FROM sightings si WHERE si.source_id = s.id),
-	'people_kept', (SELECT count(DISTINCT si.person_id) FROM sightings si JOIN people x ON x.id = si.person_id
-		WHERE si.source_id = s.id AND x.podcast_status NOT IN ('new', 'known', 'skipped')),
+	'people_connected', (SELECT count(DISTINCT si.person_id) FROM sightings si JOIN people p ON p.id = si.person_id
+		WHERE si.source_id = s.id AND ` + isConnected + `),
 	'last_check', CASE WHEN lc.id IS NULL THEN NULL ELSE json_build_object(
 		'events_found', lc.events_found, 'startups_found', lc.startups_found, 'people_found', lc.people_found,
 		'http_status', lc.http_status, 'mode', lc.mode, 'error', lc.error) END,

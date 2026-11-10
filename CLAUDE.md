@@ -101,7 +101,9 @@ messages, pull request text, code comments and chat replies.
   link to one event, added as a source, becomes the calendar it belongs to.
   Seeds exist only in the starting data, never in the interface. An
   **event** is kept or dropped, never accepted or rejected. A **person** is
-  kept or skipped. A **profile** is confirmed or rejected. The public page is the **calendar**, Tim's side is
+  connected or not, never kept or skipped: Tim marks whom he connected
+  with on LinkedIn, and the rest is simply open. A **profile** is
+  confirmed or rejected. The public page is the **calendar**, Tim's side is
   the **workspace**. Whatever a thing is called in the interface, it is
   called that in the docs and the code comments too.
 - Docs live in `docs/`. Only `README.md` and this file sit at the top, and

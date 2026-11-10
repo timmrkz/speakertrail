@@ -71,7 +71,7 @@
     const parts: string[] = []
     if (s.last_checked_at) {
       parts.push(plural(s.people, 'person', 'people'))
-      if (s.people_kept) parts.push(`${s.people_kept} kept`)
+      if (s.people_connected) parts.push(`${s.people_connected} connected`)
       parts.push(`ran ${fmtAgo(s.last_checked_at)}`)
     } else {
       parts.push('Not run yet')

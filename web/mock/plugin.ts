@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, Decision, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
+  Activity, Appearance, Check, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
 } from '../src/lib/api.ts'
 import {
@@ -44,7 +44,7 @@ interface PersonRow {
   notes: string
   profiles: Profile[]
   affiliations: PersonDetail['affiliations']
-  decision?: Decision
+  connected?: boolean
   // What the confirmed LinkedIn profile says, for people a profile search
   // found.
   linkedin?: Person['linkedin']
@@ -112,7 +112,7 @@ function createState() {
       id: 1000 + i, name, headline, city, fit: 'founder' as const, first_seen: hoursAgo(2 + i * 9), notes: '',
       profiles: [{ id: 10000 + i, platform: 'linkedin' as const, url: `https://www.linkedin.com/in/example-${1000 + i}`, review: 'confirmed' as const }],
       affiliations: [], searchId,
-      decision: i === 1 ? 'kept' as const : undefined,
+      connected: i === 1,
       linkedin: { born_about: born, age_reason: reason, roles: headline.replace(' | ', ', '), last_active: hoursAgo(activeDaysAgo * 24) },
     }))
   }
@@ -252,13 +252,12 @@ function fitStats(s: State): Stats['fit'] {
   labels.set('backed', ['Backed by a startup programme', false])
   const signals = [...labels].map(([key, [label, isFor]]) => ({
     key, label, for: isFor,
-    kept: list.filter((p) => p.decision === 'kept' && p.signals.some((x) => x.key === key)).length,
-    skipped: list.filter((p) => p.decision === 'skipped' && p.signals.some((x) => x.key === key)).length,
+    connected: list.filter((p) => p.connected && p.signals.some((x) => x.key === key)).length,
   }))
   const top = [...list].sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen)).slice(0, 20)
   return {
     signals,
-    top: { size: top.length, kept: top.filter((p) => p.decision === 'kept').length, skipped: top.filter((p) => p.decision === 'skipped').length, open: top.filter((p) => !p.decision).length },
+    top: { size: top.length, connected: top.filter((p) => p.connected).length, open: top.filter((p) => !p.connected).length },
   }
 }
 
@@ -269,7 +268,7 @@ function personList(s: State, p: PersonRow): Person {
   const signals = signalsOf(p, apps)
   return {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
-    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, decision: p.decision ?? '',
+    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, connected: !!p.connected,
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -318,7 +317,7 @@ function sourceOut(m: MockSource, s?: State): Source {
   return {
     ...rest,
     people: found.length || (m.kind === 'profile_search' && last_found ? last_found : 0),
-    people_kept: found.filter((p) => p.decision === 'kept').length,
+    people_connected: found.filter((p) => p.connected).length,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
@@ -434,32 +433,30 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const sort = q.get('sort') || 'next'
     const filter = q.get('filter') || 'all'
     // Like the server while runs take only profile searches: whom they
-    // found, and whoever Tim kept.
+    // found, and whoever Tim connected with.
     const only = s.settings.find((x) => x.key === 'profile_searches_only')?.value !== false
-    let list = s.people.filter((p) => !only || p.linkedin || p.decision === 'kept').map((p) => personList(s, p))
+    let list = s.people.filter((p) => !only || p.linkedin || p.connected).map((p) => personList(s, p))
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
       young: list.filter(young).length,
-      kept: list.filter((p) => p.decision === 'kept').length,
-      skipped: list.filter((p) => p.decision === 'skipped').length,
-      fits: list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped').length,
+      connected: list.filter((p) => p.connected).length,
+      fits: list.filter((p) => p.fit_score > 0).length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
     }
     if (filter === 'young') list = list.filter(young)
-    if (filter === 'kept') list = list.filter((p) => p.decision === 'kept')
-    if (filter === 'skipped') list = list.filter((p) => p.decision === 'skipped')
+    if (filter === 'connected') list = list.filter((p) => p.connected)
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
-    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped')
+    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0)
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    else if (sort === 'fit') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
-    else if (sort === 'young') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || (b.linkedin?.born_about ?? 0) - (a.linkedin?.born_about ?? 0) || b.fit_score - a.fit_score)
+    else if (sort === 'fit') list.sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
+    else if (sort === 'young') list.sort((a, b) => (b.linkedin?.born_about ?? 0) - (a.linkedin?.born_about ?? 0) || b.fit_score - a.fit_score)
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.
@@ -476,8 +473,8 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
-    if (b.decision === '' || b.decision === 'kept' || b.decision === 'skipped') p.decision = b.decision as Decision
-    else if (b.decision !== undefined) return err(400, 'decision must be kept, skipped or empty')
+    if (typeof b.connected === 'boolean') p.connected = b.connected
+    else if (b.connected !== undefined) return err(400, 'connected must be true or false')
     return ok(personDetail(s, p))
   }],
   ['PATCH', /^\/api\/profiles\/(\d+)$/, (s, m, _q, b) => {

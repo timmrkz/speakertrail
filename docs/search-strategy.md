@@ -48,12 +48,16 @@ Everyone kept is scored with the rubric as before, with **Likely under
 30** on top, guessed from the years on the profile, see
 [Next: younger owners](#next-younger-owners).
 
-**The starting profile searches**, 64 of them, in
+**The starting profile searches**, 82 of them, in
 `internal/importer/data/profile_searches.csv`:
 
 - 24 aimed at younger people, run first: "Gen Z Unternehmer", "Gründerin
   direkt nach dem Studium", "junger Gründer" and "Gründer unter 30", in
   Köln, Düsseldorf, Bonn, Essen, Dortmund and NRW.
+- 18 for founders in English, run first too, because many young founders
+  write "Founder" rather than "Gründer": "young founder", "founder under
+  30" and "student founder", in the same six places. Added on 10
+  November 2026.
 - 40 for the archetypes in [Who fits](#who-fits): personal trainers,
   martial arts schools, yoga studios, life coaches, nutrition advisers,
   gym owners, physiotherapy practices and dance schools, in the five

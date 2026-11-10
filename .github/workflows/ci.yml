@@ -73,8 +73,17 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      # What make run builds on Tim's Mac, Speaker Trail.app, signed ad hoc
+      # and read back by codesign.
       - name: Build the app
-        run: go build -o bin/speakertrail-app ./cmd/speakertrail-app
+        run: make app
+      - name: The app's own tests
+        run: go test -count=1 ./cmd/speakertrail-app ./internal/api ./internal/engine ./internal/keys ./internal/store
 
   # What make test runs on a laptop: the toolbox from compose.yaml, with its
   # own database and Chromium.

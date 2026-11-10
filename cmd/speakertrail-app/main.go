@@ -9,6 +9,8 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -33,6 +35,16 @@ var version = "dev"
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	// make carry-over hands over the people kept in the Docker version,
+	// see scripts/carry-over.sh. It writes the app's file and opens no
+	// window.
+	if len(os.Args) == 2 && os.Args[1] == "carry-over" {
+		if err := carryOver(os.Stdin); err != nil {
+			slog.Error("carrying over failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	slog.Info("speakertrail starting", "version", version)
 
 	answers, closeDown, err := open()
@@ -116,6 +128,34 @@ func open() (http.Handler, func(), error) {
 		}
 	}
 	return apipkg.New(st, e, exa, slog.Default()), closeDown, nil
+}
+
+// carryOver adds the people the Docker version kept, read as JSON.
+func carryOver(r io.Reader) error {
+	var people []store.Carried
+	if err := json.NewDecoder(r).Decode(&people); err != nil {
+		return fmt.Errorf("the people from the old database cannot be read: %w", err)
+	}
+	dir, err := Folder()
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(dir, nil)
+	if err != nil {
+		return err
+	}
+	var added, there int
+	if err := st.Update(func(d *store.Data) error {
+		if err := d.Start(st.Now()); err != nil {
+			return err
+		}
+		added, there = d.CarryOver(people, st.Now())
+		return nil
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("Carried over %d kept people, %d were here already. They are in %s\n", added, there, st.Path())
+	return nil
 }
 
 // handler answers everything the window asks for: /api/ goes to api, the

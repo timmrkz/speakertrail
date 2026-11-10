@@ -63,9 +63,10 @@ Everyone kept is scored with the rubric as before, with **Likely under
   gym owners, physiotherapy practices and dance schools, in the five
   cities.
 
-A run takes the ten that are due (`profile_searches_per_run`), each asks
-for 25 profiles (`profile_search_results`) and is due again after 30 days
-(`profile_search_check_days`).
+A run takes the ten that are due (`profile_searches_per_run`), the best
+first, see [Connections steer the searches](#connections-steer-the-searches).
+Each asks for 25 profiles (`profile_search_results`) and is due again
+after 30 days (`profile_search_check_days`).
 
 **Paused, not deleted**: events, portfolios, directories, website
 searches, lookups, reads by the local model and post searches. The
@@ -96,8 +97,37 @@ practices, most of them between 30 and 50. A founder who writes
 Events, sources, runs and the overview are out of the navigation while
 the rest of the engine is paused.
 
-**Next**: the funnel, keep, contacted, replied, recorded, steers which
-profile searches run more often.
+## Connections steer the searches
+
+Decided with Tim on 10 November 2026.
+
+**Connected, or not.** Tim marks a person as connected once he has
+connected with them on LinkedIn. That is the only decision. Whoever he
+does not connect with simply stays open, so there is no skipping any
+more. People he kept before are connected now, people he skipped are
+open again. The later steps of the funnel, contacted to recorded, count
+as connected too.
+
+**The best searches first.** Each profile search counts the people it
+found and how many of them Tim connected with. Of the due searches, a run
+takes, in this order, `RankSearches` in `internal/pipeline/rank.go`:
+
+1. Searches that never ran, so each gets one try. Those Tim added come
+   before the starting ones.
+2. Searches that led to connections, the most first, and among the same,
+   those with the larger share.
+3. Searches whose people Tim never connected with, those that found more
+   people first. A search that found nobody runs only when there is room.
+
+The Searches screen shows the same: those that led to the most
+connections on top, with how many, then those that found the most people.
+
+**Founders in English.** Many young founders write "Founder", not
+"Gründer". 18 starting searches ask for "young founder", "founder under
+30" and "student founder" in the five cities and NRW.
+
+**Next**: new searches made from what the people Tim connected with have
+in common.
 
 ## What we learned
 

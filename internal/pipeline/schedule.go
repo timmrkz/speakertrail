@@ -81,17 +81,30 @@ func (p *Pipeline) EnqueueDue(ctx context.Context, runID int64) (int, error) {
 	var ids []int64
 	if onlyProfiles {
 		if p.Search != nil && p.Search.FindsPosts() {
+			// The best searches first, by the people Tim connected with, see
+			// RankSearches.
 			rows, err := p.Pool.Query(ctx, `
-				SELECT id FROM sources
-				WHERE kind = 'profile_search' AND query IS NOT NULL AND status IN ('candidate', 'probation', 'active')
-				  AND (next_check_at IS NULL OR next_check_at <= $1)
-				ORDER BY next_check_at NULLS FIRST, points DESC, id
-				LIMIT $2`, now, cfg.Int("profile_searches_per_run", 10))
+				SELECT s.id, s.points::float8, s.last_checked_at IS NOT NULL,
+					(SELECT count(DISTINCT si.person_id) FROM sightings si WHERE si.source_id = s.id)::int,
+					(SELECT count(DISTINCT si.person_id) FROM sightings si JOIN people x ON x.id = si.person_id
+						WHERE si.source_id = s.id AND x.podcast_status NOT IN ('new', 'known'))::int
+				FROM sources s
+				WHERE s.kind = 'profile_search' AND s.query IS NOT NULL AND s.status IN ('candidate', 'probation', 'active')
+				  AND (s.next_check_at IS NULL OR s.next_check_at <= $1)`, now)
 			if err != nil {
 				return 0, err
 			}
-			if ids, err = pgx.CollectRows(rows, pgx.RowTo[int64]); err != nil {
+			due, err := pgx.CollectRows(rows, func(r pgx.CollectableRow) (SearchYield, error) {
+				var y SearchYield
+				err := r.Scan(&y.ID, &y.Points, &y.Ran, &y.People, &y.Connected)
+				return y, err
+			})
+			if err != nil {
 				return 0, err
+			}
+			RankSearches(due)
+			for _, y := range due[:min(len(due), cfg.Int("profile_searches_per_run", 10))] {
+				ids = append(ids, y.ID)
 			}
 		}
 	} else {

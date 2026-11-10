@@ -1,16 +1,10 @@
 <script lang="ts">
-  import { api } from '../lib/api'
   import { navigate, router } from '../lib/router.svelte'
   import { runWatch } from '../lib/run.svelte'
-  import { toast } from '../lib/toast.svelte'
   import Brand from '../lib/components/Brand.svelte'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
-  import Overview from './Overview.svelte'
-  import Events from './Events.svelte'
   import People from './People.svelte'
-  import Sources from './Sources.svelte'
-  import Runs from './Runs.svelte'
   import Settings from './Settings.svelte'
   import Searches from './Searches.svelte'
   import NotFound from './NotFound.svelte'
@@ -25,17 +19,8 @@
     { href: '/app/settings', label: 'Settings', icon: 'settings' },
   ]
 
-  // Check the session once. Any later 401 also lands on the login.
-  let ready = $state(false)
-  api
-    .me()
-    .then((m) => {
-      if (m.logged_in) ready = true
-      else navigate(`/login?next=${encodeURIComponent(router.path)}`, { replace: true })
-    })
-    .catch(() => {
-      ready = true
-    })
+  // The app has no login: nothing outside it can reach its data.
+  const ready = true
 
   // A going run shows as a pulsing dot on Runs, from the same watch every
   // screen uses.
@@ -53,15 +38,6 @@
     return router.under(href)
   }
 
-  async function logout() {
-    try {
-      await api.logout()
-    } catch {
-      // The cookie may already be gone. Leave anyway.
-    }
-    toast.show('Logged out')
-    navigate('/login', { replace: true })
-  }
 </script>
 
 {#if ready}
@@ -77,8 +53,6 @@
         {/each}
       </nav>
       <div class="nav side-foot">
-        <a href="/"><Icon name="calendar" /><span>Calendar</span></a>
-        <button type="button" onclick={logout}><Icon name="logout" /><span>Log out</span></button>
         <ThemeButton withLabel />
       </div>
     </aside>
@@ -89,15 +63,7 @@
       {:else if router.under('/app/searches')}
         <Searches />
       {:else if router.path === '/app/settings'}
-        <Settings {logout} />
-      {:else if router.under('/app/runs')}
-        <Runs />
-      {:else if router.under('/app/events')}
-        <Events />
-      {:else if router.under('/app/sources')}
-        <Sources />
-      {:else if router.path === '/app/overview'}
-        <Overview />
+        <Settings />
       {:else}
         <NotFound embedded />
       {/if}
@@ -121,12 +87,12 @@
   }
   .side > :global(.brand) { padding: 0 8px; }
   .nav { display: grid; gap: 2px; }
-  .nav a, .nav button, .side-foot :global(.btn) {
+  .nav a, .side-foot :global(.btn) {
     display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; padding: 0 10px; border: 0; border-radius: 8px;
     background: none; cursor: pointer; text-align: left; color: var(--ink-2); font-weight: 500; font-size: 14px; text-decoration: none;
     justify-content: flex-start;
   }
-  .nav a:hover, .nav button:hover { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+  .nav a:hover, .side-foot :global(.btn:hover) { background: var(--surface-2); color: var(--ink); text-decoration: none; }
   .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
   .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
   .main { padding: 28px var(--gutter) 64px; min-width: 0; }

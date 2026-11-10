@@ -419,6 +419,10 @@ export const api = {
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),
   run: (id: number) => request<{ run: Run; checks: Check[]; failures: RunFailure[] }>('GET', `/api/runs/${id}`),
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
+  // Whether the Exa key is saved, and this month's searches. Never the key.
+  keys: () => request<{ keys: SearchUse[] }>('GET', '/api/keys').then((r) => r.keys),
+  // Saves the Exa key in the keychain. An empty key removes it.
+  setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
 }
 

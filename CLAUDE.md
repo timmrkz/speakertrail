@@ -12,8 +12,9 @@ Svelte interface built in, and everything it knows in one JSON file in
 `~/Library/Application Support/Speaker Trail`. Runs ask profile searches
 through Exa. No Docker, no database, no server.
 
-The public event calendar and the crawler of event pages are paused. Their
-code still sits in the repository and the app does not use it.
+It once also crawled event pages for a public calendar. That engine, its
+Postgres database, Docker and the Scaleway deploy were removed on 10
+November 2026 and are in git history.
 
 ## Where things are
 
@@ -26,11 +27,11 @@ Start with [README.md](README.md). In short:
 | runs of profile searches | `internal/engine/` | |
 | HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
 | the Exa key in the keychain | `internal/keys/` | |
+| Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
-| paused: server, crawler, queue, Postgres, Docker, deploy | `cmd/speakertrail/`, `internal/server/` and the rest | [docs/server-api.md](docs/server-api.md), `.claude/skills/docker/` |
 
 ## How Tim works
 
@@ -80,30 +81,16 @@ messages, pull request text, code comments and chat replies.
 - **Never use semicolons.** Use commas and full stops. Semicolons in code
   syntax are fine, in prose and comments they are not.
 - Plain, direct language. Short sentences.
-- **One name per thing.** A **source** is a page the crawler checks again
-  and again. A **check** is one look at one source. A **read** is the
-  language model's look at one event's own page, for the people on stage.
-  A **portfolio** is a source that lists startups, a **directory** one that
-  lists businesses run by people, like gyms or coaches, and a **lookup** is
-  one look at one startup's or business's website, its imprint and its
-  about page, for who runs it.
-  A **search** is a source that asks a search provider, like "BJJ Gym
-  Köln", and its results are websites to look up.
-  A **post search** is a source that asks Exa for LinkedIn posts, like
-  "Ein Jahr selbstständig #köln", and its results are the people in NRW
-  who wrote them.
-  A **profile search** is a source that asks Exa for LinkedIn profiles,
-  like "Yogalehrerin Köln", and keeps the people in NRW who were active
-  lately and run their own business. Runs take only these for now.
-  A **run** is one pass over the due sources, nightly or started by hand. A
-  link to one event, added as a source, becomes the calendar it belongs to.
-  Seeds exist only in the starting data, never in the interface. An
-  **event** is kept or dropped, never accepted or rejected. A **person** is
-  kept or skipped. A **profile** is confirmed or rejected. The public page is the **calendar**, Tim's side is
-  the **workspace**. Whatever a thing is called in the interface, it is
-  called that in the docs and the code comments too.
-- Docs live in `docs/`. Only `README.md` and this file sit at the top, and
-  the deployment guide sits beside what it deploys, in `deploy/`.
+- **One name per thing.** A **profile search**, or **search** for short,
+  asks Exa for LinkedIn profiles, like "Yogalehrerin Köln", and keeps the
+  people in NRW who were active lately and run their own business. A
+  **run** is one pass over the due searches, started by hand. A **check**
+  is one search asked once in a run. A **person** is kept or skipped. A
+  **profile** is confirmed or rejected. The API still says `sources` for
+  searches, the interface and the docs never do. Whatever a thing is
+  called in the interface, it is called that in the docs and the code
+  comments too.
+- Docs live in `docs/`. Only `README.md` and this file sit at the top.
 - When behaviour changes, update the matching doc in the same change.
 
 ## Interface rules
@@ -156,26 +143,21 @@ messages, pull request text, code comments and chat replies.
 - **It builds on Linux too.** Build runners and cloud sessions build the
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.
-- **No LinkedIn, no Instagram.** The engine never requests them, not even
-  for robots.txt, and the headless browser goes through a filter that
-  refuses them. `TestNeverRequestsLinkedInOrInstagram` and
-  `TestBrowserNeverReachesBlockedHosts` prove it. Never weaken either.
-- **Polite crawling.** robots.txt is respected, the bot names itself, one
-  request every 5 seconds per website. A site that refuses the bot becomes
-  a manual source. No workarounds.
-- **Personal data.** Names, roles and profile links of speakers are personal
-  data. Store only what the data model lists, never email addresses or phone
-  numbers. Names stay out of the public calendar unless
-  `public_show_people` is on. Real names never go into test fixtures, mock
-  data or anything committed: invent them.
-- **Untrusted input.** Every crawled page, feed and pasted link is
-  untrusted. Stored pages are served as sandboxed plain text, never as HTML.
+- **No LinkedIn, no Instagram.** The app never requests them. Profiles
+  come from Exa's index, asked with `livecrawl` never. Never add a request
+  to either.
+- **Personal data.** Names, roles and profile links are personal data.
+  Store only what the data model lists, never email addresses or phone
+  numbers. The app's file stays on Tim's Mac. Real names never go into
+  test fixtures, mock data or anything committed: invent them.
+- **Untrusted input.** What Exa answers is untrusted. The interface shows
+  it as text, never as HTML.
 - **What runs on its own goroutine is tested from several at once.** Every
-  Go test runs under the race detector, and anything asynchronous, the
-  queue above all, has a test that uses it from several goroutines at once.
+  Go test runs under the race detector, and anything asynchronous, a run
+  above all, has a test that uses it from several goroutines at once.
   A fix starts as a test that fails on the code before it.
-- **Tests** need no network and never touch a live website. Pages go in
-  `testdata/`, with invented people. Run `make test` before every push that
+- **Tests** need no network and never call Exa. Answers go in the test,
+  with invented people. Run `make test` before every push that
   touches Go. A change only to `web/` or `docs/` runs `make interface`.
 - **Short updates.** The file is written on every change, so nothing
   slow, above all no call to Exa, happens inside `Store.Update`.
@@ -183,19 +165,16 @@ messages, pull request text, code comments and chat replies.
 - The interface is built by make into `web/dist/`, which Go embeds. Only
   `web/dist/.keep` is in the repository. Never commit build output, `.env`
   or the app's file.
-- **No paid language model.** The paused crawler read pages with a local
-  model through Docker Model Runner. Whatever comes back needs no paid
-  model API, no key and no credit card.
+- **No paid language model.** Whatever reads text needs no paid model
+  API, no key and no credit card.
 - Every paid API gets a monthly budget in Settings, and the engine stops
   calling it once the budget is reached.
 
 ## Cloud sessions
 
 Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
-`scripts/cloud-setup.sh`, which provides Go 1.27, GTK 4 and WebKitGTK 6 for
-the window, and a local Postgres 16 for the paused server's tests.
-`scripts/session-start.sh` starts Postgres and sets `DATABASE_URL` and
-`TEST_DATABASE_URL` in every session.
+`scripts/cloud-setup.sh`, which provides Go 1.27, and GTK 4 and WebKitGTK 6
+for the window.
 
 - If `go version` does not show 1.27, or `pkg-config --exists gtk4
   webkitgtk-6.0` fails, run `bash scripts/cloud-setup.sh`.

@@ -5,8 +5,8 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, Decision, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
+  Activity, Appearance, Decision, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Run, RunFailure, RunProgress, Setting, Source, SourceStatus,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -27,12 +27,7 @@ interface Res {
   end(body?: string): void
 }
 
-const PASSWORD = 'speakertrail'
-const SESSION = 'st_session=mock'
 const DELAY_MS = 280
-
-const dayOf = (iso: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 
 interface PersonRow {
   id: number
@@ -187,16 +182,6 @@ function setting(s: State, key: string): Json | undefined {
   return s.settings.find((x) => x.key === key)?.value
 }
 
-function toPublic(e: PrivateEvent, showPeople: boolean): PublicEvent {
-  const { fit: _f, fit_reason: _r, sources: _s, first_seen: _fs, people, ...rest } = e
-  return { ...rest, people: showPeople ? people.map(({ name, role, affiliation }): EventPerson => ({ name, role, affiliation })) : [] }
-}
-
-function inRange(e: PrivateEvent, from: string, to: string): boolean {
-  const d = dayOf(e.starts_at)
-  return d >= from && d <= to
-}
-
 function appearancesOf(s: State, id: number): Appearance[] {
   return s.events
     .filter((e) => e.fit === 'kept' && e.people.some((p) => p.id === id))
@@ -240,26 +225,6 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
     add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
   }
   return out.sort((a, b) => Number(b.for) - Number(a.for))
-}
-
-// Like the server: keeps and skips per signal, and the top 20 by fit.
-function fitStats(s: State): Stats['fit'] {
-  const list = s.people.map((p) => personList(s, p))
-  const labels = new Map<string, [string, boolean]>()
-  labels.set('young', ['Likely under 30', true])
-  for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
-  labels.set('active_on_linkedin', ['Active on LinkedIn', true])
-  labels.set('backed', ['Backed by a startup programme', false])
-  const signals = [...labels].map(([key, [label, isFor]]) => ({
-    key, label, for: isFor,
-    kept: list.filter((p) => p.decision === 'kept' && p.signals.some((x) => x.key === key)).length,
-    skipped: list.filter((p) => p.decision === 'skipped' && p.signals.some((x) => x.key === key)).length,
-  }))
-  const top = [...list].sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen)).slice(0, 20)
-  return {
-    signals,
-    top: { size: top.length, kept: top.filter((p) => p.decision === 'kept').length, skipped: top.filter((p) => p.decision === 'skipped').length, open: top.filter((p) => !p.decision).length },
-  }
 }
 
 function personList(s: State, p: PersonRow): Person {
@@ -328,38 +293,6 @@ function sourceOut(m: MockSource, s?: State): Source {
   }
 }
 
-function stats(s: State): Stats {
-  const now = new Date().toISOString()
-  const upcoming = s.events.filter((e) => e.starts_at >= now)
-  const kept = upcoming.filter((e) => e.fit === 'kept')
-  const byStatus = { active: 0, probation: 0, candidate: 0, retired: 0, manual: 0 } as Record<SourceStatus, number>
-  for (const src of s.sources) byStatus[src.status]++
-  const cityCount = new Map<string, number>()
-  for (const e of kept) if (e.format !== 'online') cityCount.set(e.city, (cityCount.get(e.city) ?? 0) + 1)
-  // Plausible growth over 8 weeks, oldest first, Mondays.
-  const today = todayBerlin()
-  const monday = addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7))
-  const shape: [number, number, number][] = [[4, 3, 2], [9, 6, 5], [14, 9, 7], [22, 12, 9], [31, 18, 6], [27, 15, 8], [38, 21, 11], [29, 17, 6]]
-  const weekly = shape.map(([people, events, sources], i) => ({ week_start: addDays(monday, (i - 7) * 7), people, events, sources }))
-  return {
-    totals: {
-      people: s.people.length + 262, organisations: 140, profiles: s.people.reduce((a, p) => a + p.profiles.length, 0) + 61,
-      events_upcoming: upcoming.length + 31, events_kept_upcoming: kept.length + 29, sources: byStatus,
-    },
-    last_7_days: { people: 41, events: 23, organisations: 12, sources: 9 },
-    weekly,
-    cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
-    last_run: s.runs[0] ?? null,
-    fit: fitStats(s),
-    // Exa has a key and has spent part of its budget. The others have none.
-    searches: [
-      { provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: true },
-      { provider: 'tavily', used: 0, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: false },
-      { provider: 'brave', used: 0, budget: Number(setting(s, 'brave_monthly_searches') ?? 1000), set: false },
-    ],
-  }
-}
-
 // Routing
 
 interface Out {
@@ -368,75 +301,18 @@ interface Out {
   type?: string
   cookie?: string
 }
-type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>, loggedIn: boolean) => Out | undefined
+type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>) => Out | undefined
 
 const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
-const PUBLIC_ROUTES: [string, RegExp, Handler][] = [
-  ['GET', /^\/api\/public\/config$/, (s, _m, _q, _b, loggedIn) => {
-    const open = setting(s, 'public_calendar') === true
-    const show_people = setting(s, 'public_show_people') === true
-    if (!open && !loggedIn) return ok({ public_calendar: false, owner: false, show_people, cities: [] })
-    const now = new Date().toISOString()
-    const count = new Map<string, number>()
-    for (const e of s.events) if (e.fit === 'kept' && e.format !== 'online' && e.starts_at >= now) count.set(e.city, (count.get(e.city) ?? 0) + 1)
-    const cities = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
-    return ok({ public_calendar: open, owner: loggedIn, show_people, cities })
-  }],
-  ['GET', /^\/api\/public\/events$/, (s, _m, q, _b, loggedIn) => {
-    if (setting(s, 'public_calendar') !== true && !loggedIn) return err(404, 'The calendar is not open yet')
-    const from = q.get('from') || todayBerlin()
-    const to = q.get('to') || addDays(from, Number(setting(s, 'collect_ahead_days') ?? 30))
-    const show = setting(s, 'public_show_people') === true
-    const events = s.events
-      .filter((e) => e.fit === 'kept' && e.format !== 'online' && inRange(e, from, to))
-      .filter((e) => !q.get('city') || e.city === q.get('city'))
-      .filter((e) => !q.get('type') || e.type === q.get('type'))
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-      .map((e) => toPublic(e, show))
-    return ok({ events })
-  }],
-  ['POST', /^\/api\/login$/, (_s, _m, _q, b) => {
-    if (b.password !== PASSWORD) return err(401, 'Wrong password')
-    return { status: 204, cookie: `${SESSION}; Path=/; HttpOnly; SameSite=Lax` }
-  }],
-  ['POST', /^\/api\/logout$/, () => ({ status: 204, cookie: `${SESSION}; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` })],
-  ['GET', /^\/api\/me$/, (_s, _m, _q, _b, loggedIn) => ok({ logged_in: loggedIn })],
-]
-
-const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
-  ['GET', /^\/api\/stats$/, (s) => ok(stats(s))],
-  ['GET', /^\/api\/events$/, (s, _m, q) => {
-    const from = q.get('from') || todayBerlin()
-    const to = q.get('to') || addDays(from, Number(setting(s, 'collect_ahead_days') ?? 30))
-    const fit = q.get('fit') || 'kept'
-    const needle = (q.get('q') ?? '').toLowerCase()
-    const events = s.events
-      .filter((e) => inRange(e, from, to))
-      .filter((e) => fit === 'all' || e.fit === fit)
-      .filter((e) => !q.get('city') || e.city === q.get('city'))
-      .filter((e) => !q.get('type') || e.type === q.get('type'))
-      .filter((e) => !needle || [e.title, e.venue, e.city, ...e.organisers, ...e.people.map((p) => p.name)].join(' ').toLowerCase().includes(needle))
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-    return ok({ events })
-  }],
-  ['PATCH', /^\/api\/events\/(\d+)$/, (s, m, _q, b) => {
-    const e = s.events.find((x) => x.id === Number(m[1]))
-    if (!e) return err(404, 'No such event')
-    if (b.fit !== 'kept' && b.fit !== 'dropped') return err(400, 'fit must be kept or dropped')
-    e.fit = b.fit as Fit
-    e.fit_reason = typeof b.fit_reason === 'string' && b.fit_reason ? b.fit_reason : `set by hand: ${b.fit}`
-    return ok(e)
-  }],
+const ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
     const sort = q.get('sort') || 'next'
     const filter = q.get('filter') || 'all'
-    // Like the server while runs take only profile searches: whom they
-    // found, and whoever Tim kept.
-    const only = s.settings.find((x) => x.key === 'profile_searches_only')?.value !== false
-    let list = s.people.filter((p) => !only || p.linkedin || p.decision === 'kept').map((p) => personList(s, p))
+    // Like the app: whom profile searches found, and whoever Tim kept.
+    let list = s.people.filter((p) => p.linkedin || p.decision === 'kept').map((p) => personList(s, p))
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
@@ -640,12 +516,6 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const run = s.runs.find((r) => r.id === Number(m[1]))
     return run ? ok({ run, checks: s.checks.get(run.id) ?? [], failures: failuresOf(s, run) }) : err(404, 'No such run')
   }],
-  ['GET', /^\/api\/fetches\/(\d+)\/(text|html|screenshot)$/, (s, m) => {
-    const id = Number(m[1])
-    const check = [...s.checks.values()].flat().find((c) => c.fetch_id === id)
-    if (!check || id < 3130) return err(404, 'This fetch is older than 30 days and was deleted')
-    return fetchBody(check, m[2])
-  }],
   ['GET', /^\/api\/settings$/, (s) => ok({ settings: s.settings })],
   ['PATCH', /^\/api\/settings\/([^/]+)$/, (s, m, _q, b) => {
     const row = s.settings.find((x: Setting) => x.key === decodeURIComponent(m[1]))
@@ -666,25 +536,6 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
 
 // The mock's Exa key, saved as the app saves it in the keychain.
 let exaKey = 'invented'
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
-}
-
-function fetchBody(c: Check, kind: string) {
-  const title = escapeHtml(c.source.name)
-  if (kind === 'text') {
-    return { status: 200, type: 'text/plain; charset=utf-8', body: `${c.source.name}\n\nUpcoming events\n\nMon 18:00  Rheinland Pitch #129  Startplatz, Köln\nWed 18:30  Gateway Sundowner  InnoDom, Köln\n\n(Mock text of fetch ${c.fetch_id}, checked ${c.checked_at})\n` }
-  }
-  if (kind === 'html') {
-    return { status: 200, type: 'text/html; charset=utf-8', body: `<!doctype html><title>${title}</title><h1>${title}</h1><p>Mock HTML of fetch ${c.fetch_id}.</p><ul><li>Rheinland Pitch #129</li><li>Gateway Sundowner</li></ul>` }
-  }
-  // The real server answers a PNG. An SVG stands in here.
-  return {
-    status: 200, type: 'image/svg+xml',
-    body: `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800"><rect width="1280" height="800" fill="#f3f5f8"/><rect x="0" y="0" width="1280" height="72" fill="#2448b8"/><text x="40" y="46" font-family="sans-serif" font-size="26" fill="#fff">${title}</text><text x="40" y="150" font-family="sans-serif" font-size="22" fill="#141b26">Mock screenshot of fetch ${c.fetch_id}</text>${[0, 1, 2, 3].map((i) => `<rect x="40" y="${200 + i * 120}" width="1200" height="96" rx="10" fill="#fff" stroke="#dde2ea"/>`).join('')}</svg>`,
-  }
-}
 
 function readBody(req: Req): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
@@ -724,24 +575,16 @@ export function mockApi(): Plugin {
         if (!url.pathname.startsWith('/api/')) return next()
         const body = req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT' ? await readBody(req) : {}
         await new Promise((r) => setTimeout(r, DELAY_MS))
-        // The app has no login, so neither has the mock.
-        const loggedIn = true
         const send = (out: Out) => {
           res.statusCode = out.status
-          if (out.cookie) res.setHeader('Set-Cookie', out.cookie)
           if (out.status === 204 || out.body === undefined) return res.end()
           res.setHeader('Content-Type', out.type ?? 'application/json; charset=utf-8')
           res.end(typeof out.body === 'string' && out.type ? out.body : JSON.stringify(out.body))
         }
-        for (const [method, re, handler] of PUBLIC_ROUTES) {
+        // The app has no login, so neither has the mock.
+        for (const [method, re, handler] of ROUTES) {
           const m = url.pathname.match(re)
-          if (m && req.method === method) return send(handler(state, m, url.searchParams, body, loggedIn) ?? err(500, 'No answer'))
-        }
-        for (const [method, re, handler] of PRIVATE_ROUTES) {
-          const m = url.pathname.match(re)
-          if (!m || req.method !== method) continue
-          if (!loggedIn) return send(err(401, 'Log in first'))
-          return send(handler(state, m, url.searchParams, body, loggedIn) ?? err(500, 'No answer'))
+          if (m && req.method === method) return send(handler(state, m, url.searchParams, body) ?? err(500, 'No answer'))
         }
         send(err(404, 'Not found'))
       })

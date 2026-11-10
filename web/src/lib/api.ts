@@ -4,7 +4,6 @@
 export type EventType = 'pitch' | 'talk' | 'panel' | 'meetup' | 'workshop' | 'conference' | 'sport' | 'other'
 export type EventFormat = 'in_person' | 'online' | 'hybrid'
 export type Fit = 'kept' | 'dropped'
-export type FitFilter = Fit | 'all'
 export type AppearanceRole = 'speaker' | 'panelist' | 'pitch' | 'host' | 'moderator'
 export type PersonFit = 'founder' | 'athlete' | 'maker' | 'creator' | 'other'
 // What a lookup saw of a startup: its website changed lately, it shows no
@@ -25,19 +24,6 @@ export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type Decision = '' | 'kept' | 'skipped'
 export type PeopleSort = 'young' | 'new' | 'fit' | 'next' | 'name'
 export type PeopleFilter = 'all' | 'young' | 'kept' | 'skipped' | 'fits' | 'upcoming' | 'profile' | 'founder'
-
-export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
-export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
-
-// Public
-
-export interface PublicConfig {
-  public_calendar: boolean
-  // True for Tim, logged in. He sees the calendar before it opens.
-  owner: boolean
-  show_people: boolean
-  cities: string[]
-}
 
 export interface EventPerson {
   id?: number
@@ -62,15 +48,6 @@ export interface PublicEvent {
   people: EventPerson[]
 }
 
-export interface EventQuery {
-  from?: string
-  to?: string
-  city?: string
-  type?: string
-}
-
-// Private
-
 export interface SourceRef {
   id: number
   name: string
@@ -83,36 +60,6 @@ export interface PrivateEvent extends PublicEvent {
   people: (EventPerson & { id: number })[]
   sources: SourceRef[]
   first_seen: string
-}
-
-export interface PrivateEventQuery extends EventQuery {
-  fit?: FitFilter
-  q?: string
-}
-
-export interface Stats {
-  totals: {
-    people: number
-    organisations: number
-    profiles: number
-    events_upcoming: number
-    events_kept_upcoming: number
-    sources: Record<SourceStatus, number>
-  }
-  last_7_days: { people: number; events: number; organisations: number; sources: number }
-  weekly: { week_start: string; people: number; events: number; sources: number }[]
-  cities: { city: string; events: number }[]
-  last_run: Run | null
-  // What Tim's keeps and skips teach the fit rubric: for every signal, how
-  // often a person with it was kept or skipped, and how the top 20 by fit
-  // were decided.
-  fit: {
-    signals: { key: string; label: string; for: boolean; kept: number; skipped: number }[]
-    top: { size: number; kept: number; skipped: number; open: number }
-  }
-  // Each search provider's budget and how much of it this month has spent.
-  // A provider without a key is never called.
-  searches: SearchUse[]
 }
 
 export interface SearchUse {
@@ -343,13 +290,6 @@ export class ApiError extends Error {
   }
 }
 
-let onUnauthorized: (() => void) | null = null
-
-// The app registers this to send people to the login on any 401.
-export function setUnauthorizedHandler(fn: () => void) {
-  onUnauthorized = fn
-}
-
 function qs(params: object): string {
   const s = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) {
@@ -359,7 +299,7 @@ function qs(params: object): string {
   return out ? `?${out}` : ''
 }
 
-async function request<T>(method: string, path: string, body?: unknown, opts: { quiet401?: boolean } = {}): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -369,9 +309,8 @@ async function request<T>(method: string, path: string, body?: unknown, opts: { 
       body: body === undefined ? undefined : JSON.stringify(body),
     })
   } catch {
-    throw new ApiError(0, 'Could not reach the server. Check your connection.')
+    throw new ApiError(0, 'Could not reach the app. Try again.')
   }
-  if (res.status === 401 && !opts.quiet401) onUnauthorized?.()
   if (!res.ok) {
     let message = `Request failed with status ${res.status}`
     try {
@@ -388,32 +327,14 @@ async function request<T>(method: string, path: string, body?: unknown, opts: { 
 }
 
 export const api = {
-  // Public
-  publicConfig: () => request<PublicConfig>('GET', '/api/public/config', undefined, { quiet401: true }),
-  publicEvents: (q: EventQuery) =>
-    request<{ events: PublicEvent[] }>('GET', `/api/public/events${qs(q)}`, undefined, { quiet401: true }).then((r) => r.events),
-
-  // Login
-  login: (password: string) => request<void>('POST', '/api/login', { password }, { quiet401: true }),
-  logout: () => request<void>('POST', '/api/logout', undefined, { quiet401: true }),
-  me: () => request<{ logged_in: boolean }>('GET', '/api/me', undefined, { quiet401: true }),
-
-  // Private
-  stats: () => request<Stats>('GET', '/api/stats'),
-  events: (q: PrivateEventQuery) => request<{ events: PrivateEvent[] }>('GET', `/api/events${qs(q)}`).then((r) => r.events),
-  patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes?: string; decision?: Decision }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
-  addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
-    request<Source>('POST', '/api/sources', { url, ...(name ? { name } : {}), lists }),
-  addSearch: (query: string) => request<Source>('POST', '/api/sources', { query }),
   addProfileSearch: (query: string) => request<Source>('POST', '/api/sources', { query, kind: 'profile_search' }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
-  runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),

@@ -8,11 +8,10 @@ All times are RFC 3339 strings in UTC. Errors are always
 `{"error": "message"}` with a fitting status code. POST, PATCH and PUT take
 only JSON with `Content-Type: application/json`, anything else gets 415.
 
-The shapes are the ones the interface already knew from the server that ran
-in Docker, so some fields say little in the app: a person has no
-appearances, a search has no URL. They are there so the interface needs no
-second set of types. The old server's API is in
-[server-api.md](server-api.md).
+The shapes are the ones the interface knew from the server that ran in
+Docker, so some fields say little in the app: a person has no appearances,
+a search has no URL. They are there so the interface needs no second set of
+types.
 
 ## People
 

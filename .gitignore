@@ -1,10 +1,6 @@
-/speakertrail
 *.test
 *.out
 .env
 /.claude/worktrees/
 /bin/
-
-# make report writes it, to attach to a chat. Not for the repository.
-/report.md
 /.preview/

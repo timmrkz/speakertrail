@@ -40,20 +40,16 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
 | `internal/api` | The JSON API the interface talks to, described in [docs/api.md](docs/api.md) |
 | `internal/keys` | The Exa key in the macOS keychain |
-| `internal/search` | Exa |
+| `internal/search` | Exa's index of LinkedIn profiles |
+| `internal/place` | Whether a place lies in NRW, and which city it names |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `web` | The interface, Svelte 5 with TypeScript |
-| `scripts` | Installing what is missing, bundling the app, the carry-over |
+| `scripts` | Installing what is missing, bundling the app, the carry-over, the cloud session setup |
 | `docs` | Building, the API, the search strategy, working with Claude |
 
-## Paused
-
-The calendar, the crawler of event pages, post searches and the server
-that ran in Docker are paused. Their code is still here, in
-`cmd/speakertrail`, `internal/server`, `internal/pipeline`, `internal/queue`,
-`internal/db` and the rest, with `compose.yaml`, the `Dockerfile` and
-`deploy/`. The app does not use any of it. Their API is in
-[docs/server-api.md](docs/server-api.md).
+The public calendar, the crawler of event pages, post searches and the
+server that ran in Docker and on Scaleway were removed when Speaker Trail
+became a Mac app. They are in git history, before pull request #9.
 
 ## Rules the code keeps
 

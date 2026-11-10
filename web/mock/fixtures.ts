@@ -315,43 +315,15 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
 
 export function buildSettings(): Setting[] {
   const t = hoursAgo(24 * 9)
+  // The app's settings, as internal/store/settings.go lists them.
   const rows: [string, Setting['value'], string][] = [
-    ['public_calendar', true, 'Show the public event calendar at the front page'],
-    ['public_show_people', true, 'Name the people on stage in the public calendar'],
-    ['region', ['Köln', 'Bonn', 'Düsseldorf', 'Essen', 'Dortmund', 'Duisburg', 'Bochum', 'Aachen', 'Münster', 'Wuppertal', 'Bielefeld', 'Neuss', 'Hürth', 'Siegburg'], 'Cities in NRW whose in-person events count'],
-    ['collect_ahead_days', 30, 'How far ahead events are collected, in days'],
-    ['post_window_days', 7, 'Which events go into a post, in days from the post date'],
-    ['active_check_interval_days', 1, 'Days between checks of an active source. 1 means every run'],
-    ['probation_weeks', 3, 'Weeks a source stays on probation before it becomes active or retired'],
-    ['probation_checks', 3, 'Checks before a candidate becomes active or retired'],
-    ['retire_after_empty_checks', 4, 'Empty checks in a row before a source retires'],
-    ['retired_recheck_days', 28, 'Days between checks of a retired source'],
-    ['new_candidates_per_run', 10, 'Candidate sources checked for the first time per run'],
-    ['profile_recheck_days', 90, 'Days before a profile is looked at again'],
-    ['scoring_window_weeks', 8, 'How far back points count, in weeks'],
-    ['discovery_share', 0.2, 'Share of points passed to the source that discovered another'],
-    ['points', { event: 1, person: 1, reaction: 3, reply: 5, yes: 10 }, 'Points per result'],
-    ['events_per_post', { min: 6, max: 10 }, 'Size of a post, grouped by city'],
-    ['keep_words', ['founder', 'gründer', 'pitch', 'meetup', 'sport', 'maker'], 'First filter that keeps an event'],
-    ['drop_words', ['webinar', 'training', 'sales'], 'First filter that drops an event'],
-    ['snapshot_retention_days', 30, 'Days raw pages and screenshots are kept'],
-    ['crawl_time', '05:00', 'Time of the nightly run, Europe/Berlin'],
-    ['draft_days', ['sunday', 'wednesday'], 'Days the next post is drafted'],
-    ['site_request_interval_seconds', 5, 'Minimum seconds between two requests to the same website'],
-    ['worker_concurrency', 4, 'Jobs a worker runs at the same time'],
-    ['browser_pages', 2, 'Headless browser pages open at the same time'],
-    ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
-    ['tavily_monthly_searches', 1000, 'Tavily searches per month. Its free plan has 1,000'],
-    ['brave_monthly_searches', 1000, 'Brave searches per month. Its monthly credit covers about 1,000, more are billed'],
-    ['searches_per_run', 3, 'Due searches a run takes. Each brings up to 20 websites to look up'],
-    ['search_check_days', 30, 'Days between two runs of the same search'],
-    ['claude_monthly_budget_eur', 4, 'Monthly cap for Claude API calls, in euros'],
-    ['voice_guide', '', 'How Tim writes, used when drafting posts'],
     ['profile_searches_per_run', 10, 'Due profile searches a run takes. Each is one call to Exa'],
     ['profile_search_results', 25, 'Profiles one profile search asks for'],
     ['profile_search_check_days', 30, 'Days between two runs of the same profile search'],
     ['profile_active_days', 183, 'Days within which a person must have been active on LinkedIn to be kept'],
-    ['profile_searches_only', true, 'Runs take only profile searches. Events, portfolios, directories, website and post searches are paused'],
+    ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
+    ['probation_weeks', 3, 'Weeks a new search may find nobody before runs leave it out'],
+    ['retire_after_empty_checks', 4, 'Runs in a row without anyone new before a search is left out'],
   ]
   return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))
 }

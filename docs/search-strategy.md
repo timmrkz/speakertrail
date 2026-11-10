@@ -5,7 +5,9 @@ where such people are found in NRW, how the engine tells them apart, and in
 which order to build it. What is built so far is under
 [Where it stands](#where-it-stands). Since 8 November 2026 runs take only
 profile searches, see [Profile searches only](#profile-searches-only).
-The sections after it describe the wider engine, which is paused.
+The sections after it describe the wider engine of events, portfolios,
+directories and post searches. Since 10 November 2026 Speaker Trail is a
+Mac app and that engine is gone from the code, it stays in git history.
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
@@ -63,10 +65,10 @@ A run takes the ten that are due (`profile_searches_per_run`), each asks
 for 25 profiles (`profile_search_results`) and is due again after 30 days
 (`profile_search_check_days`).
 
-**Paused, not deleted**: events, portfolios, directories, website
-searches, lookups, reads by the local model and post searches. The
-calendar stays online but does not update. The setting
-`profile_searches_only` brings them back.
+**Removed on 10 November 2026**, with the move to a Mac app: events,
+portfolios, directories, website searches, lookups, reads by the local
+model, post searches and the public calendar. They are in git history,
+before pull request #9.
 
 A live check on 8 November 2026, two runs of ten profile searches, each
 run done in 4 seconds. The first took the ten aimed at younger people in
@@ -86,11 +88,7 @@ practices, most of them between 30 and 50. A founder who writes
 - **Searches**, the profile searches. Add one, pause one, see how many
   people each found and how many of them Tim kept. A search Tim adds runs
   before the starting ones.
-- **Settings**, those for profile searches first, the paused engine's
-  behind one click.
-
-Events, sources, runs and the overview are out of the navigation while
-the rest of the engine is paused.
+- **Settings**, the Exa key and the settings for profile searches.
 
 **Next**: the funnel, keep, contacted, replied, recorded, steers which
 profile searches run more often.

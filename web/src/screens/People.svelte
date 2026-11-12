@@ -138,7 +138,7 @@
     <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
       disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
       title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
-      <Icon name={going ? 'close' : 'refresh'} />{runLabel}
+      <Icon name={going ? 'stop' : 'run'} />{runLabel}
     </button>
   </div>
 

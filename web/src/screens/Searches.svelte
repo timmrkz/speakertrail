@@ -120,14 +120,14 @@
   {:else if !searches.data}
     <Skeleton count={7} />
   {:else if !all.length}
-    <EmptyState icon="sources" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
+    <EmptyState icon="search" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
   {:else}
     {#if all.length > 8}
       <SearchInput bind:value={q} placeholder="Find a search" label="Find a search" />
     {/if}
     <p class="summary">{plural(all.length, 'search', 'searches')}{connecting ? `, ${connecting} led to connections` : ''}{paused ? `, ${paused} paused` : ''}</p>
     {#if !shown.length}
-      <EmptyState icon="sources" title="No search matches" text="Try another word." />
+      <EmptyState icon="search" title="No search matches" text="Try another word." />
     {:else}
       <ul class="list">
         {#each shown as s (s.id)}

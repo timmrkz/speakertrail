@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite'
 import type {
   Activity, Appearance, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
-  Run, RunFailure, RunProgress, Setting, Source, SourceStatus,
+  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -157,6 +157,30 @@ function createState() {
 }
 
 type State = ReturnType<typeof createState>
+
+const UPDATE_CHANNELS: UpdateChannel[] = [
+  { id: 'main', name: 'main', version: '0.1.0-main.4b1c0de', conflict: false },
+  { id: 'pr-9', name: '#9 Speaker Trail as a Mac app, without Docker', version: '0.1.0-pr9.e808a87', conflict: false },
+  { id: 'pr-12', name: '#12 A calmer layout, list and detail', version: '0.1.0-pr12.77aa310', conflict: true },
+]
+const upd = { running: 'pr-9', picked: '', lookFrom: Date.now(), downloadFrom: 0 }
+function updateState(): UpdateState {
+  const now = Date.now()
+  const follows = upd.picked || upd.running
+  const ch = UPDATE_CHANNELS.find((c) => c.id === follows)!
+  const base: UpdateState = {
+    version: '0.1.0-pr9.e808a87', commit: 'e808a87ee3a7', channel: upd.running, off: '', channels: UPDATE_CHANNELS,
+    picked: upd.picked, follows, gone: '', building: '', phase: 'current', next: '', nextName: '', nextCommit: '',
+    checked: new Date(upd.lookFrom + 600).toISOString(), written: 0, total: 0, problem: '', detail: '',
+  }
+  if (now - upd.lookFrom < 600) return { ...base, phase: 'checking' }
+  if (!upd.downloadFrom) return base
+  const total = 21 << 20
+  const done = Math.min(1, Math.max(0, (now - upd.downloadFrom) / 6000))
+  const next = { next: ch.version, nextName: ch.name, nextCommit: ch.version.slice(-7) }
+  if (done < 1) return { ...base, ...next, phase: 'downloading', written: Math.floor(total * done), total }
+  return { ...base, ...next, phase: 'ready' }
+}
 
 // Like the server: what failed, one per source, in plain words, with the
 // action that fixes it. Reads that failed are grouped by reason.
@@ -408,6 +432,28 @@ const ROUTES: [string, RegExp, Handler][] = [
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
   }],
+  // Updates, like cmd/speakertrail-app/updates_api.go: a build of pull
+  // request 9 that follows its channel. Check finds nothing newer. Picking
+  // another channel looks, downloads it over six seconds and has it ready.
+  ['GET', /^\/api\/updates$/, () => ok(updateState())],
+  ['POST', /^\/api\/updates\/check$/, () => {
+    upd.lookFrom = Date.now()
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/updates\/follow$/, (_s, _m, _q, b) => {
+    const ch = String(b.channel ?? '')
+    if (!UPDATE_CHANNELS.some((c) => c.id === ch)) return err(409, `There is no channel ${ch}`)
+    upd.picked = ch
+    upd.lookFrom = Date.now()
+    upd.downloadFrom = ch === upd.running ? 0 : Date.now() + 1200
+    return ok(updateState())
+  }],
+  ['POST', /^\/api\/updates\/relaunch$/, () => {
+    const st = updateState()
+    if (st.phase !== 'ready') return err(409, 'No newer build is ready')
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/updates\/commit$/, () => ({ status: 204 })],
   ['GET', /^\/api\/exclusions$/, (s) => ok(exclusionsOf(s))],
   ['POST', /^\/api\/exclusions$/, (s, _m, _q, b) => {
     const phrase = words(String(b.phrase ?? '')).length ? String(b.phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ') : ''

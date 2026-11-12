@@ -22,8 +22,10 @@ To start it like any other app instead, from the Dock or Spotlight:
 make install
 ```
 
-That copies the app to `/Applications`. Run it again after `git pull` to
-put the new version there.
+That copies the app to `/Applications`. Once is enough: from then on the
+app updates itself from its Updates page, to main or to any open pull
+request. [UPDATES.md](UPDATES.md) says how, and how to install it the
+first time.
 
 ## The first start
 
@@ -38,6 +40,8 @@ while no key is saved.
 | --- | --- |
 | People, searches, runs, settings | `~/Library/Application Support/Speaker Trail/speakertrail.json` |
 | The Exa key | the keychain, as **Speaker Trail: Exa API key** |
+| The channel the app follows | `~/Library/Application Support/Speaker Trail/updates.json` |
+| Builds downloaded to update to | `~/Library/Caches/Speaker Trail/builds` |
 
 The file is written whole on every change, to a new file that then takes
 the old one's place, so a crash in the middle leaves the last good file.
@@ -70,11 +74,12 @@ docker volume rm speakertrail_postgres
 | --- | --- |
 | `make run` | installs what is missing, builds the app and opens it |
 | `make` | builds the app, `bin/Speaker Trail.app` on a Mac |
-| `make install` | the same, copied to `/Applications` |
+| `make install` | the same, copied to `/Applications`, where it updates itself |
+| `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
 | `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `unit` and `interface` |
-| `make unit` | every Go test under the race detector |
+| `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
 | `make interface` | a type check of the interface |
 | `make check` | what this machine has and still needs |
 | `make clean` | removes what make built. The app's file stays |

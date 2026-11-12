@@ -61,6 +61,43 @@ export interface PrivateEvent extends PublicEvent {
   first_seen: string
 }
 
+// Where the app's updates stand, as cmd/speakertrail-app/updates.go says
+// it. See docs/UPDATES.md.
+export interface UpdateChannel {
+  // main, or pr- and the pull request's number.
+  id: string
+  name: string
+  version: string
+  // A pull request that no longer merges into main. Its build is still
+  // there to try.
+  conflict: boolean
+}
+
+export type UpdatePhase = '' | 'checking' | 'current' | 'gone' | 'downloading' | 'ready' | 'failed'
+
+export interface UpdateState {
+  version: string
+  commit: string
+  // Where the running build came from, empty for one made on this Mac.
+  channel: string
+  // Why this build does not update itself, empty when it does.
+  off: string
+  channels: UpdateChannel[] | null
+  picked: string
+  follows: string
+  gone: string
+  building: string
+  phase: UpdatePhase
+  next: string
+  nextName: string
+  nextCommit: string
+  checked: string
+  written: number
+  total: number
+  problem: string
+  detail: string
+}
+
 export interface SearchUse {
   provider: string
   used: number
@@ -358,6 +395,11 @@ export const api = {
   // Saves the Exa key in the keychain. An empty key removes it.
   setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
+  updates: () => request<UpdateState>('GET', '/api/updates'),
+  checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
+  followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),
+  relaunch: () => request<void>('POST', '/api/updates/relaunch', {}),
+  openCommit: () => request<void>('POST', '/api/updates/commit', {}),
 }
 
 export function fetchUrl(fetchId: number, kind: 'text' | 'html' | 'screenshot'): string {

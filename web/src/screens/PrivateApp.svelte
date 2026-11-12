@@ -1,12 +1,14 @@
 <script lang="ts">
   import { navigate, router } from '../lib/router.svelte'
   import { runWatch } from '../lib/run.svelte'
+  import { railDot, updates } from '../lib/updates.svelte'
   import Brand from '../lib/components/Brand.svelte'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
   import People from './People.svelte'
   import Settings from './Settings.svelte'
   import Searches from './Searches.svelte'
+  import Updates from './Updates.svelte'
   import NotFound from './NotFound.svelte'
 
   type Item = { href: string; label: string; icon: IconName }
@@ -29,6 +31,13 @@
   })
   let going = $derived(runWatch.run !== null)
 
+  // Where the app's updates stand, from the start, so Updates wears a dot
+  // when a newer build is coming or ready, or something needs a look.
+  $effect(() => {
+    if (ready) return updates.watch()
+  })
+  let updateDot = $derived(railDot(updates.shown))
+
   // The workspace opens on People.
   $effect(() => {
     if (router.path === '/app' || router.path === '/app/') navigate('/app/people', { replace: true })
@@ -36,6 +45,12 @@
 
   function current(href: string): boolean {
     return router.under(href)
+  }
+
+  // In the narrow window's tab bar Updates is reached from Settings, so
+  // Settings is lit there too.
+  function currentTab(href: string): boolean {
+    return current(href) || (href === '/app/settings' && router.under('/app/updates'))
   }
 
 </script>
@@ -53,6 +68,10 @@
         {/each}
       </nav>
       <div class="nav side-foot">
+        <a href="/app/updates" aria-current={current('/app/updates') ? 'page' : undefined}>
+          <Icon name="update" /><span>Updates</span>
+          {#if updateDot}<span class="dot {updateDot}" title="See Updates"></span>{/if}
+        </a>
         <ThemeButton withLabel />
       </div>
     </aside>
@@ -64,6 +83,8 @@
         <Searches />
       {:else if router.path === '/app/settings'}
         <Settings />
+      {:else if router.path === '/app/updates'}
+        <Updates />
       {:else}
         <NotFound embedded />
       {/if}
@@ -71,8 +92,8 @@
 
     <nav class="tabbar" aria-label="Main">
       {#each NAV as item (item.href)}
-        <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
-          <span class="tab-icon"><Icon name={item.icon} size={22} />{#if item.href === '/app/people' && going}<span class="dot busy" title="A run is going"></span>{/if}</span><span>{item.label}</span>
+        <a href={item.href} aria-current={currentTab(item.href) ? 'page' : undefined}>
+          <span class="tab-icon"><Icon name={item.icon} size={22} />{#if item.href === '/app/people' && going}<span class="dot busy" title="A run is going"></span>{:else if item.href === '/app/settings' && updateDot}<span class="dot {updateDot}" title="See Updates, in Settings"></span>{/if}</span><span>{item.label}</span>
         </a>
       {/each}
     </nav>

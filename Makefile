@@ -12,9 +12,13 @@
 #
 #   make            build the app, bin/Speaker Trail.app on a Mac
 #   make install    the same, copied to /Applications, to start it like
-#                   any other app
-#   make carry-over the people you kept in the old Docker version, into the
-#                   app. Once, while Docker still has the old database
+#                   any other app. Once is enough: from then on it updates
+#                   itself, see docs/UPDATES.md
+#   make update-key make the key builds are signed with, once, see
+#                   docs/UPDATES.md
+#   make carry-over the people you connected with in the old Docker
+#                   version, into the app. Once, while Docker still has the
+#                   old database
 #   make mock       the interface alone in a browser, with invented data
 #   make test       all tests: unit and interface
 #   make unit       the Go tests, under the race detector
@@ -53,7 +57,7 @@ UI_SOURCES := $(shell find web/src web/public -type f 2>/dev/null) web/index.htm
 UI_BUILT := web/dist/index.html
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install carry-over tools toolchain mock test unit interface check clean help
+.PHONY: all app run install update-key carry-over tools toolchain mock test unit interface check clean help
 
 help:
 	@sed -n '1,25p' Makefile | sed 's/^# \{0,1\}//'
@@ -114,10 +118,17 @@ else
 	@echo "make install puts the Mac app in /Applications, and this is not a Mac."
 endif
 
-# The people kept in the old Docker version, read from its database
+# The people connected in the old Docker version, read from its database
 # volume and added to the app's file. See scripts/carry-over.sh.
 carry-over: toolchain
 	@sh scripts/carry-over.sh
+
+# The key builds are signed with, made once. It puts the private half on
+# the clipboard, for GitHub's secrets and a password manager, and writes
+# the public half into cmd/speakertrail-app/update-key.txt. See
+# docs/UPDATES.md.
+update-key: toolchain
+	@$(GO) run ./cmd/speakertrail-release key
 
 # The interface on its own, with invented data, for work on how it looks.
 mock: web/node_modules/.package-lock.json
@@ -129,6 +140,7 @@ test: unit interface
 # and a race there only shows on someone else's machine.
 unit:
 	@$(GO) test -race -count=1 ./...
+	@sh scripts/needs-build-test.sh >/dev/null && printf 'ok  \tscripts/needs-build.sh\n'
 
 interface: web/node_modules/.package-lock.json
 	@out=$$(cd web && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }

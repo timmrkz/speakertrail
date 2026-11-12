@@ -117,6 +117,11 @@ answers 204. An empty key removes it.
 
 `GET /api/me` always answers `{"logged_in": true}`.
 
+## Updates
+
+`/api/updates` is answered by the app itself, not by `internal/api`. See
+[UPDATES.md](UPDATES.md).
+
 ## Exclusions
 
 An exclusion is a word or phrase, like "Online Marketing". A profile

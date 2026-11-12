@@ -9,6 +9,9 @@
   import SettingRow from '../lib/components/SettingRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
+  import { railDot, updates } from '../lib/updates.svelte'
+
+  const updateDot = $derived(railDot(updates.shown))
 
 
   const settings = new Load<Setting[]>()
@@ -61,8 +64,9 @@
     </section>
   {/if}
 
-  <!-- The sidebar holds the theme on wide screens. -->
+  <!-- The sidebar holds Updates and the theme on wide screens. -->
   <div class="account">
+    <a class="btn quiet" href="/app/updates"><Icon name="update" />Updates{#if updateDot}<span class="dot {updateDot}"></span>{/if}</a>
     <ThemeButton withLabel />
   </div>
 </div>

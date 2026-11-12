@@ -27,6 +27,7 @@ Start with [README.md](README.md). In short:
 | runs of profile searches | `internal/engine/` | |
 | HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
 | the Exa key in the keychain | `internal/keys/` | |
+| updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
@@ -36,9 +37,10 @@ Start with [README.md](README.md). In short:
 ## How Tim works
 
 - He uses Claude through claude.ai, in chat and in cloud sessions at
-  claude.ai/code. Changes reach him as pull requests on GitHub. After a
-  merge he runs `git pull && make run`. Never hand him zip files or ask him
-  to copy files around.
+  claude.ai/code. Changes reach him as pull requests on GitHub. He tries
+  one by picking it on the app's Updates page, which downloads its build
+  and relaunches, see [docs/UPDATES.md](docs/UPDATES.md). No terminal, no
+  `git pull`. Never hand him zip files or ask him to copy files around.
 - **Every piece of work becomes a pull request, always.** A branch he has to
   find himself is work he cannot see.
 - **The pull request comes first, not last.** Push the first commit and open
@@ -89,7 +91,9 @@ messages, pull request text, code comments and chat replies.
   due searches, started by hand. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
-  **profile** is confirmed or rejected. The API still says `sources` for
+  **profile** is confirmed or rejected. A **channel** is what the app
+  updates from, main or one pull request, and a **build** is the app made
+  from one commit of it. The API still says `sources` for
   searches, the interface and the docs never do. Whatever a thing is
   called in the interface, it is called that in the docs and the code
   comments too.

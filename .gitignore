@@ -4,3 +4,5 @@
 /.claude/worktrees/
 /bin/
 /.preview/
+/cmd/*/speakertrail-app
+/cmd/*/speakertrail-release

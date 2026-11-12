@@ -17,14 +17,18 @@ import (
 // of a kind of person in a place, like "Personal Trainer Düsseldorf", from
 // its own index, in one call. The engine never opens LinkedIn. A person is
 // kept only when they live in NRW, were active on LinkedIn lately, run
-// their own business, and nothing rules them out, like consulting. Nothing
-// is stored of anyone else. Without Exa, or with its budget spent, the
+// their own business, and nothing rules them out, like consulting or one
+// of Tim's exclusions. Nothing is stored of anyone else. Without Exa, or with its budget spent, the
 // profile search waits.
 func (p *Pipeline) checkProfileSearch(ctx context.Context, src Source, runID int64) error {
 	if p.Search == nil || !p.Search.FindsPosts() || src.Query == "" || src.Status == "manual" {
 		return nil
 	}
 	cfg, err := settings.Load(ctx, p.Pool)
+	if err != nil {
+		return err
+	}
+	excluded, err := Exclusions(ctx, p.Pool)
 	if err != nil {
 		return err
 	}
@@ -52,7 +56,7 @@ func (p *Pipeline) checkProfileSearch(ctx context.Context, src Source, runID int
 			continue
 		}
 		seen[key] = true
-		if !guest(prof, start, activeSince) {
+		if !guest(prof, start, activeSince, excluded) {
 			continue
 		}
 		city, _ := extract.PlaceInNRW(prof.Location)
@@ -79,8 +83,9 @@ func (p *Pipeline) checkProfileSearch(ctx context.Context, src Source, runID int
 }
 
 // guest tells whether a profile shows a possible guest: in NRW, active on
-// LinkedIn since a time, running their own business, and not ruled out.
-func guest(prof search.Profile, now, activeSince time.Time) bool {
+// LinkedIn since a time, running their own business, and neither ruled out
+// nor left out by one of the exclusions.
+func guest(prof search.Profile, now, activeSince time.Time, exclusions []string) bool {
 	if _, inNRW := extract.PlaceInNRW(prof.Location); !inNRW {
 		return false
 	}
@@ -88,6 +93,9 @@ func guest(prof search.Profile, now, activeSince time.Time) bool {
 		return false
 	}
 	_, _, roles := career(prof.Career)
+	if _, out := rubric.Excluded(prof.Headline+" "+roles, exclusions); out {
+		return false
+	}
 	ok, _ := rubric.Guest(rubric.Signals(rubric.Person{Name: prof.Name, Headline: prof.Headline, CurrentRoles: roles, Now: now}))
 	return ok
 }
@@ -124,7 +132,7 @@ func (p *Pipeline) resolveProfile(ctx context.Context, tx pgx.Tx, src Source, ru
 	if err != nil {
 		return 0, false, err
 	}
-	bornAbout, ageReason, roles := career(prof.Career)
+	bornAbout, ageReason, roles := careerOf(prof, at)
 	var lastActive *time.Time
 	if !prof.LastActive.IsZero() {
 		lastActive = &prof.LastActive

@@ -37,6 +37,10 @@ func newFakePeople() *fakePosts {
 		// A management consultant who founded his firm.
 		{URL: in("max-beispiel"), Name: "Max Beispiel", Headline: "Management Consultant | Strategy & Transformation", Location: "Köln",
 			LastActive: lastWeek, Career: []search.Step{{Title: "Founder", Org: "Beispiel Consulting", From: 2019}}},
+		// A founder in online marketing, left out by one of Tim's
+		// exclusions.
+		{URL: in("nina-probe"), Name: "Nina Probe", Headline: "Gründerin | Online-Marketing für Coaches", Location: "Köln",
+			LastActive: lastWeek, Career: []search.Step{{Title: "Gründerin", Org: "Probe Sichtbar", From: 2023}}},
 		// A trainer employed by a club.
 		{URL: in("mia-muster"), Name: "Mia Muster", Headline: "Athletiktrainerin", Location: "Essen, North Rhine-Westphalia, Germany",
 			LastActive: lastWeek, Career: []search.Step{{Title: "Athletiktrainerin", Org: "Probe Sportverein", From: 2021}}},
@@ -146,5 +150,74 @@ func TestProfileSearchesWaitWithoutExa(t *testing.T) {
 	runOnce(t, e)
 	if got := e.one(t, `SELECT status || ' ' || checks || ' ' || (next_check_at IS NULL) FROM sources WHERE id = $1`, src); got != "candidate 0 true" {
 		t.Errorf("the profile search without Exa: %v", got)
+	}
+}
+
+// A run takes the due profile searches best first: one that never ran,
+// then the one whose people Tim connected with, before one whose people he
+// never connected with.
+func TestRunsTakeTheBestSearchesFirst(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	for _, sql := range []string{
+		`UPDATE settings SET value = 'true' WHERE key = 'profile_searches_only'`,
+		`UPDATE settings SET value = '2' WHERE key = 'profile_searches_per_run'`,
+	} {
+		if _, err := e.pool.Exec(ctx, sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fp := newFakePeople()
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fp}, Now: func() time.Time { return now }}
+	ids := map[string]int64{}
+	for _, q := range []string{"Yoga Studio Inhaberin Köln", "Life Coach Bonn", "student founder NRW"} {
+		var id int64
+		if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, query, status) VALUES ($1, 'profile_search', $1, 'candidate') RETURNING id`, q).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		ids[q] = id
+	}
+	// Both ran before and found one person each. Tim connected with the
+	// one Life Coach Bonn found.
+	for i, q := range []string{"Yoga Studio Inhaberin Köln", "Life Coach Bonn"} {
+		var person int64
+		status := []string{"new", "connected"}[i]
+		if err := e.pool.QueryRow(ctx, `INSERT INTO people (full_name, normalised_name, podcast_status) VALUES ($1, lower($1), $2) RETURNING id`, "Probe "+q, status).Scan(&person); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `INSERT INTO sightings (source_id, person_id, checked_at, is_new) VALUES ($1, $2, $3, true)`, ids[q], person, now.AddDate(0, -2, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := e.pool.Exec(ctx, `UPDATE sources SET last_checked_at = $2, next_check_at = $2 WHERE id = $1`, ids[q], now.AddDate(0, -1, 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runOnce(t, e)
+	got := strings.Join(fp.queries, "|")
+	if !strings.Contains(got, "student founder NRW") || !strings.Contains(got, "Life Coach Bonn") || strings.Contains(got, "Yoga") {
+		t.Errorf("searches %q, want the new one and the one that led to a connection", got)
+	}
+}
+
+// An age the headline gives beats the guess from the years on the profile.
+func TestProfileSearchesTakeTheAgeTheHeadlineGives(t *testing.T) {
+	e := setup(t, "")
+	ctx := t.Context()
+	fp := &fakePosts{people: []search.Profile{{
+		URL: "https://www.linkedin.com/in/ben-beispiel", Name: "Ben Beispiel", Headline: "19 year old student and founder of Beispiel Labs",
+		Location: "Köln", LastActive: lastWeek, Career: []search.Step{
+			{Title: "Founder", Org: "Beispiel Labs", From: 2025},
+			{Education: true, Title: "Bachelor of Science", Org: "Probe Universität", From: 2020},
+		}}}}
+	e.p.Search = &search.Pool{DB: e.pool, Providers: []search.Provider{fp}, Now: func() time.Time { return now }}
+	var src int64
+	if err := e.pool.QueryRow(ctx, `INSERT INTO sources (name, kind, query, status) VALUES ('student founder Köln', 'profile_search', 'student founder Köln', 'candidate') RETURNING id`).Scan(&src); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.p.CheckSource(ctx, src, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.one(t, `SELECT born_about || ' ' || age_reason FROM profiles`); got != "2007 Headline says 19 in 2026" {
+		t.Errorf("age: %v", got)
 	}
 }

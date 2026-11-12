@@ -88,11 +88,11 @@ func writeReport(ctx context.Context, pool *pgxpool.Pool, w io.Writer, now time.
 		{"Fit: people by score", `
 			SELECT 'score ' || fit_score, count(*)::text FROM people GROUP BY fit_score ORDER BY fit_score DESC`},
 		{"Fit: the top 20 by score", `
-			SELECT 'kept, skipped, not decided', count(*) FILTER (WHERE podcast_status NOT IN ('new', 'known', 'skipped')) || ', ' ||
-				count(*) FILTER (WHERE podcast_status = 'skipped') || ', ' || count(*) FILTER (WHERE podcast_status IN ('new', 'known'))
+			SELECT 'connected, open', count(*) FILTER (WHERE podcast_status NOT IN ('new', 'known')) || ', ' ||
+				count(*) FILTER (WHERE podcast_status IN ('new', 'known'))
 			FROM (SELECT podcast_status FROM people ORDER BY fit_score DESC, created_at DESC, id DESC LIMIT 20) t`},
-		{"Fit: keeps and skips per signal", `
-			SELECT s, count(*) FILTER (WHERE decision = 'kept') || ' kept, ' || count(*) FILTER (WHERE decision = 'skipped') || ' skipped'
+		{"Fit: connections per signal", `
+			SELECT s, count(*) || ' connected'
 			FROM fit_decisions, unnest(signals) s GROUP BY s ORDER BY count(*) DESC, s`},
 		{"Slowest reads in the last 3 days", `
 			SELECT url, (duration_ms / 1000) || ' s, ' || people_found || ' people' FROM event_reads

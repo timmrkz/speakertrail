@@ -22,9 +22,8 @@ export type SourceKind =
 export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
-export type Decision = '' | 'kept' | 'skipped'
 export type PeopleSort = 'young' | 'new' | 'fit' | 'next' | 'name'
-export type PeopleFilter = 'all' | 'young' | 'kept' | 'skipped' | 'fits' | 'upcoming' | 'profile' | 'founder'
+export type PeopleFilter = 'all' | 'young' | 'connected' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export const EVENT_TYPES: EventType[] = ['pitch', 'talk', 'panel', 'meetup', 'workshop', 'conference', 'sport', 'other']
 export const SOURCE_STATUSES: SourceStatus[] = ['active', 'probation', 'candidate', 'manual', 'retired']
@@ -103,12 +102,12 @@ export interface Stats {
   weekly: { week_start: string; people: number; events: number; sources: number }[]
   cities: { city: string; events: number }[]
   last_run: Run | null
-  // What Tim's keeps and skips teach the fit rubric: for every signal, how
-  // often a person with it was kept or skipped, and how the top 20 by fit
-  // were decided.
+  // What Tim's connections teach the fit rubric: for every signal, how
+  // many people with it he connected with, and how many of the top 20 by
+  // fit.
   fit: {
-    signals: { key: string; label: string; for: boolean; kept: number; skipped: number }[]
-    top: { size: number; kept: number; skipped: number; open: number }
+    signals: { key: string; label: string; for: boolean; connected: number }[]
+    top: { size: number; connected: number; open: number }
   }
   // Each search provider's budget and how much of it this month has spent.
   // A provider without a key is never called.
@@ -159,8 +158,8 @@ export interface Person {
   // The signals for less those against. The signals are the reasons.
   fit_score: number
   signals: FitSignal[]
-  // Kept to contact, skipped, or not decided yet.
-  decision: Decision
+  // Whether Tim connected with the person on LinkedIn.
+  connected: boolean
   appearances: number
   next_appearance: NextAppearance | null
   profiles: Profile[]
@@ -241,9 +240,20 @@ export interface Source {
   health: Health
   health_note: string
   discovered_from: string
-  // Everyone the source ever found, and how many of them Tim kept.
+  // Everyone the source ever found, and how many of them Tim connected
+  // with.
   people: number
-  people_kept: number
+  people_connected: number
+}
+
+// An exclusion is a word or phrase, like "Online Marketing". Profile
+// searches leave out anyone whose headline or roles contain it, and People
+// hides those found before, unless Tim connected with them. people is how
+// many it hides now.
+export interface Exclusion {
+  id: number
+  phrase: string
+  people: number
 }
 
 // lists switches what a source's page is read as.
@@ -404,7 +414,7 @@ export const api = {
   patchEvent: (id: number, patch: { fit: Fit; fit_reason?: string }) => request<PrivateEvent>('PATCH', `/api/events/${id}`, patch),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
-  patchPerson: (id: number, patch: { notes?: string; decision?: Decision }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
+  patchPerson: (id: number, patch: { notes?: string; connected?: boolean }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
   addSource: (url: string, name?: string, lists: SourceLists = 'events') =>
@@ -414,6 +424,9 @@ export const api = {
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
   runs: () => request<{ runs: Run[] }>('GET', '/api/runs').then((r) => r.runs),
+  exclusions: () => request<Exclusion[]>('GET', '/api/exclusions'),
+  addExclusion: (phrase: string) => request<Exclusion>('POST', '/api/exclusions', { phrase }),
+  deleteExclusion: (id: number) => request<void>('DELETE', `/api/exclusions/${id}`, {}),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),

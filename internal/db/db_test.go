@@ -108,3 +108,41 @@ func TestFounderRuleMigration(t *testing.T) {
 		t.Errorf("%d retired and %d active sources, want 2 and 1", retired, active)
 	}
 }
+
+// Kept people become connected, skipped people open again, and only
+// connections are left among the decisions.
+func TestConnectedMigration(t *testing.T) {
+	pool := dbtest.NewEmpty(t)
+	ctx := t.Context()
+	if err := db.MigrateTo(ctx, pool, 26); err != nil {
+		t.Fatal(err)
+	}
+	for _, sql := range []string{
+		`INSERT INTO people (full_name, normalised_name, podcast_status) VALUES
+			('Anna Probe', 'anna probe', 'kept'),
+			('Bernd Probe', 'bernd probe', 'skipped'),
+			('Clara Probe', 'clara probe', 'replied'),
+			('Dora Probe', 'dora probe', 'new')`,
+		`INSERT INTO fit_decisions (person_id, decision) SELECT id, CASE podcast_status WHEN 'skipped' THEN 'skipped' ELSE 'kept' END
+			FROM people WHERE podcast_status IN ('kept', 'skipped')`,
+	} {
+		if _, err := pool.Exec(ctx, sql); err != nil {
+			t.Fatalf("%s: %v", sql, err)
+		}
+	}
+	if err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	pool.QueryRow(ctx, `SELECT string_agg(full_name || ' ' || podcast_status, ', ' ORDER BY full_name) FROM people`).Scan(&got)
+	if want := "Anna Probe connected, Bernd Probe new, Clara Probe replied, Dora Probe new"; got != want {
+		t.Errorf("people: %s, want %s", got, want)
+	}
+	pool.QueryRow(ctx, `SELECT string_agg(decision, ', ') FROM fit_decisions`).Scan(&got)
+	if got != "connected" {
+		t.Errorf("decisions: %s, want connected", got)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE people SET podcast_status = 'skipped'`); err == nil {
+		t.Error("skipped is still allowed")
+	}
+}

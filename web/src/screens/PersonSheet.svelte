@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, type Decision, type PersonDetail, type Profile, type Review } from '../lib/api'
+  import { api, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { ACTIVITY_TONE, activityText, fmtAgo, fmtDateTime, initials, instagramSearch, linkedinSearch, PLATFORM_LABEL, ROLE_LABEL, shortUrl } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
@@ -55,20 +55,20 @@
     }
   }
 
-  // Keep, to contact them, or skip. The pressed one again undoes it.
+  // Connected on LinkedIn, or not. The same button again undoes it.
   let deciding = $state(false)
-  async function decide(next: Decision) {
+  async function toggleConnected() {
     if (!person.data || deciding) return
-    const before = person.data.decision
-    const to = before === next ? '' : next
+    const before = person.data.connected
+    const to = !before
     deciding = true
-    person.data = { ...person.data, decision: to }
+    person.data = { ...person.data, connected: to }
     onupdate?.(person.data)
     try {
-      await api.patchPerson(id, { decision: to })
-      toast.show(to === 'kept' ? `Kept ${person.data.name}` : to === 'skipped' ? `Skipped ${person.data.name}` : `${person.data.name} is open again`)
+      await api.patchPerson(id, { connected: to })
+      toast.show(to ? `Connected with ${person.data.name}` : `${person.data.name} is open again`)
     } catch (e) {
-      person.data = { ...person.data, decision: before }
+      person.data = { ...person.data, connected: before }
       onupdate?.(person.data)
       toast.show(errorText(e), 'bad')
     } finally {
@@ -110,13 +110,9 @@
           {/if}
           <p class="faint small">{[person.data.city, `first seen ${fmtAgo(person.data.first_seen)}`].filter(Boolean).join(' · ')}</p>
           <div class="row decide">
-            <button class="btn sm good" type="button" aria-pressed={person.data.decision === 'kept'} disabled={deciding} onclick={() => decide('kept')}
-              title={person.data.decision === 'kept' ? 'Kept. Click again to undo' : 'Keep, to contact them. It teaches the fit rubric'}>
-              <Icon name="check" size={14} />Keep
-            </button>
-            <button class="btn sm bad" type="button" aria-pressed={person.data.decision === 'skipped'} disabled={deciding} onclick={() => decide('skipped')}
-              title={person.data.decision === 'skipped' ? 'Skipped. Click again to undo' : 'Skip. It teaches the fit rubric'}>
-              <Icon name="x" size={14} />Skip
+            <button class="btn sm good connect" type="button" aria-pressed={person.data.connected} disabled={deciding} onclick={toggleConnected}
+              title={person.data.connected ? 'Connected. Click again to undo' : 'Mark as connected once you connected on LinkedIn. It counts for the search that found them'}>
+              <Icon name="check" size={14} />{person.data.connected ? 'Connected' : 'Connect'}
             </button>
           </div>
         </div>
@@ -290,7 +286,8 @@
   .head { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 14px; align-items: center; }
   .head-text { display: grid; gap: 3px; min-width: 0; }
   .decide { margin-top: 6px; }
-  .decide .btn { min-width: 5.6em; }
+  /* Room for Connected, so the button keeps its width. */
+  .decide .btn { min-width: 9.2em; justify-content: center; }
   .head-text h2 { font-size: 19px; }
   .head-text p { overflow-wrap: anywhere; }
   .apps { display: grid; gap: 8px; }

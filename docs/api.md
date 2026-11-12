@@ -75,7 +75,7 @@ All parameters are optional. `from` defaults to today, `to` to `from` plus the s
 
 `searches` holds each search provider the engine knows, with how many searches it made this month, counted from the first of the month in Berlin, and its budget from Settings, `exa_monthly_searches`, `tavily_monthly_searches` and `brave_monthly_searches`. `set` is false when the provider has no API key, and then it is never called.
 
-`fit` says what the keeps and skips teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how often a person who had it was `kept` or `skipped`, and `top` how the top 20 by fit were decided, `{"size": 20, "kept": 6, "skipped": 3, "open": 11}`.
+`fit` says what Tim's connections teach the fit rubric: `signals` lists every signal of the rubric, in its order, with how many people who had it he `connected` with, and `top` how many of the top 20 by fit, `{"size": 20, "connected": 6, "open": 14}`.
 
 `weekly` holds the last 8 weeks, oldest first, counting new rows by their creation week. `last_run` is a run object as in `GET /api/runs`, or null.
 
@@ -96,13 +96,15 @@ In private responses `people` always holds everyone named, each with their `id`.
 
 `PATCH /api/events/{id}` with `{"fit": "kept" | "dropped", "fit_reason": "optional"}` answers the updated event.
 
-`GET /api/people?q=&sort=young|next|new|name|fit&filter=all|young|kept|skipped|fits|upcoming|profile|founder`
+`GET /api/people?q=&sort=young|next|new|name|fit&filter=all|young|connected|fits|upcoming|profile|founder`
 
-The answer is `{"people": [...], "counts": {"all": 57, "young": 9, "kept": 4, "skipped": 6, "founder": 3, "fits": 20, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
+The answer is `{"people": [...], "counts": {"all": 57, "young": 9, "connected": 4, "founder": 3, "fits": 20, "upcoming": 40, "profile": 12}}`. `counts` says how many people each filter shows for the same search, so an empty filter never hides the others.
 
-While `profile_searches_only` is on, the list holds only people a profile search found, and whoever Tim kept before. Everyone else stays in the database but is not shown.
+People whom one of Tim's exclusions leaves out are not in the list or the counts, unless Tim connected with them, see [Exclusions](#exclusions).
 
-`sort=young` orders by the likely year of birth from the confirmed LinkedIn profile, the youngest first, people without a guess after them and the skipped last. `filter=young` keeps those likely under 30, `kept` those Tim kept, at any step after, and `skipped` those he skipped. `sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
+While `profile_searches_only` is on, the list holds only people a profile search found, and whoever Tim connected with before. Everyone else stays in the database but is not shown.
+
+`sort=young` orders by the likely year of birth from the confirmed LinkedIn profile, the youngest first, people without a guess after them. `filter=young` keeps those likely under 30, and `connected` those Tim connected with, at any step after. `sort=next` (the default) orders by the next upcoming appearance, people without one last. `new` orders by first seen, newest first. `filter=upcoming` keeps people with an upcoming appearance, `profile` keeps people with at least one profile that is not rejected, and `founder` keeps people whose `fit` is `founder`: an event page says they founded or run something, or their title says so.
 
 ```json
 {
@@ -143,7 +145,7 @@ While `profile_searches_only` is on, the list holds only people a profile search
 
 `GET /api/sources?status=&q=&kind=`
 
-`kind` keeps only sources of that kind, like `profile_search`. Each source also has `people`, everyone it ever found, and `people_kept`, how many of them Tim kept.
+`kind` keeps only sources of that kind, like `profile_search`. Each source also has `people`, everyone it ever found, and `people_connected`, how many of them Tim connected with.
 
 ```json
 {
@@ -191,9 +193,9 @@ A person in `GET /api/people` carries the fit rubric's verdict, see [search-stra
   { "key": "backed", "label": "Backed by a startup programme", "for": false, "passage": "In the portfolio of Beispiel Hub", "found_in": "portfolio" } ] }
 ```
 
-`decision` is `kept`, `skipped`, or empty when Tim has not decided. `PATCH /api/people/{id}` with `{"decision": "kept"}` keeps a person, `"skipped"` skips them and `""` undoes either. Each decision is recorded with the signals the person had then, and still counts after a skipped person is deleted. Skipped people come last in `fit` order and are not among the good fits.
+`connected` says whether Tim connected with the person on LinkedIn. `PATCH /api/people/{id}` with `{"connected": true}` marks it, `false` undoes it. There is nothing else to decide: whoever is not connected is open. A person further along the funnel, like `contacted`, counts as connected and stays at that step. Each connection is recorded with the signals the person had then, and still counts after the person is deleted.
 
-`sort` is `young` for the likely youngest first, `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `young`, `kept`, `skipped`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
+`sort` is `young` for the likely youngest first, `new` for the newest first, `next` for the next appearance, `name`, or `fit` for the best fits first. `filter` is `all`, `young`, `connected`, `fits` for a score above 0, `upcoming`, `profile` or `founder`, and `counts` has each.
 
 A person also carries `activity`, what the last lookup saw of the startup they founded, or null: `{"state": "quiet", "since": "2024-05-02T00:00:00Z", "note": "the website changed May 2024, by its sitemap", "company": "Beispiel GmbH"}`. `state` is `active`, `unknown`, `quiet`, `dissolved` or `gone`. Sorted by next appearance, founders of active startups come before the others.
 
@@ -260,3 +262,13 @@ Each check is:
 `GET /api/settings` answers `{"settings": [{"key", "value", "description", "updated_at"}]}`.
 
 `PATCH /api/settings/{key}` with `{"value": <any JSON>}` answers the updated setting.
+
+## Exclusions
+
+An exclusion is a word or phrase, like "Online Marketing". A profile search leaves out anyone whose headline or current roles contain one, and `GET /api/people` hides those found before, unless Tim connected with them. A phrase matches at the start of a word, in any case, whatever stands between its words, and also written as one word: "Online Marketing" matches "Online-Marketing-Expertin" and "#onlinemarketing", but "Coach" does not match "Lifecoach".
+
+`GET /api/exclusions` answers `[{"id": 1, "phrase": "Online Marketing", "people": 3}]`, in the order of the phrases. `people` is how many people it hides now. Someone two exclusions match counts for the first.
+
+`POST /api/exclusions` with `{"phrase": "Personal Branding"}` adds one and answers it with `201`. The phrase keeps its words, with single spaces between them, at most 60 characters. The same phrase twice answers `409`, one without a word `400`.
+
+`DELETE /api/exclusions/{id}` removes one and answers `204`. The people it hid come back.

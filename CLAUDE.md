@@ -165,6 +165,11 @@ messages, pull request text, code comments and chat replies.
   for robots.txt, and the headless browser goes through a filter that
   refuses them. `TestNeverRequestsLinkedInOrInstagram` and
   `TestBrowserNeverReachesBlockedHosts` prove it. Never weaken either.
+- **LinkedIn opens in Tim's Chrome profile.** The app never requests
+  LinkedIn itself, it hands the link to Chrome with
+  `open -n -a "Google Chrome" --args --profile-directory=<folder>`, the
+  profile where Tim is logged in. Never plain `open <link>`, which lands in
+  whichever profile was used last. See [docs/open-in-profile.md](docs/open-in-profile.md).
 - **Polite crawling.** robots.txt is respected, the bot names itself, one
   request every 5 seconds per website. A site that refuses the bot becomes
   a manual source. No workarounds.

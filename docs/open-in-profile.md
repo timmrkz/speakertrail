@@ -46,8 +46,12 @@ All three were tested in a cloud session on 12 Nov 2026 with Chromium 153 on
 Linux, which uses the same hand over as Chrome on a Mac. A small local web
 server played LinkedIn. Each profile logged in as someone else, and every link
 sent to `Profile 1` arrived with `Profile 1`'s login cookie, as a tab in its
-window, never in the other profile's. What is still to check is the same on
-Tim's Mac, with `scripts/open-in-profile.sh`.
+window, never in the other profile's.
+
+On 12 Nov 2026 Tim ran `scripts/open-in-profile.sh` on his Mac, macOS with
+Google Chrome and two profiles. It listed both, and a link sent to the second
+profile, the one logged in to LinkedIn, opened there, logged in. This is the
+way the app does it.
 
 Two things to get right in the app:
 
@@ -61,11 +65,60 @@ Two things to get right in the app:
 The app is not sandboxed, it is not sold through the App Store, so it may
 start other apps with arguments.
 
-## What the app will do
+## How the app will do it
 
-In Settings, Tim picks a browser and one of its profiles once, from a list the
-app read from the browser's own files. Every LinkedIn button in the app then
-opens its link there, in the background or in front.
+This is the plan for the Mac app. Follow it when building the LinkedIn button.
+
+### Settings
+
+- Settings has one entry, **LinkedIn opens in**, a menu of Chrome's profiles by
+  the names Tim gave them, read from `Local State` each time Settings opens.
+- The app keeps the profile's **folder**, like `Profile 1`, not its name.
+  Names can change, folders do not.
+- With only one profile, it is chosen without asking.
+- If the kept folder is gone from `Local State`, the setting shows that and
+  asks for a new choice.
+
+### The Go side
+
+A small package, `internal/browser`, with no knowledge of the interface:
+
+- `Profiles(app string) ([]Profile, error)` reads
+  `~/Library/Application Support/<folder>/Local State` and returns each
+  profile's folder and name. The folder for each browser is the table in
+  `scripts/open-in-profile.sh`, Chrome first.
+- `CheckLink(link string) error` passes only a link that parses with
+  `net/url`, uses `https`, and has no spaces. A crawled link is untrusted, see
+  the warning above.
+- `Command(app, folder, link string, background bool) []string` builds the
+  arguments: `-n`, `-a`, the app, `-g` when in the background, `--args`,
+  `--profile-directory=<folder>`, the link. A pure function, so tests can
+  check every argument.
+- `Open(ctx, app, folder, link string, background bool) error` checks the
+  link, checks the folder against `Profiles` again, then runs
+  `exec.CommandContext(ctx, "open", Command(...)...)`. Never through a shell.
+
+Never plain `open <link>`, and never AppleScript window lookups. Chrome's
+AppleScript does not say which profile a window belongs to.
+
+### Tests
+
+- `Profiles` against a `Local State` in `testdata/`, with invented profile
+  names, including a broken file and one without profiles.
+- `CheckLink` as a table: a LinkedIn link passes, `--remote-debugging-port=1`,
+  `http://`, `javascript:`, `file://` and a link with a space fail.
+- `Command` as a table, foreground and background.
+- Nothing in the tests starts a browser or touches the network.
+
+### The interface
+
+- The LinkedIn button in the person's detail opens their profile link with
+  `Open`. A click shows at once: the button says it is opening until `open`
+  returns, which takes well under a second.
+- When no profile is chosen, the button does not guess. It says so and leads
+  to Settings, because guessing is the coin toss this whole page avoids.
+- An error from `Open` shows beside the button in plain words, like "Chrome
+  has no profile Profile 1 any more".
 
 ## Try it on the Mac
 

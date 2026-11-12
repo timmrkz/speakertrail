@@ -335,7 +335,7 @@ func TestChecksAtOnceWhileTheCopiesAreReplaced(t *testing.T) {
 	}
 }
 
-// Issue #420: Tim picked a pull request two minutes after its newest build
+// FrameFairy issue #420: Tim picked a pull request two minutes after its newest build
 // was published, while the list, written from every entry in a queue all
 // builds share, still named the build before. That one was in the cache,
 // so the app came back as it at once. The channel's own entry is uploaded

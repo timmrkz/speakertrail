@@ -110,7 +110,7 @@ func (s *Source) inFlight(sum string) bool {
 //
 // Handing the kept build over is not more of the download, so it does not
 // count from nothing again: the fill ran back towards empty just before
-// the end and then jumped to full (#334). It says only that the whole
+// the end and then jumped to full (FrameFairy #334). It says only that the whole
 // build is there, once it has been handed over.
 func (s *Source) await(ctx context.Context, f *fetching, sum string, dst io.Writer, report func(written, total int64)) error {
 	tick := time.NewTicker(100 * time.Millisecond)

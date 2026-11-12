@@ -19,6 +19,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -30,10 +32,11 @@ import (
 	"github.com/timmrkz/speakertrail/web"
 )
 
-// version is set at build time to the commit.
-var version = "dev"
-
 func main() {
+	// Started again to put a new build in place once the app has quit,
+	// see install.go.
+	installIfAsked()
+	go tidyTemp(os.TempDir(), time.Now())
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	// make carry-over hands over the people kept in the Docker version,
 	// see scripts/carry-over.sh. It writes the app's file and opens no
@@ -45,27 +48,46 @@ func main() {
 		}
 		return
 	}
-	slog.Info("speakertrail starting", "version", version)
+	slog.Info("speakertrail starting", "version", runningVersion(), "channel", buildChannel, "commit", buildCommit)
 
-	answers, closeDown, err := open()
+	answers, e, dir, err := open()
 	if err != nil {
 		slog.Error("speakertrail cannot start", "error", err)
 		os.Exit(1)
 	}
-	app := application.New(application.Options{
+	// The updates are made once the app is, since Wails' updater is the
+	// app's. The page asks for them through the same handler.
+	var ups atomic.Pointer[updating]
+	var app *application.App
+	api := http.NewServeMux()
+	api.Handle("/api/updates", updatesAPI{get: ups.Load, open: func(url string) error { return app.Browser.OpenURL(url) }})
+	api.Handle("/api/updates/", updatesAPI{get: ups.Load, open: func(url string) error { return app.Browser.OpenURL(url) }})
+	api.Handle("/", answers)
+	app = application.New(application.Options{
 		Name:        "Speaker Trail",
 		Description: "Finds people in NRW worth a conversation",
 		Assets: application.AssetOptions{
-			Handler: handler(web.Dist(), answers),
+			Handler: handler(web.Dist(), api),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 		// A run that goes when the app closes is stopped, and what it did
-		// not get to waits for the next run.
-		OnShutdown: closeDown,
-		Logger:     slog.Default(),
+		// not get to waits for the next run. A build that is ready goes in
+		// place once the app is gone, see installOnQuit.
+		OnShutdown: func() {
+			if id, _ := e.Going(); id != 0 {
+				e.Stop(id)
+			}
+			if c := ups.Load(); c != nil {
+				c.installOnQuit()
+			}
+		},
+		Logger: slog.Default(),
 	})
+	c := newUpdating(app.Updater, app.Quit, dir, e.CloseIfIdle, nil)
+	ups.Store(c)
+	c.start()
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Speaker Trail",
 		Width:     1100,
@@ -98,19 +120,20 @@ func Folder() (string, error) {
 }
 
 // open reads the app's file, adds the starting searches the first time,
-// ends a run the app closed under, and builds what answers the window.
-func open() (http.Handler, func(), error) {
+// ends a run the app closed under, and builds what answers the window. It
+// also gives the engine and the app's folder.
+func open() (http.Handler, *engine.Engine, string, error) {
 	dir, err := Folder()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	st, err := store.Open(dir, nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	slog.Info("the app's file", "path", st.Path())
 	if err := st.Update(func(d *store.Data) error { return d.Start(st.Now()) }); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	exa := keys.NewExa()
 	e := &engine.Engine{Store: st, Finder: func() engine.Finder {
@@ -120,14 +143,9 @@ func open() (http.Handler, func(), error) {
 		return nil
 	}}
 	if err := e.Recover(); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
-	closeDown := func() {
-		if id, _ := e.Going(); id != 0 {
-			e.Stop(id)
-		}
-	}
-	return apipkg.New(st, e, exa, slog.Default()), closeDown, nil
+	return apipkg.New(st, e, exa, slog.Default()), e, dir, nil
 }
 
 // carryOver adds the people the Docker version kept, read as JSON.

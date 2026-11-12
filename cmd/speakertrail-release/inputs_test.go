@@ -13,7 +13,7 @@ import (
 )
 
 // The app never reads keys meant for other apps or watches the screen or
-// the camera, issue #369, and a build that could is never signed. These
+// the camera, FrameFairy issue #369, and a build that could is never signed. These
 // make the programs of a build by hand, as small as macOS's own loader
 // would read them, with what each test needs in them.
 
@@ -242,7 +242,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 }
 
 // The app never runs anything as the root user or with administrator
-// rights, issue #751, and a build that could ask for them is never signed.
+// rights, FrameFairy issue #751, and a build that could ask for them is never signed.
 func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 	with := func(change func(p *program)) []byte {
 		p := app

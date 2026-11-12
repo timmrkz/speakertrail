@@ -202,7 +202,7 @@ func (a *API) checkSearch(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) startFailed(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
-	case errors.Is(err, engine.ErrNoKey), errors.Is(err, engine.ErrNoBudget), errors.Is(err, engine.ErrNothing):
+	case errors.Is(err, engine.ErrNoKey), errors.Is(err, engine.ErrNoBudget), errors.Is(err, engine.ErrNothing), errors.Is(err, engine.ErrClosed):
 		fail(w, http.StatusConflict, capital(err.Error()))
 	default:
 		a.internal(w, r, err)

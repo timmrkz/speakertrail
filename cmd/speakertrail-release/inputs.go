@@ -1,8 +1,8 @@
 package main
 
 // The app must never read keys typed into other apps, or watch the screen
-// or the camera, issue #369, and never runs anything as the root user or
-// with administrator rights, issue #751. macOS asks the person before any
+// or the camera, FrameFairy issue #369, and never runs anything as the root user or
+// with administrator rights, FrameFairy issue #751. macOS asks the person before any
 // of that works, so what is checked here is that a build never asks: a
 // build that can is refused before it is signed, and no app installs a
 // build that is not signed, see updates.Verify. sign runs from main, see publish.yml, so

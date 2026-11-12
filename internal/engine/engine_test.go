@@ -254,3 +254,72 @@ func TestLinkedIn(t *testing.T) {
 		}
 	}
 }
+
+// Relaunch asks whether a run goes, and from then on no run starts until
+// it gives up, so the quit into a new build never stops one half way.
+func TestNoRunStartsWhileTheAppRelaunches(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 16)}
+	e, st := newEngine(t, f)
+	_ = st.Update(func(d *store.Data) error {
+		_, err := d.AddSearch("Yogalehrerin Bonn", 0, t0)
+		return err
+	})
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	if _, ok := e.CloseIfIdle(); ok {
+		t.Fatal("CloseIfIdle said idle while a run goes")
+	}
+	e.Stop(id)
+	reopen, ok := e.CloseIfIdle()
+	if !ok {
+		t.Fatal("CloseIfIdle said busy after the run stopped")
+	}
+	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrClosed) {
+		t.Errorf("a start while closed said %v, want ErrClosed", err)
+	}
+	reopen()
+	if _, started, err := e.Start("manual", 0); err != nil || !started {
+		t.Errorf("a start after reopen: %v %v", started, err)
+	}
+	close(f.hold)
+	e.Wait()
+}
+
+// Starts and the look Relaunch makes come from several goroutines at once.
+// Whenever CloseIfIdle says idle, no run goes until reopen.
+func TestCloseIfIdleAndStartFromSeveralGoroutines(t *testing.T) {
+	e, st := newEngine(t, &finder{profiles: invented})
+	_ = st.Update(func(d *store.Data) error {
+		for _, q := range []string{"Yogalehrerin Bonn", "Personal Trainer Essen", "Coach Münster"} {
+			if _, err := d.AddSearch(q, 0, t0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 8 {
+				id, _, _ := e.Start("manual", 0)
+				e.Stop(id)
+			}
+		})
+		wg.Go(func() {
+			for range 8 {
+				reopen, ok := e.CloseIfIdle()
+				if ok {
+					if going, _ := e.Going(); going != 0 {
+						t.Errorf("run %d goes while closed", going)
+					}
+				}
+				reopen()
+			}
+		})
+	}
+	wg.Wait()
+	e.Wait()
+}

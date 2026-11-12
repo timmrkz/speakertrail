@@ -147,7 +147,7 @@ func (s *Source) readEntry(ctx context.Context) <-chan ownEntry {
 // shares. On 20 October the list took two minutes to follow a build of a
 // pull request, and Tim picked it in between: the list still named the
 // build before, which was kept in the cache, so the app came back as that
-// at once, issue #420. The entry is as untrusted as the list and is
+// at once, FrameFairy issue #420. The entry is as untrusted as the list and is
 // checked the same way, its claim among it before it is installed. An
 // entry that cannot be read, or is of the build the list has or an older
 // one, leaves the list as it is.

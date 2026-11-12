@@ -36,8 +36,17 @@ UNAME := $(shell uname -s)
 GOTOOLCHAIN ?= local
 export GOTOOLCHAIN
 
-# The commit, for the log line each start writes.
-VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo dev)
+# What the build workflow says about a build of the app: its version, the
+# channel it came from and the commit. A build made here leaves them empty,
+# and follows no channel until one is picked on the Updates page. See
+# docs/UPDATES.md.
+BUILD_VERSION ?=
+BUILD_CHANNEL ?=
+BUILD_COMMIT ?=
+APP_LDFLAGS := -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+# The app's version, in its Info.plist. The build's own, with its channel
+# and commit, is BUILD_VERSION.
+VERSION := $(shell awk -F'"' '/^const appVersion = /{ print $$2; exit }' cmd/speakertrail-app/appfiles.go)
 
 UI_SOURCES := $(shell find web/src web/public -type f 2>/dev/null) web/index.html web/package.json \
 	web/vite.config.ts web/tsconfig.json
@@ -75,7 +84,7 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
-	@$(GO) build -trimpath -ldflags "-X main.version=$(VERSION)" -o $@ ./cmd/speakertrail-app
+	@$(GO) build -trimpath -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
 
 # The app as the folder Finder draws as one icon. Only on a Mac: elsewhere
 # the program in bin/ is the app.

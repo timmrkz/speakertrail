@@ -85,7 +85,7 @@ func TestAChannelPickedAgainIsNotDownloadedAgain(t *testing.T) {
 // the cache and is then handed to the updater from there, and that hand
 // over used to count again from nothing, so the fill ran back towards
 // empty just before the end and then jumped to full. Found by Tim on the
-// Updates page (#334).
+// Updates page (FrameFairy #334).
 //
 // On the real disk: an update is a program that is downloaded, kept and run.
 func TestADownloadsProgressNeverGoesBack(t *testing.T) {

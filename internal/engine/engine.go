@@ -42,6 +42,7 @@ var (
 	ErrNoKey    = errors.New("add the Exa key in Settings first, runs ask Exa for the profiles")
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
 	ErrNothing  = errors.New("no search is due. Add one in Searches, or resume a paused one")
+	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
 )
 
 // Engine runs profile searches against a store.
@@ -53,6 +54,9 @@ type Engine struct {
 
 	mu    sync.Mutex
 	going *going
+	// closed is set while Relaunch puts a new build in place, so no run
+	// starts between its look and the quit, see CloseIfIdle.
+	closed bool
 }
 
 // going is the run that goes now.
@@ -89,6 +93,24 @@ func (e *Engine) Recover() error {
 	})
 }
 
+// CloseIfIdle says whether no run goes, and when none does, starts none
+// until reopen is called. Relaunch asks it, so a run is never stopped half
+// way by the quit into a new build, and none starts between the look and
+// the quit.
+func (e *Engine) CloseIfIdle() (reopen func(), ok bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.going != nil {
+		return func() {}, false
+	}
+	e.closed = true
+	return func() {
+		e.mu.Lock()
+		e.closed = false
+		e.mu.Unlock()
+	}, true
+}
+
 // Start begins a run over the due searches, or over the one search named
 // for Check now. It returns the run's id, and false with the going run's
 // id when one goes already.
@@ -97,6 +119,9 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	defer e.mu.Unlock()
 	if e.going != nil {
 		return e.going.id, false, nil
+	}
+	if e.closed {
+		return 0, false, ErrClosed
 	}
 	if e.Finder == nil || e.Finder() == nil {
 		return 0, false, ErrNoKey

@@ -17,11 +17,11 @@ func TestCarryOver(t *testing.T) {
 	if added != 2 || there != 1 {
 		t.Errorf("added %d, there %d, want 2 and 1", added, there)
 	}
-	if here.Decision != "kept" || here.Notes != "Met at the meetup" {
+	if !here.Connected || here.Notes != "Met at the meetup" {
 		t.Errorf("the person here = %+v", here)
 	}
 	ole := d.PersonByProfile("https://www.linkedin.com/in/ole-muster")
-	if ole == nil || ole.Decision != "kept" || ole.LinkedIn.BornAbout != 1998 || ole.LinkedIn.Handle != "ole-muster" || ole.City != "Essen" {
+	if ole == nil || !ole.Connected || ole.LinkedIn.BornAbout != 1998 || ole.LinkedIn.Handle != "ole-muster" || ole.City != "Essen" {
 		t.Errorf("ole = %+v", ole)
 	}
 	// Again changes nothing.

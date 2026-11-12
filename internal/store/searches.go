@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"encoding/csv"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -76,10 +75,10 @@ func (s *Search) Resume(at time.Time) {
 }
 
 // Due lists the searches a run takes now: those not paused whose time has
-// come, the longest due first, then those with more points, then the
-// oldest. At most limit of them.
+// come, the best first, see RankSearches. At most limit of them.
 func (d *Data) Due(now time.Time, limit int) []*Search {
-	var due []*Search
+	yields := d.Yields()
+	var due []SearchYield
 	for _, s := range d.Searches {
 		if s.Status == "retired" || s.Query == "" {
 			continue
@@ -87,29 +86,17 @@ func (d *Data) Due(now time.Time, limit int) []*Search {
 		if !s.NextRun.IsZero() && s.NextRun.After(now) {
 			continue
 		}
-		due = append(due, s)
+		due = append(due, yields[s.ID])
 	}
-	slices.SortStableFunc(due, func(a, b *Search) int {
-		switch {
-		case a.NextRun.IsZero() != b.NextRun.IsZero():
-			if a.NextRun.IsZero() {
-				return -1
-			}
-			return 1
-		case !a.NextRun.Equal(b.NextRun):
-			return a.NextRun.Compare(b.NextRun)
-		case a.Points != b.Points:
-			if a.Points > b.Points {
-				return -1
-			}
-			return 1
-		}
-		return int(a.ID - b.ID)
-	})
+	RankSearches(due)
 	if limit >= 0 && len(due) > limit {
 		due = due[:limit]
 	}
-	return due
+	out := make([]*Search, 0, len(due))
+	for _, y := range due {
+		out = append(out, d.Search(y.ID))
+	}
+	return out
 }
 
 // Ran moves a search on after a run took it: active while it finds new

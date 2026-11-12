@@ -18,8 +18,11 @@ types.
 `GET /api/people?q=lea&sort=young&filter=all`
 
 `sort` is `young` (the default), `new`, `fit` or `name`. `filter` is `all`,
-`young`, `kept` or `skipped`. `q` looks in the name, the headline and the
-city. `counts` says how many people each filter would show.
+`young` or `connected`. `q` looks in the name, the headline and the city.
+`counts` says how many people each filter would show.
+
+People whom one of Tim's exclusions leaves out are not in the list or the
+counts, unless Tim connected with them, see [Exclusions](#exclusions).
 
 ```json
 {
@@ -31,25 +34,24 @@ city. `counts` says how many people each filter would show.
       "city": "Köln",
       "first_seen": "2026-11-10T18:00:00Z",
       "fit_score": 3,
-      "decision": "",
+      "connected": false,
       "signals": [{ "key": "founder", "label": "Founded something", "for": true, "passage": "Gründerin", "found_in": "LinkedIn" }],
       "profiles": [{ "id": 7, "platform": "linkedin", "url": "https://www.linkedin.com/in/lea-beispiel", "review": "" }],
       "linkedin": { "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "young": 1, "kept": 0, "skipped": 0 }
+  "counts": { "all": 1, "young": 1, "connected": 0 }
 }
 ```
 
-`decision` is `kept`, `skipped` or empty. `linkedin` is null once the
-profile is rejected.
+`connected` says whether Tim connected with the person on LinkedIn.
+`linkedin` is null once the profile is rejected.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
 `sightings`: each search that found the person, newest first.
 
-`PATCH /api/people/{id}` with `{"decision": "kept"}`, `{"decision": ""}`
-or `{"notes": "..."}` answers the person as `GET` does. A decision other
-than `kept`, `skipped` or empty gets 400.
+`PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`
+or `{"notes": "..."}` answers the person as `GET` does.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
@@ -60,7 +62,8 @@ The interface calls them sources, so the paths say `sources`. Every one is
 a profile search.
 
 `GET /api/sources?kind=profile_search&q=köln` lists them, with how many
-people each found and how many of those are kept.
+people each found, `people`, and how many of those Tim connected with,
+`people_connected`.
 
 `POST /api/sources` with `{"query": "Yogalehrerin Bonn"}` adds a search and
 answers 201 with it. The same search again, in any case, gets 409.
@@ -113,3 +116,25 @@ this month used, never the key itself:
 answers 204. An empty key removes it.
 
 `GET /api/me` always answers `{"logged_in": true}`.
+
+## Exclusions
+
+An exclusion is a word or phrase, like "Online Marketing". A profile
+search leaves out anyone whose headline or current roles contain one, and
+`GET /api/people` hides those found before, unless Tim connected with
+them. A phrase matches at the start of a word, in any case, whatever
+stands between its words, and also written as one word: "Online
+Marketing" matches "Online-Marketing-Expertin" and "#onlinemarketing", but
+"Coach" does not match "Lifecoach".
+
+`GET /api/exclusions` answers `[{"id": 1, "phrase": "Online Marketing",
+"people": 3}]`, in the order of the phrases. `people` is how many people
+it hides now. Someone two exclusions match counts for the first.
+
+`POST /api/exclusions` with `{"phrase": "Personal Branding"}` adds one and
+answers it with 201. The phrase keeps its words, with single spaces
+between them, at most 60 characters. The same phrase twice answers 409,
+one without a word 400.
+
+`DELETE /api/exclusions/{id}` removes one and answers 204. The people it
+hid come back.

@@ -11,22 +11,25 @@ make run
 
 builds the app and opens it. [docs/BUILD.md](docs/BUILD.md) has the rest:
 the first start, where things are kept, and how to bring over the people
-kept in the Docker version.
+connected in the Docker version.
 
 ## How it works
 
 A run asks **profile searches**, like "Yogalehrerin Köln". Each one asks Exa
 once for LinkedIn profiles from its own index, 4 side by side. Only people
 who live in NRW, were active on LinkedIn in the last six months and run
-their own business are kept. Consultants, agencies and corporate titles are
-left out. People are scored by the fit rubric from
+their own business are kept. Consultants, agencies, corporate titles and
+whatever Tim's exclusions name, like "Online Marketing", are left out.
+People are scored by the fit rubric from
 [docs/search-strategy.md](docs/search-strategy.md): signals for and against,
 each with the passage that shows it.
 
 A search that finds new people stays active. One that finds nobody new
 moves from candidate to probation and retires, and a search is asked again
-after 30 days. A run takes the 10 most due searches, so it stays short
-enough to watch, and can be stopped. Exa gets a monthly budget in Settings,
+after 30 days. A run takes 10 due searches, those that led to the most
+people Tim connected with first, so it stays short enough to watch, and
+can be stopped. Tim marks a person as connected once he connected with
+them on LinkedIn, and the rest is simply open. Exa gets a monthly budget in Settings,
 and runs stop asking once it is spent.
 
 The engine never requests LinkedIn itself. Profiles come from Exa's index.

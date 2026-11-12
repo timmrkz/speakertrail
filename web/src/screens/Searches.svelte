@@ -4,6 +4,7 @@
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
+  import Exclusions from '../lib/components/Exclusions.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
@@ -22,7 +23,20 @@
 
   let q = $state('')
   let all = $derived(searches.data ?? [])
-  let shown = $derived(q ? all.filter((s) => (s.query ?? '').toLowerCase().includes(q.toLowerCase())) : all)
+  // The searches that led to the most connections on top, then those that
+  // found the most people. Paused ones last. Runs take them in much the
+  // same order, see RankSearches in internal/store.
+  let ranked = $derived(
+    [...all].sort(
+      (a, b) =>
+        Number(a.status === 'retired') - Number(b.status === 'retired') ||
+        b.people_connected - a.people_connected ||
+        b.people - a.people ||
+        (a.query ?? '').localeCompare(b.query ?? '', 'de'),
+    ),
+  )
+  let shown = $derived(q ? ranked.filter((s) => (s.query ?? '').toLowerCase().includes(q.toLowerCase())) : ranked)
+  let connecting = $derived(all.filter((s) => s.people_connected > 0).length)
   let paused = $derived(all.filter((s) => s.status === 'retired').length)
 
   let newQuery = $state('')
@@ -71,7 +85,6 @@
     const parts: string[] = []
     if (s.last_checked_at) {
       parts.push(plural(s.people, 'person', 'people'))
-      if (s.people_kept) parts.push(`${s.people_kept} kept`)
       parts.push(`ran ${fmtAgo(s.last_checked_at)}`)
     } else {
       parts.push('Not run yet')
@@ -85,7 +98,7 @@
   <div class="view-head">
     <div>
       <h1>Searches</h1>
-      <p>A kind of person and a place. Each run takes the ten that are due.</p>
+      <p>A kind of person and a place. Those that led to connections run first.</p>
     </div>
   </div>
 
@@ -97,6 +110,8 @@
     <button class="btn primary" type="submit" disabled={addBusy}><Icon name="plus" /><span>{addBusy ? 'Adding' : 'Add'}</span></button>
   </form>
   {#if addError}<p id="search-err" class="field-error" role="alert">{addError}</p>{/if}
+
+  <Exclusions />
 
   {#if searches.error && !searches.data}
     <EmptyState icon="alert" tone="bad" title="Could not load the searches" text={searches.error}>
@@ -110,7 +125,7 @@
     {#if all.length > 8}
       <SearchInput bind:value={q} placeholder="Find a search" label="Find a search" />
     {/if}
-    <p class="summary">{plural(all.length, 'search', 'searches')}{paused ? `, ${paused} paused` : ''}</p>
+    <p class="summary">{plural(all.length, 'search', 'searches')}{connecting ? `, ${connecting} led to connections` : ''}{paused ? `, ${paused} paused` : ''}</p>
     {#if !shown.length}
       <EmptyState icon="sources" title="No search matches" text="Try another word." />
     {:else}
@@ -119,7 +134,7 @@
           <li class="search" class:paused={s.status === 'retired'}>
             <span class="what">
               <b class="ellipsis">{s.query}</b>
-              <span class="ellipsis sub">{line(s)}</span>
+              <span class="ellipsis sub">{#if s.people_connected}<span class="connected">{s.people_connected} connected</span>{' · '}{/if}{line(s)}</span>
               {#if s.health === 'error' || s.health === 'warning'}
                 <span class="ellipsis note" class:bad={s.health === 'error'} title={s.health_note}>{s.health_note}</span>
               {/if}
@@ -147,6 +162,7 @@
   .what { display: grid; gap: 1px; min-width: 0; }
   .what b { font-weight: 600; }
   .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .connected { color: var(--good); font-weight: 600; }
   .note { font-size: 12px; color: var(--warn); }
   .note.bad { color: var(--bad); }
   .paused .what { opacity: .5; }

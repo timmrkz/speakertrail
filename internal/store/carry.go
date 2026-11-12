@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// Carried is a person Tim kept in the Docker version of Speaker Trail, as
-// scripts/carry-over.sh reads them out of its database.
+// Carried is a person Tim connected with in the Docker version of Speaker
+// Trail, as scripts/carry-over.sh reads them out of its database. KeptAt
+// is when he marked them, kept or connected.
 type Carried struct {
 	Name       string    `json:"name"`
 	Headline   string    `json:"headline"`
@@ -21,9 +22,9 @@ type Carried struct {
 	LastActive time.Time `json:"last_active"`
 }
 
-// CarryOver adds the people Tim kept in the Docker version, kept here
-// too. Someone already here, by their LinkedIn profile or else by their
-// name, is kept and keeps what is here. It is safe to repeat. It returns
+// CarryOver adds the people Tim connected with in the Docker version,
+// connected here too. Someone already here, by their LinkedIn profile or
+// else by their name, is marked connected and keeps what is here. It is safe to repeat. It returns
 // how many it added and how many were here already.
 func (d *Data) CarryOver(people []Carried, at time.Time) (added, there int) {
 	for _, c := range people {
@@ -49,8 +50,8 @@ func (d *Data) CarryOver(people []Carried, at time.Time) (added, there int) {
 		}
 		if p != nil {
 			there++
-			if p.Decision != "kept" {
-				p.Decision, p.DecidedAt, p.UpdatedAt = "kept", kept, at
+			if !p.Connected {
+				p.Connected, p.ConnectedAt, p.UpdatedAt = true, kept, at
 			}
 			if p.Notes == "" {
 				p.Notes = c.Notes
@@ -64,8 +65,8 @@ func (d *Data) CarryOver(people []Carried, at time.Time) (added, there int) {
 		}
 		p = &Person{
 			ID: d.NewID(), Name: c.Name, Headline: c.Headline, City: c.City, Notes: c.Notes,
-			Decision: "kept", DecidedAt: kept, FirstSeen: first, UpdatedAt: at,
-			Evidence: "Kept in the Docker version of Speaker Trail",
+			Connected: true, ConnectedAt: kept, FirstSeen: first, UpdatedAt: at,
+			Evidence: "Connected with in the Docker version of Speaker Trail",
 			Signals:  []Signal{},
 		}
 		if c.LinkedIn != "" {

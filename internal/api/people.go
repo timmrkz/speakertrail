@@ -32,7 +32,7 @@ type personJSON struct {
 	Fit            string         `json:"fit"`
 	FirstSeen      time.Time      `json:"first_seen"`
 	FitScore       int            `json:"fit_score"`
-	Decision       string         `json:"decision"`
+	Connected      bool           `json:"connected"`
 	Signals        []store.Signal `json:"signals"`
 	Appearances    int            `json:"appearances"`
 	NextAppearance any            `json:"next_appearance"`
@@ -60,7 +60,7 @@ type personDetail struct {
 func listPerson(p *store.Person) personJSON {
 	out := personJSON{
 		ID: p.ID, Name: p.Name, Headline: p.Headline, City: p.City, Fit: "other", FirstSeen: p.FirstSeen,
-		FitScore: p.Score, Decision: p.Decision, Signals: p.Signals, Profiles: []profileJSON{},
+		FitScore: p.Score, Connected: p.Connected, Signals: p.Signals, Profiles: []profileJSON{},
 	}
 	if out.Signals == nil {
 		out.Signals = []store.Signal{}
@@ -147,8 +147,8 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		Notes *string `json:"notes"`
-		// Decision is kept, skipped, or empty to take either back.
-		Decision *string `json:"decision"`
+		// Connected is whether Tim connected with the person on LinkedIn.
+		Connected *bool `json:"connected"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -159,10 +159,8 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 			return errNotFound
 		}
 		now := a.Store.Now()
-		if body.Decision != nil {
-			if err := p.Decide(*body.Decision, now); err != nil {
-				return errBad{err}
-			}
+		if body.Connected != nil {
+			p.Connect(*body.Connected, now)
 		}
 		if body.Notes != nil {
 			p.Notes, p.UpdatedAt = *body.Notes, now

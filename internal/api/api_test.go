@@ -117,7 +117,7 @@ func TestARunFromStartToPeople(t *testing.T) {
 		Counts map[string]int
 	}
 	call(t, a, "GET", "/api/people?sort=young&filter=all", "", &people)
-	if len(people.People) != 1 || people.Counts["kept"] != 0 || people.Counts["all"] != 1 {
+	if len(people.People) != 1 || people.Counts["connected"] != 0 || people.Counts["all"] != 1 {
 		t.Fatalf("people = %+v", people)
 	}
 	p := people.People[0]
@@ -126,22 +126,22 @@ func TestARunFromStartToPeople(t *testing.T) {
 	}
 
 	var detail personDetail
-	if code := call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"decision":"kept","notes":"Ask about the studio"}`, &detail); code != http.StatusOK {
-		t.Fatalf("keep: %d", code)
+	if code := call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":true,"notes":"Ask about the studio"}`, &detail); code != http.StatusOK {
+		t.Fatalf("connect: %d", code)
 	}
-	if detail.Decision != "kept" || detail.Notes != "Ask about the studio" || len(detail.Sightings) != 1 || detail.Sightings[0].Source != "Gründerin Köln" {
+	if !detail.Connected || detail.Notes != "Ask about the studio" || len(detail.Sightings) != 1 || detail.Sightings[0].Source != "Gründerin Köln" {
 		t.Errorf("detail = %+v", detail)
 	}
-	if code := call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"decision":"maybe"}`, nil); code != http.StatusBadRequest {
-		t.Errorf("a decision that is none: %d", code)
+	if code := call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":"maybe"}`, nil); code != http.StatusBadRequest {
+		t.Errorf("connected that is no yes or no: %d", code)
 	}
-	if code := call(t, a, "PATCH", "/api/people/999", `{"decision":"kept"}`, nil); code != http.StatusNotFound {
+	if code := call(t, a, "PATCH", "/api/people/999", `{"connected":true}`, nil); code != http.StatusNotFound {
 		t.Errorf("nobody: %d", code)
 	}
 
 	var searches struct{ Sources []searchJSON }
 	call(t, a, "GET", "/api/sources?kind=profile_search", "", &searches)
-	if len(searches.Sources) != 1 || searches.Sources[0].People != 1 || searches.Sources[0].PeopleKept != 1 || searches.Sources[0].Status != "active" {
+	if len(searches.Sources) != 1 || searches.Sources[0].People != 1 || searches.Sources[0].PeopleConnected != 1 || searches.Sources[0].Status != "active" {
 		t.Errorf("searches = %+v", searches)
 	}
 }
@@ -202,4 +202,28 @@ func TestOnlyJSONChangesAnything(t *testing.T) {
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+func TestExclusions(t *testing.T) {
+	a, _, _ := newAPI(t)
+	var list []exclusionJSON
+	if code := call(t, a, "GET", "/api/exclusions", "", &list); code != http.StatusOK || len(list) != 6 || list[0].Phrase != "LinkedIn" {
+		t.Fatalf("the starting exclusions: %d %+v", code, list)
+	}
+	var x exclusionJSON
+	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"  Business   Coach "}`, &x); code != http.StatusCreated || x.Phrase != "Business Coach" || x.People != 0 {
+		t.Fatalf("added: %d %+v", code, x)
+	}
+	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"business coach"}`, nil); code != http.StatusConflict {
+		t.Errorf("the same phrase again: %d", code)
+	}
+	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"--"}`, nil); code != http.StatusBadRequest {
+		t.Errorf("a phrase without a word: %d", code)
+	}
+	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusNoContent {
+		t.Errorf("delete: %d", code)
+	}
+	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusNotFound {
+		t.Errorf("delete again: %d", code)
+	}
 }

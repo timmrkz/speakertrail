@@ -323,3 +323,40 @@ func TestCloseIfIdleAndStartFromSeveralGoroutines(t *testing.T) {
 	wg.Wait()
 	e.Wait()
 }
+
+// An exclusion leaves out a person who would otherwise be a guest, in
+// whatever way the phrase is written.
+func TestARunLeavesOutExclusions(t *testing.T) {
+	mia := search.Profile{URL: "https://www.linkedin.com/in/mia-muster", Name: "Mia Muster", Headline: "Inhaberin, Studio Muster · #personalbranding",
+		Location: "Köln, Germany", Career: steps("Inhaberin", "Studio Muster", 2022, "Universität zu Köln", 2018), LastActive: t0.AddDate(0, -1, 0)}
+	if !Guest(mia, t0, t0.AddDate(0, -6, 0), nil) {
+		t.Fatal("Mia should be a guest without exclusions")
+	}
+	if Guest(mia, t0, t0.AddDate(0, -6, 0), []string{"Personal Branding"}) {
+		t.Fatal("Mia should be left out by Personal Branding")
+	}
+	e, st := newEngine(t, &finder{profiles: append([]search.Profile{mia}, invented...)})
+	if _, _, err := e.Start("manual", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if len(d.People) != 1 || d.People[0].Name != "Lea Beispiel" {
+			t.Errorf("kept %d people, want only Lea", len(d.People))
+		}
+	})
+}
+
+// An age the headline gives beats the guess from the years on the
+// profile.
+func TestTheAgeTheHeadlineGivesWins(t *testing.T) {
+	nora := search.Profile{Headline: "19 year old founder", Career: steps("Founder", "Jung Studio", 2025, "Universität Bonn", 2010)}
+	born, reason, _ := careerOf(nora, t0)
+	if born != 2007 || reason != "Headline says 19 in 2026" {
+		t.Errorf("born %d, %q", born, reason)
+	}
+	born, _, _ = careerOf(invented[0], t0)
+	if born == 0 || born == 2007 {
+		t.Errorf("without an age in the headline, born %d", born)
+	}
+}

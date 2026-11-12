@@ -3,8 +3,11 @@ package store
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -33,16 +36,20 @@ func TestWhatIsWrittenIsReadBack(t *testing.T) {
 		if !isNew {
 			t.Error("a new profile should be a new person")
 		}
-		return p.Decide("kept", t0)
+		p.Connect(true, t0)
+		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	again := open(t, dir)
 	again.Read(func(d *Data) {
-		if len(d.Searches) != 64 {
-			t.Errorf("%d searches, want the 64 starting ones", len(d.Searches))
+		if len(d.Searches) != 82 {
+			t.Errorf("%d searches, want the 82 starting ones", len(d.Searches))
 		}
-		if len(d.People) != 1 || d.People[0].Decision != "kept" || d.People[0].LinkedIn.BornAbout != 1999 {
+		if len(d.Exclusions) != 6 {
+			t.Errorf("%d exclusions, want the 6 starting ones", len(d.Exclusions))
+		}
+		if len(d.People) != 1 || !d.People[0].Connected || !d.People[0].ConnectedAt.Equal(t0) || d.People[0].LinkedIn.BornAbout != 1999 {
 			t.Errorf("people read back as %+v", d.People)
 		}
 	})
@@ -68,6 +75,8 @@ func TestAFailedUpdateChangesNothing(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
 	boom := errors.New("boom")
+	var lastID int64
+	s.Read(func(d *Data) { lastID = d.LastID })
 	err := s.Update(func(d *Data) error {
 		_, _ = d.AddSearch("Yogalehrerin Köln", 0, t0)
 		return boom
@@ -76,7 +85,7 @@ func TestAFailedUpdateChangesNothing(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 	s.Read(func(d *Data) {
-		if len(d.Searches) != 0 || d.LastID != 0 {
+		if len(d.Searches) != 0 || d.LastID != lastID {
 			t.Errorf("memory kept the failed change: %+v", d.Searches)
 		}
 	})
@@ -221,17 +230,18 @@ func TestSettings(t *testing.T) {
 func TestListPeople(t *testing.T) {
 	d := &Data{}
 	d.fill()
+	d.Exclusions = []*Exclusion{}
 	s, _ := d.AddSearch("Gründer Köln", 0, t0)
-	add := func(name string, born, score int, decision string, seen time.Time) *Person {
+	add := func(name string, born, score int, connected bool, seen time.Time) *Person {
 		p, _ := d.AddFound(Found{URL: "https://www.linkedin.com/in/" + name, Name: name, Headline: "Gründer", City: "Köln", BornAbout: born}, s, 0, seen)
 		p.FirstSeen, p.Score = seen, score
-		_ = p.Decide(decision, seen)
+		p.Connect(connected, seen)
 		return p
 	}
-	old := add("Bea", 1980, 3, "", t0)
-	young := add("Cem", 2001, 1, "kept", t0.Add(time.Hour))
-	skipped := add("Dana", 2003, 2, "skipped", t0.Add(2*time.Hour))
-	unknown := add("Ann", 0, 2, "", t0.Add(3*time.Hour))
+	old := add("Bea", 1980, 3, false, t0)
+	young := add("Cem", 2001, 1, true, t0.Add(time.Hour))
+	dana := add("Dana", 2003, 2, false, t0.Add(2*time.Hour))
+	unknown := add("Ann", 0, 2, false, t0.Add(3*time.Hour))
 
 	list := func(q PeopleQuery) []*Person {
 		q.Now = t0
@@ -253,20 +263,135 @@ func TestListPeople(t *testing.T) {
 			}
 		}
 	}
-	same("young first", list(PeopleQuery{}), young, old, unknown, skipped)
-	same("new", list(PeopleQuery{Sort: "new"}), unknown, skipped, young, old)
-	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, young, skipped)
-	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, young, skipped)
-	same("under 30", list(PeopleQuery{Filter: "young"}), young, skipped)
-	same("kept", list(PeopleQuery{Filter: "kept"}), young)
-	same("words", list(PeopleQuery{Q: "dana"}), skipped)
+	same("young first", list(PeopleQuery{}), dana, young, old, unknown)
+	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, young, old)
+	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, young, dana)
+	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, dana, young)
+	same("under 30", list(PeopleQuery{Filter: "young"}), dana, young)
+	same("connected", list(PeopleQuery{Filter: "connected"}), young)
+	same("words", list(PeopleQuery{Q: "dana"}), dana)
 
-	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "kept", Now: t0})
-	if counts["all"] != 4 || counts["young"] != 2 || counts["kept"] != 1 || counts["skipped"] != 1 {
+	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: t0})
+	if counts["all"] != 4 || counts["young"] != 2 || counts["connected"] != 1 {
 		t.Errorf("counts = %v", counts)
 	}
-	if _, _, err := d.ListPeople(PeopleQuery{Filter: "founder"}); err == nil {
-		t.Error("an unknown filter was taken")
+	for _, f := range []string{"founder", "kept", "skipped"} {
+		if _, _, err := d.ListPeople(PeopleQuery{Filter: f}); err == nil {
+			t.Errorf("the filter %s was taken", f)
+		}
+	}
+
+	// An exclusion hides whom it matches, never someone connected, and
+	// removing it brings them back.
+	dana.Headline = "Online-Marketing-Expertin"
+	young.Headline = "Onlinemarketing und Yoga"
+	x, err := d.AddExclusion("online  marketing", t0)
+	if err != nil || x.Phrase != "online marketing" {
+		t.Fatalf("added %+v, %v", x, err)
+	}
+	same("with an exclusion", list(PeopleQuery{}), young, old, unknown)
+	if h := d.Hidden(); len(h) != 1 || h[dana.ID] != "online marketing" {
+		t.Errorf("hidden = %v", h)
+	}
+	_, counts, _ = d.ListPeople(PeopleQuery{Now: t0})
+	if counts["all"] != 3 || counts["young"] != 1 {
+		t.Errorf("counts with an exclusion = %v", counts)
+	}
+	if !d.DeleteExclusion(x.ID) || d.DeleteExclusion(x.ID) {
+		t.Error("an exclusion should be removed once")
+	}
+	same("without it", list(PeopleQuery{}), dana, young, old, unknown)
+}
+
+func TestExclusions(t *testing.T) {
+	d := &Data{}
+	d.fill()
+	if got := d.Phrases(); len(got) != 6 || got[0] != "Online Marketing" {
+		t.Fatalf("starting exclusions %v", got)
+	}
+	if _, err := d.AddExclusion("ONLINE marketing", t0); err != ErrExclusionExists {
+		t.Errorf("the same phrase in another case: %v", err)
+	}
+	if _, err := d.AddExclusion(" - ", t0); err != ErrNoPhrase {
+		t.Errorf("a phrase without a word: %v", err)
+	}
+	if _, err := d.AddExclusion(strings.Repeat("a", MaxPhrase+1), t0); err != ErrLongPhrase {
+		t.Errorf("a long phrase: %v", err)
+	}
+	if _, err := d.AddExclusion("Coach", t0); err != nil {
+		t.Fatal(err)
+	}
+	sorted := d.SortedExclusions()
+	if sorted[0].Phrase != "Coach" || sorted[len(sorted)-1].Phrase != "Social Media Marketing" {
+		t.Errorf("sorted %v", sorted)
+	}
+	// Removing every exclusion keeps them removed, the starting ones do
+	// not come back.
+	for _, x := range slices.Clone(d.Exclusions) {
+		d.DeleteExclusion(x.ID)
+	}
+	raw, _ := json.Marshal(d)
+	again := &Data{}
+	if err := json.Unmarshal(raw, again); err != nil {
+		t.Fatal(err)
+	}
+	again.fill()
+	if len(again.Exclusions) != 0 {
+		t.Errorf("the starting exclusions came back: %v", again.Phrases())
+	}
+}
+
+// A file from before connections: kept becomes connected, skipped open
+// again, and the old words are dropped.
+func TestOldDecisionsBecomeConnections(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version": 1, "last_id": 2, "people": [
+		{"id": 1, "name": "Ada Beispiel", "decision": "kept", "decided_at": "2026-11-01T10:00:00Z"},
+		{"id": 2, "name": "Ben Muster", "decision": "skipped", "decided_at": "2026-11-02T10:00:00Z"}]}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := open(t, dir)
+	if err := s.Update(func(*Data) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	s.Read(func(d *Data) {
+		ada, ben := d.Person(1), d.Person(2)
+		if !ada.Connected || ada.ConnectedAt.IsZero() || ben.Connected || ada.Decision != "" || ben.Decision != "" {
+			t.Errorf("read as %+v and %+v", ada, ben)
+		}
+		if len(d.Exclusions) != 6 || d.Exclusions[0].ID != 3 {
+			t.Errorf("a file without exclusions gets the starting ones, with new ids: %+v", d.Exclusions[0])
+		}
+	})
+	raw, _ := os.ReadFile(filepath.Join(dir, FileName))
+	if strings.Contains(string(raw), `"decision"`) {
+		t.Error("the file still says decision")
+	}
+}
+
+// Runs take the searches that led to connections before those that did
+// not, and never-run searches before both.
+func TestDueTakesTheBestSearchesFirst(t *testing.T) {
+	d := &Data{}
+	d.fill()
+	none, _ := d.AddSearch("Gründer Köln", 0, t0)
+	good, _ := d.AddSearch("Yogalehrerin Bonn", 0, t0)
+	fresh, _ := d.AddSearch("Tanzschule Essen", 0, t0)
+	for i, s := range []*Search{none, good} {
+		for j := range 3 {
+			p, _ := d.AddFound(Found{URL: fmt.Sprintf("https://www.linkedin.com/in/p-%d-%d", i, j), Name: "Someone"}, s, 0, t0)
+			p.Connect(s == good && j == 0, t0)
+		}
+		s.Runs, s.LastRun = 1, t0
+	}
+	due := d.Due(t0, 10)
+	if len(due) != 3 || due[0] != fresh || due[1] != good || due[2] != none {
+		t.Errorf("due %v", due)
+	}
+	y := d.Yields()[good.ID]
+	if y.People != 3 || y.Connected != 1 || !y.Ran {
+		t.Errorf("yield %+v", y)
 	}
 }
 

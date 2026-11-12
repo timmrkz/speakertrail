@@ -1,13 +1,13 @@
 #!/bin/sh
-# Carries the people you kept in the Docker version of Speaker Trail over
-# into the app. Once is enough, and again does no harm.
+# Carries the people you connected with in the Docker version of Speaker
+# Trail, or kept before that, over into the app. Once is enough, and again does no harm.
 #
 #   make carry-over
 #
 # The Docker version kept its database in a Docker volume,
-# speakertrail_postgres. This reads the kept people out of it with
+# speakertrail_postgres. This reads those people out of it with
 # Postgres 16 in a container, and hands them to the app, which adds them
-# to its file as kept. It changes nothing in the old database. Docker is
+# to its file as connected. It changes nothing in the old database. Docker is
 # needed only for this, once. Afterwards Docker and the volume can go.
 set -e
 VOLUME=speakertrail_postgres
@@ -30,7 +30,8 @@ if pgrep -x speakertrail-app >/dev/null 2>&1; then
 fi
 [ -x "$APPBIN" ] || make --no-print-directory "$APPBIN" >/dev/null
 
-# Everyone kept, with their LinkedIn profile and what it says.
+# Everyone connected or kept, with their LinkedIn profile and what it
+# says. Skipped is left out, in a database from before connections.
 QUERY="SELECT COALESCE(json_agg(json_build_object(
 	'name', p.full_name, 'headline', p.headline, 'city', p.city, 'notes', p.notes,
 	'kept_at', p.status_changed_at, 'first_seen', p.created_at,

@@ -38,7 +38,7 @@ func main() {
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	// make carry-over hands over the people kept in the Docker version,
+	// make carry-over hands over the people connected in the Docker version,
 	// see scripts/carry-over.sh. It writes the app's file and opens no
 	// window.
 	if len(os.Args) == 2 && os.Args[1] == "carry-over" {
@@ -148,7 +148,8 @@ func open() (http.Handler, *engine.Engine, string, error) {
 	return apipkg.New(st, e, exa, slog.Default()), e, dir, nil
 }
 
-// carryOver adds the people the Docker version kept, read as JSON.
+// carryOver adds the people connected in the Docker version, read as
+// JSON.
 func carryOver(r io.Reader) error {
 	var people []store.Carried
 	if err := json.NewDecoder(r).Decode(&people); err != nil {
@@ -172,7 +173,7 @@ func carryOver(r io.Reader) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Printf("Carried over %d kept people, %d were here already. They are in %s\n", added, there, st.Path())
+	fmt.Printf("Carried over %d connected people, %d were here already. They are in %s\n", added, there, st.Path())
 	return nil
 }
 

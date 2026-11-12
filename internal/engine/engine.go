@@ -305,14 +305,15 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 			return nil
 		}
 		seen := map[string]bool{}
+		exclusions := d.Phrases()
 		for _, prof := range profiles {
 			profile := linkedIn(prof.URL)
-			if profile == "" || seen[profile] || !Guest(prof, c.At, c.At.Add(-active)) {
+			if profile == "" || seen[profile] || !Guest(prof, c.At, c.At.Add(-active), exclusions) {
 				continue
 			}
 			seen[profile] = true
 			city, _ := place.PlaceInNRW(prof.Location)
-			born, reason, roles := career(prof.Career)
+			born, reason, roles := careerOf(prof, c.At)
 			p, isNew := d.AddFound(store.Found{
 				URL: profile, Handle: handleOf(profile), Name: prof.Name, Headline: prof.Headline, City: city,
 				BornAbout: born, AgeReason: reason, Roles: roles, LastActive: prof.LastActive,
@@ -335,8 +336,9 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 }
 
 // Guest tells whether a profile shows a possible guest: in NRW, active on
-// LinkedIn since a time, running their own business, and not ruled out.
-func Guest(prof search.Profile, now, activeSince time.Time) bool {
+// LinkedIn since a time, running their own business, and neither ruled out
+// nor left out by one of Tim's exclusions.
+func Guest(prof search.Profile, now, activeSince time.Time, exclusions []string) bool {
 	if _, inNRW := place.PlaceInNRW(prof.Location); !inNRW {
 		return false
 	}
@@ -344,12 +346,26 @@ func Guest(prof search.Profile, now, activeSince time.Time) bool {
 		return false
 	}
 	_, _, roles := career(prof.Career)
+	if _, out := rubric.Excluded(prof.Headline+" "+roles, exclusions); out {
+		return false
+	}
 	ok, _ := rubric.Guest(rubric.Signals(rubric.Person{Name: prof.Name, Headline: prof.Headline, CurrentRoles: roles, Now: now}))
 	return ok
 }
 
 // maxRoles is how many roles held now are kept of a profile.
 const maxRoles = 3
+
+// careerOf is career, except that an age the headline gives, like "19
+// year old student", beats the guess from the years on the profile. Tim
+// saw "19 year old student" shown as about 25 on 10 November 2026.
+func careerOf(prof search.Profile, now time.Time) (born int, reason, roles string) {
+	born, reason, roles = career(prof.Career)
+	if age := rubric.StatedAge(prof.Headline); age > 0 {
+		born, reason = now.Year()-age, fmt.Sprintf("Headline says %d in %d", age, now.Year())
+	}
+	return born, reason, roles
+}
 
 // career reads what a profile's jobs and education show: the likely year
 // of birth with the step that shows it, and the roles held now. The list

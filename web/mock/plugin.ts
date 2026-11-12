@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Decision, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Activity, Appearance, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus,
 } from '../src/lib/api.ts'
 import {
@@ -39,7 +39,7 @@ interface PersonRow {
   notes: string
   profiles: Profile[]
   affiliations: PersonDetail['affiliations']
-  decision?: Decision
+  connected?: boolean
   // What the confirmed LinkedIn profile says, for people a profile search
   // found.
   linkedin?: Person['linkedin']
@@ -96,6 +96,7 @@ function createState() {
     const rows: [string, string, string, number | null, string, number, number][] = [
       ['Lea Probe', 'Personal Trainerin | Selbstständig', 'Köln', 2000, 'Bachelor from 2019', 3, 101],
       ['Tom Muster', 'Gründer @ Probe Gym', 'Düsseldorf', 1986, 'First job from 2008', 40, 102],
+      ['Sara Probe', 'Gründerin | Online-Marketing für Coaches', 'Köln', 1998, 'Bachelor from 2017', 5, 104],
       ['Mia Beispiel', 'Yogalehrerin mit eigenem Studio', 'Bonn', 1999, 'Bachelor from 2018', 9, 103],
       ['Jan Probst', 'Gen Z Unternehmer | Gründer von Probst Media', 'Essen', 2003, 'School until 2022', 1, 104],
       ['Nora Muster', 'Ernährungsberaterin, eigene Praxis', 'Dortmund', null, '', 21, 105],
@@ -107,7 +108,7 @@ function createState() {
       id: 1000 + i, name, headline, city, fit: 'founder' as const, first_seen: hoursAgo(2 + i * 9), notes: '',
       profiles: [{ id: 10000 + i, platform: 'linkedin' as const, url: `https://www.linkedin.com/in/example-${1000 + i}`, review: 'confirmed' as const }],
       affiliations: [], searchId,
-      decision: i === 1 ? 'kept' as const : undefined,
+      connected: i === 1,
       linkedin: { born_about: born, age_reason: reason, roles: headline.replace(' | ', ', '), last_active: hoursAgo(activeDaysAgo * 24) },
     }))
   }
@@ -149,7 +150,9 @@ function createState() {
     runs,
     checks,
     settings: buildSettings(),
-    nextId: { source: 200 },
+    exclusions: ['Online Marketing', 'Social Media Marketing', 'Performance Marketing', 'Personal Branding', 'LinkedIn', 'Sichtbarkeit']
+      .map((phrase, i) => ({ id: i + 1, phrase })),
+    nextId: { source: 200, exclusion: 100 },
   }
 }
 
@@ -234,7 +237,7 @@ function personList(s: State, p: PersonRow): Person {
   const signals = signalsOf(p, apps)
   return {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
-    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, decision: p.decision ?? '',
+    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, connected: !!p.connected,
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -283,7 +286,7 @@ function sourceOut(m: MockSource, s?: State): Source {
   return {
     ...rest,
     people: found.length || (m.kind === 'profile_search' && last_found ? last_found : 0),
-    people_kept: found.filter((p) => p.decision === 'kept').length,
+    people_connected: found.filter((p) => p.connected).length,
     last_checked_at: checked,
     next_check_at: checked ? hoursAgo((checked_hours_ago ?? 0) - every) : hoursAgo(-19),
     last_check: last_found === null ? null : {
@@ -303,6 +306,36 @@ interface Out {
 }
 type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>) => Out | undefined
 
+// Like rubric.Excluded on the server: a phrase matches at the start of a
+// word, whatever stands between its words, or written as one word.
+function words(text: string): string[] {
+  return text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+}
+function excludedBy(text: string, phrases: string[]): string | null {
+  const t = ' ' + words(text).join(' ')
+  for (const p of phrases) {
+    const w = words(p)
+    if (w.length && (t.includes(' ' + w.join(' ')) || t.includes(' ' + w.join('')))) return p
+  }
+  return null
+}
+// Whom the exclusions hide, and how many each, never someone connected.
+function hiddenBy(s: State): Map<number, string> {
+  const phrases = s.exclusions.map((x) => x.phrase)
+  const out = new Map<number, string>()
+  for (const p of s.people) {
+    const by = p.connected ? null : excludedBy(`${p.headline} ${p.linkedin?.roles ?? ''}`, phrases)
+    if (by) out.set(p.id, by)
+  }
+  return out
+}
+function exclusionsOf(s: State) {
+  const hidden = [...hiddenBy(s).values()]
+  return [...s.exclusions]
+    .sort((a, b) => a.phrase.toLowerCase().localeCompare(b.phrase.toLowerCase()))
+    .map((x) => ({ ...x, people: hidden.filter((p) => p === x.phrase).length }))
+}
+
 const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
@@ -311,31 +344,31 @@ const ROUTES: [string, RegExp, Handler][] = [
     const needle = (q.get('q') ?? '').toLowerCase()
     const sort = q.get('sort') || 'next'
     const filter = q.get('filter') || 'all'
-    // Like the app: whom profile searches found, and whoever Tim kept.
-    let list = s.people.filter((p) => p.linkedin || p.decision === 'kept').map((p) => personList(s, p))
+    // Like the app: whom profile searches found, and whoever Tim connected
+    // with, less whom the exclusions hide.
+    const hidden = hiddenBy(s)
+    let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     const counts = {
       all: list.length,
       young: list.filter(young).length,
-      kept: list.filter((p) => p.decision === 'kept').length,
-      skipped: list.filter((p) => p.decision === 'skipped').length,
-      fits: list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped').length,
+      connected: list.filter((p) => p.connected).length,
+      fits: list.filter((p) => p.fit_score > 0).length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
     }
     if (filter === 'young') list = list.filter(young)
-    if (filter === 'kept') list = list.filter((p) => p.decision === 'kept')
-    if (filter === 'skipped') list = list.filter((p) => p.decision === 'skipped')
+    if (filter === 'connected') list = list.filter((p) => p.connected)
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))
     if (filter === 'founder') list = list.filter((p) => p.fit === 'founder')
-    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0 && p.decision !== 'skipped')
+    if (filter === 'fits') list = list.filter((p) => p.fit_score > 0)
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name, 'de'))
-    else if (sort === 'fit') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
-    else if (sort === 'young') list.sort((a, b) => Number(a.decision === 'skipped') - Number(b.decision === 'skipped') || (b.linkedin?.born_about ?? 0) - (a.linkedin?.born_about ?? 0) || b.fit_score - a.fit_score)
+    else if (sort === 'fit') list.sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen))
+    else if (sort === 'young') list.sort((a, b) => (b.linkedin?.born_about ?? 0) - (a.linkedin?.born_about ?? 0) || b.fit_score - a.fit_score)
     else if (sort === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     else {
       // Like the server: next appearance, then founders of startups that look alive.
@@ -352,8 +385,8 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
-    if (b.decision === '' || b.decision === 'kept' || b.decision === 'skipped') p.decision = b.decision as Decision
-    else if (b.decision !== undefined) return err(400, 'decision must be kept, skipped or empty')
+    if (typeof b.connected === 'boolean') p.connected = b.connected
+    else if (b.connected !== undefined) return err(400, 'connected must be true or false')
     return ok(personDetail(s, p))
   }],
   ['PATCH', /^\/api\/profiles\/(\d+)$/, (s, m, _q, b) => {
@@ -374,6 +407,22 @@ const ROUTES: [string, RegExp, Handler][] = [
       .sort((a, b) => Number(a.status === 'retired') - Number(b.status === 'retired') || b.points - a.points || a.name.localeCompare(b.name))
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
+  }],
+  ['GET', /^\/api\/exclusions$/, (s) => ok(exclusionsOf(s))],
+  ['POST', /^\/api\/exclusions$/, (s, _m, _q, b) => {
+    const phrase = words(String(b.phrase ?? '')).length ? String(b.phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ') : ''
+    if (!phrase) return err(400, 'Enter a word or phrase, like Online Marketing')
+    if (phrase.length > 60) return err(400, 'An exclusion is at most 60 characters')
+    if (s.exclusions.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())) return err(409, 'This exclusion is already there')
+    const id = s.nextId.exclusion++
+    s.exclusions.push({ id, phrase })
+    return { status: 201, body: exclusionsOf(s).find((x) => x.id === id) }
+  }],
+  ['DELETE', /^\/api\/exclusions\/(\d+)$/, (s, m) => {
+    const i = s.exclusions.findIndex((x) => x.id === Number(m[1]))
+    if (i < 0) return err(404, 'Not found')
+    s.exclusions.splice(i, 1)
+    return { status: 204 }
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
     const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''

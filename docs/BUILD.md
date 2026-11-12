@@ -45,7 +45,7 @@ It holds real names, so it stays on this Mac and never goes into the
 repository. `SPEAKERTRAIL_DIR` names another folder for the file, for a
 try that should not touch the real one.
 
-## The people kept in the Docker version
+## The people connected in the Docker version
 
 The Docker version kept its database in a Docker volume. Once, while
 Docker Desktop still runs and with the app closed:
@@ -54,8 +54,9 @@ Docker Desktop still runs and with the app closed:
 make carry-over
 ```
 
-This reads the people you kept out of the old database, with Postgres 16
-in a container, and adds them to the app as kept, with their LinkedIn
+This reads the people you connected with, or kept before that, out of the
+old database, with Postgres 16 in a container, and adds them to the app as
+connected, with their LinkedIn
 profile and notes. It changes nothing in the old database and is safe to
 repeat. Afterwards Docker is no longer needed, and the old data can go:
 
@@ -70,7 +71,7 @@ docker volume rm speakertrail_postgres
 | `make run` | installs what is missing, builds the app and opens it |
 | `make` | builds the app, `bin/Speaker Trail.app` on a Mac |
 | `make install` | the same, copied to `/Applications` |
-| `make carry-over` | the people kept in the Docker version, into the app, see above |
+| `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `unit` and `interface` |
 | `make unit` | every Go test under the race detector |

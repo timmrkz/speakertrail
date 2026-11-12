@@ -36,7 +36,11 @@ type Data struct {
 	LastID   int64     `json:"last_id"`
 	People   []*Person `json:"people"`
 	Searches []*Search `json:"searches"`
-	Runs     []*Run    `json:"runs"`
+	// Exclusions are Tim's words and phrases that leave a person out, see
+	// exclusions.go. Missing from a file before they existed, and then
+	// the starting ones are added.
+	Exclusions []*Exclusion `json:"exclusions"`
+	Runs       []*Run       `json:"runs"`
 	// Settings holds the settings changed from their defaults, see
 	// settings.go.
 	Settings map[string]SettingValue `json:"settings"`
@@ -55,14 +59,20 @@ type SettingValue struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
-// Person is someone a profile search found, or Tim kept.
+// Person is someone a profile search found, or Tim connected with.
 type Person struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	Headline string `json:"headline"`
 	City     string `json:"city"`
-	// Decision is kept, skipped, or empty while nothing is decided.
-	Decision  string    `json:"decision"`
+	// Connected says Tim connected with the person on LinkedIn, and
+	// since when. Whoever he did not connect with is simply open.
+	Connected   bool      `json:"connected"`
+	ConnectedAt time.Time `json:"connected_at,omitzero"`
+	// Decision and DecidedAt are what a file from before connections
+	// says: kept became connected, skipped open again. They are read
+	// once, then dropped.
+	Decision  string    `json:"decision,omitempty"`
 	DecidedAt time.Time `json:"decided_at,omitzero"`
 	Notes     string    `json:"notes"`
 	// Evidence says how the person was found, like "Found by the profile
@@ -221,6 +231,18 @@ func (d *Data) fill() {
 	}
 	if d.Runs == nil {
 		d.Runs = []*Run{}
+	}
+	if d.Exclusions == nil {
+		d.Exclusions = []*Exclusion{}
+		for _, phrase := range startingExclusions {
+			d.Exclusions = append(d.Exclusions, &Exclusion{ID: d.NewID(), Phrase: phrase})
+		}
+	}
+	for _, p := range d.People {
+		if p.Decision == "kept" {
+			p.Connected, p.ConnectedAt = true, p.DecidedAt
+		}
+		p.Decision, p.DecidedAt = "", time.Time{}
 	}
 }
 

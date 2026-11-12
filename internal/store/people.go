@@ -58,13 +58,18 @@ func (d *Data) AddFound(f Found, search *Search, runID int64, at time.Time) (*Pe
 	return p, isNew
 }
 
-// Decide keeps or skips a person, or takes it back with an empty decision.
-func (p *Person) Decide(decision string, at time.Time) error {
-	if decision != "" && decision != "kept" && decision != "skipped" {
-		return fmt.Errorf("decision must be kept, skipped or empty")
+// Connect marks a person as connected on LinkedIn, or open again. Tim
+// connects with someone on LinkedIn and marks it here. Whoever he does
+// not connect with stays open, there is no skipping.
+func (p *Person) Connect(connected bool, at time.Time) {
+	if p.Connected == connected {
+		return
 	}
-	p.Decision, p.DecidedAt, p.UpdatedAt = decision, at, at
-	return nil
+	p.Connected, p.UpdatedAt = connected, at
+	p.ConnectedAt = time.Time{}
+	if connected {
+		p.ConnectedAt = at
+	}
 }
 
 // YoungUntil is the age up to which a person counts as young, by the
@@ -79,7 +84,7 @@ func (p *Person) Young(now time.Time) bool {
 // Filters are the ways People can be narrowed, and Sorts the orders it
 // can be in.
 var (
-	Filters = []string{"all", "young", "kept", "skipped"}
+	Filters = []string{"all", "young", "connected"}
 	Sorts   = []string{"young", "new", "fit", "name"}
 )
 
@@ -91,7 +96,9 @@ type PeopleQuery struct {
 
 // ListPeople lists the people a query asks for, and how many each filter
 // would show for the same words, so a filter that shows nobody never hides
-// that others were found.
+// that others were found. Whom an exclusion leaves out is in neither,
+// unless Tim connected with them. They stay in the file, so removing the
+// exclusion brings them back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
 		q.Sort = "young"
@@ -107,16 +114,19 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	}
 	words := strings.ToLower(strings.TrimSpace(q.Q))
 	counts := map[string]int{}
+	hidden := d.Hidden()
 	var out []*Person
 	for _, p := range d.People {
+		if _, out := hidden[p.ID]; out {
+			continue
+		}
 		if words != "" && !strings.Contains(strings.ToLower(p.Name+"\n"+p.Headline+"\n"+p.City), words) {
 			continue
 		}
 		in := map[string]bool{
-			"all":     true,
-			"young":   p.Young(q.Now),
-			"kept":    p.Decision == "kept",
-			"skipped": p.Decision == "skipped",
+			"all":       true,
+			"young":     p.Young(q.Now),
+			"connected": p.Connected,
 		}
 		for f, ok := range in {
 			if ok {
@@ -126,9 +136,6 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		if in[q.Filter] {
 			out = append(out, p)
 		}
-	}
-	skippedLast := func(a, b *Person) int {
-		return cmpBool(a.Decision == "skipped", b.Decision == "skipped")
 	}
 	newest := func(a, b *Person) int {
 		return cmp.Or(b.FirstSeen.Compare(a.FirstSeen), cmp.Compare(b.ID, a.ID))
@@ -140,10 +147,10 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		case "name":
 			return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
 		case "fit":
-			return cmp.Or(skippedLast(a, b), cmp.Compare(b.Score, a.Score), newest(a, b))
+			return cmp.Or(cmp.Compare(b.Score, a.Score), newest(a, b))
 		}
 		// The likely youngest first, those without a guess after them.
-		return cmp.Or(skippedLast(a, b), cmpBool(a.LinkedIn.BornAbout == 0, b.LinkedIn.BornAbout == 0),
+		return cmp.Or(cmpBool(a.LinkedIn.BornAbout == 0, b.LinkedIn.BornAbout == 0),
 			cmp.Compare(b.LinkedIn.BornAbout, a.LinkedIn.BornAbout), cmp.Compare(b.Score, a.Score), newest(a, b))
 	})
 	return out, counts, nil

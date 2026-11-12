@@ -83,9 +83,12 @@ messages, pull request text, code comments and chat replies.
 - Plain, direct language. Short sentences.
 - **One name per thing.** A **profile search**, or **search** for short,
   asks Exa for LinkedIn profiles, like "Yogalehrerin Köln", and keeps the
-  people in NRW who were active lately and run their own business. A
-  **run** is one pass over the due searches, started by hand. A **check**
-  is one search asked once in a run. A **person** is kept or skipped. A
+  people in NRW who were active lately and run their own business. An
+  **exclusion** is a word or phrase, like "Online Marketing", that leaves a
+  person out of profile searches and People. A **run** is one pass over the
+  due searches, started by hand. A **check** is one search asked once in a
+  run. A **person** is connected or not, never kept or skipped: Tim marks
+  whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. The API still says `sources` for
   searches, the interface and the docs never do. Whatever a thing is
   called in the interface, it is called that in the docs and the code

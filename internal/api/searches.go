@@ -44,7 +44,8 @@ type searchJSON struct {
 	HealthNote     string         `json:"health_note"`
 	DiscoveredFrom string         `json:"discovered_from"`
 	People         int            `json:"people"`
-	PeopleKept     int            `json:"people_kept"`
+	// PeopleConnected is how many of them Tim connected with.
+	PeopleConnected int `json:"people_connected"`
 }
 
 func searchOf(d *store.Data, s *store.Search) searchJSON {
@@ -66,8 +67,8 @@ func searchOf(d *store.Data, s *store.Search) searchJSON {
 		for _, f := range p.FoundBy {
 			if f.SearchID == s.ID {
 				out.People++
-				if p.Decision == "kept" {
-					out.PeopleKept++
+				if p.Connected {
+					out.PeopleConnected++
 				}
 			}
 		}

@@ -44,26 +44,32 @@ latest posts, comments and reactions.
 5. **Not ruled out**: consultants, agencies, law and tax offices,
    recruiters, sales, politicians, therapists, large companies and
    corporate titles. A sales trainer or a psychological counsellor is
-   not ruled out.
+   not ruled out. Nor left out by one of Tim's exclusions, like "Online
+   Marketing", see [Connections steer the searches](#connections-steer-the-searches).
 
 Everyone kept is scored with the rubric as before, with **Likely under
 30** on top, guessed from the years on the profile, see
 [Next: younger owners](#next-younger-owners).
 
-**The starting profile searches**, 64 of them, in
+**The starting profile searches**, 82 of them, in
 `internal/importer/data/profile_searches.csv`:
 
 - 24 aimed at younger people, run first: "Gen Z Unternehmer", "Gründerin
   direkt nach dem Studium", "junger Gründer" and "Gründer unter 30", in
   Köln, Düsseldorf, Bonn, Essen, Dortmund and NRW.
+- 18 for founders in English, run first too, because many young founders
+  write "Founder" rather than "Gründer": "young founder", "founder under
+  30" and "student founder", in the same six places. Added on 10
+  November 2026.
 - 40 for the archetypes in [Who fits](#who-fits): personal trainers,
   martial arts schools, yoga studios, life coaches, nutrition advisers,
   gym owners, physiotherapy practices and dance schools, in the five
   cities.
 
-A run takes the ten that are due (`profile_searches_per_run`), each asks
-for 25 profiles (`profile_search_results`) and is due again after 30 days
-(`profile_search_check_days`).
+A run takes the ten that are due (`profile_searches_per_run`), the best
+first, see [Connections steer the searches](#connections-steer-the-searches).
+Each asks for 25 profiles (`profile_search_results`) and is due again
+after 30 days (`profile_search_check_days`).
 
 **Removed on 10 November 2026**, with the move to a Mac app: events,
 portfolios, directories, website searches, lookups, reads by the local
@@ -82,16 +88,66 @@ practices, most of them between 30 and 50. A founder who writes
 **The workspace** has three screens now:
 
 - **People**, with the Run button. Only people a profile search found,
-  and whoever Tim kept before, the likely youngest first. Each row says
+  and whoever Tim connected with before, the likely youngest first. Each row says
   about how old the person is and when they were last active on
-  LinkedIn. Filters: all, under 30, kept, skipped.
+  LinkedIn. Filters: all, under 30, connected.
 - **Searches**, the profile searches. Add one, pause one, see how many
-  people each found and how many of them Tim kept. A search Tim adds runs
-  before the starting ones.
+  people each found and how many of them Tim connected with, those that
+  led to the most connections on top. A search Tim adds runs before the
+  starting ones. The exclusions sit here too, behind one click.
 - **Settings**, the Exa key and the settings for profile searches.
 
-**Next**: the funnel, keep, contacted, replied, recorded, steers which
-profile searches run more often.
+## Connections steer the searches
+
+Decided with Tim on 10 November 2026.
+
+**Connected, or not.** Tim marks a person as connected once he has
+connected with them on LinkedIn. That is the only decision. Whoever he
+does not connect with simply stays open, so there is no skipping any
+more. People he kept before are connected now, people he skipped are
+open again. The later steps of the funnel, contacted to recorded, count
+as connected too.
+
+**The best searches first.** Each profile search counts the people it
+found and how many of them Tim connected with. Of the due searches, a run
+takes, in this order, `RankSearches` in `internal/store/rank.go`:
+
+1. Searches that never ran, so each gets one try. Those Tim added come
+   before the starting ones.
+2. Searches that led to connections, the most first, and among the same,
+   those with the larger share.
+3. Searches whose people Tim never connected with, those that found more
+   people first. A search that found nobody runs only when there is room.
+
+The Searches screen shows the same: those that led to the most
+connections on top, with how many, then those that found the most people.
+
+**Exclusions.** Some searches brought mostly online and LinkedIn
+marketing experts, and Tim wants more kinds of people. An **exclusion**
+is a word or phrase, like "Online Marketing". A profile search leaves out
+anyone whose headline or current roles contain one, and People hides
+those found before, unless Tim connected with them. They stay in the
+file, so removing an exclusion brings them back. A phrase matches at
+the start of a word, in any case and whatever stands between its words,
+so "Online Marketing" also leaves out "Online-Marketing-Expertin" and
+"#onlinemarketing", see `rubric.Excluded`. Six to start with: Online
+Marketing, Social Media Marketing, Performance Marketing, Personal
+Branding, LinkedIn and Sichtbarkeit. Tim edits them on the Searches
+screen, which also says how many people each one hides.
+
+A live check on 10 November 2026, ten founder searches, half of them the
+new English ones, and two archetype searches: 85 people kept, 46 of them
+likely under 30. 8 of the 85 had words like marketing, social media,
+content or Sichtbarkeit in their headline, so the marketing experts Tim
+saw may come from particular searches. The counts per exclusion will
+show it.
+
+**Founders in English.** Many young founders write "Founder", not
+"Gründer". 18 starting searches ask for "young founder", "founder under
+30" and "student founder" in the five cities and NRW.
+
+**Next**: new searches made from what the people Tim connected with have
+in common.
 
 ## What we learned
 
@@ -545,6 +601,9 @@ person were as old as most people in Germany are at that step:
 | Student job, internship | 19 | |
 | Apprentice | 17 | |
 | First other job | 22 | |
+
+An age the headline gives, like "19 year old student" or "23 Jahre
+alt", beats all of these. It is shown as "Headline says 19 in 2026".
 
 The earliest year counts, because a late degree makes someone look
 younger than they are and an early start never does. Jobs count only

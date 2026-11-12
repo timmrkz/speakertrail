@@ -152,3 +152,20 @@ func TestActiveOnLinkedIn(t *testing.T) {
 		})
 	}
 }
+
+func TestStatedAge(t *testing.T) {
+	for headline, want := range map[string]int{
+		"19 year old student on his StartUp Journey | Probe | Muster": 19,
+		"Gründerin, 23 Jahre alt":                                     23,
+		"22yo founder of Beispiel":                                    22,
+		"25-year-old founder":                                         25,
+		"Founder | 20 years of experience in fitness":                 0,
+		"Coach mit 30-jähriger Erfahrung":                             0,
+		"Gen Z Unternehmer":                                           0,
+		"Inhaber seit 2019, 120 years old company":                    0,
+	} {
+		if got := rubric.StatedAge(headline); got != want {
+			t.Errorf("%q: %d, want %d", headline, got, want)
+		}
+	}
+}

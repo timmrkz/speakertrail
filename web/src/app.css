@@ -43,6 +43,13 @@
      this wide at most, centred in the window. */
   --col-w: 720px;
   --side: #eceff4;
+  /* The lights work is drawn in, all mixed from the one accent: a lighter
+     shade, the brightest point at the head of a fill or the beam, and the
+     two ends of the wash a fill lays over what is done. */
+  --accent-hi: color-mix(in srgb, var(--accent) 80%, white);
+  --accent-lit: color-mix(in srgb, var(--accent) 45%, white);
+  --accent-fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  --accent-fill-hi: color-mix(in srgb, var(--accent) 30%, transparent);
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
@@ -381,3 +388,10 @@ a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-dr
 .bar .btn, .bar .select, .bar .input { height: 30px; font-size: 13px; }
 .bar .btn.icon { width: 30px; }
 .bar .btn.icon.flush-end { margin-right: -7px; }
+/* A control with work running in it carries the beam, see Busy.svelte.
+   The beam is drawn inside it, over its background and under its words,
+   which a stacking context of its own and its rounded clip make so. */
+.btn:has(> .beam) { position: relative; overflow: hidden; isolation: isolate; --lit: var(--accent-lit); }
+/* A control that cannot be pressed while its work runs is still seen
+   working at full strength. Its words say what is happening. */
+.btn:has(> .beam):disabled { opacity: 1; }

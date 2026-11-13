@@ -4,7 +4,8 @@
   import { plural } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
-  import { runWatch } from '../lib/run.svelte'
+  import { runShare, runWatch } from '../lib/run.svelte'
+  import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import RunOutcome from '../lib/components/RunOutcome.svelte'
@@ -154,6 +155,7 @@
       <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
         disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
         title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
+        {#if going}<Busy fraction={runShare(going)} />{/if}
         <Icon name={going ? 'stop' : 'run'} />{runLabel}
       </button>
     </header>

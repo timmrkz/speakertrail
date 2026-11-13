@@ -126,3 +126,15 @@ function placeholder(): Run {
 }
 
 export const runWatch = new RunWatch()
+
+// How far a run is, from 0 to 1, or -1 while it cannot say. The total
+// counts the reads and lookups the run expects, so the share does not
+// jump back each time a check queues new ones. RunProgress and the beam
+// on the Stop button both read it, so the two never disagree.
+export function runShare(run: Run | null): number {
+  const p = run?.progress
+  if (!p) return -1
+  const total = p.checks + Math.max(p.reads, p.reads_expected) + Math.max(p.lookups, p.lookups_expected)
+  if (!total) return -1
+  return Math.min(1, (p.checks_done + p.reads_done + p.lookups_done) / total)
+}

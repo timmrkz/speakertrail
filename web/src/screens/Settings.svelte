@@ -33,13 +33,11 @@
   }
 </script>
 
-<div class="view">
-  <div class="view-head">
-    <div>
-      <h1>Settings</h1>
-      <p>Each row saves on its own.</p>
-    </div>
-  </div>
+<div class="page">
+  <header class="bar">
+    <h1 title="Each row saves on its own.">Settings</h1>
+  </header>
+  <div class="page-body">
 
   <SearchInput bind:value={q} placeholder="Search settings" label="Search settings" />
 
@@ -69,6 +67,7 @@
     <a class="btn quiet" href="/app/updates"><Icon name="update" />Updates{#if updateDot}<span class="dot {updateDot}"></span>{/if}</a>
     <ThemeButton withLabel />
   </div>
+</div>
 </div>
 
 <style>

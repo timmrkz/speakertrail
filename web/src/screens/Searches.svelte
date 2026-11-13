@@ -21,7 +21,9 @@
     document.title = 'Searches · Speaker Trail'
   })
 
-  let q = $state('')
+  // A person's "Found by" links here with the search's words, so the
+  // list opens on that search.
+  let q = $state(new URLSearchParams(location.search).get('q') ?? '')
   let all = $derived(searches.data ?? [])
   // The searches that led to the most connections on top, then those that
   // found the most people. Paused ones last. Runs take them in much the
@@ -94,13 +96,11 @@
   }
 </script>
 
-<div class="view">
-  <div class="view-head">
-    <div>
-      <h1>Searches</h1>
-      <p>A kind of person and a place. Those that led to connections run first.</p>
-    </div>
-  </div>
+<div class="page">
+  <header class="bar">
+    <h1 title="A kind of person and a place. Those that led to connections run first.">Searches{#if searches.data}<span class="num-count">{all.length}</span>{/if}</h1>
+  </header>
+  <div class="page-body">
 
   <form class="add" onsubmit={add} novalidate>
     <label class="sr-only" for="new-search">New search</label>
@@ -122,7 +122,7 @@
   {:else if !all.length}
     <EmptyState icon="search" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
   {:else}
-    {#if all.length > 8}
+    {#if all.length > 8 || q}
       <SearchInput bind:value={q} placeholder="Find a search" label="Find a search" />
     {/if}
     <p class="summary">{plural(all.length, 'search', 'searches')}{connecting ? `, ${connecting} led to connections` : ''}{paused ? `, ${paused} paused` : ''}</p>
@@ -139,7 +139,7 @@
                 <span class="ellipsis note" class:bad={s.health === 'error'} title={s.health_note}>{s.health_note}</span>
               {/if}
             </span>
-            <button class="btn sm toggle" type="button" onclick={() => toggle(s)} disabled={busy === s.id}
+            <button class="btn sm quiet toggle" type="button" onclick={() => toggle(s)} disabled={busy === s.id}
               title={s.status === 'retired' ? 'Runs take this search again' : 'Runs leave this search out until you resume it'}>
               {s.status === 'retired' ? 'Resume' : 'Pause'}
             </button>
@@ -148,6 +148,7 @@
       </ul>
     {/if}
   {/if}
+</div>
 </div>
 
 <style>

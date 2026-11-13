@@ -9,6 +9,7 @@
   import { api } from '../lib/api'
   import { runWatch } from '../lib/run.svelte'
   import { errorText } from '../lib/toast.svelte'
+  import Busy from '../lib/components/Busy.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import { channelName, conflicted as conflictedIn, following as followingIn, standing as standingOf, updates } from '../lib/updates.svelte'
@@ -110,13 +111,11 @@
   const short = (commit: string) => commit.slice(0, 7)
 </script>
 
-<div class="view narrow">
-  <div class="view-head">
-    <div>
-      <h1>Updates</h1>
-      <p>This build, and where the next one comes from.</p>
-    </div>
-  </div>
+<div class="page">
+  <header class="bar">
+    <h1 title="This build, and where the next one comes from.">Updates</h1>
+  </header>
+  <div class="page-body">
 
   {#if problem}<p class="field-error" role="alert">{problem}</p>{/if}
 
@@ -159,12 +158,6 @@
         <div class="words">
           <b>{standing.head}</b>
           <span class="faint small">{standing.more}</span>
-          {#if downloading}
-            <div class="progress" class:unknown={!update.total} role="progressbar" aria-label="Downloading"
-              aria-valuenow={update.total ? Math.floor((update.written / update.total) * 100) : undefined}>
-              <i style:width={update.total ? `${(update.written / update.total) * 100}%` : undefined}></i>
-            </div>
-          {/if}
         </div>
         {#if update.phase === 'ready'}
           <button class="btn primary act" type="button" onclick={relaunch} disabled={restarting || !!working}
@@ -174,6 +167,7 @@
         {:else if !update.off && following}
           <button class="btn act" type="button" onclick={check} disabled={looking || downloading}
             title="Look for a newer build now">
+            {#if looking || downloading}<Busy fraction={downloading && update.total ? update.written / update.total : -1} />{/if}
             {downloading ? 'Downloading' : looking ? 'Checking' : update.phase === 'failed' ? 'Try again' : 'Check'}
           </button>
         {/if}
@@ -190,6 +184,7 @@
       {/if}
     </div>
   {/if}
+</div>
 </div>
 
 <style>

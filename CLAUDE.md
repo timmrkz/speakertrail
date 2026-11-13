@@ -67,6 +67,10 @@ Where the generic skills meet this repository:
 | a path a person waits on | opening the calendar, a page of the workspace, and a run |
 | a trade-off the user accepted | Tim's yes in the thread of the session |
 
+`.claude/settings.json` raises the room Claude Code gives the list of
+skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below
+that, the skills listed last show their name without what they are for.
+
 ## How Tim works
 
 - He uses Claude through claude.ai, in chat and in cloud sessions at
@@ -244,9 +248,6 @@ Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
   has no such limit.
 - There is no screen. Interface work goes through the skill in
   `.claude/skills/interface/`. Read it before changing anything in `web/`.
-- `.claude/settings.json` raises the room Claude Code gives the list of
-  skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below
-  that, the skills listed last show their name without what they are for.
 
 ## Where guidance goes
 

@@ -34,6 +34,39 @@ Start with [README.md](README.md). In short:
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 | deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
 
+## The skills
+
+How we work is in the skills in `.claude/skills/`. Most are written for
+any project, so their rules name nothing of ours. Read the one for the
+work before starting it. Where a generic skill and this file differ, this
+file wins.
+
+| Skill | For |
+| --- | --- |
+| [architecture](.claude/skills/architecture/SKILL.md) | where a change goes, the server and client split, changing the design |
+| [engineering](.claude/skills/engineering/SKILL.md) | how any change is made, root causes, build, CI, speed, measurements |
+| [testing](.claude/skills/testing/SKILL.md) | how every test is written, fixed and reviewed, and how a bug is found |
+| [pull-requests](.claude/skills/pull-requests/SKILL.md) | how a pull request is opened, sized, described, watched and made ready |
+| [review](.claude/skills/review/SKILL.md) | how a pull request is reviewed by an agent that did none of the work |
+| [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
+| [collaboration](.claude/skills/collaboration/SKILL.md) | replies, issues with a priority and a size, writing rules |
+| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
+| [docker](.claude/skills/docker/SKILL.md) | this repository's Docker setup |
+
+Where the generic skills meet this repository:
+
+| The skills say | Here it is |
+| --- | --- |
+| the user | Tim |
+| the people using the product | whoever looks for events on the calendar, and Tim in his workspace |
+| the product's goals | The project above, and the issue the pull request names |
+| the architecture as the project writes it | Where things are above and [README.md](README.md) for now, and the records in [docs/decisions/](docs/decisions/README.md) |
+| the place the project names for a review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed and never posted on GitHub |
+| logged | a GitHub issue, laid out the way [the issue template](.github/ISSUE_TEMPLATE/issue.md) says |
+| how a pull request is described | [the pull request template](.github/pull_request_template.md) |
+| a path a person waits on | opening the calendar, a page of the workspace, and a run |
+| a trade-off the user accepted | Tim's yes in the thread of the session |
+
 ## How Tim works
 
 - He uses Claude through claude.ai, in chat and in cloud sessions at
@@ -211,6 +244,9 @@ Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
   has no such limit.
 - There is no screen. Interface work goes through the skill in
   `.claude/skills/interface/`. Read it before changing anything in `web/`.
+- `.claude/settings.json` raises the room Claude Code gives the list of
+  skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below
+  that, the skills listed last show their name without what they are for.
 
 ## Where guidance goes
 

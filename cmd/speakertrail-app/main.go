@@ -11,6 +11,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/timmrkz/speakertrail/internal/browser"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -155,7 +156,9 @@ func open() (http.Handler, *engine.Engine, string, error) {
 	if err := e.Recover(); err != nil {
 		return nil, nil, "", err
 	}
-	return apipkg.New(st, e, exa, slog.Default()), e, dir, nil
+	a := apipkg.New(st, e, exa, slog.Default())
+	a.Browsers = apipkg.Mac{Support: browser.Support()}
+	return a, e, dir, nil
 }
 
 // carryOver adds the people connected in the Docker version, read as

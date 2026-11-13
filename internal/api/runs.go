@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
@@ -224,7 +225,15 @@ func (a *API) settings(w http.ResponseWriter, r *http.Request) {
 	var out struct {
 		Settings []store.Setting `json:"settings"`
 	}
-	a.Store.Read(func(d *store.Data) { out.Settings = d.AllSettings() })
+	out.Settings = []store.Setting{}
+	a.Store.Read(func(d *store.Data) {
+		// Where LinkedIn opens is one menu of its own, GET /api/linkedin.
+		for _, s := range d.AllSettings() {
+			if !strings.HasPrefix(s.Key, "linkedin_") {
+				out.Settings = append(out.Settings, s)
+			}
+		}
+	})
 	send(w, http.StatusOK, out)
 }
 

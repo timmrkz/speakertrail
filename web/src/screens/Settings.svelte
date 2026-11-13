@@ -6,13 +6,13 @@
   import Icon from '../lib/components/Icon.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import KeyRow from '../lib/components/KeyRow.svelte'
+  import LinkedinRow from '../lib/components/LinkedinRow.svelte'
   import SettingRow from '../lib/components/SettingRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
   import { railDot, updates } from '../lib/updates.svelte'
 
   const updateDot = $derived(railDot(updates.shown))
-
 
   const settings = new Load<Setting[]>()
   settings.run(api.settings)
@@ -42,6 +42,8 @@
   <SearchInput bind:value={q} placeholder="Search settings" label="Search settings" />
 
   <KeyRow />
+
+  <LinkedinRow />
 
   {#if settings.error && !settings.data}
     <EmptyState icon="alert" tone="bad" title="Could not load the settings" text={settings.error}>

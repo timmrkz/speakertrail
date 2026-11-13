@@ -373,6 +373,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return (text ? JSON.parse(text) : undefined) as T
 }
 
+export interface BrowserProfile {
+  folder: string
+  name: string
+}
+
+export interface LinkedinWhere {
+  app: string
+  folder: string
+  // Whether the chosen profile is still there.
+  known: boolean
+  browsers: { app: string; profiles: BrowserProfile[] }[]
+}
+
 export const api = {
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
@@ -395,6 +408,11 @@ export const api = {
   // Saves the Exa key in the keychain. An empty key removes it.
   setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
+  // Where LinkedIn opens: the browser and its profile, and what this Mac has.
+  linkedin: () => request<LinkedinWhere>('GET', '/api/linkedin'),
+  setLinkedin: (app: string, folder: string) => request<LinkedinWhere>('PUT', '/api/linkedin', { app, folder }),
+  // Opens a profile link in the chosen browser profile.
+  open: (url: string) => request<void>('POST', '/api/open', { url }),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),

@@ -101,7 +101,7 @@ the app was closed while it went.
 ## Settings and the key
 
 `GET /api/settings` lists every setting with its value and what it
-does.
+does, except where LinkedIn opens, which has its own endpoints below.
 `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A value of the
 wrong kind gets 400, an unknown key 404.
 
@@ -114,6 +114,33 @@ this month used, never the key itself:
 
 `PUT /api/keys/exa` with `{"key": "..."}` saves the key in the keychain and
 answers 204. An empty key removes it.
+
+## Where LinkedIn opens
+
+The LinkedIn button opens a profile in the browser profile that is logged
+in to LinkedIn, with `open -n -a <browser> --args
+--profile-directory=<folder> <link>`. The app never asks LinkedIn for
+anything itself. See `internal/browser`.
+
+`GET /api/linkedin` answers the choice and what this Mac has, read from
+each Chromium browser's `Local State` every time:
+
+```json
+{
+  "app": "Google Chrome", "folder": "Profile 1", "known": true,
+  "browsers": [{ "app": "Google Chrome", "profiles": [{ "folder": "Default", "name": "Privat" }, { "folder": "Profile 1", "name": "Arbeit" }] }]
+}
+```
+
+`known` is false when nothing is chosen or the chosen profile is gone. One
+browser with one profile counts as chosen.
+
+`PUT /api/linkedin` with `{"app": "Google Chrome", "folder": "Profile 1"}`
+chooses. A browser or profile that is not on this Mac gets 400.
+
+`POST /api/open` with `{"url": "https://..."}` opens the link there and
+answers 204. Only https links open, anything else gets 400. With nothing
+chosen, or a browser that is gone, it answers 409 with what to do.
 
 `GET /api/me` always answers `{"logged_in": true}`.
 

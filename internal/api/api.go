@@ -29,8 +29,11 @@ type API struct {
 	Store  *store.Store
 	Engine *engine.Engine
 	Keys   Keys
-	Log    *slog.Logger
-	mux    *http.ServeMux
+	// Browsers opens LinkedIn in the right browser profile. Nil where
+	// there is no Mac to open it on.
+	Browsers Browsers
+	Log      *slog.Logger
+	mux      *http.ServeMux
 }
 
 // New builds the handler.
@@ -63,6 +66,9 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("PATCH /api/settings/{key}", a.patchSetting)
 	m.HandleFunc("GET /api/keys", a.keys)
 	m.HandleFunc("PUT /api/keys/exa", a.setKey)
+	m.HandleFunc("GET /api/linkedin", a.linkedin)
+	m.HandleFunc("PUT /api/linkedin", a.setLinkedin)
+	m.HandleFunc("POST /api/open", a.open)
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "No such endpoint") })
 	return a
 }

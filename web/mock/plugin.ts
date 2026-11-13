@@ -627,7 +627,25 @@ const ROUTES: [string, RegExp, Handler][] = [
     exaKey = String(b.key ?? '').trim()
     return { status: 204 }
   }],
+  ['GET', /^\/api\/linkedin$/, () => ok(where())],
+  ['PUT', /^\/api\/linkedin$/, (_s, _m, _q, b) => {
+    const known = browsers.find((x) => x.app === b.app)?.profiles.some((p) => p.folder === b.folder)
+    if (!known) return err(400, `There is no such profile in ${b.app}`)
+    Object.assign(linkedin, { app: String(b.app), folder: String(b.folder) })
+    return ok(where())
+  }],
+  // The mock opens nothing. It answers as the app does, a moment later.
+  ['POST', /^\/api\/open$/, (_s, _m, _q, b) => {
+    if (!String(b.url ?? '').startsWith('https://')) return err(400, 'Only https links open')
+    if (!linkedin.folder) return err(409, 'Choose in Settings where LinkedIn opens')
+    return { status: 204 }
+  }],
 ]
+
+// The mock's Mac: Chrome with two invented profiles, nothing chosen yet.
+const browsers = [{ app: 'Google Chrome', profiles: [{ folder: 'Default', name: 'Privat' }, { folder: 'Profile 1', name: 'Arbeit' }] }]
+const linkedin = { app: 'Google Chrome', folder: '' }
+const where = () => ({ ...linkedin, known: browsers.some((b) => b.app === linkedin.app && b.profiles.some((p) => p.folder === linkedin.folder)), browsers })
 
 // The mock's Exa key, saved as the app saves it in the keychain.
 let exaKey = 'invented'

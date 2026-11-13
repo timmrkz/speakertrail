@@ -3,10 +3,11 @@
   // why they fit, which search found them, and Tim's notes. The pane
   // beside the list in a wide window and the sheet in a narrow one both
   // show this, so the two never drift apart.
-  import { api, type PersonDetail } from '../lib/api'
+  import { api, ApiError, type PersonDetail } from '../lib/api'
   import { fmtDay, initials } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
+  import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
 
@@ -53,6 +54,30 @@
     }
   }
 
+  // LinkedIn opens in the browser profile chosen in Settings, the one
+  // logged in to LinkedIn, see internal/browser. The click shows at once.
+  // Without a choice the app does not guess, and the line beside the
+  // button leads to Settings.
+  let opening = $state(false)
+  let openProblem = $state('')
+  let needsChoice = $state(false)
+  async function openLinkedin(e: MouseEvent) {
+    e.preventDefault()
+    if (opening) return
+    opening = true
+    openProblem = ''
+    needsChoice = false
+    try {
+      await api.open(linkedin)
+    } catch (err) {
+      needsChoice = err instanceof ApiError && err.status === 409 && /Settings/.test(err.message)
+      openProblem = errorText(err)
+    } finally {
+      // Long enough to see, short enough not to wait for.
+      setTimeout(() => (opening = false), 600)
+    }
+  }
+
   // Connected on LinkedIn, or not. The same button again undoes it. It
   // shows at once and goes back if the app says no.
   let deciding = $state(false)
@@ -95,11 +120,17 @@
           <Icon name={p.connected ? 'check' : 'connect'} />{p.connected ? 'Connected' : 'Connect'}
         </button>
         {#if linkedin}
-          <a class="btn wide" href={linkedin} target="_blank" rel="noopener noreferrer" title="Open the LinkedIn profile in your browser">
-            <Icon name="external" />LinkedIn
+          <a class="btn wide" href={linkedin} target="_blank" rel="noopener noreferrer" aria-busy={opening} onclick={openLinkedin}
+            title="Open the LinkedIn profile in the browser profile chosen in Settings">
+            {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
           </a>
         {/if}
       </div>
+      {#if openProblem}
+        <p class="open-problem small" role="alert">
+          {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
+        </p>
+      {/if}
     </header>
 
     {#if reasons.length || doubts.length}
@@ -166,5 +197,6 @@
   .why b { font-weight: 600; }
   .why q { color: var(--ink-2); overflow-wrap: anywhere; }
   .found { font-size: 13px; color: var(--ink-3); }
+  .open-problem { color: var(--bad); margin-top: -6px; }
   .note-state { color: var(--ink-3); }
 </style>

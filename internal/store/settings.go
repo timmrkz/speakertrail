@@ -23,6 +23,19 @@ var Defaults = []Default{
 	{"exa_monthly_searches", "1000", "Exa searches per month. Its free $10 a month covers about 1,400"},
 	{"probation_weeks", "3", "Weeks a new search may find nobody before runs leave it out"},
 	{"retire_after_empty_checks", "4", "Runs in a row without anyone new before a search is left out"},
+	// Where LinkedIn opens: the browser, and the folder of the profile
+	// that is logged in to LinkedIn. Settings shows the two as one menu,
+	// LinkedIn opens in, see internal/browser.
+	{"linkedin_browser", `"Google Chrome"`, "The browser LinkedIn opens in"},
+	{"linkedin_profile", `""`, "The browser profile LinkedIn opens in"},
+}
+
+// Text gives a setting as text.
+func (d *Data) Text(key string) string {
+	s, _ := d.Setting(key)
+	var v string
+	_ = json.Unmarshal(s.Value, &v)
+	return v
 }
 
 func defaultOf(key string) (Default, bool) {

@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte'
   import Icon from './Icon.svelte'
 
-  // A bottom sheet on phones and a side panel on wide screens.
+  // A panel that slides in from the right, over the window.
   // Mount it to open it. It closes on Escape, the scrim and the close button.
   let {
     label,
@@ -54,10 +54,9 @@
 
 <div class="scrim" onclick={onclose} aria-hidden="true"></div>
 <div class="sheet" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" bind:this={panel} onkeydown={keydown}>
-  <div class="grip" aria-hidden="true"></div>
-  <div class="sheet-head">
+  <div class="bar sheet-bar">
     <div class="head-body">{@render head?.()}</div>
-    <button class="btn icon close" type="button" onclick={onclose} aria-label="Close"><Icon name="close" /></button>
+    <button class="btn quiet icon close flush-end" type="button" onclick={onclose} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
   </div>
   <div class="sheet-body">
     {@render children()}
@@ -67,27 +66,16 @@
 <style>
   .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; animation: fade .18s ease-out; }
   .sheet {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(540px, 100%); z-index: 41; background: var(--surface);
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); z-index: 41; background: var(--surface);
     border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); overflow-y: auto; overscroll-behavior: contain;
-    padding: calc(18px + env(safe-area-inset-top, 0px)) 22px calc(28px + env(safe-area-inset-bottom, 0px));
-    display: grid; gap: 18px; align-content: start; outline: none;
-    animation: slide-in .22s cubic-bezier(.2, .8, .2, 1);
+    display: flex; flex-direction: column; outline: none;
+    animation: slide-in .26s cubic-bezier(.2, .8, .2, 1);
   }
-  .grip { display: none; }
-  .sheet-head {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start;
-  }
-  .head-body { min-width: 0; }
-  .sheet-body { display: grid; gap: 22px; min-width: 0; }
-  @media (max-width: 760px) {
-    .sheet {
-      top: auto; left: 0; width: 100%; max-height: 90dvh; border-left: 0; border-top: 1px solid var(--line);
-      border-radius: 18px 18px 0 0; padding: 8px 16px calc(24px + env(safe-area-inset-bottom, 0px));
-      animation-name: slide-up;
-    }
-    .grip { display: block; width: 40px; height: 4px; border-radius: 4px; background: var(--line-strong); margin: 0 auto 2px; }
-  }
+  /* The bar a sheet starts with is every pane's bar: the cross at its end
+     stands where the content's right edge is. */
+  .sheet-bar { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom-color: transparent; }
+  .head-body { flex: 1 1 auto; min-width: 0; }
+  .sheet-body { display: grid; gap: 22px; min-width: 0; padding: 8px var(--pad) calc(32px + env(safe-area-inset-bottom, 0px)); }
   @keyframes fade { from { opacity: 0; } }
-  @keyframes slide-in { from { transform: translateX(40px); opacity: 0; } }
-  @keyframes slide-up { from { transform: translateY(40px); opacity: 0; } }
+  @keyframes slide-in { from { transform: translateX(48px); opacity: 0; } }
 </style>

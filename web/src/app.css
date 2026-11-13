@@ -28,6 +28,21 @@
   --control-h: 36px;
   --seg-on: #ffffff;
   --gutter: 32px;
+  /* The window's grid. Every pane starts with a bar --bar-h tall, which is
+     where the title bar's buttons sit on macOS, see main.go. Everything in
+     a pane, its bar too, stands --pad in from the pane's edges, so a button
+     in a bar lines up with the list or the page under it. */
+  --bar-h: 44px;
+  --pad: 20px;
+  --side-w: 216px;
+  --list-w: 380px;
+  /* Room the close, minimise and zoom buttons take in the top left corner,
+     16 in, three of 12 with 8 between, and a space after. */
+  --lights-r: 88px;
+  /* A page of its own, Searches, Settings and Updates, reads in a column
+     this wide at most, centred in the window. */
+  --col-w: 720px;
+  --side: #eceff4;
   --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
@@ -55,6 +70,7 @@
     --series-2: #d95926;
     --scrim: rgba(0, 0, 0, .6);
     --seg-on: #34405a;
+    --side: #121822;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
     --shadow-lg: 0 8px 40px rgba(0, 0, 0, .5);
   }
@@ -82,6 +98,7 @@
   --series-2: #d95926;
   --scrim: rgba(0, 0, 0, .6);
   --seg-on: #34405a;
+  --side: #121822;
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
   --shadow-lg: 0 8px 40px rgba(0, 0, 0, .5);
 }
@@ -91,7 +108,7 @@ html { -webkit-text-size-adjust: 100%; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--surface);
   color: var(--ink);
   font: 15px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -331,3 +348,36 @@ button { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
+
+/* The window. Wails drags the window by any element whose
+   --wails-draggable is drag, and the property is inherited, so whatever
+   can be clicked inside a bar says no-drag again. */
+.bar {
+  flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 10px;
+  padding: 0 var(--pad); border-bottom: 1px solid var(--line); min-width: 0;
+  --wails-draggable: drag;
+}
+.bar h1 { font-size: 15px; font-weight: 650; letter-spacing: 0; flex: 1 1 auto; min-width: 0; }
+.bar .num-count { font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; }
+a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-drag; }
+/* A page of its own: the bar runs the width of the window, and what is in
+   it stands in the same centred column as the page under it. */
+.page { display: flex; flex-direction: column; min-height: 100dvh; min-width: 0; }
+.page > .bar { padding: 0 max(var(--pad), calc((100% - var(--col-w)) / 2)); }
+.page-body {
+  width: 100%; max-width: calc(var(--col-w) + 2 * var(--pad)); margin: 0 auto;
+  padding: 24px var(--pad) 64px; display: grid; gap: 24px; align-content: start; min-width: 0;
+}
+@media (max-width: 760px) {
+  /* No sidebar: the title bar's buttons stand over the bar itself. */
+  .bar, .page > .bar { padding-left: var(--lights-r); }
+  .page-body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+}
+/* An icon button at the end of a bar: its glyph, not its box, lines up
+   with the edge of what is under it, the way a Mac toolbar does it. */
+.btn.icon.flush-end { margin-right: calc((16px - var(--control-h)) / 2); }
+/* Controls in a bar are a size smaller, the way a Mac toolbar's are, and
+   all the same size. */
+.bar .btn, .bar .select, .bar .input { height: 30px; font-size: 13px; }
+.bar .btn.icon { width: 30px; }
+.bar .btn.icon.flush-end { margin-right: -7px; }

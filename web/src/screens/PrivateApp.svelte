@@ -2,7 +2,6 @@
   import { navigate, router } from '../lib/router.svelte'
   import { runWatch } from '../lib/run.svelte'
   import { railDot, updates } from '../lib/updates.svelte'
-  import Brand from '../lib/components/Brand.svelte'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import ThemeButton from '../lib/components/ThemeButton.svelte'
   import People from './People.svelte'
@@ -58,7 +57,7 @@
 {#if ready}
   <div class="app">
     <aside class="side" aria-label="Workspace">
-      <Brand href="/app/people" sub="Workspace" />
+      <div class="side-top" aria-hidden="true"></div>
       <nav class="nav" aria-label="Main">
         {#each NAV as item (item.href)}
           <a href={item.href} aria-current={current(item.href) ? 'page' : undefined}>
@@ -101,22 +100,25 @@
 {/if}
 
 <style>
-  .app { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100dvh; }
+  /* The sidebar runs to the top of the window with the title bar's buttons
+     on it, the way Mail does, and the main area is a pane of its own. */
+  .app { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); height: 100dvh; background: var(--surface); }
   .side {
-    position: sticky; top: 0; height: 100dvh; border-right: 1px solid var(--line); background: var(--surface);
-    padding: 18px 12px; display: flex; flex-direction: column; gap: 22px; overflow-y: auto;
+    height: 100dvh; border-right: 1px solid var(--line); background: var(--side);
+    padding: 0 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow-y: auto;
   }
-  .side > :global(.brand) { padding: 0 8px; }
+  /* As tall as every pane's bar, and what the window is dragged by. */
+  .side-top { flex: none; height: var(--bar-h); --wails-draggable: drag; }
   .nav { display: grid; gap: 2px; }
   .nav a, .side-foot :global(.btn) {
-    display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; padding: 0 10px; border: 0; border-radius: 8px;
+    display: flex; align-items: center; gap: 10px; width: 100%; height: 32px; padding: 0 10px; border: 0; border-radius: 7px;
     background: none; cursor: pointer; text-align: left; color: var(--ink-2); font-weight: 500; font-size: 14px; text-decoration: none;
     justify-content: flex-start;
   }
-  .nav a:hover, .side-foot :global(.btn:hover) { background: var(--surface-2); color: var(--ink); text-decoration: none; }
+  .nav a:hover, .side-foot :global(.btn:hover) { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); text-decoration: none; }
   .nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .side-foot { margin-top: auto; border-top: 1px solid var(--line); padding-top: 12px; }
-  .main { padding: 28px var(--gutter) 64px; min-width: 0; }
+  .side-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line); }
+  .main { min-width: 0; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; }
   .tabbar { display: none; }
   .nav a .dot { margin-left: auto; }
   .tab-icon { position: relative; display: inline-grid; }
@@ -125,10 +127,9 @@
   @media (max-width: 760px) {
     .app { grid-template-columns: minmax(0, 1fr); }
     .side { display: none; }
-    .main { padding: 16px var(--gutter) calc(88px + env(safe-area-inset-bottom, 0px)); }
     .tabbar {
       display: grid; grid-template-columns: repeat(3, 1fr); position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-      background: var(--surface); border-top: 1px solid var(--line);
+      background: var(--side); border-top: 1px solid var(--line);
       padding: 4px 4px calc(4px + env(safe-area-inset-bottom, 0px));
     }
     .tabbar a {

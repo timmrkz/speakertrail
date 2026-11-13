@@ -97,6 +97,16 @@ func main() {
 		URL:       "/app/people",
 		Mac: application.MacWindow{
 			Backdrop: application.MacBackdropNormal,
+			// The page reaches up under the title bar, the way Mail and
+			// FrameFairy look: the sidebar runs to the top with the close,
+			// minimise and zoom buttons on it, and every pane starts with
+			// a bar of the same height, see --bar-h in web/src/app.css.
+			// Hidden, not HiddenInset: a toolbar makes macOS push the
+			// buttons further in than Terminal's, which FrameFairy measured
+			// and found reads as wrong. A click in the top 28 points still
+			// drags the window, and so does a click on any pane's bar.
+			TitleBar:                application.MacTitleBarHidden,
+			InvisibleTitleBarHeight: 28,
 		},
 	})
 	if err := app.Run(); err != nil {

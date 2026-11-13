@@ -78,7 +78,12 @@ main, so nothing is published yet.
 - What it picked is in `updates.json`, in the app's folder beside
   `speakertrail.json`.
 
-The interface asks `/api/updates`:
+Where things stand reaches the interface the way it does in FrameFairy:
+the app sends it as the Wails event `updates` every time it changes, and
+the Updates page and the sidebar's dot show what it last sent. The
+interface asks `/api/updates` only when the workspace starts, when the
+Updates page opens, and after a pick the app refused. A click is sent as
+a request:
 
 | Request | What it does |
 | --- | --- |

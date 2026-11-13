@@ -85,7 +85,13 @@ func main() {
 		},
 		Logger: slog.Default(),
 	})
-	c := newUpdating(app.Updater, app.Quit, dir, e.CloseIfIdle, nil)
+	// Where updates stand is sent to the page as it changes, as an event
+	// called updates, the way FrameFairy sends it. The page asks
+	// /api/updates once when it starts and after a click, and hears the
+	// rest. See web/src/lib/updates.svelte.ts.
+	c := newUpdating(app.Updater, app.Quit, dir, e.CloseIfIdle, func(u UpdateState) {
+		app.Event.Emit("updates", u)
+	})
 	ups.Store(c)
 	c.start()
 	app.Window.NewWithOptions(application.WebviewWindowOptions{

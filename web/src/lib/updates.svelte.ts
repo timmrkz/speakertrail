@@ -1,24 +1,17 @@
 // Where the app's updates stand, read in two places: the Updates page,
 // which says it in words, and Updates in the sidebar, which wears a dot
 // for it. Both read the one state kept here, so the sidebar never says
-// less than the page, or something else. Ported from FrameFairy, whose
-// page hears events from Go. This one asks /api/updates instead, often
-// while something moves and seldom when nothing does. See
+// less than the page, or something else. Ported from FrameFairy: the app
+// sends where things stand as an event, updates, whenever it changes, and
+// the page asks /api/updates only when it starts and after a click. See
 // docs/UPDATES.md.
 
+import { Events } from '@wailsio/runtime'
 import { api, type UpdateState } from './api'
 
 // A check that finds nothing is over in a tenth of a second, which is a
 // flash nobody can read. So looking is shown for at least this long.
 const LOOK_AT_LEAST = 1400
-
-// How often the state is asked for: while a check or a download moves,
-// while the page is open, and otherwise, for the dot alone. The app
-// itself looks for a newer build every ten minutes, and every twenty
-// seconds while a newer commit is being built.
-const MOVING_MS = 1500
-const OPEN_MS = 10_000
-const QUIET_MS = 60_000
 
 // What the line under the build starts with. A dot is work, running or
 // waiting to be picked up: look pulses, new stands still. Something that
@@ -120,11 +113,14 @@ export function standing(
 // empty for none. All is well is no dot: the sidebar only speaks when
 // there is something to look at.
 export function railDot(u: UpdateState | null): string {
+  // Work on a pull request in conflict keeps its dot, in the colour of a
+  // warning, the way the page wears it.
+  const warn = conflicted(u) ? ' warn' : ''
   switch (standing(u).mark) {
     case 'look':
-      return 'busy'
+      return `busy${warn}`
     case 'new':
-      return 'ready'
+      return `ready${warn}`
     case 'warn':
       return 'warn'
     case 'err':
@@ -133,22 +129,16 @@ export function railDot(u: UpdateState | null): string {
   return ''
 }
 
-// A commit being built is not moving here: a build takes minutes, and the
-// app itself looks every twenty seconds while one is on its way, so the
-// page's own pace is soon enough to hear of it.
-const moving = (u: UpdateState | null) => u?.phase === 'checking' || u?.phase === 'downloading'
-
-class Updates {
+export class Updates {
   // What is on screen, which trails what the app last said while a check
   // is held.
   shown = $state<UpdateState | null>(null)
   #latest: UpdateState | null = null
   #lookingSince = 0
   #held: ReturnType<typeof setTimeout> | undefined
-  #timer: ReturnType<typeof setTimeout> | undefined
-  #users = 0
-  #open = 0
-  #seq = 0
+  // Events heard so far, so an answer to an asking that an event came
+  // after is known to be the older of the two.
+  #told = 0
 
   // Takes what the app said, or what a click shows at once.
   heard(u: UpdateState) {
@@ -171,37 +161,28 @@ class Updates {
     this.shown = u
   }
 
-  // Asks the app where things stand, and asks again later: soon while
-  // something moves, seldom when nothing does.
-  async ask(): Promise<void> {
-    clearTimeout(this.#timer)
-    const mine = ++this.#seq
-    try {
-      const u = await api.updates()
-      if (mine === this.#seq) this.heard(u)
-    } catch {
-      // Keep what is shown. The next answer puts it right.
-    } finally {
-      if (mine === this.#seq && this.#users > 0) {
-        const wait = moving(this.#latest) ? MOVING_MS : this.#open > 0 ? OPEN_MS : QUIET_MS
-        this.#timer = setTimeout(() => void this.ask(), wait)
-      }
-    }
+  // Asks the app where things stand. Asking also reads the channel list,
+  // and what that read found is sent as an event, which can arrive before
+  // the answer to the asking does. The answer is then the older of the
+  // two, so it only counts while no event has come since it was asked.
+  ask() {
+    const at = this.#told
+    api
+      .updates()
+      .then((u) => this.#told === at && this.heard(u))
+      .catch(() => {})
   }
 
-  // The workspace watches from its start, for the dot. The page watches
-  // too, with open set, so it asks more often while it is on screen.
-  watch(open = false): () => void {
-    this.#users++
-    if (open) this.#open++
-    void this.ask()
+  // Listens from the start of the workspace until it closes.
+  listen(): () => void {
+    const off = Events.On('updates', (ev) => {
+      this.#told++
+      this.heard(ev.data as UpdateState)
+    })
+    this.ask()
     return () => {
-      this.#users--
-      if (open) this.#open--
-      if (this.#users === 0) {
-        clearTimeout(this.#timer)
-        clearTimeout(this.#held)
-      }
+      off()
+      clearTimeout(this.#held)
     }
   }
 }

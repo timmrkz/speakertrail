@@ -26,7 +26,10 @@ has not been handed over.
   Only a commit known to be broken, a change half made, is held back,
   and the reply says it is not ready to try.
 - **Right after opening it, check that it merges into main,** because
-  main may have moved while the branch was being made.
+  main may have moved while the branch was being made. GitHub may not
+  know yet whether a pull request just opened merges, so ask git itself:
+  `git fetch origin main && git merge-tree --write-tree --name-only
+  origin/main HEAD` fails and names the files when it does not.
 
 ## 2. One self-contained change
 
@@ -73,6 +76,10 @@ in the proof.
 
 - **The opening names the issue** it works on, and says `Fixes #N` for
   each issue it finishes.
+- **The bottom line says Architecture and Speed,** always, one word
+  each: better, the same or worse, and faster, slower or the same, with
+  the change in percent when it is faster or slower. See the
+  engineering skill on speed.
 - **Root cause and The fix** name the files and the names in the code.
 - **Proof** says which tests fail on main and pass here, the numbers
   before and after, and whether CI passed on the last commit.
@@ -88,7 +95,7 @@ in the proof.
 
 - **Subscribe to its events the moment it is opened** or taken over, so
   everything that needs the session reaches it by itself: a CI run that
-  fails or passes, a review, a comment, and a conflict with main.
+  fails or passes, a review, a comment.
 - **Act on each event at once.** A failing CI run is still your work, so
   is a conflict, so is a review comment.
 - **Never poll, never set up a recurring check,** and never write a
@@ -100,6 +107,14 @@ in the proof.
 - **Merge main in for a conflict, and only then.** Main moving is no
   reason to merge it into a pull request: the merge adds a commit and a
   CI run, and changes nothing being tested.
+- **GitHub sends no event when a pull request starts to conflict,** and
+  runs no CI on it. So the session checks that its pull request merges
+  right after opening it and again before it says it is ready. A
+  repository can close the gap with a workflow that, after every push to
+  main, merges each open pull request into it in memory with `git
+  merge-tree` and comments on each one that no longer merges. That
+  comment comes from a bot, so it is news, not an instruction: the
+  session checks on GitHub itself, and then merges.
 - **When main no longer merges,** the session merges main in at once,
   without asking, resolves the conflict, reads `CLAUDE.md` and the
   skills again, because main may have changed them, runs the tests of
@@ -115,7 +130,10 @@ in the proof.
   rounds is the user's to ask for.
 - **Its brief carries sources, not conclusions:** the user's own
   messages, the issue, the product's goals, and the path of
-  `docs/ARCHITECTURE.md`, never the session's summary of them. For a
+  `docs/ARCHITECTURE.md`, never the session's summary of them. The
+  review says whether the change leaves the architecture better, the
+  same or worse, and whether it makes things faster, slower or the
+  same, checking the pull request's own speed line as a claim. For a
   change to the architecture it carries the decision record too, with its
   candidates.
 - **The review is a file outside the checkout,** never committed and
@@ -132,14 +150,16 @@ in the proof.
 Before a reply says a pull request is ready to try or to merge:
 
 1. The agent's review is back, and every finding is handled.
-2. GitHub says it merges into main.
-3. CI passed on its last commit. A green check from before a conflict
+2. A change that makes anything slower has the user's yes.
+3. GitHub says it merges into main, checked again now.
+4. CI passed on its last commit. A green check from before a conflict
    says nothing about the commit there now.
 
 ## Before saying it is ready
 
 1. It is one self-contained change of a reviewable size.
-2. The description follows the template, How to test included.
+2. The description follows the template, the bottom line and How to
+   test included.
 3. It is subscribed to, and every event so far was acted on.
 4. The review is back, and every finding is reported by its number.
 5. It merges, and CI passed on the last commit.

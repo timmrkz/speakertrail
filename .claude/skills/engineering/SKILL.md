@@ -120,16 +120,27 @@ CI is where every pull request waits, and the user waits with it.
 - **Every job has a short limit, five minutes as a start,** setup
   included. A job that grows past it is split or loses the work that
   does not belong in it, never given a longer limit.
-- **A pull request runs only what its change reaches,** picked from the
-  diff. A push to main runs everything.
+- **A pull request starts only the jobs whose code it changed,** by a
+  path filter on the kind of file: no backend code changed, no backend
+  tests. Every pull request runs the lint and the build, because the
+  repository's rules read the docs too. Inside a job the tool's own
+  cache runs only what changed. A push to main runs everything.
 - **A run for an old commit is stopped** when a new one comes, with
   `concurrency` and `cancel-in-progress`. Only what writes shared state
   is never stopped halfway, and CI on main keeps a result per commit.
 - **Expensive machines run only what differs on them.**
 - **What is long and blocks nothing runs by hand or at night,** never
   on every push.
-- **Every CI job is one command,** the same one a person runs. A check
-  is added to that command, never as a step of its own in a workflow.
+- **Every CI job is one command,** the same one a person runs, with
+  only what its machine needs around it. A check is added to that
+  command, never as a step of its own in a workflow, and no script of
+  ours picks, runs or reports tests.
+- **A workflow that writes gets its token only from main's own copy.**
+  A branch is code nobody has reviewed yet, so its copy of a workflow
+  never runs with a token that writes. `pull_request_target` runs the
+  main branch's workflow for a stranger's pull request with such a
+  token, and one step that reads the pull request's code hands it over,
+  so no workflow uses it, and a test fails on one that does.
 
 ## 8. Docs say what the code does now
 
@@ -143,7 +154,30 @@ CI is where every pull request waits, and the user waits with it.
 - **One name per thing.** Whatever a thing is called in the interface,
   it is called that in the docs, the code and the comments too.
 
-## 9. A measurement a person can compare
+## 9. Every change knows its speed
+
+- **Every pull request says whether it makes things faster, slower or
+  the same,** before the user has to ask: for the product, or for CI when
+  only the tests or the build change. Its bottom line is one word, and
+  when it is faster or slower, the change in percent with its spread,
+  overall. How it is known, and each part, goes in Proof, see the
+  template.
+- **Ask it while working:** what runs more often or less, what waits on
+  what, what is read, drawn, decoded or started again, what is held in
+  memory.
+- **A change on a path a person waits on is measured** before and after,
+  the way section 10 writes a measurement. A session times what it can
+  reach, a benchmark of the code that changed when the real thing needs
+  a screen or a model it does not have. CI is measured by the times of
+  the jobs the change reaches against the last runs on the main branch.
+  What cannot be timed is reasoned from the code, said as reasoning,
+  never as a measurement, and Proof names what was not timed.
+- **Slower is not shipped** unless it buys something worth more, and the
+  user accepted that trade-off. The pull request names what got slower,
+  by how much and what it buys. Until the user agrees, the question is in
+  their list and the pull request is not ready to merge.
+
+## 10. A measurement a person can compare
 
 Wherever numbers are put side by side, in a pull request, a reply or a
 doc:
@@ -173,3 +207,5 @@ doc:
 4. Input from outside is checked at the boundary.
 5. The build is clean and pinned, and CI stays under its limits.
 6. The docs say what the code does now.
+7. The pull request says whether it is faster, slower or the same, and
+   a slower one has the user's yes.

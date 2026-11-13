@@ -43,8 +43,9 @@ and changed, and what shape we build toward.
   down the side for "may use", the path under each box's name, and its
   parts as small chips. It follows the reader's light or dark theme
   with `prefers-color-scheme`, on a background of its own, and names
-  only paths that exist. A change that moves a box changes its drawing
-  in the same pull request.
+  only paths that exist. A change that adds a part, moves a box, or
+  changes what a box holds or how it is reached changes its drawing in
+  the same pull request, as it changes the line of the file.
 - **A line is added only for a new kind of thing:** a new part, a new
   home for state, a new boundary. A change that brings one adds its line
   in the same pull request. Rewording is not a change of the
@@ -122,6 +123,25 @@ What follows from it:
 - **The API is a boundary.** Its shapes are written once, on the server,
   and the client's types are made from them, never written by hand
   beside them. A change to it says what the client relies on.
+- **What the server tells the client unasked is named once.** Each
+  message has a type that says what it carries, and is sent through one
+  function by that type, never with its name written out where it is
+  sent. A test holds every name and every field to the client's, both
+  ways, so the channel is tested alone, without a browser. One name
+  per type on the client too: two declarations of one name merge into
+  one in some languages, and each then reads as having the fields of
+  both.
+- **A state sent often sends only what changed.** When the server sends
+  a whole state many times a second and most of it seldom changes, the
+  sender keeps a hash of each part as it last sent it and sends a part
+  whole only when its hash changed. The client's transport makes the
+  state whole again, so nothing past it knows, and one call starts both
+  sides over.
+- **A press the server has not answered yet is held in one place,** the
+  store that holds that kind of work, until the server answers or a
+  timeout passes. Never a flag of the control's own. How long a note of
+  what became of something stays on screen, like a toast, is the
+  client's: it is how news is shown, not what happened to the work.
 - **The database comes when it is needed, and only the server sees it.**
   Plain files are fine until two writers, a query or a size make them
   wrong. The client never knows what the storage is.
@@ -210,6 +230,7 @@ with a link to the new one.
 | follow the pattern in the code next to the change | that code may be what Not to copy names | the architecture file, section 5 |
 | write a decision down after it is built | the alternatives are gone by then | five simulations before the code, section 6 |
 | a database from the start | a moving part nothing needs yet | plain files until they are wrong, section 4 |
+| test the channel between client and server through the screen | a wrong name passes every check that wires the channel again | the names and fields held to each other by a unit test, section 4 |
 
 ## Before saying done
 

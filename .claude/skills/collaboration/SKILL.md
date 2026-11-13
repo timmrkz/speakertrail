@@ -125,15 +125,18 @@ issue of the highest priority, the smallest first and then the oldest,
 unless the user puts them in another order. What is happening now comes
 before that order, because labels lag behind it: a test that has just
 failed on main, or an issue that comes with its trace or its log, goes
-before an older one still waiting for its next failure to show why. The
-session says which it picked and why.
+before an older one with less in hand. Following the evidence in hand
+gets a fix done sooner. An issue that can only wait for its next failure
+is not kept open, see What can close below. The session says which it
+picked and why.
 
 ### Looking over the issues
 
 Now and then, a session looks over the open issues. It changes no file,
 so it opens no pull request. It works in this order:
 
-1. **Main's CI runs since the last time.** Every red run is matched to an
+1. **Main's CI runs since the last time,** the nightly runs among them,
+   which no pull request waits on. Every red run is matched to an
    issue. A red run with none gets one.
 2. **Labels.** Every issue without a priority or a size gets one. An
    issue whose facts changed is looked at again.
@@ -143,7 +146,13 @@ so it opens no pull request. It works in this order:
    events in our own code that a test can make happen stays, and gets its
    test.
 4. **What can close.** Done, not planned or a duplicate, each closing
-   saying in one line which pull request or decision closed it.
+   saying in one line which pull request or decision closed it. One
+   that waits for its next failure to say why, with nothing to work on
+   until then, because nothing failed since its last trace or log, is
+   closed as not planned with a comment that it is reopened once it
+   fails again, with the run and its trace. An open issue nobody can act
+   on is asked about at every look over and answered the same way each
+   time.
 5. **Problems that come back.** Incidents with one cause are put under
    one `problem` issue, as its sub-issues, so the cause is fixed once.
 

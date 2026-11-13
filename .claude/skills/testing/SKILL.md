@@ -324,6 +324,7 @@ nothing more than a field, a parameter or an option:
 | random numbers | a source of randomness |
 | a network service, a model, a database | an interface, with a fake the test drives |
 | a program the code runs | its path or a runner |
+| hardware or a system service outside the code, a hardware codec, a driver, a keychain | a value the program hands in, absent by default, see below |
 | the end of work | a channel, callback or event the caller gives |
 
 - The program hands in the real thing. A test hands in one it drives.
@@ -339,6 +340,43 @@ nothing more than a field, a parameter or an option:
   needed it got a sleep instead.
 - The interface the same: a module that keeps time takes its timer, or
   is tested under fake timers.
+
+### Test up to the boundary you own
+
+A product hands work to systems it does not own: the operating system's
+media engine, a graphics driver, a keychain, a service in the cloud. What
+the product owns is what it hands over, the arguments, the request, the
+order of the calls. What the system then does with them is the system's
+code, on the machine the test happens to run on, which is rarely a
+machine people use. A test that runs it tests the system: a virtual
+machine's media engine that hangs says nothing about the product. This
+is ports and adapters, Alistair Cockburn's hexagonal architecture: the
+product meets the outside at a port, the real system is the adapter
+behind it, and a test stands in for the adapter.
+
+- **The product does not reach for the system by itself.** It is handed
+  it, the way it is handed the network: the program's own `main` hands
+  the real one, and what a test makes gets none, so it runs the plain
+  path in the product's own code or a stand-in. Code that picks the
+  system by the operating system it finds itself on reaches it from
+  every test on that system too.
+- **What is handed over is the test.** A stand-in records the arguments
+  or the request, and the test checks them against what the real system
+  took on a real machine, argument by argument. It runs on every machine
+  in milliseconds, and a change to what the system is asked shows there
+  first.
+- **The line is what differs between machines.** A library the project
+  builds itself and runs the same everywhere may run in a test, because
+  what it makes of the product's input is the product's behaviour. What
+  changes from one machine to the next, hardware, a driver, a system
+  framework, is behind the port.
+- **When a real machine breaks the contract,** the input that broke it
+  goes into the test of what is handed over, and the adapter is fixed
+  for it. A run of the real system in CI is not the answer, because CI's
+  machine is not the one that broke.
+- Something that fails on one machine and passes on another is first a
+  question of whether the test reaches past the boundary, before it is a
+  question of the product, section 6.
 
 ### Shapes that test well
 
@@ -409,7 +447,9 @@ happening there. A bug report asks the same.
      CI runner and its virtual hardware, on a busy machine, with a
      stand-in program or a file made for the test? Look there first.
      What the environment's own hardware or programs do is fixed in how
-     the test uses them, never in the product. What the test fed the
+     the test uses them, never in the product, and a test that reaches
+     them at all is the first thing to change, see Test up to the
+     boundary you own in section 5. What the test fed the
      product decides it, not where it ran: input from outside, like a
      fuzzer's bytes, or an order of the product's own work that a busy
      machine only made likelier, is the product's to fix.
@@ -531,10 +571,14 @@ failure belongs in the trace or the product's logs for good.
 A test suite is run thousands of times. Every second in it is paid on
 every push, by the people waiting on CI and by the machines.
 
-- **Run only what a change reaches.** The tests of what changed and of
-  what depends on it, chosen from the diff. That simple rule beats a
-  clever cache. Prefer a tool's own feature, a test runner's affected
-  mode, a CI path filter, to a script of ours.
+- **Run only what a change reaches,** in two coarse steps, both from
+  tools that exist. A CI path filter starts only the jobs whose kind of
+  code changed: no backend code changed, no backend tests, no interface
+  changed, no interface tests. Inside a job, the tool's own cache, like
+  Go's test cache restored from the main branch, runs only what changed.
+  No script of ours picks, runs or reports a test. A selection made
+  finer than that by our own glue tends to save a few percent and cost
+  a script to keep, so measure what it buys before keeping one.
 - **Use the caches there are, and never defeat them.** Test runners and
   build tools cache results until their inputs change. So:
   - never turn the test cache off across the board, like Go's
@@ -564,6 +608,13 @@ every push, by the people waiting on CI and by the machines.
   made while they run: one made every run costs its time on every run,
   and fails wherever the tool that makes it does. Share the few that
   are there before adding one.
+- **Less waiting is not always a faster job.** When tests run side by
+  side on a machine whose cores are busy the whole time, a test that
+  waits less hands its time to the others, and the job gets only a
+  little shorter. Plays that stopped running in real time once got
+  twice as fast, and their job 3 % faster. What makes such a job shorter
+  is less work: fewer frames drawn, fewer builds, fewer times the
+  product is started.
 - **Work on the tests proves itself against the main branch.** The point
   of it is tests that are faster and more reliable. A change to tests or
   CI shows its numbers before and after, on the same machine, in a table.
@@ -631,6 +682,34 @@ A test is code we keep. It must still be right and readable in a year.
   browser engine or a platform of its own, run the same steps there too
   before saying it works there. Typing, focus, hover, painting and timing
   are where engines differ.
+- **Only what the screen can show.** An interface test checks two
+  things: that a key or a click does what the person meant, and that
+  the screen shows what the core sent. Rules the core decides, file
+  formats and long lists of values go in unit tests of the core, and the
+  interface test checks once that the screen shows the result. Time in
+  an interface test runs on a clock the test moves, the timers and any
+  playback too, so a minute of animation runs as fast as its frames can
+  be drawn.
+- **Add a step, not a test.** Every interface test starts the product
+  from scratch, which costs seconds on every run. A new case goes into
+  a test that is already there, and a new one says why no test there
+  could take its steps. Each job of them prints how long its tests took
+  against the times kept from the main branch, so a slowdown shows on
+  the pull request.
+- **The channel is tested alone, not through the screen.** What the
+  server sends and what the client hears, the names of the messages and
+  every field they carry, are held to each other by a unit test, both
+  ways. An end-to-end test that finds a wrong name found it late, and
+  one that wires the channel again on its own finds nothing.
+- **When a test spans two processes, both run on one clock,** the one
+  the test moves. Time the server keeps and time the page keeps move
+  together, so ten seconds are the same ten seconds on both sides, on
+  any machine.
+- **Every engine on a schedule, one on every push.** Where the product
+  runs in more than one browser engine and one is slow to run in CI,
+  every push runs in the quicker one, and every night runs both. A
+  nightly failure in the other engine is a test to fix, never one left
+  red.
 
 ## 12. CI holds the rules
 
@@ -731,6 +810,7 @@ wrong, and this skill wins:
 3. Nothing already tested it, or the old test was strengthened instead.
 4. It failed on the main branch, for the reason given, and passes now.
 5. It never waits, and nothing in it defeats the test cache.
-6. A change to tests or CI has its numbers against the main branch.
+6. A change to tests or CI has its numbers against the main branch, and
+   the end-to-end tests take no longer than they did there.
 7. CI passed on the last commit, and every rule here that CI does not
    check yet has an issue asking for the check.

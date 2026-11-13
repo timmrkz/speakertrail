@@ -48,6 +48,17 @@ BUILD_VERSION ?=
 BUILD_CHANNEL ?=
 BUILD_COMMIT ?=
 APP_LDFLAGS := -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+# On a Mac every part of the app is built for the same oldest macOS, the
+# one the bundle's Info.plist names. Without it clang builds the window's
+# C for the macOS it runs on and Go links for 11.0, and the linker warns
+# about every object file, as FrameFairy's build once did too.
+MACOS_MIN := 13.0
+ifeq ($(UNAME),Darwin)
+export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
+export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
+export CGO_LDFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
+APP_LDFLAGS += -extldflags=-mmacosx-version-min=$(MACOS_MIN)
+endif
 # The app's version, in its Info.plist. The build's own, with its channel
 # and commit, is BUILD_VERSION.
 VERSION := $(shell awk -F'"' '/^const appVersion = /{ print $$2; exit }' cmd/speakertrail-app/appfiles.go)
@@ -55,7 +66,9 @@ VERSION := $(shell awk -F'"' '/^const appVersion = /{ print $$2; exit }' cmd/spe
 UI_SOURCES := $(shell find web/src web/public -type f 2>/dev/null) web/index.html web/package.json \
 	web/vite.config.ts web/tsconfig.json
 UI_BUILT := web/dist/index.html
-GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' 2>/dev/null) go.mod go.sum
+# The .txt is the update key's public half, built into the app, so a new
+# key builds the app again.
+GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
 .PHONY: all app run install update-key carry-over tools toolchain mock test unit interface check clean help
 

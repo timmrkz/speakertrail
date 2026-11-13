@@ -247,15 +247,15 @@
     </section>
 
     <section class="section" aria-labelledby="seen-h">
-      <h3 id="seen-h" class="label">Seen on</h3>
+      <h3 id="seen-h" class="label">Found by</h3>
       {#if p.sightings.length}
         <ul class="plain">
           {#each p.sightings as s (s.source_id)}
-            <li><a href="/app/sources/{s.source_id}">{s.source}</a> <span class="faint">checked {fmtAgo(s.checked_at)}</span></li>
+            <li>{s.source} <span class="faint">checked {fmtAgo(s.checked_at)}</span></li>
           {/each}
         </ul>
       {:else}
-        <p class="muted small">No sightings recorded.</p>
+        <p class="muted small">No search has found this person yet.</p>
       {/if}
     </section>
 

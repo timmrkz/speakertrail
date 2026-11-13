@@ -133,7 +133,10 @@ export function railDot(u: UpdateState | null): string {
   return ''
 }
 
-const moving = (u: UpdateState | null) => u?.phase === 'checking' || u?.phase === 'downloading' || !!u?.building
+// A commit being built is not moving here: a build takes minutes, and the
+// app itself looks every twenty seconds while one is on its way, so the
+// page's own pace is soon enough to hear of it.
+const moving = (u: UpdateState | null) => u?.phase === 'checking' || u?.phase === 'downloading'
 
 class Updates {
   // What is on screen, which trails what the app last said while a check

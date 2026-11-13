@@ -16,6 +16,14 @@ entries=$(mktemp -d)
 trap 'rm -rf "$entries"' EXIT
 gh release download dev --pattern 'channel-*.json' --dir "$entries" || true
 
+# Whether the build of a commit ended and failed. A commit whose build
+# failed has no build coming, and a list that said it had would say so
+# for good, with the app asking every twenty seconds. Needs actions: read.
+failed() {
+	[ "$(gh run list --workflow builds.yml --commit "$1" --limit 1 --json status,conclusion \
+		--jq '.[0] | select(.status == "completed") | .conclusion' 2>/dev/null)" = failure ]
+}
+
 # Every open pull request with its newest commit and whether it still
 # merges into main, one a line. GitHub says CONFLICTING for one that does
 # not, and UNKNOWN while it has not worked it out yet, which is said as
@@ -54,6 +62,10 @@ if open=$(gh pr list --state open --limit 1000 --json number,headRefOid,mergeabl
 		# it had would say so for good.
 		built=$(jq -r '.commit // empty' "$entry")
 		if [ "$(sh scripts/needs-build.sh "$built" "$head")" = build ]; then
+			if failed "$head"; then
+				echo "pull request $number has $head, whose build failed"
+				continue
+			fi
 			echo "pull request $number has $head still to be built"
 			newest="$newest -newest pr-$number=$(echo "$head" | cut -c1-12)"
 		fi
@@ -70,8 +82,12 @@ if [ -e "$entries/channel-main.json" ] &&
 	case $head in
 	"$built"*) ;;
 	*)
-		echo "main has $head still to be built"
-		newest="$newest -newest main=$(echo "$head" | cut -c1-12)"
+		if failed "$head"; then
+			echo "main has $head, whose build failed"
+		else
+			echo "main has $head still to be built"
+			newest="$newest -newest main=$(echo "$head" | cut -c1-12)"
+		fi
 		;;
 	esac
 fi

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"hash/crc32"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -224,12 +225,23 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"the camera and the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
 				"<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
-			[]string{"asks for NSMicrophoneUsageDescription", "asks for NSCameraUsageDescription"}},
+			[]string{"asks for NSCameraUsageDescription", "asks for NSMicrophoneUsageDescription"}},
 		// A key deeper in the dictionary is no reason Info.plist gives.
 		{"a key inside another", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
 			nil},
-		{"a file that is no program", "Speaker Trail.app/Contents/Resources/LICENSE", []byte("CGEventTapCreate is named here"), nil},
+		// Every file is read for the names, program or not: a script the
+		// app runs or a library it loads names them just the same.
+		{"a file that is no program", "Speaker Trail.app/Contents/Resources/LICENSE", []byte("nothing is named here"), nil},
+		{"a script that names a tap", "Speaker Trail.app/Contents/Resources/tap.py", []byte("Quartz.CGEventTapCreate(...)"),
+			[]string{"names CGEventTapCreate"}},
+		{"a script that asks for sudo", "Speaker Trail.app/Contents/Resources/run.sh", []byte("#!/bin/sh\n/usr/bin/sudo true\n"),
+			[]string{"names /usr/bin/sudo"}},
+		// What cannot be read cannot be checked.
+		{"a program that cannot be read", "Speaker Trail.app/Contents/Frameworks/x.dylib", append([]byte{0xcf, 0xfa, 0xed, 0xfe}, make([]byte, 8)...),
+			[]string{"starts like a program but cannot be read as one"}},
+		{"a universal program that cannot be read", "Speaker Trail.app/Contents/MacOS/speakertrail-app", []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 9},
+			[]string{"starts like a program but cannot be read as one"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -420,4 +432,47 @@ func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Error("an entry was written for it")
 	}
+}
+
+// A zip that unpacks to more than any build of the app is refused before
+// it is read, and so is one whose file holds more than the zip says.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildTooBigToReadIsNotSigned(t *testing.T) {
+	write := func(t *testing.T, said uint64, data []byte) string {
+		var b bytes.Buffer
+		w := zip.NewWriter(&b)
+		f, err := w.CreateRaw(&zip.FileHeader{
+			Name: "Speaker Trail.app/Contents/Resources/big", Method: zip.Store,
+			CRC32: crc32.ChecksumIEEE(data), CompressedSize64: uint64(len(data)), UncompressedSize64: said,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		zipPath := filepath.Join(t.TempDir(), "app.zip")
+		if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return zipPath
+	}
+	t.Run("says it is too big", func(t *testing.T) {
+		err := check([]string{"-zip", write(t, maxUnpacked+1, []byte("abc"))})
+		if err == nil || !strings.Contains(err.Error(), "unpacks to more than 1024 MB") {
+			t.Errorf("a zip that says it holds more than a GB said %v", err)
+		}
+	})
+	t.Run("holds more than it says", func(t *testing.T) {
+		err := check([]string{"-zip", write(t, 2, []byte("abc"))})
+		// archive/zip finds it first, as a file that is not what the zip
+		// says. Should it not, the read stops one byte past what it says.
+		if err == nil || !strings.Contains(err.Error(), "Resources/big: ") {
+			t.Errorf("a file that holds more than the zip says said %v", err)
+		}
+	})
 }

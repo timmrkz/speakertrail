@@ -41,15 +41,19 @@ then on every build comes from GitHub.
    and nothing else. It gets no secret, because a branch runs its own
    copy of this file.
 2. `.github/workflows/publish.yml` runs from main whenever a build starts
-   or ends, whatever branch was built. It works out the channel, commit
-   and version again from GitHub's own record of the run, checks what the
-   app links and asks for with `cmd/speakertrail-release sign`, signs the
-   zip with the key from the environment `updates`, and uploads it with
-   its entry to the pre-release `dev`.
+   or ends, whatever branch was built. It takes only runs of `builds.yml`
+   started by a push. It works out the channel, commit and version again
+   from GitHub's own record of the run, and refuses a commit that is not
+   in the history of main or of the pull request it is for. It checks
+   what the app links and asks for with `cmd/speakertrail-release check`,
+   in a step that has no key, signs the zip with the key from the
+   environment `updates`, and uploads it with its entry to the
+   pre-release `dev`. The commit that was built gets the status **Ready
+   to update to** on the pull request.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
-   request that closed leaves the list. The commit that was built gets
-   the status **Ready to update to** on the pull request.
+   request that closed leaves the list. A newer commit whose build failed
+   is not said to be on its way.
 
 A build takes a few minutes after the push. A version reads like
 `0.1.0-pr9.e808a87`: the app's version, the channel and the commit.
@@ -95,10 +99,28 @@ Losing the private half costs a new pair and one `make install` by hand.
 `make update-key` refuses to replace a key that is there, because every
 build made with the old one trusts only the old one.
 
+## Guarding main
+
+The key is only as safe as main, because whatever reaches main runs with
+it. Two settings guard main, in the repository's **Settings, Rules,
+Rulesets**. Tim sets them once:
+
+- A branch ruleset for `main`: **Restrict deletions**, **Block force
+  pushes** and **Require a pull request before merging**.
+- A tag ruleset for every tag, `~ALL`: **Restrict creations**, with Tim
+  as the only one allowed past it, in **Bypass list**.
+
+publish.yml already refuses a build whose commit is not in main's
+history or its pull request's, so these are a second wall, not the
+first.
+
 ## What is never signed
 
-`speakertrail-release sign` reads every program in the zip before it
-signs, see `cmd/speakertrail-release/inputs.go`. It refuses a build that
-links a library not on its list, or names what taps keys, records the
-screen, opens the camera or asks for administrator rights. A refused build
-says why on the commit, as a failed **Ready to update to**.
+`speakertrail-release check` reads every file in the zip, and `sign`
+reads it all again before it signs, see
+`cmd/speakertrail-release/inputs.go`. They refuse a build that links a
+library not on its list, has a file that names what taps keys, records
+the screen, opens the camera or asks for administrator rights, has a
+file that looks like a program and cannot be read as one, or unpacks to
+more than 1 GB. A refused build says why on the commit, as a failed
+**Ready to update to**.

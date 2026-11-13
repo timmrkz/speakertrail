@@ -4,10 +4,14 @@
 # publish.yml's work, not this one's. See docs/UPDATES.md. Ported from
 # FrameFairy, which works the same way.
 #
-# This workflow runs the branch's own code, so it gets no secret and no
-# token that can write. A branch is code nobody has reviewed yet, and a
-# push to a branch runs the workflow file of that branch, so whatever this
-# file is given, any branch can take. publish.yml runs from main whenever
+# This workflow runs the branch's own code, so it gets no secret and asks
+# for no token that can write. A branch is code nobody has reviewed yet,
+# and a push to a branch runs the workflow file of that branch, so
+# whatever this file is given, any branch can take, and a branch's copy
+# can ask for more. What keeps the key from a branch is not this file but
+# the environment updates, which only main enters, and what keeps a
+# branch's build from passing as another's is publish.yml, which checks
+# the commit built against the channel it is published for. publish.yml runs from main whenever
 # this workflow starts or ends, takes the zip this one leaves as an
 # artifact, and signs and publishes it with main's own tools. The zip is
 # the only thing it takes from here: which channel, which commit and which

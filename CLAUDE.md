@@ -50,7 +50,7 @@ file wins.
 | [review](.claude/skills/review/SKILL.md) | how a pull request is reviewed by an agent that did none of the work |
 | [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
 | [collaboration](.claude/skills/collaboration/SKILL.md) | replies, issues with a priority and a size, writing rules |
-| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
+| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, `RunProgress` |
 
 Where the generic skills meet this repository:
 

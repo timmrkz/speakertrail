@@ -43,6 +43,21 @@ session, but the app builds and every test runs.
 
 `make run` still builds a change on the Mac itself, from a checkout.
 
+## When main moves
+
+GitHub sends no event when a pull request stops merging into main, and
+runs no CI on one that conflicts. So `.github/workflows/conflicts.yml`,
+ported word for word from FrameFairy, tries every open pull request
+against main after each push to main, and a pull request against main
+after each push to its branch. It merges in memory with `git merge-tree`
+and runs none of the pull request's code. A pull request that no longer
+merges gets a comment that names the files in conflict, once for each of
+its commits. The comment wakes the session that owns the pull request,
+which checks on GitHub, merges main in and pushes, without asking.
+
+It writes a comment, so it runs from main alone: on a push to main, and
+when builds.yml starts for a push to another branch.
+
 ## What is on your Mac
 
 Git, this folder, and what make installs with Homebrew the first time, Go

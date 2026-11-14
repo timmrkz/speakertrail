@@ -28,7 +28,6 @@ const walks = [
         const rows = [...document.querySelectorAll('.prow')]
         return JSON.stringify({
           rows: rows.map((r) => Math.round(r.getBoundingClientRect().top)),
-          areas: getComputedStyle(rows[0]).gridTemplateAreas,
           controls: [...document.querySelectorAll('.controls > *, .controls .toolbar > *')].map((c) => Math.round(c.getBoundingClientRect().top)),
         })
       })
@@ -42,6 +41,53 @@ const walks = [
       const open = await look()
       if (open !== closed) return `the list changed: closed ${closed}, open ${open}`
       return ''
+    },
+  },
+  {
+    // Tim saw the pane slide in while the list jumped to its new width at
+    // once. An animation goes the full way, so the list narrows over the
+    // frames the pane slides in on, and widens again as it leaves, with
+    // every row as tall as before on every frame.
+    name: 'The list narrows and widens with the person, frame by frame',
+    async run(page) {
+      // Reads the list's width and the rows' heights on every frame,
+      // starting before the click, until the given time has passed.
+      const frames = (ms) => page.evaluate((ms) => new Promise((done) => {
+        const out = []
+        const end = performance.now() + ms
+        const read = () => {
+          const list = document.querySelector('.list-pane')
+          out.push({
+            w: Math.round(list.getBoundingClientRect().width),
+            h: [...document.querySelectorAll('.prow')].map((r) => Math.round(r.getBoundingClientRect().height)).join(),
+          })
+          if (performance.now() < end) requestAnimationFrame(read)
+          else done(out)
+        }
+        requestAnimationFrame(read)
+      }), ms)
+      const judge = (what, fs, narrower) => {
+        const first = fs[0].w
+        const last = fs[fs.length - 1].w
+        if (narrower ? last >= first : last <= first) return `the list did not ${narrower ? 'narrow' : 'widen'}: ${first} to ${last}`
+        const between = new Set(fs.map((f) => f.w).filter((w) => w !== first && w !== last))
+        if (between.size < 3) return `the list ${what} in ${between.size} steps between ${first} and ${last}, it jumps`
+        for (let i = 1; i < fs.length; i++) {
+          if (narrower ? fs[i].w > fs[i - 1].w : fs[i].w < fs[i - 1].w) return `the list ${what} and then went back, ${fs.map((f) => f.w).join(' ')}`
+        }
+        const heights = new Set(fs.map((f) => f.h))
+        if (heights.size !== 1) return `rows changed height while the list ${what}: ${[...heights].join(' | ')}`
+        return ''
+      }
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      const opening = frames(600)
+      await page.locator('.prow').nth(2).click()
+      const opened = judge('narrowed', await opening, true)
+      if (opened) return opened
+      const closing = frames(600)
+      await page.keyboard.press('Escape')
+      return judge('widened', await closing, false)
     },
   },
   {

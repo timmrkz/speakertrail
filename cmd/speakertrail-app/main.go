@@ -63,6 +63,10 @@ func main() {
 	api := http.NewServeMux()
 	api.Handle("/api/updates", updatesAPI{get: ups.Load, open: func(url string) error { return app.Browser.OpenURL(url) }})
 	api.Handle("/api/updates/", updatesAPI{get: ups.Load, open: func(url string) error { return app.Browser.OpenURL(url) }})
+	// Where macOS put the title bar and its buttons, once the window is
+	// made, see chrome.go.
+	var chrome atomic.Pointer[chromeWatch]
+	api.Handle("/api/chrome", chromeAPI{get: chrome.Load})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",
@@ -95,7 +99,7 @@ func main() {
 	})
 	ups.Store(c)
 	c.start()
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Speaker Trail",
 		Width:     1100,
 		Height:    820,
@@ -105,9 +109,10 @@ func main() {
 		Mac: application.MacWindow{
 			Backdrop: application.MacBackdropNormal,
 			// The page reaches up under the title bar, the way Mail and
-			// FrameFairy look: the title bar is the page's own, --bar-h
-			// tall in web/src/app.css, with the close, minimise and zoom
-			// buttons on it and the screen's name beside them.
+			// FrameFairy look: the title bar is the page's own, exactly as
+			// tall as the one macOS lays out, see chrome.go, with the close,
+			// minimise and zoom buttons on it and the screen's name beside
+			// them.
 			// Hidden, not HiddenInset: a toolbar makes macOS push the
 			// buttons further in than Terminal's, which FrameFairy measured
 			// and found reads as wrong. A click in the top 28 points still
@@ -116,6 +121,10 @@ func main() {
 			InvisibleTitleBarHeight: 28,
 		},
 	})
+	// The title bar is as tall as the one macOS lays out, measured rather
+	// than chosen, the way FrameFairy does it. The page hears it on the
+	// event called chrome whenever it changes, see lib/chrome.svelte.ts.
+	chrome.Store(watchChrome(func(c Chrome) { app.Event.Emit("chrome", c) }, window))
 	if err := app.Run(); err != nil {
 		slog.Error("speakertrail failed", "error", err)
 		os.Exit(1)

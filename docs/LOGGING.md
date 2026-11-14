@@ -70,11 +70,13 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `start` | one start of the app, so a restart is seen and two starts never mix |
-| `from` | the part that wrote it: `app`, `api`, `engine`, `updates`, `wails` |
+| `from` | the part that wrote it: `app`, `api`, `engine`, `updates`, `wails`, `window` |
 | `msg` | what happened, in words |
 
 Other fields come where they mean something: `run` and `search` for the
-run and the search a line is about, by id, `path` for a request,
+run and the search a line is about, by id, `ms` for how long a check
+took, `profiles`, `found` and `new` for what it found, counted and never
+named, `path` for a request,
 `error`, `stack`, and `build`, `channel`, `commit`, `os` and `arch` when
 the app starts.
 
@@ -91,7 +93,7 @@ Exa key. A person is named by id.
 | `error` | something failed: a run that could not be saved, a request that failed, a panic |
 | `warn` | something went wrong and the app carried on: a search that failed, a check for updates that failed |
 | `info` | the app starting, a run starting and ending, a channel picked |
-| `debug` | the steps between |
+| `debug` | the steps between: every check of a run, a search stopped, the title bar measured |
 | `trace` | lines that come with every step of something that repeats |
 
 Everything from `debug` up is always written. `trace` lines go to memory

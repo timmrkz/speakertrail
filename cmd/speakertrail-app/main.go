@@ -221,12 +221,20 @@ func handler(ui fs.FS, api http.Handler) http.Handler {
 		// Wails serves each request on a goroutine of its own with no
 		// recover, so a panic in one ended the whole app. Now it fails
 		// that request and says so in the app's log, with its stack.
+		// http.ErrAbortHandler is how a handler ends a response on
+		// purpose, which net/http expects to see again, so it goes on.
 		defer func() {
-			if caught := recover(); caught != nil {
-				theLog.line(zerolog.ErrorLevel, "api").Str("path", r.URL.Path).Str("stack", string(debug.Stack())).
-					Msgf("the window's request stopped unexpectedly: %v", caught)
-				http.Error(w, `{"error":"The request stopped unexpectedly"}`, http.StatusInternalServerError)
+			caught := recover()
+			if caught == nil {
+				return
 			}
+			if caught == http.ErrAbortHandler {
+				panic(caught)
+			}
+			theLog.line(zerolog.ErrorLevel, "api").Str("path", r.URL.Path).Str("stack", string(debug.Stack())).
+				Msgf("the window's request stopped unexpectedly: %v", caught)
+			said, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("the request stopped unexpectedly: %v", caught)})
+			http.Error(w, string(said), http.StatusInternalServerError)
 		}()
 		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
 			if api == nil {

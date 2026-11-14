@@ -1,8 +1,12 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -381,4 +385,98 @@ func TestOneReopenNeverLiftsAnothersClose(t *testing.T) {
 		t.Fatalf("start once both reopened: %v %v", started, err)
 	}
 	e.Wait()
+}
+
+// lines is a log written as JSON, read back a line each, safe to write
+// from the run's goroutines while a test reads it after.
+type lines struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (l *lines) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.buf.Write(p)
+}
+
+func (l *lines) all(t *testing.T) []map[string]any {
+	t.Helper()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []map[string]any
+	for _, b := range bytes.Split(bytes.TrimSpace(l.buf.Bytes()), []byte("\n")) {
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatalf("a line is not whole JSON: %v\n%s", err, b)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// Every check of a run is a line of the log with the run, the search,
+// how long it took and what it found, and a failed one with its error
+// too, while several are asked side by side. The lines name nobody: no
+// name, headline or profile link of a person found.
+func TestEveryCheckIsALineOfTheLog(t *testing.T) {
+	e, st := newEngine(t, &finder{profiles: invented})
+	if err := st.Update(func(d *store.Data) error {
+		for _, q := range []string{"Yogalehrerin Bonn", "Gründer Essen", "Trainerin Münster", "Coach Aachen", "Fotografin Bielefeld"} {
+			if _, err := d.AddSearch(q, 0, t0); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out lines
+	e.Log = slog.New(slog.NewJSONHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+
+	asked := 0
+	for _, l := range out.all(t) {
+		if l["msg"] != "a search was asked" {
+			continue
+		}
+		asked++
+		if l["run"] != float64(id) || l["search"] == nil || l["ms"] == nil || l["found"] != float64(1) || l["new"] == nil || l["profiles"] != float64(len(invented)) {
+			t.Errorf("a check's line is %v", l)
+		}
+	}
+	if asked != 6 {
+		t.Errorf("%d checks were logged, want 6", asked)
+	}
+	text := out.buf.String()
+	for _, p := range invented {
+		if strings.Contains(text, p.Name) || strings.Contains(text, p.Headline) || strings.Contains(text, "linkedin.com") {
+			t.Fatalf("the log names a person: %s", text)
+		}
+	}
+
+	f, _ := newEngine(t, &finder{err: errors.New("exa answered 500")})
+	var failed lines
+	f.Log = slog.New(slog.NewJSONHandler(&failed, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	fid, _, err := f.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Wait()
+	found := false
+	for _, l := range failed.all(t) {
+		if l["msg"] == "a search failed" {
+			found = true
+			if l["run"] != float64(fid) || l["ms"] == nil || l["error"] != "exa answered 500" {
+				t.Errorf("a failed check's line is %v", l)
+			}
+		}
+	}
+	if !found {
+		t.Error("a failed check wrote no line")
+	}
 }

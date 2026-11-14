@@ -305,4 +305,16 @@ func TestAPanicInARequestIsInTheAppsLog(t *testing.T) {
 	if s, _ := line["stack"].(string); !strings.Contains(s, "goroutine") {
 		t.Errorf("the line has no stack: %v", line)
 	}
+
+	// A handler that ends its response on purpose is no failure, and
+	// net/http goes on to see it.
+	abort := handler(nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }))
+	func() {
+		defer func() {
+			if caught := recover(); caught != http.ErrAbortHandler {
+				t.Errorf("an aborted response gave %v, want http.ErrAbortHandler again", caught)
+			}
+		}()
+		abort.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/api/runs", nil))
+	}()
 }

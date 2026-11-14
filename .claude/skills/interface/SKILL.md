@@ -117,11 +117,15 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   anything else reached with the keyboard a faint wash of the accent laid
   over its own colour, see `:focus-visible` in `app.css`. What is selected
   already, like the open person's row, shows nothing more.
-- **Opening something never relays out what is beside it.** The list's
-  rows and toolbar take their layout from the window, not from the list's
-  own width, so a person opening only narrows its columns. A container
-  query on a pane that another pane squeezes brings the shuffle back.
-  `web/walks/person.mjs` checks it.
+- **Every list looks the same.** People, Searches and Settings read in
+  one centred column, `--col-w`, with the controls above a `.list` of
+  frosted rows, each a name over one line of what is known, with what is
+  connected in green at its start. Tim asked for one look for all lists
+  on 14 November 2026.
+- **Opening something never relays out what is beside it.** A row has the
+  same lines at any width, so a person opening only narrows the list. A
+  container query on a pane that another pane squeezes brings the shuffle
+  back. `web/walks/person.mjs` checks it.
 - **Every colour has a light and a dark value.** Check both, and check that
   small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
 

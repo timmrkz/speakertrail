@@ -53,7 +53,7 @@
   --lights-r: 88px;
   /* A page of its own, Searches, Settings and Updates, reads in a column
      this wide at most, centred in the window. */
-  --col-w: 720px;
+  --col-w: 880px;
   --side: rgba(255, 255, 255, .45);
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the

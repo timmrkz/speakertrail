@@ -105,6 +105,12 @@
 
   const year = new Date().getFullYear()
   const age = (p: Person) => (p.linkedin?.born_about ? year - p.linkedin.born_about : null)
+  // A person's second line, the way a search has one: what they do,
+  // where, and about how old, each only when known.
+  function line(p: Person) {
+    const a = age(p)
+    return [p.headline || 'No headline yet', p.city, a ? `about ${a}` : ''].filter(Boolean).join(' · ')
+  }
 
   // Wide enough for the list and the person beside it, like Mail. Below
   // that the person slides in over the list.
@@ -290,18 +296,15 @@
           {/if}
         </EmptyState>
       {:else}
-        <ul class="rows" class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
+        <ul class="list rows" class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
           {#each people.data as p (p.id)}
             <li>
               <a class="prow" id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
                 <span class="who">
-                  <b class="ellipsis name">{p.name}</b>
+                  <b class="ellipsis">{p.name}</b>
                   {#if isNew(p)}<span class="dot new" title="Found by this run"></span><span class="sr-only">, new</span>{/if}
-                  {#if p.connected}<span class="ok" title="Connected"><Icon name="check" size={14} line={2} /></span><span class="sr-only">, connected</span>{/if}
                 </span>
-                <span class="ellipsis sub">{p.headline || p.city || 'No headline yet'}</span>
-                <span class="ellipsis city">{p.headline ? p.city : ''}</span>
-                <span class="age" title={age(p) ? 'Age, a guess from the LinkedIn profile' : undefined}>{age(p) ?? ''}</span>
+                <span class="ellipsis sub" title={age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
               </a>
             </li>
           {/each}
@@ -348,7 +351,7 @@
      own that scrolls by itself, the way Mail is laid out. */
   .people { display: flex; height: 100%; min-width: 0; overflow: hidden; }
   .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
-  .list-pane { flex: 1 1 0; container-type: inline-size; }
+  .list-pane { flex: 1 1 0; }
   /* The person comes in from the right and takes its share of the width.
      Closed, it is not there at all. */
   /* Its body scrolls, not the pane, so the edge can reach out over the
@@ -372,71 +375,46 @@
     position: absolute; top: 14px; left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
   }
-  /* Where everything in the list pane starts and ends. In a window too
-     narrow for the person beside it, the list reads in the same centred
-     column as the other pages. */
-  .list-pane { --x: var(--pad); }
-  .people:not(.wide) .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .controls { display: grid; gap: 10px; padding: 14px var(--x) 10px; }
+  /* People reads like Searches and Settings: the same centred column,
+     the controls over a list of frosted rows, each a name over one line
+     of what is known. The column is the same with a person open or not,
+     only narrower when the list is, so nothing moves when one opens. */
+  .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
+  .controls { display: grid; gap: 10px; padding: 24px var(--x) 14px; }
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
   /* Room for the longest label, Starting or Stopping, so the button keeps its width. */
   .start { min-width: 7.4em; }
+  .controls .toolbar { flex-wrap: nowrap; }
+  .controls .toolbar > :global(.search) { flex: 1 1 0; }
+  /* A phone-wide window gives the search field a line of its own, and
+     the order and Run share the next, the same size. */
+  @media (max-width: 520px) {
+    .controls .toolbar { flex-wrap: wrap; }
+    .controls .toolbar > :global(.search) { flex: 1 1 100%; }
+    .controls .sort, .controls .start { flex: 1 1 0; }
+    .controls .sort .select { width: 100%; }
+  }
   .run-now {
     display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;
     background: var(--surface-2); border: 0; border-radius: var(--radius);
   }
   .run-now:hover { background: color-mix(in srgb, var(--ink) 8%, var(--surface-2)); }
-  .rows-wrap { padding: 0 calc(var(--x) - 12px) 24px; display: grid; }
-  .rows-wrap > :global(.empty) { margin: 8px 12px; }
-  .rows { display: grid; gap: 2px; }
+  .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
-  /* A row's words stand where the bar's words stand: the row reaches 12
-     px past them on either side for its highlight. */
-  /* A row is two lines in a narrow window: name and age, then the
-     headline. In a wide window it is one line of columns, name, headline,
-     city and age, so the list uses its width rather than leaving it empty.
-     Which one depends on the window and never on whether a person is
-     open: opening someone narrows the list's columns and changes nothing
-     else, so no row, column or button moves to another place. */
-  .prow {
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who age" "sub sub";
-    gap: 2px 8px; padding: 9px 12px; border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; align-items: center;
-  }
-  .who { grid-area: who; } .sub { grid-area: sub; } .age { grid-area: age; } .city { display: none; }
-  /* A narrow list gives the search field a line of its own, and the
-     order and Run share the next, the same size. */
-  .people.wide .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
-  .people.wide .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
-  .people.wide .controls .toolbar { flex-wrap: nowrap; }
-  .people.wide .controls .toolbar > :global(.search) { flex: 1 1 0; }
-  /* Below, a narrow window, where the person comes in over the list and
-     the list keeps the window's width. */
-  @container (max-width: 520px) {
-    .people:not(.wide) .controls .toolbar { flex-wrap: wrap; }
-    .people:not(.wide) .controls .toolbar > :global(.search) { flex: 1 1 100%; }
-    .people:not(.wide) .controls .sort, .people:not(.wide) .controls .start { flex: 1 1 0; }
-    .people:not(.wide) .controls .sort .select { width: 100%; }
-  }
-  @container (min-width: 760px) {
-    .people:not(.wide) .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
-    .people:not(.wide) .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
-    .people:not(.wide) .controls { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-    .people:not(.wide) .controls .filters { width: auto; grid-auto-columns: minmax(7.5em, auto); grid-template-columns: none; grid-auto-flow: column; }
-    .people:not(.wide) .controls .run-now { grid-column: 1 / -1; }
-  }
-  .prow:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); text-decoration: none; }
+  /* A row as Searches has one: 12 by 16 in, the name over its line. */
+  .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
+  .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
   .prow[aria-current="true"] { background: var(--accent-soft); }
   /* The person open is marked already, the keyboard on it adds nothing. */
   .prow[aria-current="true"]:focus-visible { background-image: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
-  .name { font-weight: 600; font-size: 14px; }
+  .who b { font-weight: 600; }
   .dot.new { width: 7px; height: 7px; background: var(--accent); }
-  .ok { color: var(--good); display: inline-flex; }
-  .age { text-align: right; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
-  .sub { font-size: 13px; color: var(--ink-2); }
-  .prow[aria-current="true"] .sub, .prow[aria-current="true"] .age { color: var(--ink-2); }
+  .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .connected { color: var(--good); font-weight: 600; }
+  @media (max-width: 520px) { .prow { padding: 12px 14px; } }
   /* The person stands in a column of its own width, and the cross in the
      bar over it ends where the column ends. */
   .detail-top { flex: none; display: flex; justify-content: flex-end; align-items: center; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }

@@ -16,6 +16,8 @@ type profileJSON struct {
 }
 
 type linkedInJSON struct {
+	// URL is the profile the LinkedIn button shows and opens.
+	URL        string     `json:"url"`
 	BornAbout  *int       `json:"born_about"`
 	AgeReason  string     `json:"age_reason"`
 	Roles      string     `json:"roles"`
@@ -69,7 +71,7 @@ func listPerson(p *store.Person) personJSON {
 		// A person has one profile, so it goes by the person's id.
 		out.Profiles = append(out.Profiles, profileJSON{ID: p.ID, Platform: "linkedin", URL: l.URL, Review: l.Review})
 		if l.Review != "rejected" {
-			lj := &linkedInJSON{AgeReason: l.AgeReason, Roles: l.Roles, LastActive: ptrTime(l.LastActive)}
+			lj := &linkedInJSON{URL: l.URL, AgeReason: l.AgeReason, Roles: l.Roles, LastActive: ptrTime(l.LastActive)}
 			if l.BornAbout != 0 {
 				born := l.BornAbout
 				lj.BornAbout = &born

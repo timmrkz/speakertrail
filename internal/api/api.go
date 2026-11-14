@@ -68,7 +68,7 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("PUT /api/keys/exa", a.setKey)
 	m.HandleFunc("GET /api/linkedin", a.linkedin)
 	m.HandleFunc("PUT /api/linkedin", a.setLinkedin)
-	m.HandleFunc("POST /api/open", a.open)
+	m.HandleFunc("POST /api/people/{id}/linkedin", a.openLinkedin)
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "No such endpoint") })
 	return a
 }

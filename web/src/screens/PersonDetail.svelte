@@ -35,18 +35,31 @@
       .filter(Boolean)
       .join(' · ')
   })
-  // The LinkedIn profile the search found, unless Tim said it is not them.
-  let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin' && x.review !== 'rejected'))
-  let linkedin = $derived(profile?.url ?? '')
+  // The LinkedIn profile the search found, and the link the app opens,
+  // which it leaves out once Tim said the profile is not them.
+  let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin'))
+  let linkedin = $derived(person.data?.linkedin?.url ?? '')
 
   // A search can find the wrong person's profile. Not this person sets it
-  // aside, so LinkedIn no longer opens it, and Undo in the toast brings it
-  // back as it was.
+  // aside, so LinkedIn no longer opens it. Undo in the toast, or in the
+  // line that stays while it is set aside, brings it back.
   let settingAside = $state(false)
   async function review(of: Profile, next: Review) {
-    if (!person.data) return
     await api.patchProfile(of.id, next)
-    if (person.data) person.data = { ...person.data, profiles: person.data.profiles.map((x) => (x.id === of.id ? { ...x, review: next } : x)) }
+    // The app says what follows from it, the link and the facts.
+    person.data = await api.person(id)
+    onupdate?.(person.data)
+  }
+  async function takeBack() {
+    if (!profile || settingAside) return
+    settingAside = true
+    try {
+      await review(profile, 'open')
+    } catch (e) {
+      toast.show(errorText(e), 'bad')
+    } finally {
+      settingAside = false
+    }
   }
   async function notThem() {
     if (!profile || settingAside) return
@@ -95,13 +108,12 @@
     openProblem = ''
     needsChoice = false
     try {
-      await api.open(linkedin)
+      await api.openLinkedin(id)
     } catch (err) {
-      needsChoice = err instanceof ApiError && err.status === 409 && /Settings/.test(err.message)
+      needsChoice = err instanceof ApiError && err.choose
       openProblem = errorText(err)
     } finally {
-      // Long enough to see, short enough not to wait for.
-      setTimeout(() => (opening = false), 600)
+      opening = false
     }
   }
 
@@ -157,6 +169,10 @@
           </button>
         {/if}
       </div>
+      {#if profile?.review === 'rejected'}
+        <p class="set-aside small">LinkedIn profile set aside as not this person.
+          <button class="link" type="button" disabled={settingAside} onclick={takeBack}>Undo</button></p>
+      {/if}
       {#if openProblem}
         <p class="open-problem small" role="alert">
           {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
@@ -229,5 +245,6 @@
   .why q { color: var(--ink-2); overflow-wrap: anywhere; }
   .found { font-size: 13px; color: var(--ink-3); }
   .open-problem { color: var(--bad); margin-top: -6px; }
+  .set-aside { color: var(--ink-3); }
   .note-state { color: var(--ink-3); }
 </style>

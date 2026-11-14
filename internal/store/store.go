@@ -44,6 +44,9 @@ type Data struct {
 	// Settings holds the settings changed from their defaults, see
 	// settings.go.
 	Settings map[string]SettingValue `json:"settings"`
+	// LinkedInOpens is the browser profile LinkedIn opens in, chosen in
+	// Settings, see internal/browser. Empty until Tim chooses one.
+	LinkedInOpens Where `json:"linkedin_opens"`
 	// Calls counts the calls made to each search provider, by month, like
 	// "exa" -> "2026-11" -> 12. Every call counts, a failed one too,
 	// because it may be billed.
@@ -51,6 +54,13 @@ type Data struct {
 	// Started says the starting searches were added once, so a search
 	// removed later does not come back.
 	Started bool `json:"started"`
+}
+
+// Where is a browser and the folder of one of its profiles, like
+// "Google Chrome" and "Profile 1".
+type Where struct {
+	App    string `json:"app"`
+	Folder string `json:"folder"`
 }
 
 // SettingValue is a setting Tim changed, and when.
@@ -220,6 +230,21 @@ func (d *Data) fill() {
 	if d.Settings == nil {
 		d.Settings = map[string]SettingValue{}
 	}
+	// Builds of pull request 12 before 14 November 2026 kept where
+	// LinkedIn opens as two settings. Their choice moves over once.
+	if v, ok := d.Settings["linkedin_profile"]; ok {
+		var w Where
+		_ = json.Unmarshal(v.Value, &w.Folder)
+		w.App = "Google Chrome"
+		if b, ok := d.Settings["linkedin_browser"]; ok {
+			_ = json.Unmarshal(b.Value, &w.App)
+		}
+		if d.LinkedInOpens.Folder == "" && w.Folder != "" {
+			d.LinkedInOpens = w
+		}
+	}
+	delete(d.Settings, "linkedin_browser")
+	delete(d.Settings, "linkedin_profile")
 	if d.Calls == nil {
 		d.Calls = map[string]map[string]int{}
 	}

@@ -168,6 +168,8 @@ export interface Person {
 }
 
 export interface LinkedInFacts {
+  // The profile the LinkedIn button shows and opens.
+  url: string
   // The likely year of birth, and the step on the profile that shows it.
   born_about: number | null
   age_reason: string
@@ -344,9 +346,12 @@ export interface Setting {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  // The app needs a choice in Settings first, like where LinkedIn opens.
+  choose: boolean
+  constructor(status: number, message: string, choose = false) {
     super(message)
     this.status = status
+    this.choose = choose
   }
 }
 
@@ -373,13 +378,15 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     let message = `Request failed with status ${res.status}`
+    let choose = false
     try {
       const data = await res.json()
       if (data && typeof data.error === 'string') message = data.error
+      choose = data?.choose === true
     } catch {
       // Not JSON. Keep the generic message.
     }
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, choose)
   }
   if (res.status === 204) return undefined as T
   const text = await res.text()
@@ -425,7 +432,7 @@ export const api = {
   linkedin: () => request<LinkedinWhere>('GET', '/api/linkedin'),
   setLinkedin: (app: string, folder: string) => request<LinkedinWhere>('PUT', '/api/linkedin', { app, folder }),
   // Opens a profile link in the chosen browser profile.
-  open: (url: string) => request<void>('POST', '/api/open', { url }),
+  openLinkedin: (id: number) => request<void>('POST', `/api/people/${id}/linkedin`, {}),
   chrome: () => request<Chrome>('GET', '/api/chrome'),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),

@@ -60,6 +60,29 @@ const walks = [
       await linkedin.waitFor()
       const after = await review(page, 1001)
       if (after !== before) return `Undo left the profile ${after}, it was ${before}`
+      // Once the toast is gone, the line under the buttons undoes it.
+      await page.getByRole('button', { name: 'Not this person' }).click()
+      await linkedin.waitFor({ state: 'detached' })
+      await page.locator('.set-aside').getByRole('button', { name: 'Undo' }).click()
+      await linkedin.waitFor()
+      if ((await review(page, 1001)) === 'rejected') return 'the line\'s Undo left the profile set aside'
+      return ''
+    },
+  },
+  {
+    // Without a choice of where LinkedIn opens, the app says so with a
+    // field, and the line leads to Settings. The button is itself again
+    // as soon as the answer is in.
+    name: 'LinkedIn with nothing chosen leads to Settings',
+    async run(page) {
+      await page.goto(`${url}/app/people/1002`)
+      const linkedin = page.locator('.actions a.btn')
+      await linkedin.click()
+      const line = page.locator('.open-problem')
+      await line.waitFor()
+      if ((await line.getByRole('link', { name: 'Settings' }).count()) !== 1) return `the line says ${await line.innerText()}`
+      const text = (await linkedin.innerText()).trim()
+      if (text !== 'LinkedIn') return `the button says ${text} once the answer is in`
       return ''
     },
   },

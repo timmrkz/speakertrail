@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
@@ -221,24 +220,13 @@ func (a *API) run(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusOK, out)
 }
 
-// plain says whether a setting is one of the plain settings. Where
-// LinkedIn opens is one menu of its own, GET and PUT /api/linkedin, which
-// checks that the profile is there, so it is neither listed nor set here.
-func plain(key string) bool {
-	return !strings.HasPrefix(key, "linkedin_")
-}
-
 func (a *API) settings(w http.ResponseWriter, r *http.Request) {
 	var out struct {
 		Settings []store.Setting `json:"settings"`
 	}
 	out.Settings = []store.Setting{}
 	a.Store.Read(func(d *store.Data) {
-		for _, s := range d.AllSettings() {
-			if plain(s.Key) {
-				out.Settings = append(out.Settings, s)
-			}
-		}
+		out.Settings = append(out.Settings, d.AllSettings()...)
 	})
 	send(w, http.StatusOK, out)
 }
@@ -253,7 +241,7 @@ func (a *API) patchSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	var out store.Setting
 	if !a.update(w, r, func(d *store.Data) error {
-		if _, ok := d.Setting(key); !ok || !plain(key) {
+		if _, ok := d.Setting(key); !ok {
 			return errNotFound
 		}
 		if err := d.SetSetting(key, body.Value, a.Store.Now()); err != nil {

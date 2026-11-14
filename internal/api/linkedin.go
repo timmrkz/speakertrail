@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"slices"
@@ -33,46 +32,59 @@ type browserJSON struct {
 	Profiles []browser.Profile `json:"profiles"`
 }
 
-// linkedin answers where LinkedIn opens and the choices there are: every
-// Chromium browser on this Mac with its profiles, read anew each time.
-// One browser with one profile is chosen without asking.
-func (a *API) linkedin(w http.ResponseWriter, r *http.Request) {
-	var app, folder string
-	a.Store.Read(func(d *store.Data) {
-		app, folder = d.Text("linkedin_browser"), d.Text("linkedin_profile")
-	})
+// browsers lists every Chromium browser on this Mac with its profiles,
+// read anew each time.
+func (a *API) browsers() []browserJSON {
 	found := []browserJSON{}
-	if a.Browsers != nil {
-		for _, b := range browser.Apps {
-			ps, err := a.Browsers.Profiles(b.App)
-			if err != nil || len(ps) == 0 {
-				continue
-			}
-			found = append(found, browserJSON{App: b.App, Profiles: ps})
+	if a.Browsers == nil {
+		return found
+	}
+	for _, b := range browser.Apps {
+		ps, err := a.Browsers.Profiles(b.App)
+		if err != nil || len(ps) == 0 {
+			continue
 		}
+		found = append(found, browserJSON{App: b.App, Profiles: ps})
 	}
-	if folder == "" && len(found) == 1 && len(found[0].Profiles) == 1 {
-		app, folder = found[0].App, found[0].Profiles[0].Folder
+	return found
+}
+
+// opensIn is where LinkedIn opens: the profile Tim chose, or else the
+// only profile of the only browser on this Mac. Empty when it is neither,
+// because guessing is the coin toss this avoids.
+func opensIn(chosen store.Where, found []browserJSON) store.Where {
+	if chosen.Folder == "" && len(found) == 1 && len(found[0].Profiles) == 1 {
+		return store.Where{App: found[0].App, Folder: found[0].Profiles[0].Folder}
 	}
-	// Whether the kept profile is still there, so Settings can say so
-	// rather than Chrome quietly making a new one.
+	return chosen
+}
+
+func (a *API) chosen() store.Where {
+	var w store.Where
+	a.Store.Read(func(d *store.Data) { w = d.LinkedInOpens })
+	return w
+}
+
+// linkedin answers where LinkedIn opens and the choices there are.
+func (a *API) linkedin(w http.ResponseWriter, r *http.Request) {
+	found := a.browsers()
+	at := opensIn(a.chosen(), found)
+	// Whether the profile is still there, so Settings can say so rather
+	// than Chrome quietly making a new one.
 	known := false
 	for _, b := range found {
 		for _, p := range b.Profiles {
-			known = known || (b.App == app && p.Folder == folder)
+			known = known || (b.App == at.App && p.Folder == at.Folder)
 		}
 	}
-	send(w, http.StatusOK, map[string]any{"app": app, "folder": folder, "known": known, "browsers": found})
+	send(w, http.StatusOK, map[string]any{"app": at.App, "folder": at.Folder, "known": known, "browsers": found})
 }
 
 // setLinkedin chooses the browser profile LinkedIn opens in. Only a
 // profile that is there now can be chosen, so the choice never names a
 // folder Chrome would quietly make anew.
 func (a *API) setLinkedin(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		App    string `json:"app"`
-		Folder string `json:"folder"`
-	}
+	var in store.Where
 	if !decode(w, r, &in) {
 		return
 	}
@@ -89,16 +101,8 @@ func (a *API) setLinkedin(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "There is no such profile in "+in.App)
 		return
 	}
-	app, _ := json.Marshal(in.App)
-	folder, _ := json.Marshal(in.Folder)
 	if !a.update(w, r, func(d *store.Data) error {
-		now := a.Store.Now()
-		if err := d.SetSetting("linkedin_browser", app, now); err != nil {
-			return errBad{err}
-		}
-		if err := d.SetSetting("linkedin_profile", folder, now); err != nil {
-			return errBad{err}
-		}
+		d.LinkedInOpens = in
 		return nil
 	}) {
 		return
@@ -106,45 +110,60 @@ func (a *API) setLinkedin(w http.ResponseWriter, r *http.Request) {
 	a.linkedin(w, r)
 }
 
-// open opens a LinkedIn profile in the chosen browser profile. Without a
-// choice it does not guess, which is the coin toss this avoids.
-func (a *API) open(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		URL string `json:"url"`
-	}
-	if !decode(w, r, &in) {
+// openLinkedin opens a person's LinkedIn profile where LinkedIn opens.
+// The interface names the person, and the link comes from the file, so
+// nothing but a profile a search kept is ever opened.
+func (a *API) openLinkedin(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
 		return
 	}
-	if err := browser.CheckLink(in.URL); err != nil {
+	var link string
+	found := false
+	a.Store.Read(func(d *store.Data) {
+		if p := d.Person(id); p != nil {
+			found = true
+			if p.LinkedIn.Review != "rejected" {
+				link = p.LinkedIn.URL
+			}
+		}
+	})
+	switch {
+	case !found:
+		fail(w, http.StatusNotFound, "Not found")
+		return
+	case link == "":
+		fail(w, http.StatusNotFound, "This person has no LinkedIn profile")
+		return
+	}
+	if err := browser.CheckLink(link); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	var app, folder string
-	a.Store.Read(func(d *store.Data) {
-		app, folder = d.Text("linkedin_browser"), d.Text("linkedin_profile")
-	})
 	if a.Browsers == nil {
 		fail(w, http.StatusConflict, "This app cannot open a browser")
 		return
 	}
-	if folder == "" {
-		if ps, err := a.Browsers.Profiles(app); err == nil && len(ps) == 1 {
-			folder = ps[0].Folder
-		}
-	}
-	if folder == "" {
-		fail(w, http.StatusConflict, "Choose in Settings where LinkedIn opens")
+	at := opensIn(a.chosen(), a.browsers())
+	if at.Folder == "" {
+		choose(w, "Choose in Settings where LinkedIn opens")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
-	if err := a.Browsers.Open(ctx, app, folder, in.URL); err != nil {
+	if err := a.Browsers.Open(ctx, at.App, at.Folder, link); err != nil {
 		if errors.Is(err, browser.ErrNoBrowser) {
-			fail(w, http.StatusConflict, app+" is not on this Mac. Choose another in Settings")
+			choose(w, at.App+" is not on this Mac. Choose another in Settings")
 			return
 		}
 		fail(w, http.StatusConflict, err.Error())
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// choose answers that LinkedIn cannot open until Tim chooses where in
+// Settings. The interface goes by choose, never by the words.
+func choose(w http.ResponseWriter, msg string) {
+	send(w, http.StatusConflict, map[string]any{"error": msg, "choose": true})
 }

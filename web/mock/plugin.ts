@@ -42,7 +42,7 @@ interface PersonRow {
   connected?: boolean
   // What the confirmed LinkedIn profile says, for people a profile search
   // found.
-  linkedin?: Person['linkedin']
+  linkedin?: Omit<NonNullable<Person['linkedin']>, 'url'>
   searchId?: number
 }
 
@@ -267,7 +267,11 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
-    linkedin: p.linkedin ?? null,
+    // Like the server: no facts from a profile Tim said is someone else's.
+    linkedin: (() => {
+      const l = p.profiles.find((x) => x.platform === 'linkedin')
+      return p.linkedin && l && l.review !== 'rejected' ? { ...p.linkedin, url: l.url } : null
+    })(),
     // Founders of a startup come with what its lookup saw, like the server.
     activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
@@ -642,9 +646,10 @@ const ROUTES: [string, RegExp, Handler][] = [
     return ok(where())
   }],
   // The mock opens nothing. It answers as the app does, a moment later.
-  ['POST', /^\/api\/open$/, (_s, _m, _q, b) => {
-    if (!String(b.url ?? '').startsWith('https://')) return err(400, 'Only https links open')
-    if (!linkedin.folder) return err(409, 'Choose in Settings where LinkedIn opens')
+  ['POST', /^\/api\/people\/(\d+)\/linkedin$/, (s, m) => {
+    const l = s.people.find((p) => p.id === Number(m[1]))?.profiles.find((x) => x.platform === 'linkedin')
+    if (!l || l.review === 'rejected') return err(404, 'This person has no LinkedIn profile')
+    if (!linkedin.folder) return { status: 409, body: { error: 'Choose in Settings where LinkedIn opens', choose: true } }
     return { status: 204 }
   }],
 ]

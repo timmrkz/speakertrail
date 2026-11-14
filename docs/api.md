@@ -37,7 +37,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "connected": false,
       "signals": [{ "key": "founder", "label": "Founded something", "for": true, "passage": "Gründerin", "found_in": "LinkedIn" }],
       "profiles": [{ "id": 7, "platform": "linkedin", "url": "https://www.linkedin.com/in/lea-beispiel", "review": "" }],
-      "linkedin": { "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
+      "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
   "counts": { "all": 1, "young": 1, "connected": 0 }
@@ -101,10 +101,9 @@ the app was closed while it went.
 ## Settings and the key
 
 `GET /api/settings` lists every setting with its value and what it
-does, except where LinkedIn opens, which has its own endpoints below.
-`PATCH /api/settings/{key}` with `{"value": 5}` changes one. A value of the
-wrong kind gets 400, an unknown key 404, and so does where LinkedIn opens,
-which only `PUT /api/linkedin` sets.
+does. Where LinkedIn opens is not one of them, it has its own endpoints
+below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
+value of the wrong kind gets 400, an unknown key 404.
 
 `GET /api/keys` says whether the Exa key is saved and how many searches
 this month used, never the key itself:
@@ -139,9 +138,12 @@ browser with one profile counts as chosen.
 `PUT /api/linkedin` with `{"app": "Google Chrome", "folder": "Profile 1"}`
 chooses. A browser or profile that is not on this Mac gets 400.
 
-`POST /api/open` with `{"url": "https://..."}` opens the link there and
-answers 204. Only https links open, anything else gets 400. With nothing
-chosen, or a browser that is gone, it answers 409 with what to do.
+`POST /api/people/{id}/linkedin` with `{}` opens that person's LinkedIn
+profile there and answers 204. The interface names the person and the
+app takes the link from its file, so it opens nothing else. A person
+without a profile, or whose profile is rejected, gets 404. With nothing
+chosen, or a browser that is gone, it answers 409 with what to do and
+`"choose": true`, and the interface leads to Settings.
 
 `GET /api/me` always answers `{"logged_in": true}`.
 

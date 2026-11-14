@@ -251,7 +251,7 @@
     color: var(--ink-2); font-size: 14px; font-weight: 500; text-decoration: none;
   }
   .nav:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); text-decoration: none; }
-  .nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi), 0 1px 3px rgba(20, 27, 38, .12); }
+  .nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: var(--chosen); }
   .nav .word { flex: 1; }
   /* The build stands at the far end of its row, whole, since it names
      what is being tested. */

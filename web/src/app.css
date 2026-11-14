@@ -60,6 +60,11 @@
      the parts of one section, like a heading and its list. */
   --gap-page: 24px;
   --gap-group: 12px;
+  /* What is chosen, a filter, a page in the sidebar, the person open,
+     lies on what it sits on like a piece of glass: the bright edge on top
+     that every pane has, and a soft shadow under it. No blur, since what
+     lies under it is a plain fill or a pane that blurs already. */
+  --chosen: inset 0 1px var(--glass-hi), 0 1px 3px rgba(20, 27, 38, .12);
   --side: rgba(255, 255, 255, .45);
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the
@@ -307,14 +312,7 @@ button { -webkit-tap-highlight-color: transparent; }
   cursor: pointer; white-space: nowrap;
 }
 .segmented button:hover { color: var(--ink); }
-.segmented button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); }
-/* What is chosen, a filter, a page in the sidebar, the person open, is a
-   piece of glass laid over what it sits on: it blurs what is under it
-   and has the same bright edge on top as every pane. */
-.segmented button[aria-pressed="true"], .lit {
-  backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
-  box-shadow: inset 0 1px var(--glass-hi), 0 1px 3px rgba(20, 27, 38, .12);
-}
+.segmented button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); box-shadow: var(--chosen); }
 
 /* Pills */
 .pill {

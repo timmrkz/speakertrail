@@ -409,7 +409,7 @@
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
   .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
-  .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 0 1px var(--glass-hi); }
+  .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: var(--chosen); }
   /* The person open is marked already, the keyboard on it adds nothing. */
   .prow[aria-current="true"]:focus-visible { background-image: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }

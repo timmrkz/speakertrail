@@ -112,6 +112,11 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   pane, panels and lists use `--glass` or `--side` with
   `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
   `--surface`, so text over moving content is always readable.
+- **What is chosen lies on its pane like glass.** A pressed filter, the
+  page in the sidebar and the open person all take `--chosen`: the bright
+  top edge every pane has and a soft shadow. No blur of their own, since
+  what lies under them is a plain fill or a pane that blurs already, and
+  a second blur there changed no pixel a person could see.
 - **Focus is never a ring.** Tim found the outlines round focused
   controls loud and wrong. A field in use shows the accent on its edge,
   anything else reached with the keyboard a faint wash of the accent laid

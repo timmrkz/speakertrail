@@ -27,6 +27,7 @@ Start with [README.md](README.md). In short:
 | runs of profile searches | `internal/engine/` | |
 | HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
 | the Exa key in the keychain | `internal/keys/` | |
+| the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
@@ -220,7 +221,8 @@ messages, pull request text, code comments and chat replies.
   and `make walks`.
 - **Short updates.** The file is written on every change, so nothing
   slow, above all no call to Exa, happens inside `Store.Update`.
-- `gofmt` and `go vet` must pass.
+- `make lint` must pass: `gofmt`, `go vet` and `.golangci.yml`. Our code
+  never writes to Go's standard `log`, see [docs/LOGGING.md](docs/LOGGING.md).
 - The interface is built by make into `web/dist/`, which Go embeds. Only
   `web/dist/.keep` is in the repository. Never commit build output, `.env`
   or the app's file.

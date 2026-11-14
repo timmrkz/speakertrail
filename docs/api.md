@@ -37,7 +37,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "connected": false,
       "signals": [{ "key": "founder", "label": "Founded something", "for": true, "passage": "Gründerin", "found_in": "LinkedIn" }],
       "profiles": [{ "id": 7, "platform": "linkedin", "url": "https://www.linkedin.com/in/lea-beispiel", "review": "" }],
-      "linkedin": { "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
+      "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
   "counts": { "all": 1, "young": 1, "connected": 0 }
@@ -101,9 +101,9 @@ the app was closed while it went.
 ## Settings and the key
 
 `GET /api/settings` lists every setting with its value and what it
-does.
-`PATCH /api/settings/{key}` with `{"value": 5}` changes one. A value of the
-wrong kind gets 400, an unknown key 404.
+does. Where LinkedIn opens is not one of them, it has its own endpoints
+below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
+value of the wrong kind gets 400, an unknown key 404.
 
 `GET /api/keys` says whether the Exa key is saved and how many searches
 this month used, never the key itself:
@@ -115,12 +115,51 @@ this month used, never the key itself:
 `PUT /api/keys/exa` with `{"key": "..."}` saves the key in the keychain and
 answers 204. An empty key removes it.
 
+## Where LinkedIn opens
+
+The LinkedIn button opens a profile in the browser profile that is logged
+in to LinkedIn, with `open -n -a <browser> --args
+--profile-directory=<folder> <link>`. The app never asks LinkedIn for
+anything itself. See `internal/browser`.
+
+`GET /api/linkedin` answers the choice and what this Mac has, read from
+each Chromium browser's `Local State` every time:
+
+```json
+{
+  "app": "Google Chrome", "folder": "Profile 1", "known": true,
+  "browsers": [{ "app": "Google Chrome", "profiles": [{ "folder": "Default", "name": "Privat" }, { "folder": "Profile 1", "name": "Arbeit" }] }]
+}
+```
+
+`known` is false when nothing is chosen or the chosen profile is gone. One
+browser with one profile counts as chosen.
+
+`PUT /api/linkedin` with `{"app": "Google Chrome", "folder": "Profile 1"}`
+chooses. A browser or profile that is not on this Mac gets 400.
+
+`POST /api/people/{id}/linkedin` with `{}` opens that person's LinkedIn
+profile there and answers 204. The interface names the person and the
+app takes the link from its file, so it opens nothing else. A person
+without a profile, or whose profile is rejected, gets 404. With nothing
+chosen, or a browser that is gone, it answers 409 with what to do and
+`"choose": true`, and the interface leads to Settings.
+
 `GET /api/me` always answers `{"logged_in": true}`.
 
 ## Updates
 
 `/api/updates` is answered by the app itself, not by `internal/api`. See
 [UPDATES.md](UPDATES.md).
+
+## The title bar
+
+`GET /api/chrome` is answered by the app itself, not by `internal/api`.
+It says how tall the title bar macOS laid out is and where its three
+buttons are, in whole CSS pixels, `{"bar": 30, "left": 12, "right": 72}`.
+All zeros mean the system draws its own title bar. The page asks once
+when it starts and hears every change after on the Wails event called
+`chrome`. See `cmd/speakertrail-app/chrome.go`.
 
 ## Exclusions
 

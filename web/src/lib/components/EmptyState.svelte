@@ -3,7 +3,7 @@
   import Icon, { type IconName } from './Icon.svelte'
 
   let {
-    icon = 'calendar',
+    icon = 'people',
     title,
     text = '',
     tone = 'plain',

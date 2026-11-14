@@ -69,6 +69,15 @@ $ICON
 	<string>public.app-category.productivity</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<!-- Full screen reaches the top of the display, as FrameFairy's does.
+	     Without this macOS keeps a band of black across the top of a full
+	     screen window, as wide as the whole display and 29 points tall,
+	     which is the safe area it leaves clear of a MacBook's camera
+	     housing. The window's own title bar is what ends up under the
+	     housing, and it carries one word at the far left, so there is
+	     nothing there for the housing to cover. -->
+	<key>NSPrefersDisplaySafeAreaLayoutGuide</key>
+	<false/>
 </dict>
 </plist>
 PLIST

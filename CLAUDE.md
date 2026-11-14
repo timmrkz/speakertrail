@@ -29,6 +29,7 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
+| opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
@@ -164,11 +165,20 @@ messages, pull request text, code comments and chat replies.
   interface skill.
 - **Short runs, often.** Tim runs the engine by hand on his Mac. A run
   stays short enough to watch, and what does not fit waits for the next.
+- **The sidebar is FrameFairy's.** A rail of icons until the pointer
+  reaches it, open over the page while it is there, kept open by the
+  button at its top. People and Searches at the top, Settings and then
+  Updates at the foot. `lib/sidebar.svelte.ts` and its walks in
+  `web/walks/sidebar.mjs` are ported from FrameFairy, so a fix there is a
+  fix here.
 - **Consistency over novelty.** A visual treatment used in one place is used
   for every equivalent element, or not at all. Two things of the same kind
   are the same size, in the same colour, in the same place.
 - Colours and sizes come from the tokens in `web/src/app.css`, in both
   themes. Tabular figures for times and counts.
+- **Quiet marks.** No outline rings for focus and no lines or patterns in
+  the background. What is in hand gets a faint tint, see the interface
+  skill.
 
 ## Engineering rules
 
@@ -206,7 +216,8 @@ messages, pull request text, code comments and chat replies.
   A fix starts as a test that fails on the code before it.
 - **Tests** need no network and never call Exa. Answers go in the test,
   with invented people. Run `make test` before every push that
-  touches Go. A change only to `web/` or `docs/` runs `make interface`.
+  touches Go. A change only to `web/` or `docs/` runs `make interface`
+  and `make walks`.
 - **Short updates.** The file is written on every change, so nothing
   slow, above all no call to Exa, happens inside `Store.Update`.
 - `gofmt` and `go vet` must pass.

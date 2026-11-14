@@ -1,18 +1,19 @@
 <script lang="ts">
+  import { cubicOut } from 'svelte/easing'
   import { untrack } from 'svelte'
-  import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail } from '../lib/api'
-  import { fmtDay, initials, plural } from '../lib/format'
+  import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail as Detail } from '../lib/api'
+  import { plural } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { navigate, router } from '../lib/router.svelte'
-  import { runWatch } from '../lib/run.svelte'
-  import Chips from '../lib/components/Chips.svelte'
+  import { runShare, runWatch } from '../lib/run.svelte'
+  import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
-  import ProfileBadges from '../lib/components/ProfileBadges.svelte'
   import RunOutcome from '../lib/components/RunOutcome.svelte'
   import RunProgress from '../lib/components/RunProgress.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
+  import PersonDetail from './PersonDetail.svelte'
   import PersonSheet from './PersonSheet.svelte'
   import RunSheet from './RunSheet.svelte'
 
@@ -98,126 +99,248 @@
   // The run is started and stopped here, where its people show up.
   let going = $derived(runWatch.run)
   let runLabel = $derived(
-    runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop the run' : 'Run',
+    runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop' : 'Run',
   )
   let runOpen = $state<number | null>(null)
 
-  // What the LinkedIn profile says, in one line: the likely age and when
-  // the person was last active there.
   const year = new Date().getFullYear()
-  function facts(p: Person): string {
-    const l = p.linkedin
-    if (!l) return ''
-    const parts: string[] = []
-    if (l.born_about) parts.push(`about ${year - l.born_about}`)
-    if (l.last_active) parts.push(`active ${fmtDay(l.last_active)}`)
-    return parts.join(' · ')
+  const age = (p: Person) => (p.linkedin?.born_about ? year - p.linkedin.born_about : null)
+  // A person's second line, the way a search has one: what they do,
+  // where, and about how old, each only when known.
+  function line(p: Person) {
+    const a = age(p)
+    return [p.headline || 'No headline yet', p.city, a ? `about ${a}` : ''].filter(Boolean).join(' · ')
   }
-  function factsTitle(p: Person): string {
-    const l = p.linkedin
-    if (!l) return ''
-    return [l.born_about ? `A guess from the LinkedIn profile: ${l.age_reason}` : '', l.roles ? `Now: ${l.roles}` : '']
-      .filter(Boolean)
-      .join('\n')
+
+  // Wide enough for the list and the person beside it, like Mail. Below
+  // that the person slides in over the list.
+  let wide = $state(false)
+  const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  $effect(() => {
+    const mq = window.matchMedia('(min-width: 1000px)')
+    wide = mq.matches
+    const on = () => (wide = mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  })
+
+  // The arrow keys go up and down the list and Escape puts the person away,
+  // the way Mail and Finder do, unless a field has the keyboard.
+  function keydown(e: KeyboardEvent) {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.closest('input, textarea, select, [contenteditable]') || t.closest('[role="dialog"]'))) return
+    if (e.key === 'Escape' && wide && openId !== null) {
+      e.preventDefault()
+      navigate('/app/people')
+      return
+    }
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+    const list = people.data
+    if (!list?.length) return
+    e.preventDefault()
+    const at = list.findIndex((p) => p.id === openId)
+    const next = at < 0 ? 0 : Math.max(0, Math.min(list.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))
+    navigate(`/app/people/${list[next].id}`, { replace: at >= 0 })
+    // The keyboard goes with the person, so a row the pointer clicked
+    // does not stay marked as the one in hand.
+    const inList = !!t?.closest('.prow')
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`person-row-${list[next].id}`)
+      row?.scrollIntoView({ block: 'nearest' })
+      if (inList) row?.focus({ preventScroll: true })
+    })
   }
+
+  // The person beside the list takes a share of the window that Tim sets
+  // by dragging its edge. It snaps to steps of 5 %, so it lands on 40 %
+  // or 50 % rather than anywhere near them. Each pane keeps room for its
+  // words, so the steps on offer depend on how wide the window is. Closed,
+  // the person takes nothing and the list has the whole width.
+  const STEP = 0.05
+  const SHARE_KEY = 'people.detail-share'
+  let width = $state(0)
+  let share = $state(readShare())
+  let dragging = $state(false)
+  function readShare(): number {
+    try {
+      const v = Number(localStorage.getItem(SHARE_KEY))
+      return v > 0 && v < 1 ? v : 0.45
+    } catch {
+      return 0.45
+    }
+  }
+  // The smallest and largest share that leave the person 360 px and the
+  // list 480 px, room for its columns, between a quarter and three
+  // quarters of the width.
+  let least = $derived(Math.min(0.75, Math.ceil(Math.max(0.25, 360 / (width || 1)) / STEP - 1e-6) * STEP))
+  let most = $derived(Math.max(least, Math.floor(Math.min(0.75, 1 - 480 / (width || 1)) / STEP + 1e-6) * STEP))
+  let shown = $derived(Math.min(most, Math.max(least, share)))
+  let percent = $derived(Math.round(shown * 100))
+
+  function setShare(v: number) {
+    share = Math.min(most, Math.max(least, Math.round(v / STEP) * STEP))
+    try {
+      localStorage.setItem(SHARE_KEY, String(share))
+    } catch {
+      // A private window keeps the width for this visit only.
+    }
+  }
+
+  // The person grows in from the right edge and shrinks back into it, and
+  // the list gives way beside it the whole time, so both move together
+  // and nothing jumps at either end. A row has the same lines at any
+  // width, so the list only narrows. The person's words keep their final
+  // width meanwhile and slide in rather than wrap anew on every frame.
+  function grow(node: HTMLElement) {
+    const w = node.getBoundingClientRect().width
+    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `flex-basis: ${t * w}px; overflow: hidden; --pane-w: ${w}px` }
+  }
+
+  let peopleEl = $state<HTMLElement>()
+  function startDrag(e: PointerEvent) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const edge = e.currentTarget as HTMLElement
+    edge.setPointerCapture(e.pointerId)
+    dragging = true
+    const move = (ev: PointerEvent) => {
+      const r = peopleEl?.getBoundingClientRect()
+      if (r) setShare((r.right - ev.clientX) / r.width)
+    }
+    const end = () => {
+      dragging = false
+      edge.removeEventListener('pointermove', move)
+      edge.removeEventListener('pointerup', end)
+      edge.removeEventListener('pointercancel', end)
+    }
+    edge.addEventListener('pointermove', move)
+    edge.addEventListener('pointerup', end)
+    edge.addEventListener('pointercancel', end)
+  }
+
+  // The edge answers the keyboard too: the arrows move it a step, Home and
+  // End to the ends.
+  function edgeKey(e: KeyboardEvent) {
+    const to = { ArrowLeft: shown + STEP, ArrowRight: shown - STEP, Home: most, End: least }[e.key]
+    if (to === undefined) return
+    e.preventDefault()
+    setShare(to)
+  }
+
   let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
-  function updated(p: PersonDetail) {
+  function updated(p: Detail) {
     if (!people.data) return
     people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))
   }
 </script>
 
-<div class="view">
-  <div class="view-head">
-    <div>
-      <h1>People</h1>
-      <p>On LinkedIn, in NRW, running their own thing.</p>
-    </div>
-    <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
-      disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
-      title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
-      <Icon name={going ? 'close' : 'refresh'} />{runLabel}
-    </button>
-  </div>
+<svelte:window onkeydown={keydown} />
 
-  {#if runWatch.run}
-    <button class="panel run-now" type="button" disabled={runWatch.run.id <= 0} onclick={() => (runOpen = runWatch.run?.id ?? null)}>
-      <RunProgress run={runWatch.run} />
-    </button>
-  {:else if runWatch.ended}
-    <button class="panel run-now" type="button" onclick={() => (runOpen = runWatch.ended?.id ?? null)}>
-      <RunOutcome run={runWatch.ended} />
-    </button>
-  {/if}
-
-  <div class="filters">
-    <div class="toolbar tight">
-      <SearchInput bind:value={q} placeholder="Search people" label="Search people" onsearch={(v) => (query = v)} />
-      <label class="sort">
-        <span class="sr-only">Sort by</span>
-        <select class="select" bind:value={sort}>
-          <option value="young">Youngest</option>
-          <option value="new">Newest</option>
-          <option value="fit">Best fit</option>
-          <option value="name">Name</option>
-        </select>
-      </label>
-    </div>
-    <Chips label="Show" options={filters} bind:value={filter} scroll={false} />
-  </div>
-
-  {#if people.error && !people.data}
-    <EmptyState icon="alert" tone="bad" title="Could not load people" text={people.error}>
-      <button class="btn" type="button" onclick={() => reload++}><Icon name="refresh" />Try again</button>
-    </EmptyState>
-  {:else if !people.data}
-    <Skeleton count={7} />
-  {:else if !people.data.length}
-    <EmptyState
-      icon="people"
-      title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'connected' && !query ? 'Nobody connected yet' : 'Nobody here yet'}
-      text={filter !== 'all' && others > 0
-        ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'connected' ? 'connected yet' : 'in this filter'}.`
-        : query ? 'Nobody matches this search.' : 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'}>
-      {#if query || filter !== 'all'}
-        <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
+<div class="people" class:wide class:open={wide && openId !== null} class:dragging bind:this={peopleEl} bind:clientWidth={width}
+  style:--detail-w="{percent}%">
+  <section class="list-pane" aria-label="People">
+    <div class="controls">
+      <div class="toolbar tight">
+        <SearchInput bind:value={q} placeholder="Search people" label="Search people" onsearch={(v) => (query = v)} />
+        <label class="sort" title="Order">
+          <span class="sr-only">Sort by</span>
+          <select class="select" bind:value={sort}>
+            <option value="young">Youngest</option>
+            <option value="new">Newest</option>
+            <option value="fit">Best fit</option>
+            <option value="name">Name</option>
+          </select>
+        </label>
+        <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
+        disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
+        title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
+        {#if going}<Busy fraction={runShare(going)} />{/if}
+        <Icon name={going ? 'stop' : 'run'} />{runLabel}
+        </button>
+      </div>
+      <div class="segmented filters" role="group" aria-label="Show">
+        {#each filters as f (f.value)}
+          <button type="button" aria-pressed={filter === f.value} onclick={() => (filter = f.value)}>
+            {f.label}{#if f.count !== undefined}<span class="n">{f.count}</span>{/if}
+          </button>
+        {/each}
+      </div>
+      {#if runWatch.run}
+        <button class="run-now" type="button" disabled={runWatch.run.id <= 0} onclick={() => (runOpen = runWatch.run?.id ?? null)}>
+          <RunProgress run={runWatch.run} />
+        </button>
+      {:else if runWatch.ended}
+        <button class="run-now" type="button" onclick={() => (runOpen = runWatch.ended?.id ?? null)}>
+          <RunOutcome run={runWatch.ended} />
+        </button>
       {/if}
-    </EmptyState>
-  {:else}
-    <p class="summary">{plural(people.data.length, 'person', 'people')}{people.loading ? ', updating' : ''}</p>
-    <ul class="list" class:stale={people.loading}>
-      {#each people.data as p (p.id)}
-        <li>
-          <a class="row-btn person" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}
-            title={p.connected ? 'Connected' : undefined}>
-            <span class="avatar" class:connected={p.connected} aria-hidden="true">{initials(p.name)}</span>
-            <b class="ellipsis name">{p.name}{#if p.connected}<span class="sr-only">, connected</span>{/if}{#if isNew(p)}<span class="new" title="Found by this run">new</span>{/if}</b>
-            <span class="who">
-              <span class="ellipsis sub">{[p.headline, p.city].filter(Boolean).join(' · ') || 'No headline yet'}</span>
-              {#if facts(p)}
-                <span class="ellipsis facts" title={factsTitle(p)}>{facts(p)}</span>
-              {/if}
-              {#if p.signals.length}
-                <span class="signals ellipsis" title={p.signals.map((s) => `${s.for ? 'For' : 'Against'}: ${s.label}`).join('\n')}>
-                  {#each p.signals as s, i (s.key)}{#if i}<span class="sep" aria-hidden="true">·</span>{/if}<span class:for={s.for} class:against={!s.for}><span class="sr-only">{s.for ? 'For: ' : 'Against: '}</span>{s.label}</span>{/each}
+    </div>
+
+    <div class="rows-wrap">
+      {#if people.error && !people.data}
+        <EmptyState icon="alert" tone="bad" title="Could not load people" text={people.error}>
+          <button class="btn" type="button" onclick={() => reload++}><Icon name="refresh" />Try again</button>
+        </EmptyState>
+      {:else if !people.data}
+        <Skeleton count={7} />
+      {:else if !people.data.length}
+        <EmptyState
+          icon="people"
+          title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'connected' && !query ? 'Nobody connected yet' : 'Nobody here yet'}
+          text={filter !== 'all' && others > 0
+            ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'connected' ? 'connected yet' : 'in this filter'}.`
+            : query ? 'Nobody matches this search.' : 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'}>
+          {#if query || filter !== 'all'}
+            <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
+          {/if}
+        </EmptyState>
+      {:else}
+        <ul class="list rows" class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
+          {#each people.data as p (p.id)}
+            <li>
+              <a class="prow" id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
+                <span class="who">
+                  <b class="ellipsis">{p.name}</b>
+                  {#if isNew(p)}<span class="dot new" title="Found by this run"></span><span class="sr-only">, new</span>{/if}
                 </span>
-              {/if}
-            </span>
-            <span class="meta">
-              <ProfileBadges profiles={p.profiles} />
-            </span>
-          </a>
-        </li>
-      {/each}
-    </ul>
+                <span class="ellipsis sub" title={age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  </section>
+
+  {#if wide && openId !== null}
+    <section class="detail-pane" aria-label="Person" transition:grow>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+      <div class="edge" role="separator" aria-orientation="vertical" aria-label="Width of the person"
+        aria-valuemin={Math.round(least * 100)} aria-valuemax={Math.round(most * 100)} aria-valuenow={percent} aria-valuetext="{percent} % of the window"
+        tabindex="0" title="Drag to make the person wider or narrower. It snaps to steps of 5 %. Double-click for 45 %"
+        onpointerdown={startDrag} onkeydown={edgeKey} ondblclick={() => setShare(0.45)}>
+        {#if dragging}<span class="share">{percent} %</span>{/if}
+      </div>
+      <!-- The cross stands in the row the list's controls stand in, the
+           same height, its glyph on the edge of the person under it. -->
+      <div class="detail-top">
+        <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
+      </div>
+      <div class="detail-body">
+        {#key openId}
+          <PersonDetail id={openId} onupdate={updated} />
+        {/key}
+      </div>
+    </section>
   {/if}
 </div>
 
-{#if openId !== null}
+{#if openId !== null && !wide}
   {#key openId}
-    <PersonSheet id={openId} onclose={() => navigate('/app/people')} onupdate={updated} />
+    <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name} onclose={() => navigate('/app/people')} onupdate={updated} />
   {/key}
 {:else if runOpen !== null}
   {#key runOpen}
@@ -226,42 +349,78 @@
 {/if}
 
 <style>
-  .filters { display: grid; gap: 10px; }
+  /* The list on the left and the person on the right, each a pane of its
+     own that scrolls by itself, the way Mail is laid out. */
+  .people { display: flex; height: 100%; min-width: 0; overflow: hidden; }
+  .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+  .list-pane { flex: 1 1 0; }
+  /* The person comes in from the right and takes its share of the width.
+     Closed, it is not there at all. */
+  /* Its body scrolls, not the pane, so the edge can reach out over the
+     list a little and still be caught. */
+  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi); }
+  .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .detail-top, .detail-body { min-width: var(--pane-w, 0); }
+  .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
+  /* The edge to drag: wider than the line it sits on, so it is easy to
+     catch, and lit while it is held or has the keyboard. */
+  .edge {
+    position: absolute; z-index: 3; top: 0; bottom: 0; left: -5px; width: 9px; cursor: col-resize; touch-action: none;
+    --wails-draggable: no-drag;
+  }
+  .edge::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; background: transparent;
+    transition: background .15s;
+  }
+  .edge:hover::after { background: var(--line-strong); }
+  .dragging .edge::after, .edge:focus-visible::after { background: var(--accent); }
+  .share {
+    position: absolute; top: 14px; left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+    background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  /* People reads like Searches and Settings: the same centred column,
+     the controls over a list of frosted rows, each a name over one line
+     of what is known. The column is the same with a person open or not,
+     only narrower when the list is, so nothing moves when one opens. */
+  .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
+  .controls { display: grid; gap: var(--gap-group); padding: var(--gap-page) var(--x) var(--gap-group); }
+  .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
-  .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
-  .run-now { display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer; }
-  .run-now:hover { border-color: var(--line-strong); }
-  /* Room for the longest label, so the button keeps its width. */
-  .start { min-width: 10.2em; justify-content: center; }
-  .new {
-    margin-left: 6px; padding: 1px 6px; border-radius: 999px; font-size: 11px; font-weight: 600; vertical-align: 1px;
-    background: var(--accent-soft); color: var(--accent);
-  }
-  .stale { opacity: .6; }
-  .person {
-    grid-template-columns: 36px minmax(0, 1fr) auto;
-    grid-template-areas: "av name meta" "av who meta";
-    align-items: start; row-gap: 1px;
-  }
-  .person .avatar { grid-area: av; }
-  .name { grid-area: name; font-weight: 600; }
-  .who { grid-area: who; display: grid; gap: 1px; min-width: 0; }
-  .meta { grid-area: meta; }
-  .sub { font-size: 13px; color: var(--ink-2); }
-  .facts { font-size: 13px; color: var(--accent); font-variant-numeric: tabular-nums; }
-  .meta { display: flex; gap: 8px; align-items: center; padding-top: 2px; }
-  /* A connected person's initials turn green. */
-  .avatar.connected { background: var(--good-soft); color: var(--good); }
-  /* Relative, so the hidden words of signals cut off at the end stay inside
-     the row and never widen the page. */
-  .signals { font-size: 12px; font-weight: 500; position: relative; }
-  .signals .for { color: var(--good); }
-  .signals .against { color: var(--bad); }
-  /* The sign says it without colour. Screen readers get the words instead. */
-  .signals .for::before { content: "+\2009" / ""; }
-  .signals .against::before { content: "\2212\2009" / ""; }
-  .signals .sep { color: var(--ink-3); margin: 0 5px; }
+  /* Room for the longest label, Starting or Stopping, so the button keeps its width. */
+  .start { min-width: 7.4em; }
+  .controls .toolbar { flex-wrap: nowrap; }
+  .controls .toolbar > :global(.search) { flex: 1 1 0; }
+  /* A phone-wide window gives the search field a line of its own, and
+     the order and Run share the next, the same size. */
   @media (max-width: 520px) {
-    .person { padding: 12px 14px; column-gap: 10px; grid-template-areas: "av name meta" "av who who"; }
+    .controls .toolbar { flex-wrap: wrap; }
+    .controls .toolbar > :global(.search) { flex: 1 1 100%; }
+    .controls .sort, .controls .start { flex: 1 1 0; }
+    .controls .sort .select { width: 100%; }
   }
+  .run-now {
+    display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;
+    background: var(--surface-2); border: 0; border-radius: var(--radius);
+  }
+  .run-now:hover { background: color-mix(in srgb, var(--ink) 8%, var(--surface-2)); }
+  .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
+  .stale { opacity: .6; transition: opacity .2s; }
+  /* A row as Searches has one: 12 by 16 in, the name over its line. */
+  .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
+  .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
+  .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: var(--chosen); }
+  /* The person open is marked already, the keyboard on it adds nothing. */
+  .prow[aria-current="true"]:focus-visible { background-image: none; }
+  .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .who b { font-weight: 600; }
+  .dot.new { width: 7px; height: 7px; background: var(--accent); }
+  .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .connected { color: var(--good); font-weight: 600; }
+  @media (max-width: 520px) { .prow { padding: 12px 14px; } }
+  /* The person stands in a column of its own width, and the cross in the
+     bar over it ends where the column ends. */
+  .detail-top { flex: none; display: flex; justify-content: flex-end; align-items: center; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
+  .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
+  .detail-body { padding: 0 var(--dx) 48px; }
 </style>

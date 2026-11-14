@@ -29,6 +29,13 @@ HTTP from a small program in the scratchpad, with the interface from
 finder that returns invented profiles, the way `internal/api/api_test.go`
 does. Never real names, not even in a scratch file.
 
+What has to keep working is a walk in `web/walks/`, run by `make walks`
+and by CI: it starts the mock itself, drives Chromium, plays what macOS
+and WebKit hand the app, and checks what the interface did, never waiting
+on the clock. The sidebar's walks are ported from FrameFairy's
+`frontend/preview/walks`. A walk is proven by making it fail on the code
+before the fix.
+
 Look at every change at 390 by 844, the narrowest window, and at 1280 by 900, in
 light and in dark. Probes and screenshots go in the scratchpad, not in the
 repository.
@@ -75,7 +82,7 @@ Fairy's rules, without its styling:
   whole minutes from a minute on, and it counts down between answers.
   Until there is anything to measure against, it says so.
 - **Work out of sight pulses.** `.dot.busy` on the place that leads to it,
-  like Runs in the sidebar and in the narrow window's tab bar.
+  like People on the sidebar's rail.
 - **One watch, one state.** The going run comes from `runWatch` in
   `lib/run.svelte.ts`, for every screen and the dot alike, so no screen
   shows a state another has left. A screen that shows the run calls
@@ -91,6 +98,41 @@ Check it in the mock: the mock's run moves through its checks and reads
 every two seconds, like the app's. Probe the step text, the fill width
 and the time left over the whole run and see that the fill only grows and
 the time left only shrinks.
+
+## The look
+
+Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
+mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
+
+- **The mist lies behind the window.** `--mist` in `app.css` draws the
+  soft fog, once, on the shell. Nothing else draws a background picture.
+  No lines or patterns in it: Tim found the contour lines of the mockup
+  distracting and had them taken out.
+- **Panes over it are frosted.** The sidebar, the title bar, the person's
+  pane, panels and lists use `--glass` or `--side` with
+  `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
+  `--surface`, so text over moving content is always readable.
+- **What is chosen lies on its pane like glass.** A pressed filter, the
+  page in the sidebar and the open person all take `--chosen`: the bright
+  top edge every pane has and a soft shadow. No blur of their own, since
+  what lies under them is a plain fill or a pane that blurs already, and
+  a second blur there changed no pixel a person could see.
+- **Focus is never a ring.** Tim found the outlines round focused
+  controls loud and wrong. A field in use shows the accent on its edge,
+  anything else reached with the keyboard a faint wash of the accent laid
+  over its own colour, see `:focus-visible` in `app.css`. What is selected
+  already, like the open person's row, shows nothing more.
+- **Every list looks the same.** People, Searches and Settings read in
+  one centred column, `--col-w`, with the controls above a `.list` of
+  frosted rows, each a name over one line of what is known, with what is
+  connected in green at its start. Tim asked for one look for all lists
+  on 14 November 2026.
+- **Opening something never relays out what is beside it.** A row has the
+  same lines at any width, so a person opening only narrows the list. A
+  container query on a pane that another pane squeezes brings the shuffle
+  back. `web/walks/person.mjs` checks it.
+- **Every colour has a light and a dark value.** Check both, and check that
+  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
 
 ## What to report
 

@@ -410,3 +410,28 @@ func TestAddFoundMergesTheSameProfile(t *testing.T) {
 		t.Errorf("merged into %+v", p2)
 	}
 }
+
+// Builds before where LinkedIn opens had a field of its own kept it as two
+// settings. Opening such a file keeps the choice and drops the settings.
+func TestWhereLinkedInOpensMovesOutOfTheSettings(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"settings":{
+		"linkedin_browser":{"value":"Brave Browser","updated_at":"2026-11-14T10:00:00Z"},
+		"linkedin_profile":{"value":"Profile 1","updated_at":"2026-11-14T10:00:00Z"},
+		"profile_search_results":{"value":"30","updated_at":"2026-11-14T10:00:00Z"}}}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st, err := Open(dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Read(func(d *Data) {
+		if d.LinkedInOpens != (Where{App: "Brave Browser", Folder: "Profile 1"}) {
+			t.Errorf("where = %+v", d.LinkedInOpens)
+		}
+		if _, ok := d.Settings["linkedin_profile"]; ok || len(d.Settings) != 1 {
+			t.Errorf("settings = %v", d.Settings)
+		}
+	})
+}

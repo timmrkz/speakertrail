@@ -50,36 +50,53 @@
     }
   })
 
-  let dirty = $derived(parsed.ok && JSON.stringify(parsed.value) !== JSON.stringify(setting.value))
   let lines = $derived(Math.min(10, Math.max(3, text.split('\n').length + 1)))
 
-  async function save(e?: SubmitEvent) {
+  // A setting saves the moment it is left or Enter is pressed, the way
+  // System Settings does, and Undo puts the value before it back.
+  let before = $state<Json | null>(null)
+  async function save(e?: Event, value?: Json) {
     e?.preventDefault()
-    if (!parsed.ok || !dirty) return
+    const next = value !== undefined ? value : parsed.ok ? parsed.value : undefined
+    if (next === undefined || JSON.stringify(next) === JSON.stringify(setting.value)) return
+    const was = setting.value
     status = 'saving'
     error = ''
     try {
-      const updated = await api.patchSetting(setting.key, parsed.value)
+      const updated = await api.patchSetting(setting.key, next)
       onsaved(updated)
       text = toText(updated.value, kind)
+      before = value !== undefined ? null : was
       status = 'saved'
     } catch (err) {
       status = 'idle'
-      if (kind === 'boolean') text = toText(setting.value, kind)
+      text = toText(setting.value, kind)
       error = errorText(err)
     }
+  }
+
+  function undo() {
+    if (before !== null) save(undefined, before)
   }
 
   function toggle() {
     text = text === 'true' ? 'false' : 'true'
     save()
   }
+
+  // Enter saves a one-line field, Escape puts back what is saved.
+  function keydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      text = toText(setting.value, kind)
+      ;(e.currentTarget as HTMLElement).blur()
+    }
+  }
 </script>
 
 <form class="setting" onsubmit={save} novalidate>
   <div class="info">
     <label for={id} class="desc">{setting.description || setting.key}</label>
-    <span class="key num">{setting.key}</span>
+    <span class="key num" title="Changed {fmtAgo(setting.updated_at)}">{setting.key}</span>
   </div>
   <div class="editor" class:bool={kind === 'boolean'}>
     {#if kind === 'boolean'}
@@ -87,20 +104,14 @@
         <span class="knob"></span>
         <span class="sr-only">{setting.description}</span>
       </button>
-      <span class="small muted">{text === 'true' ? 'On' : 'Off'}</span>
     {:else if kind === 'number'}
       <input {id} class="input num-input" type="text" inputmode="decimal" bind:value={text} oninput={() => (status = 'idle')}
-        aria-invalid={!parsed.ok ? 'true' : undefined} />
+        onblur={() => save()} onkeydown={keydown} aria-invalid={!parsed.ok ? 'true' : undefined} />
     {:else if kind === 'string'}
-      <input {id} class="input" type="text" bind:value={text} oninput={() => (status = 'idle')} />
+      <input {id} class="input" type="text" bind:value={text} oninput={() => (status = 'idle')} onblur={() => save()} onkeydown={keydown} />
     {:else}
       <textarea {id} class="textarea" class:code={kind === 'json'} rows={lines} bind:value={text} oninput={() => (status = 'idle')}
-        aria-invalid={!parsed.ok ? 'true' : undefined} spellcheck="false"></textarea>
-    {/if}
-    {#if kind !== 'boolean'}
-      <button class="btn" class:primary={dirty} type="submit" disabled={!dirty || status === 'saving'}>
-        {status === 'saving' ? 'Saving' : status === 'saved' && !dirty ? 'Saved' : 'Save'}
-      </button>
+        onblur={() => save()} onkeydown={keydown} aria-invalid={!parsed.ok ? 'true' : undefined} spellcheck="false"></textarea>
     {/if}
   </div>
   <p class="foot small" aria-live="polite">
@@ -108,38 +119,44 @@
       <span class="field-error">{parsed.msg}</span>
     {:else if error}
       <span class="field-error">{error}</span>
+    {:else if status === 'saving'}
+      <span class="faint">Saving</span>
+    {:else if status === 'saved'}
+      <span class="faint">Saved</span>{#if before !== null}<button class="link" type="button" onclick={undo}>Undo</button>{/if}
     {:else if kind === 'list'}
-      <span class="faint">One per line. Changed {fmtAgo(setting.updated_at)}</span>
-    {:else}
-      <span class="faint">Changed {fmtAgo(setting.updated_at)}</span>
+      <span class="faint">One per line</span>
     {/if}
   </p>
 </form>
 
 <style>
   .setting {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 6px 20px; padding: 16px; align-items: start;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 24px; padding: 14px 16px; align-items: center;
   }
   .info { display: grid; gap: 2px; min-width: 0; }
-  .desc { font-weight: 600; font-size: 14px; }
+  .desc { font-weight: 500; font-size: 14px; }
   .key { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
-  .editor { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
-  .editor .input, .editor .textarea { flex: 1; }
-  .num-input { max-width: 140px; font-family: var(--mono); }
-  .foot { grid-column: 2; min-height: 0; }
+  .editor { display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-width: 0; }
+  .editor .textarea { width: min(340px, 100%); }
+  .editor .input { width: 220px; }
+  .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
+  .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
+  .foot:empty { display: none; }
+  .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
+  .link:hover { text-decoration: underline; }
   .switch {
-    width: 44px; height: 26px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-2);
+    width: 40px; height: 24px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-2);
     position: relative; cursor: pointer; padding: 0; flex: none;
   }
   .switch .knob {
-    position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface);
+    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface);
     box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s;
   }
   .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
-  .switch[aria-checked="true"] .knob { transform: translateX(18px); }
-  .editor.bool { align-items: center; min-height: var(--control-h); }
+  .switch[aria-checked="true"] .knob { transform: translateX(16px); }
   @media (max-width: 760px) {
-    .setting { grid-template-columns: minmax(0, 1fr); padding: 14px; }
-    .foot { grid-column: 1; }
+    .setting { grid-template-columns: minmax(0, 1fr); }
+    .editor { justify-content: flex-start; }
+    .foot { justify-content: flex-start; }
   }
 </style>

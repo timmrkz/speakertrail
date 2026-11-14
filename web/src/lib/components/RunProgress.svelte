@@ -4,6 +4,7 @@
   // in the list and in the run's sheet alike.
   import type { Run } from '../api'
   import { fmtElapsed, fmtLeft, plural } from '../format'
+  import { runShare } from '../run.svelte'
 
   let { run }: { run: Run } = $props()
 
@@ -25,7 +26,7 @@
   // does not jump back each time a check queues new ones.
   let total = $derived(p ? p.checks + Math.max(p.reads, p.reads_expected) + Math.max(p.lookups, p.lookups_expected) : 0)
   let done = $derived(p ? p.checks_done + p.reads_done + p.lookups_done : 0)
-  let share = $derived(total ? Math.min(1, done / total) : 0)
+  let share = $derived(Math.max(0, runShare(run)))
   let step = $derived.by(() => {
     const first = p?.now[0]
     if (!first) return done === 0 ? 'Starting' : done >= total ? 'Finishing' : 'Waiting for the next website to allow a request'

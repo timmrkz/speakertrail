@@ -20,9 +20,10 @@
 #                   version, into the app. Once, while Docker still has the
 #                   old database
 #   make mock       the interface alone in a browser, with invented data
-#   make test       all tests: unit and interface
+#   make test       all tests: unit, interface and walks
 #   make unit       the Go tests, under the race detector
 #   make interface  the interface type check
+#   make walks      the interface driven in Chromium, with invented data
 #   make check      what this machine has and still needs
 #   make clean      remove what make built
 #
@@ -70,7 +71,7 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain mock test unit interface check clean help
+.PHONY: all app run install update-key carry-over tools toolchain mock test unit interface walks check clean help
 
 help:
 	@sed -n '1,25p' Makefile | sed 's/^# \{0,1\}//'
@@ -147,7 +148,7 @@ update-key: toolchain
 mock: web/node_modules/.package-lock.json
 	@cd web && MOCK=1 $(NPM) run dev
 
-test: unit interface
+test: unit interface walks
 
 # The race detector is always on: runs ask several searches side by side,
 # and a race there only shows on someone else's machine.
@@ -158,6 +159,11 @@ unit:
 interface: web/node_modules/.package-lock.json
 	@out=$$(cd web && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tinterface types\n'
+
+# The walks drive the interface with invented data in Chromium, the way
+# FrameFairy's walks drive its own, see web/walks/.
+walks: web/node_modules/.package-lock.json
+	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs
 
 check:
 	@sh scripts/check.sh || true

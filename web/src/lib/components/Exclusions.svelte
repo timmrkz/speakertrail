@@ -67,7 +67,7 @@
 <details class="exclusions">
   <summary title="Words that leave a person out of profile searches and People, matched in their headline and roles. People you connected with always stay">
     <span class="title">Exclusions</span>
-    {#if list.data}<span class="faint small num">{all.length}{hiding ? `, hiding ${plural(hiding, 'person', 'people')}` : ''}</span>{/if}
+    {#if list.data}<span class="faint small count">{all.length}{hiding ? `, hiding ${plural(hiding, 'person', 'people')}` : ''}</span>{/if}
   </summary>
   {#if list.error && !list.data}
     <p class="field-error">{list.error}</p>
@@ -93,11 +93,12 @@
 </details>
 
 <style>
-  .exclusions { display: grid; gap: 10px; }
+  .exclusions { display: block; }
   summary { display: flex; align-items: baseline; gap: 8px; cursor: pointer; list-style: revert; font-size: 14px; }
   .title { font-weight: 600; }
-  details[open] > summary { margin-bottom: 10px; }
-  .phrases { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; padding: 0; list-style: none; min-width: 0; }
+  .count { font-variant-numeric: tabular-nums; }
+  details[open] > summary { margin-bottom: var(--gap-group); }
+  .phrases { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 var(--gap-group); padding: 0; list-style: none; min-width: 0; }
   /* Shaped like a chip, but a label with its own remove button. */
   .phrase {
     height: 32px; padding: 0 2px 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);

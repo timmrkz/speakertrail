@@ -224,7 +224,10 @@ func (a *API) settings(w http.ResponseWriter, r *http.Request) {
 	var out struct {
 		Settings []store.Setting `json:"settings"`
 	}
-	a.Store.Read(func(d *store.Data) { out.Settings = d.AllSettings() })
+	out.Settings = []store.Setting{}
+	a.Store.Read(func(d *store.Data) {
+		out.Settings = append(out.Settings, d.AllSettings()...)
+	})
 	send(w, http.StatusOK, out)
 }
 

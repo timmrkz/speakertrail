@@ -49,6 +49,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/updates` | Where builds to update to come from, and checking their signatures |
 | `internal/search` | Exa's index of LinkedIn profiles |
 | `internal/place` | Whether a place lies in NRW, and which city it names |
+| `internal/browser` | Opening LinkedIn in the Chrome profile chosen in Settings, see [docs/open-in-profile.md](docs/open-in-profile.md) |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `web` | The interface, Svelte 5 with TypeScript |
 | `scripts` | Installing what is missing, bundling the app, the carry-over, the cloud session setup |

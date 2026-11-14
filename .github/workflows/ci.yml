@@ -26,6 +26,11 @@ jobs:
         run: make interface
       - name: Build
         run: npm run build
+      - name: Chromium for the walks
+        run: npx playwright install --with-deps chromium
+      - name: Walks
+        working-directory: .
+        run: make walks
 
   go:
     runs-on: ubuntu-24.04

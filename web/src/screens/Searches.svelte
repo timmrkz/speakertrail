@@ -21,7 +21,9 @@
     document.title = 'Searches · Speaker Trail'
   })
 
-  let q = $state('')
+  // A person's "Found by" links here with the search's words, so the
+  // list opens on that search.
+  let q = $state(new URLSearchParams(location.search).get('q') ?? '')
   let all = $derived(searches.data ?? [])
   // The searches that led to the most connections on top, then those that
   // found the most people. Paused ones last. Runs take them in much the
@@ -94,13 +96,8 @@
   }
 </script>
 
-<div class="view">
-  <div class="view-head">
-    <div>
-      <h1>Searches</h1>
-      <p>A kind of person and a place. Those that led to connections run first.</p>
-    </div>
-  </div>
+<div class="page">
+  <div class="page-body">
 
   <form class="add" onsubmit={add} novalidate>
     <label class="sr-only" for="new-search">New search</label>
@@ -120,14 +117,15 @@
   {:else if !searches.data}
     <Skeleton count={7} />
   {:else if !all.length}
-    <EmptyState icon="sources" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
+    <EmptyState icon="search" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
   {:else}
-    {#if all.length > 8}
+    <div class="group">
+    {#if all.length > 8 || q}
       <SearchInput bind:value={q} placeholder="Find a search" label="Find a search" />
     {/if}
     <p class="summary">{plural(all.length, 'search', 'searches')}{connecting ? `, ${connecting} led to connections` : ''}{paused ? `, ${paused} paused` : ''}</p>
     {#if !shown.length}
-      <EmptyState icon="sources" title="No search matches" text="Try another word." />
+      <EmptyState icon="search" title="No search matches" text="Try another word." />
     {:else}
       <ul class="list">
         {#each shown as s (s.id)}
@@ -139,7 +137,7 @@
                 <span class="ellipsis note" class:bad={s.health === 'error'} title={s.health_note}>{s.health_note}</span>
               {/if}
             </span>
-            <button class="btn sm toggle" type="button" onclick={() => toggle(s)} disabled={busy === s.id}
+            <button class="btn sm quiet toggle" type="button" onclick={() => toggle(s)} disabled={busy === s.id}
               title={s.status === 'retired' ? 'Runs take this search again' : 'Runs leave this search out until you resume it'}>
               {s.status === 'retired' ? 'Resume' : 'Pause'}
             </button>
@@ -147,14 +145,16 @@
         {/each}
       </ul>
     {/if}
+    </div>
   {/if}
+</div>
 </div>
 
 <style>
   .add { display: flex; gap: 8px; }
   .add .input { flex: 1; min-width: 0; }
   .add .btn { flex: none; min-width: 6.4em; justify-content: center; }
-  .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
+  .summary { font-size: 13px; color: var(--ink-2); }
   .search {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
     padding: 12px 16px;

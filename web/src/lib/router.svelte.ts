@@ -17,7 +17,8 @@ class Router {
       if (!a || a.target || a.hasAttribute('download') || a.origin !== location.origin) return
       if (a.pathname.startsWith('/api/')) return
       e.preventDefault()
-      this.go(a.pathname + a.search)
+      // The hash goes along, so a link can point at one part of a page.
+      this.go(a.pathname + a.search + a.hash)
     })
   }
 
@@ -27,7 +28,7 @@ class Router {
   }
 
   go(to: string, opts: { replace?: boolean } = {}) {
-    if (to === location.pathname + location.search) return
+    if (to === location.pathname + location.search + location.hash) return
     if (opts.replace) history.replaceState(null, '', to)
     else history.pushState(null, '', to)
     const prev = this.path

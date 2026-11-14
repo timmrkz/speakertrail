@@ -78,9 +78,10 @@ docker volume rm speakertrail_postgres
 | `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
 | `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
-| `make test` | `unit` and `interface` |
+| `make test` | `unit`, `interface` and `walks` |
 | `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
 | `make interface` | a type check of the interface |
+| `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/` |
 | `make check` | what this machine has and still needs |
 | `make clean` | removes what make built. The app's file stays |
 | `make help` | this list |

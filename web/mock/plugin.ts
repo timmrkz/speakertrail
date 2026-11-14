@@ -42,7 +42,7 @@ interface PersonRow {
   connected?: boolean
   // What the confirmed LinkedIn profile says, for people a profile search
   // found.
-  linkedin?: Person['linkedin']
+  linkedin?: Omit<NonNullable<Person['linkedin']>, 'url'>
   searchId?: number
 }
 
@@ -267,7 +267,11 @@ function personList(s: State, p: PersonRow): Person {
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
       : null,
     profiles: p.profiles,
-    linkedin: p.linkedin ?? null,
+    // Like the server: no facts from a profile Tim said is someone else's.
+    linkedin: (() => {
+      const l = p.profiles.find((x) => x.platform === 'linkedin')
+      return p.linkedin && l && l.review !== 'rejected' ? { ...p.linkedin, url: l.url } : null
+    })(),
     // Founders of a startup come with what its lookup saw, like the server.
     activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
@@ -432,6 +436,11 @@ const ROUTES: [string, RegExp, Handler][] = [
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
   }],
+  // The title bar, like chromeAPI in cmd/speakertrail-app/chrome.go, as
+  // macOS answered on Tim's Mac in FrameFairy's walks: a title bar 30 high
+  // and the three buttons from 12 to 72. The mock draws no buttons, but
+  // the bar and the name stand where they do on the Mac.
+  ['GET', /^\/api\/chrome$/, () => ok({ bar: 30, left: 12, right: 72 })],
   // Updates, like cmd/speakertrail-app/updates_api.go: a build of pull
   // request 9 that follows its channel. Check finds nothing newer. Picking
   // another channel looks, downloads it over six seconds and has it ready.
@@ -629,7 +638,26 @@ const ROUTES: [string, RegExp, Handler][] = [
     exaKey = String(b.key ?? '').trim()
     return { status: 204 }
   }],
+  ['GET', /^\/api\/linkedin$/, () => ok(where())],
+  ['PUT', /^\/api\/linkedin$/, (_s, _m, _q, b) => {
+    const known = browsers.find((x) => x.app === b.app)?.profiles.some((p) => p.folder === b.folder)
+    if (!known) return err(400, `There is no such profile in ${b.app}`)
+    Object.assign(linkedin, { app: String(b.app), folder: String(b.folder) })
+    return ok(where())
+  }],
+  // The mock opens nothing. It answers as the app does, a moment later.
+  ['POST', /^\/api\/people\/(\d+)\/linkedin$/, (s, m) => {
+    const l = s.people.find((p) => p.id === Number(m[1]))?.profiles.find((x) => x.platform === 'linkedin')
+    if (!l || l.review === 'rejected') return err(404, 'This person has no LinkedIn profile')
+    if (!linkedin.folder) return { status: 409, body: { error: 'Choose in Settings where LinkedIn opens', choose: true } }
+    return { status: 204 }
+  }],
 ]
+
+// The mock's Mac: Chrome with two invented profiles, nothing chosen yet.
+const browsers = [{ app: 'Google Chrome', profiles: [{ folder: 'Default', name: 'Privat' }, { folder: 'Profile 1', name: 'Arbeit' }] }]
+const linkedin = { app: 'Google Chrome', folder: '' }
+const where = () => ({ ...linkedin, known: browsers.some((b) => b.app === linkedin.app && b.profiles.some((p) => p.folder === linkedin.folder)), browsers })
 
 // The mock's Exa key, saved as the app saves it in the keychain.
 let exaKey = 'invented'

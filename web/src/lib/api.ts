@@ -73,6 +73,19 @@ export interface UpdateChannel {
   conflict: boolean
 }
 
+// Where macOS put the title bar and its buttons, in whole CSS pixels, as
+// cmd/speakertrail-app/chrome.go says. All zeros means the system draws
+// its own title bar, which is every other system, and then the
+// stylesheet keeps its own numbers.
+export interface Chrome {
+  // The title bar's height, which is the height of the bar the app draws.
+  bar: number
+  // The left edge of the first of those buttons and the right edge of the
+  // last, so the name of what is on screen starts after them.
+  left: number
+  right: number
+}
+
 export type UpdatePhase = '' | 'checking' | 'current' | 'gone' | 'downloading' | 'ready' | 'failed'
 
 export interface UpdateState {
@@ -155,6 +168,8 @@ export interface Person {
 }
 
 export interface LinkedInFacts {
+  // The profile the LinkedIn button shows and opens.
+  url: string
   // The likely year of birth, and the step on the profile that shows it.
   born_about: number | null
   age_reason: string
@@ -331,9 +346,12 @@ export interface Setting {
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  // The app needs a choice in Settings first, like where LinkedIn opens.
+  choose: boolean
+  constructor(status: number, message: string, choose = false) {
     super(message)
     this.status = status
+    this.choose = choose
   }
 }
 
@@ -360,17 +378,32 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
   if (!res.ok) {
     let message = `Request failed with status ${res.status}`
+    let choose = false
     try {
       const data = await res.json()
       if (data && typeof data.error === 'string') message = data.error
+      choose = data?.choose === true
     } catch {
       // Not JSON. Keep the generic message.
     }
-    throw new ApiError(res.status, message)
+    throw new ApiError(res.status, message, choose)
   }
   if (res.status === 204) return undefined as T
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
+}
+
+export interface BrowserProfile {
+  folder: string
+  name: string
+}
+
+export interface LinkedinWhere {
+  app: string
+  folder: string
+  // Whether the chosen profile is still there.
+  known: boolean
+  browsers: { app: string; profiles: BrowserProfile[] }[]
 }
 
 export const api = {
@@ -395,6 +428,12 @@ export const api = {
   // Saves the Exa key in the keychain. An empty key removes it.
   setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
+  // Where LinkedIn opens: the browser and its profile, and what this Mac has.
+  linkedin: () => request<LinkedinWhere>('GET', '/api/linkedin'),
+  setLinkedin: (app: string, folder: string) => request<LinkedinWhere>('PUT', '/api/linkedin', { app, folder }),
+  // Opens a profile link in the chosen browser profile.
+  openLinkedin: (id: number) => request<void>('POST', `/api/people/${id}/linkedin`, {}),
+  chrome: () => request<Chrome>('GET', '/api/chrome'),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),

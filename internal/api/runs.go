@@ -221,15 +221,21 @@ func (a *API) run(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusOK, out)
 }
 
+// plain says whether a setting is one of the plain settings. Where
+// LinkedIn opens is one menu of its own, GET and PUT /api/linkedin, which
+// checks that the profile is there, so it is neither listed nor set here.
+func plain(key string) bool {
+	return !strings.HasPrefix(key, "linkedin_")
+}
+
 func (a *API) settings(w http.ResponseWriter, r *http.Request) {
 	var out struct {
 		Settings []store.Setting `json:"settings"`
 	}
 	out.Settings = []store.Setting{}
 	a.Store.Read(func(d *store.Data) {
-		// Where LinkedIn opens is one menu of its own, GET /api/linkedin.
 		for _, s := range d.AllSettings() {
-			if !strings.HasPrefix(s.Key, "linkedin_") {
+			if plain(s.Key) {
 				out.Settings = append(out.Settings, s)
 			}
 		}
@@ -247,7 +253,7 @@ func (a *API) patchSetting(w http.ResponseWriter, r *http.Request) {
 	}
 	var out store.Setting
 	if !a.update(w, r, func(d *store.Data) error {
-		if _, ok := d.Setting(key); !ok {
+		if _, ok := d.Setting(key); !ok || !plain(key) {
 			return errNotFound
 		}
 		if err := d.SetSetting(key, body.Value, a.Store.Now()); err != nil {

@@ -103,7 +103,8 @@ the app was closed while it went.
 `GET /api/settings` lists every setting with its value and what it
 does, except where LinkedIn opens, which has its own endpoints below.
 `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A value of the
-wrong kind gets 400, an unknown key 404.
+wrong kind gets 400, an unknown key 404, and so does where LinkedIn opens,
+which only `PUT /api/linkedin` sets.
 
 `GET /api/keys` says whether the Exa key is saved and how many searches
 this month used, never the key itself:

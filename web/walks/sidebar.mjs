@@ -9,6 +9,15 @@
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import { fileURLToPath } from 'node:url'
+import { existsSync } from 'node:fs'
+
+// Without Playwright's Chromium there is nothing to walk in. Say so in one
+// line rather than in a stack trace. CI installs it, a cloud session gets
+// it from scripts/cloud-setup.sh.
+if (!existsSync(chromium.executablePath())) {
+  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
+  process.exit(1)
+}
 
 const web = fileURLToPath(new URL('..', import.meta.url))
 process.env.MOCK = '1'

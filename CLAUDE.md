@@ -29,6 +29,7 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
+| opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |

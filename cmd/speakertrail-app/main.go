@@ -105,9 +105,9 @@ func main() {
 		Mac: application.MacWindow{
 			Backdrop: application.MacBackdropNormal,
 			// The page reaches up under the title bar, the way Mail and
-			// FrameFairy look: the sidebar runs to the top with the close,
-			// minimise and zoom buttons on it, and every pane starts with
-			// a bar of the same height, see --bar-h in web/src/app.css.
+			// FrameFairy look: the title bar is the page's own, --bar-h
+			// tall in web/src/app.css, with the close, minimise and zoom
+			// buttons on it and the screen's name beside them.
 			// Hidden, not HiddenInset: a toolbar makes macOS push the
 			// buttons further in than Terminal's, which FrameFairy measured
 			// and found reads as wrong. A click in the top 28 points still

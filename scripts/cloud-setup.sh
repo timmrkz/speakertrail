@@ -10,11 +10,13 @@
 # - installs GTK 4 and WebKitGTK 6, which the app's window compiles against
 #   on Linux. The window cannot be opened here, but its code builds and its
 #   tests run
+# - installs Playwright's Chromium for the walks, unless the image has it
 #
 # A failed step never stops the session. Its log stays in /tmp, and running
 # this script again inside a session finishes the job.
 
 GO_VERSION=1.27.1
+PLAYWRIGHT_VERSION=1.63.0
 
 log() { echo "[speakertrail setup] $*"; }
 
@@ -51,6 +53,18 @@ install_webview() {
 		pkg-config libgtk-4-dev libwebkitgtk-6.0-dev
 }
 
+# The walks run in Playwright's Chromium. Many cloud images carry it
+# already, then nothing is installed. The script runs before the
+# repository is there, so the version is written here, the same as
+# playwright in web/package.json.
+install_chromium() {
+	local dir=${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}
+	if compgen -G "$dir/chromium-*" >/dev/null; then
+		return 0
+	fi
+	npx --yes "playwright@$PLAYWRIGHT_VERSION" install --with-deps chromium
+}
+
 install_go >/tmp/speakertrail-setup-go.log 2>&1 &
 go_job=$!
 install_webview >/tmp/speakertrail-setup-webview.log 2>&1 &
@@ -61,6 +75,12 @@ if wait "$go_job"; then
 else
 	log "Go failed, see /tmp/speakertrail-setup-go.log:"
 	tail -n 20 /tmp/speakertrail-setup-go.log
+fi
+if install_chromium >/tmp/speakertrail-setup-chromium.log 2>&1; then
+	log "Chromium ready, for the walks"
+else
+	log "Chromium failed, see /tmp/speakertrail-setup-chromium.log:"
+	tail -n 20 /tmp/speakertrail-setup-chromium.log
 fi
 if wait "$webview_job"; then
 	log "GTK 4 and WebKitGTK 6 ready, for the app's window"

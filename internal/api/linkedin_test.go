@@ -70,6 +70,15 @@ func TestLinkedInOpensInTheChosenProfile(t *testing.T) {
 			t.Error("the profile shows among the plain settings")
 		}
 	}
+	// Where LinkedIn opens is chosen only through PUT /api/linkedin, which
+	// checks the profile is there. A plain setting would skip that check.
+	if code := call(t, a, "PATCH", "/api/settings/linkedin_profile", `{"value":"Profile 9"}`, nil); code != http.StatusNotFound {
+		t.Errorf("the profile set as a plain setting: %d", code)
+	}
+	call(t, a, "GET", "/api/linkedin", "", &where)
+	if where.Folder != "Profile 1" {
+		t.Errorf("the profile after a plain setting: %+v", where)
+	}
 }
 
 func TestLinkedInFromSeveralAtOnce(t *testing.T) {

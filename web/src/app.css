@@ -2,31 +2,42 @@
 
 :root {
   color-scheme: light;
-  --bg: #f3f5f8;
-  --surface: #ffffff;
-  --surface-2: #eef1f6;
-  --ink: #141b26;
-  --ink-2: #4a5566;
-  --ink-3: #6b7689;
-  --line: #dde2ea;
-  --line-strong: #c5ccd8;
-  --accent: #2448b8;
-  --accent-soft: #e4eaf9;
+  /* Morning Mist: fog over a cool morning, faint contour lines for
+     structure, frosted panes over it. */
+  --bg: #e9eef2;
+  --surface: #f7f9fa;
+  --surface-2: #e6ecf0;
+  /* A pane over the mist is frosted glass: it lets the mist through,
+     blurred, and has a bright edge on top. */
+  --glass: rgba(255, 255, 255, .55);
+  --glass-hi: rgba(255, 255, 255, .9);
+  --frost: blur(24px) saturate(140%);
+  --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28110%2C140%2C158%2C.22%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
+    radial-gradient(50% 55% at 12% 78%, #CFDDE6, transparent 70%),
+    radial-gradient(45% 50% at 62% 4%, #DCE6EC, transparent 70%),
+    radial-gradient(45% 50% at 90% 92%, #C9D9DF, transparent 70%);
+  --ink: #1e2a33;
+  --ink-2: #4a5864;
+  --ink-3: #647380;
+  --line: rgba(30, 42, 51, .1);
+  --line-strong: rgba(30, 42, 51, .2);
+  --accent: #3a7685;
+  --accent-soft: rgba(62, 124, 140, .13);
   --accent-ink: #ffffff;
-  --good: #1f7a4d;
-  --good-soft: #e0f2e8;
+  --good: #2e7553;
+  --good-soft: rgba(59, 132, 98, .14);
   --warn: #8a5100;
-  --warn-soft: #fbefd9;
+  --warn-soft: #f6ead4;
   --bad: #b3261e;
-  --bad-soft: #fbe4e2;
-  --series-1: #2448b8;
-  --series-2: #eb6834;
-  --scrim: rgba(10, 14, 20, .45);
-  --shadow: 0 1px 2px rgba(20, 27, 38, .06), 0 4px 16px rgba(20, 27, 38, .06);
-  --shadow-lg: 0 8px 40px rgba(20, 27, 38, .18);
+  --bad-soft: #f7e1df;
+  --series-1: #3a7685;
+  --series-2: #d9824a;
+  --scrim: rgba(20, 32, 42, .35);
+  --shadow: 0 1px 2px rgba(30, 42, 51, .05), 0 10px 30px rgba(52, 72, 90, .1);
+  --shadow-lg: 0 8px 40px rgba(30, 42, 51, .18);
   --radius: 10px;
   --control-h: 36px;
-  --seg-on: #ffffff;
+  --seg-on: rgba(255, 255, 255, .95);
   --gutter: 32px;
   /* The window's grid. Every pane starts with a bar --bar-h tall, which is
      where the title bar's buttons sit on macOS, see main.go. Everything in
@@ -45,7 +56,7 @@
   /* A page of its own, Searches, Settings and Updates, reads in a column
      this wide at most, centred in the window. */
   --col-w: 720px;
-  --side: #eceff4;
+  --side: rgba(255, 255, 255, .45);
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the
      two ends of the wash a fill lays over what is done. */
@@ -59,58 +70,78 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #0e131b;
-    --surface: #161d28;
-    --surface-2: #1d2634;
-    --ink: #e8edf5;
-    --ink-2: #aab4c4;
-    --ink-3: #8c97aa;
-    --line: #2a3445;
-    --line-strong: #3a4659;
-    --accent: #7c9bff;
-    --accent-soft: #1f2a4a;
-    --accent-ink: #0e131b;
-    --good: #5cc98f;
-    --good-soft: #15321f;
-    --warn: #e7aa4c;
-    --warn-soft: #3a2a10;
+    /* Dusk Fog: night fog in deep blue, smoked glass, a warm amber for what
+       matters. */
+    --bg: #12141f;
+    --surface: #1c2030;
+    --surface-2: #252a3d;
+    --glass: rgba(30, 34, 52, .6);
+    --glass-hi: rgba(255, 255, 255, .07);
+    --frost: blur(28px) saturate(130%);
+    --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28180%2C195%2C230%2C.07%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
+      radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
+      radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
+      radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
+      radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
+    --ink: #eef0f6;
+    --ink-2: #b4b9cc;
+    --ink-3: #8c92a8;
+    --line: rgba(255, 255, 255, .09);
+    --line-strong: rgba(255, 255, 255, .17);
+    --accent: #f0a868;
+    --accent-soft: rgba(240, 168, 104, .14);
+    --accent-ink: #2a1a08;
+    --good: #7fd1a8;
+    --good-soft: rgba(127, 209, 168, .14);
+    --warn: #e9c46a;
+    --warn-soft: rgba(233, 196, 106, .14);
     --bad: #f08a82;
-    --bad-soft: #3c1a18;
-    --series-1: #5b7ef0;
-    --series-2: #d95926;
-    --scrim: rgba(0, 0, 0, .6);
-    --seg-on: #34405a;
-    --side: #121822;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
-    --shadow-lg: 0 8px 40px rgba(0, 0, 0, .5);
+    --bad-soft: rgba(240, 138, 130, .14);
+    --series-1: #f0a868;
+    --series-2: #7fa8f0;
+    --scrim: rgba(0, 0, 0, .55);
+    --seg-on: rgba(255, 255, 255, .12);
+    --side: rgba(22, 25, 38, .7);
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 36px rgba(0, 0, 0, .35);
+    --shadow-lg: 0 8px 40px rgba(0, 0, 0, .55);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0e131b;
-  --surface: #161d28;
-  --surface-2: #1d2634;
-  --ink: #e8edf5;
-  --ink-2: #aab4c4;
-  --ink-3: #8c97aa;
-  --line: #2a3445;
-  --line-strong: #3a4659;
-  --accent: #7c9bff;
-  --accent-soft: #1f2a4a;
-  --accent-ink: #0e131b;
-  --good: #5cc98f;
-  --good-soft: #15321f;
-  --warn: #e7aa4c;
-  --warn-soft: #3a2a10;
+  /* Dusk Fog: night fog in deep blue, smoked glass, a warm amber for what
+     matters. */
+  --bg: #12141f;
+  --surface: #1c2030;
+  --surface-2: #252a3d;
+  --glass: rgba(30, 34, 52, .6);
+  --glass-hi: rgba(255, 255, 255, .07);
+  --frost: blur(28px) saturate(130%);
+  --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28180%2C195%2C230%2C.07%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
+    radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
+    radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
+    radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
+    radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
+  --ink: #eef0f6;
+  --ink-2: #b4b9cc;
+  --ink-3: #8c92a8;
+  --line: rgba(255, 255, 255, .09);
+  --line-strong: rgba(255, 255, 255, .17);
+  --accent: #f0a868;
+  --accent-soft: rgba(240, 168, 104, .14);
+  --accent-ink: #2a1a08;
+  --good: #7fd1a8;
+  --good-soft: rgba(127, 209, 168, .14);
+  --warn: #e9c46a;
+  --warn-soft: rgba(233, 196, 106, .14);
   --bad: #f08a82;
-  --bad-soft: #3c1a18;
-  --series-1: #5b7ef0;
-  --series-2: #d95926;
-  --scrim: rgba(0, 0, 0, .6);
-  --seg-on: #34405a;
-  --side: #121822;
-  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 16px rgba(0, 0, 0, .25);
-  --shadow-lg: 0 8px 40px rgba(0, 0, 0, .5);
+  --bad-soft: rgba(240, 138, 130, .14);
+  --series-1: #f0a868;
+  --series-2: #7fa8f0;
+  --scrim: rgba(0, 0, 0, .55);
+  --seg-on: rgba(255, 255, 255, .12);
+  --side: rgba(22, 25, 38, .7);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 36px rgba(0, 0, 0, .35);
+  --shadow-lg: 0 8px 40px rgba(0, 0, 0, .55);
 }
 
 * { box-sizing: border-box; }
@@ -118,7 +149,7 @@ html { -webkit-text-size-adjust: 100%; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
-  background: var(--surface);
+  background: var(--bg);
   color: var(--ink);
   font: 15px/1.5 var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -161,14 +192,17 @@ button { -webkit-tap-highlight-color: transparent; }
 .stack { display: grid; gap: 10px; min-width: 0; }
 
 /* Panels and lists */
+/* A panel is frosted glass over the mist, with a bright edge on top. */
 .panel {
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
+  background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
+  box-shadow: inset 0 1px var(--glass-hi), var(--shadow);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 18px;
   display: grid; gap: 14px; min-width: 0; align-content: start;
 }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
-.list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.list { background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .list > * + * { border-top: 1px solid var(--line); }
 .row-btn {
   display: grid; width: 100%; padding: 12px 16px; border: 0; background: none; text-align: left; cursor: pointer;
@@ -187,7 +221,10 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .btn:hover { background: var(--surface-2); text-decoration: none; }
 .btn:disabled { opacity: .55; cursor: default; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
+  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
+}
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
 .btn.good[aria-pressed="true"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .btn.bad[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }

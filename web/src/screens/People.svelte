@@ -345,7 +345,7 @@
      Closed, it is not there at all. */
   /* Its body scrolls, not the pane, so the edge can reach out over the
      list a little and still be caught. */
-  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--surface); }
+  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi); }
   .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
   .detail-top, .detail-body { min-width: var(--pane-w, 0); }
   .dragging, .dragging * { cursor: col-resize !important; user-select: none; }

@@ -124,12 +124,18 @@
 </div>
 
 <style>
-  .shell { display: flex; flex-direction: column; height: 100dvh; background: var(--surface); }
+  /* The mist lies behind the whole window, and every pane over it is
+     frosted, see --mist and --frost in app.css. */
+  .shell {
+    display: flex; flex-direction: column; height: 100dvh;
+    background: var(--mist), var(--bg); background-size: 100% 100%;
+  }
 
   /* The title bar: what the app is dragged by, and where macOS puts its
      three buttons. The name starts one space after them. */
   .titlebar {
     flex: none; position: relative; height: var(--bar-h); background: var(--side);
+    backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
     box-shadow: inset 0 -1px var(--line); --wails-draggable: drag;
   }
   .titlebar .name {
@@ -149,6 +155,7 @@
   aside {
     position: absolute; top: 0; bottom: 0; left: 0; z-index: 20; width: var(--rail);
     display: flex; flex-direction: column; background: var(--side);
+    backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
     /* The line at the edge is drawn inside rather than as a border, so the
        rail is 44 px of room for the icons and not 43, and an icon sits on
        whole pixels in the middle of it. */

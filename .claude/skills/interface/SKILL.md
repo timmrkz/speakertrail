@@ -99,6 +99,21 @@ every two seconds, like the app's. Probe the step text, the fill width
 and the time left over the whole run and see that the fill only grows and
 the time left only shrinks.
 
+## The look
+
+Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
+mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
+
+- **The mist lies behind the window.** `--mist` in `app.css` draws the
+  fog and its faint contour lines, once, on the shell. Nothing else draws
+  a background picture.
+- **Panes over it are frosted.** The sidebar, the title bar, the person's
+  pane, panels and lists use `--glass` or `--side` with
+  `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
+  `--surface`, so text over moving content is always readable.
+- **Every colour has a light and a dark value.** Check both, and check that
+  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
+
 ## What to report
 
 What changed, the screenshots before and after, the measurement that proves

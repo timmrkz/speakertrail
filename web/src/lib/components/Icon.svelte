@@ -31,6 +31,8 @@
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Ban from '@lucide/svelte/icons/ban'
+  import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open'
+  import PanelLeftClose from '@lucide/svelte/icons/panel-left-close'
   import type { Component } from 'svelte'
 
   const glyphs = {
@@ -66,6 +68,10 @@
     more: Ellipsis,
     trash: Trash2,
     exclude: Ban,
+    // The button at the top of the sidebar, as FrameFairy draws it: a
+    // panel opening while the sidebar is not kept, closing while it is.
+    'sidebar-keep': PanelLeftOpen,
+    'sidebar-close': PanelLeftClose,
   } satisfies Record<string, Component<any>>
 
   export type IconName = keyof typeof glyphs

@@ -34,7 +34,10 @@
      in a bar lines up with the list or the page under it. */
   --bar-h: 44px;
   --pad: 20px;
-  --side-w: 216px;
+  --side-w: 232px;
+  /* The sidebar shut: a column of icons, each in a 36 px box with 4 on
+     either side, as FrameFairy has it. */
+  --rail: 44px;
   --list-w: 380px;
   /* Room the close, minimise and zoom buttons take in the top left corner,
      16 in, three of 12 with 8 between, and a space after. */
@@ -369,17 +372,13 @@ button { -webkit-tap-highlight-color: transparent; }
 a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-drag; }
 /* A page of its own: the bar runs the width of the window, and what is in
    it stands in the same centred column as the page under it. */
-.page { display: flex; flex-direction: column; min-height: 100dvh; min-width: 0; }
+.page { display: flex; flex-direction: column; min-height: 100%; min-width: 0; }
 .page > .bar { padding: 0 max(var(--pad), calc((100% - var(--col-w)) / 2)); }
 .page-body {
   width: 100%; max-width: calc(var(--col-w) + 2 * var(--pad)); margin: 0 auto;
   padding: 24px var(--pad) 64px; display: grid; gap: 24px; align-content: start; min-width: 0;
 }
-@media (max-width: 760px) {
-  /* No sidebar: the title bar's buttons stand over the bar itself. */
-  .bar, .page > .bar { padding-left: var(--lights-r); }
-  .page-body { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
-}
+
 /* An icon button at the end of a bar: its glyph, not its box, lines up
    with the edge of what is under it, the way a Mac toolbar does it. */
 .btn.icon.flush-end { margin-right: calc((16px - var(--control-h)) / 2); }

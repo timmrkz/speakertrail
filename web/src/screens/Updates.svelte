@@ -113,9 +113,6 @@
 </script>
 
 <div class="page">
-  <header class="bar">
-    <h1 title="This build, and where the next one comes from.">Updates</h1>
-  </header>
   <div class="page-body">
 
   {#if problem}<p class="field-error" role="alert">{problem}</p>{/if}

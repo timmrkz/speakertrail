@@ -97,9 +97,6 @@
 </script>
 
 <div class="page">
-  <header class="bar">
-    <h1 title="A kind of person and a place. Those that led to connections run first.">Searches{#if searches.data}<span class="num-count">{all.length}</span>{/if}</h1>
-  </header>
   <div class="page-body">
 
   <form class="add" onsubmit={add} novalidate>

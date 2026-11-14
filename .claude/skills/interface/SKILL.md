@@ -29,6 +29,13 @@ HTTP from a small program in the scratchpad, with the interface from
 finder that returns invented profiles, the way `internal/api/api_test.go`
 does. Never real names, not even in a scratch file.
 
+What has to keep working is a walk in `web/walks/`, run by `make walks`
+and by CI: it starts the mock itself, drives Chromium, plays what macOS
+and WebKit hand the app, and checks what the interface did, never waiting
+on the clock. The sidebar's walks are ported from FrameFairy's
+`frontend/preview/walks`. A walk is proven by making it fail on the code
+before the fix.
+
 Look at every change at 390 by 844, the narrowest window, and at 1280 by 900, in
 light and in dark. Probes and screenshots go in the scratchpad, not in the
 repository.
@@ -75,7 +82,7 @@ Fairy's rules, without its styling:
   whole minutes from a minute on, and it counts down between answers.
   Until there is anything to measure against, it says so.
 - **Work out of sight pulses.** `.dot.busy` on the place that leads to it,
-  like Runs in the sidebar and in the narrow window's tab bar.
+  like People on the sidebar's rail.
 - **One watch, one state.** The going run comes from `runWatch` in
   `lib/run.svelte.ts`, for every screen and the dot alike, so no screen
   shows a state another has left. A screen that shows the run calls

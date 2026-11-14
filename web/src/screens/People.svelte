@@ -226,16 +226,6 @@
 <div class="people" class:wide class:open={wide && openId !== null} class:dragging bind:this={peopleEl} bind:clientWidth={width}
   style:--detail-w="{percent}%">
   <section class="list-pane" aria-label="People">
-    <header class="bar">
-      <h1>People{#if counts}<span class="num-count">{counts.all}</span>{/if}</h1>
-      <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
-        disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
-        title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
-        {#if going}<Busy fraction={runShare(going)} />{/if}
-        <Icon name={going ? 'stop' : 'run'} />{runLabel}
-      </button>
-    </header>
-
     <div class="controls">
       <div class="toolbar tight">
         <SearchInput bind:value={q} placeholder="Search people" label="Search people" onsearch={(v) => (query = v)} />
@@ -248,6 +238,12 @@
             <option value="name">Name</option>
           </select>
         </label>
+        <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
+        disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
+        title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
+        {#if going}<Busy fraction={runShare(going)} />{/if}
+        <Icon name={going ? 'stop' : 'run'} />{runLabel}
+        </button>
       </div>
       <div class="segmented filters" role="group" aria-label="Show">
         {#each filters as f (f.value)}
@@ -315,10 +311,11 @@
         onpointerdown={startDrag} onkeydown={edgeKey} ondblclick={() => setShare(0.45)}>
         {#if dragging}<span class="share">{percent} %</span>{/if}
       </div>
-      <header class="bar">
-        <span class="grow"></span>
+      <!-- The cross stands in the row the list's controls stand in, the
+           same height, its glyph on the edge of the person under it. -->
+      <div class="detail-top">
         <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
-      </header>
+      </div>
       <div class="detail-body">
         {#key openId}
           <PersonDetail id={openId} onupdate={updated} />
@@ -341,8 +338,8 @@
 <style>
   /* The list on the left and the person on the right, each a pane of its
      own that scrolls by itself, the way Mail is laid out. */
-  .people { display: flex; height: 100dvh; min-width: 0; }
-  .list-pane, .detail-pane { min-width: 0; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+  .people { display: flex; height: 100%; min-width: 0; }
+  .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
   .list-pane { flex: 1 1 0; container-type: inline-size; }
   /* The person comes in from the right and takes its share of the width.
      Closed, it is not there at all. */
@@ -350,7 +347,7 @@
      list a little and still be caught. */
   .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--surface); }
   .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
-  .detail-pane > .bar, .detail-body { min-width: var(--pane-w, 0); }
+  .detail-top, .detail-body { min-width: var(--pane-w, 0); }
   .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
   /* The edge to drag: wider than the line it sits on, so it is easy to
      catch, and lit while it is held or has the keyboard. */
@@ -366,7 +363,7 @@
   .dragging .edge::after, .edge:focus-visible::after { background: var(--accent); }
   .edge:focus-visible { outline: none; }
   .share {
-    position: absolute; top: calc(var(--bar-h) + 10px); left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+    position: absolute; top: 14px; left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
   }
   /* Where everything in the list pane starts and ends. In a window too
@@ -374,8 +371,6 @@
      column as the other pages. */
   .list-pane { --x: var(--pad); }
   .people:not(.wide) .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .list-pane > .bar { position: sticky; top: 0; z-index: 2; background: var(--surface); padding-inline: var(--x); }
-  @media (max-width: 760px) { .list-pane > .bar { padding-left: var(--lights-r); } }
   .controls { display: grid; gap: 10px; padding: 14px var(--x) 10px; }
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -401,6 +396,14 @@
     gap: 2px 8px; padding: 9px 12px; border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; align-items: center;
   }
   .who { grid-area: who; } .sub { grid-area: sub; } .age { grid-area: age; } .city { display: none; }
+  /* A narrow list gives the search field a line of its own, and the
+     order and Run share the next, the same size. */
+  @container (max-width: 520px) {
+    .controls .toolbar { flex-wrap: wrap; }
+    .controls .toolbar > :global(.search) { flex: 1 1 100%; }
+    .controls .sort, .controls .start { flex: 1 1 0; }
+    .controls .sort .select { width: 100%; }
+  }
   @container (min-width: 760px) {
     .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
     .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
@@ -418,10 +421,9 @@
   .age { text-align: right; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
   .sub { font-size: 13px; color: var(--ink-2); }
   .prow[aria-current="true"] .sub, .prow[aria-current="true"] .age { color: var(--ink-2); }
-  .grow { flex: 1 1 auto; }
   /* The person stands in a column of its own width, and the cross in the
      bar over it ends where the column ends. */
-  .detail-pane > .bar { padding-inline: var(--dx); }
+  .detail-top { flex: none; display: flex; justify-content: flex-end; align-items: center; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
   .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
-  .detail-body { padding: 28px var(--dx) 48px; }
+  .detail-body { padding: 0 var(--dx) 48px; }
 </style>

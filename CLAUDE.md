@@ -176,6 +176,9 @@ messages, pull request text, code comments and chat replies.
   are the same size, in the same colour, in the same place.
 - Colours and sizes come from the tokens in `web/src/app.css`, in both
   themes. Tabular figures for times and counts.
+- **Quiet marks.** No outline rings for focus and no lines or patterns in
+  the background. What is in hand gets a faint tint, see the interface
+  skill.
 
 ## Engineering rules
 

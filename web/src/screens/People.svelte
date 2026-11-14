@@ -136,7 +136,14 @@
     const at = list.findIndex((p) => p.id === openId)
     const next = at < 0 ? 0 : Math.max(0, Math.min(list.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))
     navigate(`/app/people/${list[next].id}`, { replace: at >= 0 })
-    requestAnimationFrame(() => document.getElementById(`person-row-${list[next].id}`)?.scrollIntoView({ block: 'nearest' }))
+    // The keyboard goes with the person, so a row the pointer clicked
+    // does not stay marked as the one in hand.
+    const inList = !!t?.closest('.prow')
+    requestAnimationFrame(() => {
+      const row = document.getElementById(`person-row-${list[next].id}`)
+      row?.scrollIntoView({ block: 'nearest' })
+      if (inList) row?.focus({ preventScroll: true })
+    })
   }
 
   // The person beside the list takes a share of the window that Tim sets
@@ -361,7 +368,6 @@
   }
   .edge:hover::after { background: var(--line-strong); }
   .dragging .edge::after, .edge:focus-visible::after { background: var(--accent); }
-  .edge:focus-visible { outline: none; }
   .share {
     position: absolute; top: 14px; left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -413,7 +419,8 @@
   }
   .prow:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); text-decoration: none; }
   .prow[aria-current="true"] { background: var(--accent-soft); }
-  .prow:focus-visible { outline-offset: -2px; }
+  /* The person open is marked already, the keyboard on it adds nothing. */
+  .prow[aria-current="true"]:focus-visible { background-image: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .name { font-weight: 600; font-size: 14px; }
   .dot.new { width: 7px; height: 7px; background: var(--accent); }

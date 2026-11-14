@@ -105,12 +105,18 @@ Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
 mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
 
 - **The mist lies behind the window.** `--mist` in `app.css` draws the
-  fog and its faint contour lines, once, on the shell. Nothing else draws
-  a background picture.
+  soft fog, once, on the shell. Nothing else draws a background picture.
+  No lines or patterns in it: Tim found the contour lines of the mockup
+  distracting and had them taken out.
 - **Panes over it are frosted.** The sidebar, the title bar, the person's
   pane, panels and lists use `--glass` or `--side` with
   `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
   `--surface`, so text over moving content is always readable.
+- **Focus is never a ring.** Tim found the outlines round focused
+  controls loud and wrong. A field in use shows the accent on its edge,
+  anything else reached with the keyboard a faint wash of the accent laid
+  over its own colour, see `:focus-visible` in `app.css`. What is selected
+  already, like the open person's row, shows nothing more.
 - **Every colour has a light and a dark value.** Check both, and check that
   small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
 

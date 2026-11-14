@@ -2,8 +2,7 @@
 
 :root {
   color-scheme: light;
-  /* Morning Mist: fog over a cool morning, faint contour lines for
-     structure, frosted panes over it. */
+  /* Morning Mist: fog over a cool morning, frosted panes over it. */
   --bg: #e9eef2;
   --surface: #f7f9fa;
   --surface-2: #e6ecf0;
@@ -12,8 +11,7 @@
   --glass: rgba(255, 255, 255, .55);
   --glass-hi: rgba(255, 255, 255, .9);
   --frost: blur(24px) saturate(140%);
-  --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28110%2C140%2C158%2C.22%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
-    radial-gradient(50% 55% at 12% 78%, #CFDDE6, transparent 70%),
+  --mist: radial-gradient(50% 55% at 12% 78%, #CFDDE6, transparent 70%),
     radial-gradient(45% 50% at 62% 4%, #DCE6EC, transparent 70%),
     radial-gradient(45% 50% at 90% 92%, #C9D9DF, transparent 70%);
   --ink: #1e2a33;
@@ -78,8 +76,7 @@
     --glass: rgba(30, 34, 52, .6);
     --glass-hi: rgba(255, 255, 255, .07);
     --frost: blur(28px) saturate(130%);
-    --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28180%2C195%2C230%2C.07%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
-      radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
+    --mist: radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
       radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
       radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
       radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
@@ -116,8 +113,7 @@
   --glass: rgba(30, 34, 52, .6);
   --glass-hi: rgba(255, 255, 255, .07);
   --frost: blur(28px) saturate(130%);
-  --mist: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 760' preserveAspectRatio='none' fill='none' stroke='rgba%28180%2C195%2C230%2C.07%29' stroke-width='1' vector-effect='non-scaling-stroke'%3E%3Cpath d='M-20 520C180 470 320 600 520 540S860 420 1220 500'/%3E%3Cpath d='M-20 560C200 510 340 640 540 580S880 460 1220 540'/%3E%3Cpath d='M-20 600C220 550 360 680 560 620S900 500 1220 580'/%3E%3Cpath d='M-20 140C160 100 360 200 600 150S960 60 1220 120'/%3E%3Cpath d='M-20 180C180 140 380 240 620 190S980 100 1220 160'/%3E%3C/svg%3E"),
-    radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
+  --mist: radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
     radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
     radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
     radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
@@ -165,7 +161,15 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Focus is never a ring around a control. Tim found the rings loud and
+   wrong. A field in use takes the accent on its edge, anything else
+   reached with the keyboard a faint wash of it. */
+:focus, :focus-visible { outline: none; }
+/* Laid over a control's own colour, not in place of it. */
+:is(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
+}
+.btn.primary:focus-visible { filter: brightness(1.08); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }
@@ -209,7 +213,6 @@ button { -webkit-tap-highlight-color: transparent; }
   gap: 12px; align-items: center; color: inherit; font: inherit; text-decoration: none;
 }
 .row-btn:hover { background: var(--surface-2); text-decoration: none; }
-.row-btn:focus-visible { outline-offset: -2px; }
 .row-btn:hover .avatar, .row-btn[aria-current="true"] .avatar { background: var(--surface); }
 .row-btn[aria-current="true"] { background: var(--accent-soft); }
 
@@ -251,6 +254,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea { padding: 9px 12px; resize: vertical; min-height: 76px; line-height: 1.45; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
+.input:focus, .select:focus, .textarea:focus { border-color: var(--accent); }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field > label, .field > .field-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }

@@ -180,12 +180,12 @@
     }
   }
 
-  // The person grows in from the right edge and shrinks back into it. Its
-  // words keep their final width meanwhile, so they slide rather than
-  // wrap anew on every frame.
-  function grow(node: HTMLElement) {
-    const w = node.getBoundingClientRect().width
-    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `flex-basis: ${t * w}px; overflow: hidden; --pane-w: ${w}px` }
+  // The person slides in from the right edge and back out into it. The
+  // pane takes its whole share at once and only moves, so the list beside
+  // it changes its width once, not on every frame, and nothing in it
+  // shuffles while the person comes and goes.
+  function grow(_node: HTMLElement) {
+    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `transform: translateX(${(1 - t) * 100}%)` }
   }
 
   let peopleEl = $state<HTMLElement>()
@@ -345,7 +345,7 @@
 <style>
   /* The list on the left and the person on the right, each a pane of its
      own that scrolls by itself, the way Mail is laid out. */
-  .people { display: flex; height: 100%; min-width: 0; }
+  .people { display: flex; height: 100%; min-width: 0; overflow: hidden; }
   .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
   .list-pane { flex: 1 1 0; container-type: inline-size; }
   /* The person comes in from the right and takes its share of the width.
@@ -354,7 +354,6 @@
      list a little and still be caught. */
   .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi); }
   .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
-  .detail-top, .detail-body { min-width: var(--pane-w, 0); }
   .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
   /* The edge to drag: wider than the line it sits on, so it is easy to
      catch, and lit while it is held or has the keyboard. */

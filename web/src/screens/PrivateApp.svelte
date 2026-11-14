@@ -33,7 +33,7 @@
   // Where the app's updates stand, from the start, so Updates wears a dot
   // when a newer build is coming or ready, or something needs a look.
   $effect(() => {
-    if (ready) return updates.watch()
+    if (ready) return updates.listen()
   })
   let updateDot = $derived(railDot(updates.shown))
 

@@ -435,6 +435,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   // Updates, like cmd/speakertrail-app/updates_api.go: a build of pull
   // request 9 that follows its channel. Check finds nothing newer. Picking
   // another channel looks, downloads it over six seconds and has it ready.
+  // The app sends each change as an event, which the mock cannot, so what
+  // the page shows here moves on only when it asks: on opening the page.
   ['GET', /^\/api\/updates$/, () => ok(updateState())],
   ['POST', /^\/api\/updates\/check$/, () => {
     upd.lookFrom = Date.now()

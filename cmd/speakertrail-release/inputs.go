@@ -35,7 +35,7 @@ import (
 // up by name at run time, with dlsym or NSClassFromString.
 // RegisterEventHotKey is not one of them: Wails links it for global
 // shortcuts, which take only the keys they are registered for, and the app
-// registers none, see the test in internal/inputs.
+// registers none.
 var watching = []string{
 	// Every key and click of every app, with Input Monitoring.
 	"CGEventTapCreate", "CGEventTapCreateForPid", "CGRequestListenEventAccess",
@@ -105,6 +105,11 @@ var asks = []string{}
 // get-task-allow.
 var entitled = []string{}
 
+// maxUnpacked is the most the files of a build may hold once unpacked,
+// all together. The app is some tens of MB. A zip that unpacks to more is
+// not a build, and reading it whole would only fill the runner's memory.
+const maxUnpacked = 1 << 30
+
 // checkInputs reads every file of the zip and says everything in it that
 // could read input meant for other apps, watch the screen or the camera,
 // or ask for administrator rights.
@@ -114,6 +119,15 @@ func checkInputs(zipPath string) error {
 		return fmt.Errorf("the build is not a zip: %w", err)
 	}
 	defer z.Close()
+	// What each file says it holds is checked first, and what it really
+	// holds as it is read, because a zip can say less than it holds.
+	var total uint64
+	for _, f := range z.File {
+		total += f.UncompressedSize64
+		if total > maxUnpacked {
+			return fmt.Errorf("the build unpacks to more than %d MB, which no build of the app does", maxUnpacked>>20)
+		}
+	}
 	// Each file is unpacked and read on its own goroutine: unpacking is
 	// most of the time.
 	type read struct {
@@ -135,10 +149,14 @@ func checkInputs(zipPath string) error {
 				reads[i].err = fmt.Errorf("%s: %w", f.Name, err)
 				return
 			}
-			data, err := io.ReadAll(r)
+			data, err := io.ReadAll(io.LimitReader(r, int64(f.UncompressedSize64)+1))
 			r.Close()
 			if err != nil {
 				reads[i].err = fmt.Errorf("%s: %w", f.Name, err)
+				return
+			}
+			if uint64(len(data)) > f.UncompressedSize64 {
+				reads[i].err = fmt.Errorf("%s: holds more than the zip says it does", f.Name)
 				return
 			}
 			for _, p := range inputsOf(f.Name, data) {
@@ -162,19 +180,30 @@ func checkInputs(zipPath string) error {
 
 // inputsOf says what in one file of the build could read input or ask
 // for administrator rights, or nothing.
+//
+// Every file is read for the names as text, whatever it is: a script or
+// a library the app loads at run time is no Mach-O program and can name
+// them all the same. A file that starts like a Mach-O program and cannot
+// be read as one is refused, because what cannot be read cannot be
+// checked.
 func inputsOf(name string, data []byte) []string {
+	var found []string
+	for _, n := range slices.Concat(watching, raising) {
+		if bytes.Contains(data, []byte(n)) {
+			found = append(found, "names "+n)
+		}
+	}
 	if path.Base(name) == "Info.plist" {
 		keys, err := plistKeys(data)
 		if err != nil {
-			return []string{fmt.Sprintf("cannot be read: %v", err)}
+			return append(found, fmt.Sprintf("cannot be read: %v", err))
 		}
-		var found []string
 		for _, k := range keys {
 			if strings.HasPrefix(k, "NS") && strings.HasSuffix(k, "UsageDescription") && !slices.Contains(asks, k) {
 				found = append(found, "asks for "+k)
 			}
 		}
-		return found
+		return tidy(found)
 	}
 	// Each architecture with its own bytes: the offsets inside one, like
 	// where its signature is, count from the start of its slice.
@@ -193,20 +222,37 @@ func inputsOf(name string, data []byte) []string {
 		}
 	} else if f, err := macho.NewFile(bytes.NewReader(data)); err == nil {
 		files = append(files, arch{f, data})
+	} else if looksMachO(data) {
+		return append(found, "starts like a program but cannot be read as one")
 	} else {
-		return nil
-	}
-	var found []string
-	for _, n := range slices.Concat(watching, raising) {
-		if bytes.Contains(data, []byte(n)) {
-			found = append(found, "names "+n)
-		}
+		return tidy(found)
 	}
 	for _, a := range files {
 		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
 	}
+	return tidy(found)
+}
+
+// tidy sorts what was found and says each thing once, or is nil.
+func tidy(found []string) []string {
+	if len(found) == 0 {
+		return nil
+	}
 	slices.Sort(found)
 	return slices.Compact(found)
+}
+
+// looksMachO says whether data starts with the magic number of a Mach-O
+// program, thin or fat, 32 or 64 bit, in either byte order.
+func looksMachO(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	switch binary.BigEndian.Uint32(data) {
+	case 0xfeedface, 0xcefaedfe, 0xfeedfacf, 0xcffaedfe, 0xcafebabe, 0xbebafeca, 0xcafebabf, 0xbfbafeca:
+		return true
+	}
+	return false
 }
 
 // machoInputs says what one program, or one architecture of it, imports,

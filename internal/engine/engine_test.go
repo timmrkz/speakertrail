@@ -360,3 +360,25 @@ func TestTheAgeTheHeadlineGivesWins(t *testing.T) {
 		t.Errorf("without an age in the headline, born %d", born)
 	}
 }
+
+// Two that close the engine each reopen only their own close: a run
+// waits until both have reopened. The test above failed in CI on 13
+// November 2026 when one reopen lifted the other's close.
+func TestOneReopenNeverLiftsAnothersClose(t *testing.T) {
+	e, _ := newEngine(t, &finder{profiles: invented})
+	first, ok1 := e.CloseIfIdle()
+	second, ok2 := e.CloseIfIdle()
+	if !ok1 || !ok2 {
+		t.Fatal("an idle engine should close")
+	}
+	first()
+	first()
+	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrClosed) {
+		t.Fatalf("start with one close left: %v, want ErrClosed", err)
+	}
+	second()
+	if _, started, err := e.Start("manual", 0); err != nil || !started {
+		t.Fatalf("start once both reopened: %v %v", started, err)
+	}
+	e.Wait()
+}

@@ -24,11 +24,13 @@
     document.title = 'Updates · Speaker Trail'
   })
 
-  // The page asks more often while it is open, and the run is watched so
-  // Relaunch knows to wait for it.
-  $effect(() => updates.watch(true))
+  // What the app says comes as it changes, see updates.svelte.ts. The
+  // run is watched so Relaunch knows to wait for it.
   $effect(() => runWatch.watch())
+  // The workspace listens from its start, see PrivateApp.svelte. Opening
+  // the page asks again, so what it shows is never older than the opening.
   $effect(() => {
+    updates.ask()
     const tick = setInterval(() => (now = Date.now()), 15_000)
     return () => clearInterval(tick)
   })
@@ -41,24 +43,23 @@
     updates.heard({ ...update, phase: 'checking' })
     try {
       await api.checkForUpdates()
-      void updates.ask()
     } catch (e) {
       problem = errorText(e)
     }
   }
 
   // A pick shows at once too: the channel in the list and looking under
-  // it. Should the app say no, what is true is asked for again.
+  // it, before the app has said a word. Should it say no, what it says
+  // is true is asked for again.
   async function follow(channel: string) {
     if (!update || !channel) return
     problem = ''
     updates.heard({ ...update, picked: channel, gone: '', building: '', next: '', phase: 'checking' })
     try {
-      updates.heard(await api.followChannel(channel))
-      void updates.ask()
+      await api.followChannel(channel)
     } catch (e) {
       problem = errorText(e)
-      void updates.ask()
+      updates.ask()
     }
   }
 

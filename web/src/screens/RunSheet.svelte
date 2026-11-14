@@ -128,7 +128,7 @@
             <li class="failure">
               <div class="f-text">
                 {#if f.source}
-                  <a class="f-name" href="/app/sources/{f.source.id}">{f.source.name}</a>
+                  <b class="f-name">{f.source.name}</b>
                 {:else}
                   <b class="f-name">{WHAT[f.what as 'read' | 'lookup']}{f.count > 1 ? `, ${f.count} times` : ''}</b>
                 {/if}
@@ -137,13 +137,13 @@
               {#if f.source}
                 {@const d = done[f.source.id]}
                 {#if d?.what === 'retired'}
-                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => undo(f)} title="Set the source back to how it was">Undo</button>
+                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => undo(f)} title="Set the search back to how it was">Undo</button>
                 {:else if d?.what === 'checking'}
                   <span class="pill act">Checking</span>
                 {:else if f.action === 'retire'}
-                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => retire(f)} title="Stop checking this source. Undo sets it back">Retire</button>
+                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => retire(f)} title="Stop asking this search. Undo sets it back">Retire</button>
                 {:else if f.action === 'check'}
-                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => checkAgain(f)} title="Check this source again now">Check again</button>
+                  <button class="btn sm act" type="button" disabled={working === f.source.id} onclick={() => checkAgain(f)} title="Ask this search again now">Check again</button>
                 {:else}
                   <span class="pill act" title={f.source.status === 'manual' ? 'The engine no longer checks it. Follow it by hand' : 'The engine retired it'}>{STATUS_LABEL[f.source.status] ?? f.source.status}</span>
                 {/if}
@@ -162,7 +162,7 @@
       {#each shown as c (c.id)}
         <li class="check" class:failed={!!c.error}>
           <div class="c-top">
-            <a class="c-name" href="/app/sources/{c.source.id}">{c.source.name}</a>
+            <b class="c-name">{c.source.name}</b>
             {#if c.error}
               <span class="pill bad"><span class="dot"></span>{c.http_status ? `HTTP ${c.http_status}` : 'Failed'}</span>
             {:else}

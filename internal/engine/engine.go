@@ -54,9 +54,10 @@ type Engine struct {
 
 	mu    sync.Mutex
 	going *going
-	// closed is set while Relaunch puts a new build in place, so no run
-	// starts between its look and the quit, see CloseIfIdle.
-	closed bool
+	// closed counts those who closed the engine and have not reopened it:
+	// Relaunch, while it puts a new build in place, so no run starts. A
+	// count, not a flag, so one reopen never lifts another's close.
+	closed int
 }
 
 // going is the run that goes now.
@@ -103,11 +104,14 @@ func (e *Engine) CloseIfIdle() (reopen func(), ok bool) {
 	if e.going != nil {
 		return func() {}, false
 	}
-	e.closed = true
+	e.closed++
+	var once sync.Once
 	return func() {
-		e.mu.Lock()
-		e.closed = false
-		e.mu.Unlock()
+		once.Do(func() {
+			e.mu.Lock()
+			e.closed--
+			e.mu.Unlock()
+		})
 	}, true
 }
 
@@ -120,7 +124,7 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	if e.going != nil {
 		return e.going.id, false, nil
 	}
-	if e.closed {
+	if e.closed > 0 {
 		return 0, false, ErrClosed
 	}
 	if e.Finder == nil || e.Finder() == nil {

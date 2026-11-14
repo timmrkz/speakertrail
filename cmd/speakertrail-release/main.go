@@ -6,6 +6,10 @@
 //	    make an update key: the public half into the repository, the
 //	    private half to the clipboard, for GitHub's secrets and the
 //	    password manager
+//	speakertrail-release check -zip F
+//	    say whether a build could read input meant for other apps, watch
+//	    the screen or the camera, or ask for administrator rights, see
+//	    inputs.go. It needs no key, so it runs before the key is near.
 //	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F
 //	    sign a build with the private half, read from SPEAKERTRAIL_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
@@ -46,6 +50,8 @@ func main() {
 	switch os.Args[1] {
 	case "key":
 		err = makeKey()
+	case "check":
+		err = check(os.Args[2:])
 	case "sign":
 		err = sign(os.Args[2:])
 	case "list":
@@ -60,7 +66,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | check -zip FILE | sign ... | list -out FILE ENTRY...")
 	os.Exit(2)
 }
 
@@ -128,6 +134,18 @@ func keys() (ed25519.PrivateKey, ed25519.PublicKey, error) {
 	return private, public, nil
 }
 
+// check reads the build the way sign does, without the key. publish.yml
+// runs it in a step of its own before the step that has the key, so what
+// is read from the zip is read where no secret is.
+func check(args []string) error {
+	fs := flag.NewFlagSet("check", flag.ExitOnError)
+	zipPath := fs.String("zip", "", "the zip holding the app")
+	_ = fs.Parse(args)
+	return checkInputs(*zipPath)
+}
+
+// sign checks the build again before it signs it, so a sign run on its
+// own never signs what check would refuse.
 func sign(args []string) error {
 	fs := flag.NewFlagSet("sign", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip holding the app")

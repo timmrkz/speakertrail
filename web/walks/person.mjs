@@ -20,6 +20,31 @@ const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).th
 
 const walks = [
   {
+    // Tim saw the list reshuffle as a person came in: rows went from one
+    // line to two, the toolbar broke into lines and the list jumped.
+    name: 'Opening a person narrows the list and moves nothing in it',
+    async run(page) {
+      const look = () => page.evaluate(() => {
+        const rows = [...document.querySelectorAll('.prow')]
+        return JSON.stringify({
+          rows: rows.map((r) => Math.round(r.getBoundingClientRect().top)),
+          areas: getComputedStyle(rows[0]).gridTemplateAreas,
+          controls: [...document.querySelectorAll('.controls > *, .controls .toolbar > *')].map((c) => Math.round(c.getBoundingClientRect().top)),
+        })
+      })
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      const closed = await look()
+      await page.locator('.prow').nth(2).click()
+      await page.locator('.detail-pane').waitFor()
+      await page.waitForTimeout(0)
+      await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))))
+      const open = await look()
+      if (open !== closed) return `the list changed: closed ${closed}, open ${open}`
+      return ''
+    },
+  },
+  {
     // A search can find someone else's LinkedIn profile. Not this person
     // sets it aside, and the toast's Undo brings it back as it was.
     name: 'Not this person sets the LinkedIn profile aside, and Undo brings it back',

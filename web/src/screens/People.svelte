@@ -165,9 +165,10 @@
     }
   }
   // The smallest and largest share that leave the person 360 px and the
-  // list 320 px, between a quarter and three quarters of the width.
+  // list 480 px, room for its columns, between a quarter and three
+  // quarters of the width.
   let least = $derived(Math.min(0.75, Math.ceil(Math.max(0.25, 360 / (width || 1)) / STEP - 1e-6) * STEP))
-  let most = $derived(Math.max(least, Math.floor(Math.min(0.75, 1 - 320 / (width || 1)) / STEP + 1e-6) * STEP))
+  let most = $derived(Math.max(least, Math.floor(Math.min(0.75, 1 - 480 / (width || 1)) / STEP + 1e-6) * STEP))
   let shown = $derived(Math.min(most, Math.max(least, share)))
   let percent = $derived(Math.round(shown * 100))
 
@@ -393,9 +394,12 @@
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row's words stand where the bar's words stand: the row reaches 12
      px past them on either side for its highlight. */
-  /* A row is two lines in a narrow list: name and age, then the
-     headline. With room it is one line of columns, name, headline, city
-     and age, so a wide list uses its width rather than leaving it empty. */
+  /* A row is two lines in a narrow window: name and age, then the
+     headline. In a wide window it is one line of columns, name, headline,
+     city and age, so the list uses its width rather than leaving it empty.
+     Which one depends on the window and never on whether a person is
+     open: opening someone narrows the list's columns and changes nothing
+     else, so no row, column or button moves to another place. */
   .prow {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who age" "sub sub";
     gap: 2px 8px; padding: 9px 12px; border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; align-items: center;
@@ -403,18 +407,24 @@
   .who { grid-area: who; } .sub { grid-area: sub; } .age { grid-area: age; } .city { display: none; }
   /* A narrow list gives the search field a line of its own, and the
      order and Run share the next, the same size. */
+  .people.wide .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
+  .people.wide .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
+  .people.wide .controls .toolbar { flex-wrap: nowrap; }
+  .people.wide .controls .toolbar > :global(.search) { flex: 1 1 0; }
+  /* Below, a narrow window, where the person comes in over the list and
+     the list keeps the window's width. */
   @container (max-width: 520px) {
-    .controls .toolbar { flex-wrap: wrap; }
-    .controls .toolbar > :global(.search) { flex: 1 1 100%; }
-    .controls .sort, .controls .start { flex: 1 1 0; }
-    .controls .sort .select { width: 100%; }
+    .people:not(.wide) .controls .toolbar { flex-wrap: wrap; }
+    .people:not(.wide) .controls .toolbar > :global(.search) { flex: 1 1 100%; }
+    .people:not(.wide) .controls .sort, .people:not(.wide) .controls .start { flex: 1 1 0; }
+    .people:not(.wide) .controls .sort .select { width: 100%; }
   }
   @container (min-width: 760px) {
-    .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
-    .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
-    .controls { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-    .controls .filters { width: auto; grid-auto-columns: minmax(7.5em, auto); grid-template-columns: none; grid-auto-flow: column; }
-    .controls .run-now { grid-column: 1 / -1; }
+    .people:not(.wide) .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
+    .people:not(.wide) .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
+    .people:not(.wide) .controls { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .people:not(.wide) .controls .filters { width: auto; grid-auto-columns: minmax(7.5em, auto); grid-template-columns: none; grid-auto-flow: column; }
+    .people:not(.wide) .controls .run-now { grid-column: 1 / -1; }
   }
   .prow:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); text-decoration: none; }
   .prow[aria-current="true"] { background: var(--accent-soft); }

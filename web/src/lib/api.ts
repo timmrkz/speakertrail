@@ -73,6 +73,19 @@ export interface UpdateChannel {
   conflict: boolean
 }
 
+// Where macOS put the title bar and its buttons, in whole CSS pixels, as
+// cmd/speakertrail-app/chrome.go says. All zeros means the system draws
+// its own title bar, which is every other system, and then the
+// stylesheet keeps its own numbers.
+export interface Chrome {
+  // The title bar's height, which is the height of the bar the app draws.
+  bar: number
+  // The left edge of the first of those buttons and the right edge of the
+  // last, so the name of what is on screen starts after them.
+  left: number
+  right: number
+}
+
 export type UpdatePhase = '' | 'checking' | 'current' | 'gone' | 'downloading' | 'ready' | 'failed'
 
 export interface UpdateState {
@@ -413,6 +426,7 @@ export const api = {
   setLinkedin: (app: string, folder: string) => request<LinkedinWhere>('PUT', '/api/linkedin', { app, folder }),
   // Opens a profile link in the chosen browser profile.
   open: (url: string) => request<void>('POST', '/api/open', { url }),
+  chrome: () => request<Chrome>('GET', '/api/chrome'),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),

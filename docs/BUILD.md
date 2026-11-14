@@ -13,7 +13,8 @@ make run
 The first time, make installs what the Mac is missing with Homebrew, Go
 and Node.js, and the command line tools for the compiler. Then it builds
 the interface and the app, puts them together as `bin/Speaker Trail.app`
-and opens it. The log stays in the terminal. After the first time a
+and opens it. The app's log is in `~/Library/Logs/Speaker Trail`, see
+[LOGGING.md](LOGGING.md). After the first time a
 rebuild takes seconds.
 
 To start it like any other app instead, from the Dock or Spotlight:
@@ -78,7 +79,8 @@ docker volume rm speakertrail_postgres
 | `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
 | `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
-| `make test` | `unit`, `interface` and `walks` |
+| `make test` | `lint`, `unit`, `interface` and `walks` |
+| `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |
 | `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
 | `make interface` | a type check of the interface |
 | `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/` |

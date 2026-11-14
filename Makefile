@@ -20,7 +20,8 @@
 #                   version, into the app. Once, while Docker still has the
 #                   old database
 #   make mock       the interface alone in a browser, with invented data
-#   make test       all tests: unit, interface and walks
+#   make test       all tests: lint, unit, interface and walks
+#   make lint       gofmt, go vet and golangci-lint, see .golangci.yml
 #   make unit       the Go tests, under the race detector
 #   make interface  the interface type check
 #   make walks      the interface driven in Chromium, with invented data
@@ -71,10 +72,10 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain mock test unit interface walks check clean help
+.PHONY: all app run install update-key carry-over tools toolchain mock test lint golangci-lint unit interface walks check clean help
 
 help:
-	@sed -n '1,25p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
 
 all: app
 
@@ -113,8 +114,8 @@ else
 	@echo "Ready: $(EXE)"
 endif
 
-# Started from inside the bundle rather than with open, so the log stays in
-# this terminal. macOS still reads the bundle's Info.plist, because it finds
+# Started from inside the bundle rather than with open, so what the app
+# says before its log is open stays in this terminal. macOS still reads the bundle's Info.plist, because it finds
 # the bundle by walking up from the program.
 run: app
 ifeq ($(UNAME),Darwin)
@@ -148,7 +149,35 @@ update-key: toolchain
 mock: web/node_modules/.package-lock.json
 	@cd web && MOCK=1 $(NPM) run dev
 
-test: unit interface walks
+test: lint unit interface walks
+
+# Everything that reads the Go code without running it, the same here and
+# in CI: gofmt, go vet and the rules in .golangci.yml.
+GOLANGCI_LINT_VERSION := 2.14.0
+GOLANGCI_LINT := $(BIN)/tools/golangci-lint-$(GOLANGCI_LINT_VERSION)/golangci-lint
+lint: toolchain golangci-lint
+	@out=$$(gofmt -l $$(git ls-files '*.go')); [ -z "$$out" ] || { echo "gofmt -w these:"; echo "$$out"; exit 1; }
+	@printf 'ok  \tgofmt\n'
+	@$(GO) vet ./...
+	@printf 'ok  \tgo vet\n'
+	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tour code logs into the app log\n'
+
+# The release golangci-lint builds and checks against its own checksums,
+# as its install.sh does. Not install.sh itself, which asks github.com's
+# release page for the tag, a page a cloud session cannot reach. Fetched
+# into bin/, in CI too, the way Go fetches a module: it installs nothing
+# on the machine. As in FrameFairy.
+golangci-lint: $(GOLANGCI_LINT)
+$(GOLANGCI_LINT):
+	@echo "Fetching golangci-lint $(GOLANGCI_LINT_VERSION)"
+	@name=golangci-lint-$(GOLANGCI_LINT_VERSION)-$$(uname -s | tr A-Z a-z)-$$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/'); \
+		url=https://github.com/golangci/golangci-lint/releases/download/v$(GOLANGCI_LINT_VERSION); \
+		tmp=$$(mktemp -d); \
+		(cd $$tmp && curl -sSfLO $$url/$$name.tar.gz && curl -sSfLO $$url/golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt && \
+			grep " $$name.tar.gz$$" golangci-lint-$(GOLANGCI_LINT_VERSION)-checksums.txt | shasum -a 256 -c - >/dev/null && \
+			tar -xzf $$name.tar.gz) && mkdir -p $(@D) && mv $$tmp/$$name/golangci-lint $@; \
+		status=$$?; rm -rf $$tmp; exit $$status
 
 # The race detector is always on: runs ask several searches side by side,
 # and a race there only shows on someone else's machine.

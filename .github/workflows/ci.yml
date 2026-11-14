@@ -42,10 +42,8 @@ jobs:
       # The app's window is a webview, which on Linux is GTK and WebKit.
       - name: GTK and WebKit
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
-      - name: Format
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
-      - name: Vet
-        run: go vet ./...
+      - name: Lint
+        run: make lint
       - name: Test
         run: make unit
 

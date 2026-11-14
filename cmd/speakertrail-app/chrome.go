@@ -4,15 +4,14 @@ package main
 // is. Speaker Trail has one window, so there is no report window and no
 // name for each window's event. The interface asks over /api/chrome
 // rather than through a Wails binding, and hears the event called chrome,
-// the way it hears updates. The log is slog rather than zerolog, see
-// log.go.
+// the way it hears updates.
 
 import (
-	"log/slog"
 	"math"
 	"net/http"
 	"sync"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
@@ -154,12 +153,10 @@ func (c *chromeWatch) publish() {
 	if same {
 		return
 	}
-	// What macOS answered, in points, and what the interface is told.
-	// FrameFairy writes this at debug level, which its log file keeps.
-	// Here the log keeps info and above, see main.go, so it is info: it
+	// What macOS answered, in points, and what the interface is told. It
 	// is written only when the answer changes, and if the bar looks wrong
 	// on the Mac it is the only number from the real window.
-	theLog.line(slog.LevelInfo, "window").Str("event", "chrome").
+	theLog.line(zerolog.DebugLevel, "window").Str("event", "chrome").
 		Float64("bar", raw.bar).Float64("left", raw.left).Float64("right", raw.right).
 		Float64("close_top", raw.closeTop).Float64("close_bottom", raw.closeBottom).
 		Bool("fullscreen", raw.fullscreen).Interface("told", now).

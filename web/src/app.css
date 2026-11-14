@@ -37,8 +37,9 @@
   --control-h: 36px;
   --seg-on: rgba(255, 255, 255, .95);
   --gutter: 32px;
-  /* The window's grid. Every pane starts with a bar --bar-h tall, which is
-     where the title bar's buttons sit on macOS, see main.go. Everything in
+  /* The window's grid. Every pane starts with a bar --bar-h tall. The
+     title bar starts at it too, and on macOS takes the height macOS lays
+     out instead, see lib/chrome.svelte.ts. Everything in
      a pane, its bar too, stands --pad in from the pane's edges, so a button
      in a bar lines up with the list or the page under it. */
   --bar-h: 44px;
@@ -48,9 +49,10 @@
      either side, as FrameFairy has it. */
   --rail: 44px;
   --list-w: 380px;
-  /* Room the close, minimise and zoom buttons take in the top left corner,
-     16 in, three of 12 with 8 between, and a space after. */
-  --lights-r: 88px;
+  /* One space, between the title bar's buttons and the name beside them,
+     as FrameFairy has it. Where the buttons are, --lights-r, is measured,
+     see lib/chrome.svelte.ts. */
+  --gap: 12px;
   /* A page of its own, Searches, Settings and Updates, reads in a column
      this wide at most, centred in the window. */
   --col-w: 880px;

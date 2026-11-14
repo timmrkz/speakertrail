@@ -432,6 +432,11 @@ const ROUTES: [string, RegExp, Handler][] = [
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
   }],
+  // The title bar, like chromeAPI in cmd/speakertrail-app/chrome.go, as
+  // macOS answered on Tim's Mac in FrameFairy's walks: a title bar 30 high
+  // and the three buttons from 12 to 72. The mock draws no buttons, but
+  // the bar and the name stand where they do on the Mac.
+  ['GET', /^\/api\/chrome$/, () => ok({ bar: 30, left: 12, right: 72 })],
   // Updates, like cmd/speakertrail-app/updates_api.go: a build of pull
   // request 9 that follows its channel. Check finds nothing newer. Picking
   // another channel looks, downloads it over six seconds and has it ready.

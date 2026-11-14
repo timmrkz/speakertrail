@@ -1,0 +1,478 @@
+package main
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/binary"
+	"hash/crc32"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+// The app never reads keys meant for other apps or watches the screen or
+// the camera, FrameFairy issue #369, and a build that could is never signed. These
+// make the programs of a build by hand, as small as macOS's own loader
+// would read them, with what each test needs in them.
+
+// program is a 64-bit arm64 Mach-O program: the libraries it links, the
+// functions and classes it imports, text anywhere in it, and the
+// entitlements it is signed with, as the XML codesign writes, or none.
+type program struct {
+	// cpu is arm64 when it is 0.
+	cpu      uint32
+	links    []string
+	imports  []string
+	text     string
+	entitled string
+}
+
+// bytes lays the program out: the header, its load commands, then its
+// symbols and their names, then the text, then the code signature.
+func (p program) bytes() []byte {
+	le := binary.LittleEndian
+	var cmds bytes.Buffer
+	ncmds := 0
+	add := func(words ...uint32) {
+		for _, w := range words {
+			_ = binary.Write(&cmds, le, w)
+		}
+		ncmds++
+	}
+	for _, l := range p.links {
+		name := append([]byte(l), 0)
+		for len(name)%8 != 0 {
+			name = append(name, 0)
+		}
+		// LC_LOAD_DYLIB, its size, where its name starts, a time and two
+		// versions, then the name.
+		add(0xc, uint32(24+len(name)), 24, 2, 0x10000, 0x10000)
+		cmds.Write(name)
+	}
+	// After the header and the commands: the symbols, the names, the
+	// text, the signature. The commands for them are 24, 80 and 16 bytes.
+	cmdsize := cmds.Len() + 24 + 80
+	if p.entitled != "" {
+		cmdsize += 16
+	}
+	symoff := 32 + cmdsize
+	var syms, names bytes.Buffer
+	names.WriteByte(0)
+	for _, s := range p.imports {
+		// An undefined external symbol.
+		_ = binary.Write(&syms, le, uint32(names.Len()))
+		syms.Write([]byte{0x01, 0})
+		_ = binary.Write(&syms, le, uint16(0))
+		_ = binary.Write(&syms, le, uint64(0))
+		names.WriteString(s)
+		names.WriteByte(0)
+	}
+	stroff := symoff + syms.Len()
+	textoff := stroff + names.Len()
+	sigoff := textoff + len(p.text)
+	// LC_SYMTAB, and LC_DYSYMTAB with every symbol undefined.
+	add(0x2, 24, uint32(symoff), uint32(len(p.imports)), uint32(stroff), uint32(names.Len()))
+	add(0xb, 80, 0, 0, 0, 0, 0, uint32(len(p.imports)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	var sig []byte
+	if p.entitled != "" {
+		be := binary.BigEndian
+		blob := be.AppendUint32(nil, 0xfade7171)
+		blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
+		blob = append(blob, p.entitled...)
+		// A blob of blobs with one, the entitlements in slot 5.
+		sig = be.AppendUint32(nil, 0xfade0cc0)
+		sig = be.AppendUint32(sig, uint32(20+len(blob)))
+		sig = be.AppendUint32(sig, 1)
+		sig = be.AppendUint32(sig, 5)
+		sig = be.AppendUint32(sig, 20)
+		sig = append(sig, blob...)
+		add(0x1d, 16, uint32(sigoff), uint32(len(sig)))
+	}
+	cpu := p.cpu
+	if cpu == 0 {
+		cpu = 0x0100000c
+	}
+	var out bytes.Buffer
+	for _, w := range []uint32{0xfeedfacf, cpu, 0, 2, uint32(ncmds), uint32(cmds.Len()), 0, 0} {
+		_ = binary.Write(&out, le, w)
+	}
+	out.Write(cmds.Bytes())
+	out.Write(syms.Bytes())
+	out.Write(names.Bytes())
+	out.WriteString(p.text)
+	out.Write(sig)
+	return out.Bytes()
+}
+
+// fat wraps programs in a universal file, one architecture each, each
+// on a page of its own.
+func fat(ps ...program) []byte {
+	be := binary.BigEndian
+	head := be.AppendUint32(nil, 0xcafebabe)
+	head = be.AppendUint32(head, uint32(len(ps)))
+	size := 8 + 20*len(ps)
+	at := size
+	var body []byte
+	for _, p := range ps {
+		at = (at + 4095) &^ 4095
+		b := p.bytes()
+		cpu := p.cpu
+		if cpu == 0 {
+			cpu = 0x0100000c
+		}
+		head = be.AppendUint32(head, cpu)
+		head = be.AppendUint32(head, 0)
+		head = be.AppendUint32(head, uint32(at))
+		head = be.AppendUint32(head, uint32(len(b)))
+		head = be.AppendUint32(head, 12)
+		for size+len(body) < at {
+			body = append(body, 0)
+		}
+		body = append(body, b...)
+		at += len(b)
+	}
+	return append(head, body...)
+}
+
+// app is the app's own program as it links today, which may link what it
+// does and nothing more.
+var app = program{
+	links: []string{
+		"/System/Library/Frameworks/Cocoa.framework/Versions/A/Cocoa",
+		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
+		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
+		"/usr/lib/libSystem.B.dylib",
+	},
+	imports: []string{"_NSClassFromString", "_OBJC_CLASS_$_NSEvent", "_RegisterEventHotKey", "_dlsym", "_SecItemCopyMatching"},
+}
+
+// adhoc is the app signed ad hoc, with no entitlement, which is how the
+// build signs it.
+var adhoc = func() program {
+	p := app
+	p.entitled = plistHead + "</dict>\n</plist>\n"
+	return p
+}()
+
+const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+`
+
+func TestWhatCouldWatchInputIsFound(t *testing.T) {
+	with := func(change func(p *program)) []byte {
+		p := app
+		p.links = slices.Clone(app.links)
+		p.imports = slices.Clone(app.imports)
+		change(&p)
+		return p.bytes()
+	}
+	cases := []struct {
+		name, file string
+		data       []byte
+		want       []string
+	}{
+		{"the app as it is", "speakertrail-app", app.bytes(), nil},
+		{"a tap on every key", "speakertrail-app", with(func(p *program) { p.imports = append(p.imports, "_CGEventTapCreate") }),
+			[]string{"imports _CGEventTapCreate", "names CGEventTapCreate"}},
+		{"the camera", "speakertrail-app", with(func(p *program) { p.imports = append(p.imports, "_OBJC_CLASS_$_AVCaptureDevice") }),
+			[]string{"imports _OBJC_CLASS_$_AVCaptureDevice", "names AVCaptureDevice"}},
+		// Looked up by name while it runs, with NSClassFromString.
+		{"the screen, by name", "speakertrail-app", with(func(p *program) { p.text += "SCShareableContent" }),
+			[]string{"names SCShareableContent"}},
+		{"another app's windows, by name", "speakertrail-app", with(func(p *program) { p.links = nil; p.text = "AXUIElementCreateSystemWide" }),
+			[]string{"names AXUIElementCreateSystemWide"}},
+		{"a framework not on the list", "speakertrail-app",
+			with(func(p *program) {
+				p.links = append(p.links, "/System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit")
+			}),
+			[]string{"links /System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"}},
+		{"a program the list does not know", "watcher", program{links: []string{"/usr/lib/libSystem.B.dylib"}}.bytes(),
+			[]string{"is a program the list of linked libraries does not know, and links /usr/lib/libSystem.B.dylib"}},
+		{"the microphone, entitled", "speakertrail-app",
+			with(func(p *program) {
+				p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
+			}),
+			[]string{"is entitled to com.apple.security.device.audio-input"}},
+		{"the camera, entitled", "speakertrail-app",
+			with(func(p *program) {
+				p.entitled = plistHead + "<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"
+			}),
+			[]string{"is entitled to com.apple.security.device.camera"}},
+		{"other code let in, entitled", "speakertrail-app",
+			with(func(p *program) {
+				p.entitled = plistHead + "<key>com.apple.security.cs.disable-library-validation</key><true/>\n</dict>\n</plist>\n"
+			}),
+			[]string{"is entitled to com.apple.security.cs.disable-library-validation"}},
+		// A universal program is read for every architecture.
+		{"a universal program, one architecture with a tap", "speakertrail-app",
+			fat(app, program{cpu: 0x01000007, links: app.links, imports: []string{"_IOHIDManagerOpen"}}),
+			[]string{"imports _IOHIDManagerOpen", "names IOHIDManagerOpen"}},
+		// Each architecture's signature is read from its own slice.
+		{"a signed universal program", "speakertrail-app",
+			fat(adhoc, program{cpu: 0x01000007, links: app.links, entitled: adhoc.entitled}), nil},
+		{"a signed universal program, one architecture with the camera", "speakertrail-app",
+			fat(adhoc, program{cpu: 0x01000007, links: app.links, entitled: plistHead +
+				"<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"}),
+			[]string{"is entitled to com.apple.security.device.camera"}},
+		{"nothing asked for", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "<key>CFBundleName</key><string>Speaker Trail</string>\n" +
+				"<!-- <key>NSCameraUsageDescription</key> -->\n</dict>\n</plist>\n"), nil},
+		{"the camera and the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
+				"<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
+			[]string{"asks for NSCameraUsageDescription", "asks for NSMicrophoneUsageDescription"}},
+		// A key deeper in the dictionary is no reason Info.plist gives.
+		{"a key inside another", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
+			nil},
+		// Every file is read for the names, program or not: a script the
+		// app runs or a library it loads names them just the same.
+		{"a file that is no program", "Speaker Trail.app/Contents/Resources/LICENSE", []byte("nothing is named here"), nil},
+		{"a script that names a tap", "Speaker Trail.app/Contents/Resources/tap.py", []byte("Quartz.CGEventTapCreate(...)"),
+			[]string{"names CGEventTapCreate"}},
+		{"a script that asks for sudo", "Speaker Trail.app/Contents/Resources/run.sh", []byte("#!/bin/sh\n/usr/bin/sudo true\n"),
+			[]string{"names /usr/bin/sudo"}},
+		// What cannot be read cannot be checked.
+		{"a program that cannot be read", "Speaker Trail.app/Contents/Frameworks/x.dylib", append([]byte{0xcf, 0xfa, 0xed, 0xfe}, make([]byte, 8)...),
+			[]string{"starts like a program but cannot be read as one"}},
+		{"a universal program that cannot be read", "Speaker Trail.app/Contents/MacOS/speakertrail-app", []byte{0xca, 0xfe, 0xba, 0xbe, 0, 0, 0, 9},
+			[]string{"starts like a program but cannot be read as one"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(c.file, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// The app never runs anything as the root user or with administrator
+// rights, FrameFairy issue #751, and a build that could ask for them is never signed.
+func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
+	with := func(change func(p *program)) []byte {
+		p := app
+		p.links = slices.Clone(app.links)
+		p.imports = slices.Clone(app.imports)
+		change(&p)
+		return p.bytes()
+	}
+	cases := []struct {
+		name, file string
+		data       []byte
+		want       []string
+	}{
+		{"an administrator's password asked for", "speakertrail-app",
+			with(func(p *program) { p.imports = append(p.imports, "_AuthorizationExecuteWithPrivileges") }),
+			[]string{"imports _AuthorizationExecuteWithPrivileges", "names AuthorizationExecuteWithPrivileges"}},
+		{"a right asked of the system", "speakertrail-app",
+			with(func(p *program) { p.imports = append(p.imports, "_AuthorizationCreate", "_AuthorizationCopyRights") }),
+			[]string{"imports _AuthorizationCopyRights", "imports _AuthorizationCreate",
+				"names AuthorizationCopyRights", "names AuthorizationCreate"}},
+		{"a helper installed to run as root", "speakertrail-app",
+			with(func(p *program) { p.links = nil; p.imports = []string{"_SMJobBless"} }),
+			[]string{"imports _SMJobBless", "names SMJobBless"}},
+		// An Objective-C method is called by its name, so it is only ever
+		// text in the program.
+		{"a daemon of SMAppService, by name", "speakertrail-app",
+			with(func(p *program) { p.text += "daemonServiceWithPlistName:" }),
+			[]string{"names daemonServiceWithPlistName"}},
+		{"AppleScript as an administrator", "speakertrail-app",
+			with(func(p *program) { p.links = nil; p.text = `do shell script "x" with administrator privileges` }),
+			[]string{"names with administrator privileges"}},
+		{"sudo", "speakertrail-app",
+			with(func(p *program) { p.links = nil; p.text = "/usr/bin/sudo" }),
+			[]string{"names /usr/bin/sudo"}},
+		// What the app links today and looks alike: Go's os/exec imports
+		// setuid and setgid, which only give rights up, Wails opens the
+		// app at login as the person with mainAppService, and Go's
+		// runtime keeps its sudog.
+		{"what the app links today", "speakertrail-app",
+			with(func(p *program) {
+				p.imports = append(p.imports, "_setuid", "_setgid", "_OBJC_CLASS_$_SMAppService")
+				p.text += "mainAppService runtime.adjustsudogs sudogcache"
+			}), nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(c.file, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A program marked set-user-ID or set-group-ID runs with its owner's
+// rights, root's once it is installed by root, so a build that carries
+// one is refused, whatever the program is.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
+	for _, mode := range []fs.FileMode{0o755 | fs.ModeSetuid, 0o755 | fs.ModeSetgid} {
+		t.Run(mode.String(), func(t *testing.T) {
+			var b bytes.Buffer
+			w := zip.NewWriter(&b)
+			for name, data := range theApp("main") {
+				h := &zip.FileHeader{Name: name, Method: zip.Deflate}
+				h.SetMode(0o644)
+				if strings.HasSuffix(name, "/speakertrail-app") {
+					h.SetMode(mode)
+				}
+				f, err := w.CreateHeader(h)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := f.Write(data); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := w.Close(); err != nil {
+				t.Fatal(err)
+			}
+			zipPath := filepath.Join(t.TempDir(), "app.zip")
+			if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := checkInputs(zipPath)
+			if err == nil || !strings.Contains(err.Error(), "Speaker Trail.app/Contents/MacOS/speakertrail-app: runs as its owner, set-user-ID or set-group-ID") {
+				t.Errorf("a build whose app is %v said %v", mode, err)
+			}
+		})
+	}
+}
+
+// What bundle-macos.sh writes as the app's Info.plist asks for nothing, so
+// a pull request that adds a reason for the camera or the screen fails
+// here, before its build is refused.
+//
+// On the real disk: what this reads is the script that writes Info.plist.
+func TestTheShippedInfoPlistAsksForNoInput(t *testing.T) {
+	script, err := os.ReadFile("../../scripts/bundle-macos.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, plist, ok := strings.Cut(string(script), "<<PLIST\n")
+	plist, _, found := strings.Cut(plist, "\nPLIST\n")
+	if !ok || !found {
+		t.Fatal("scripts/bundle-macos.sh writes no Info.plist between <<PLIST and PLIST")
+	}
+	keys, err := plistKeys([]byte(plist))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(keys, "CFBundleIdentifier") {
+		t.Fatalf("read %q from it, which is not the app's Info.plist", keys)
+	}
+	if got := inputsOf("Speaker Trail.app/Contents/Info.plist", []byte(plist)); got != nil {
+		t.Errorf("the app's Info.plist %s", strings.Join(got, ", "))
+	}
+}
+
+// zipped is a zip of files, by name.
+func zipped(t *testing.T, files map[string][]byte) []byte {
+	t.Helper()
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	for _, n := range names {
+		f, err := w.Create(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(files[n]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.Bytes()
+}
+
+// theApp is a build of the app for a channel that watches nothing.
+func theApp(channel string) map[string][]byte {
+	return map[string][]byte{
+		"Speaker Trail.app/Contents/MacOS/speakertrail-app": app.bytes(),
+		"Speaker Trail.app/Contents/Info.plist": []byte(plistHead +
+			"<key>CFBundleName</key><string>Speaker Trail " + channel + "</string>\n</dict>\n</plist>\n"),
+	}
+}
+
+// A build that could watch input is refused before it is signed, and no
+// entry is written for it, so no app is offered it.
+//
+// On the real disk: the release tool reads the zip and writes the entry as files.
+func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
+	release(t)
+	files := theApp("main")
+	watcher := app
+	watcher.imports = append(slices.Clone(app.imports), "_CGWindowListCreateImage")
+	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = watcher.bytes()
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "main.json")
+	err := sign([]string{"-zip", zipPath, "-channel", "main", "-name", "main", "-version", "0.1.0-main.abc1234",
+		"-commit", "abc1234def56", "-url", "https://example.com/main.zip", "-out", out})
+	if err == nil || !strings.Contains(err.Error(), "Speaker Trail.app/Contents/MacOS/speakertrail-app: imports _CGWindowListCreateImage") {
+		t.Errorf("signing a build that imports CGWindowListCreateImage said %v", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Error("an entry was written for it")
+	}
+}
+
+// A zip that unpacks to more than any build of the app is refused before
+// it is read, and so is one whose file holds more than the zip says.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildTooBigToReadIsNotSigned(t *testing.T) {
+	write := func(t *testing.T, said uint64, data []byte) string {
+		var b bytes.Buffer
+		w := zip.NewWriter(&b)
+		f, err := w.CreateRaw(&zip.FileHeader{
+			Name: "Speaker Trail.app/Contents/Resources/big", Method: zip.Store,
+			CRC32: crc32.ChecksumIEEE(data), CompressedSize64: uint64(len(data)), UncompressedSize64: said,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		zipPath := filepath.Join(t.TempDir(), "app.zip")
+		if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return zipPath
+	}
+	t.Run("says it is too big", func(t *testing.T) {
+		err := check([]string{"-zip", write(t, maxUnpacked+1, []byte("abc"))})
+		if err == nil || !strings.Contains(err.Error(), "unpacks to more than 1024 MB") {
+			t.Errorf("a zip that says it holds more than a GB said %v", err)
+		}
+	})
+	t.Run("holds more than it says", func(t *testing.T) {
+		err := check([]string{"-zip", write(t, 2, []byte("abc"))})
+		// archive/zip finds it first, as a file that is not what the zip
+		// says. Should it not, the read stops one byte past what it says.
+		if err == nil || !strings.Contains(err.Error(), "Resources/big: ") {
+			t.Errorf("a file that holds more than the zip says said %v", err)
+		}
+	})
+}

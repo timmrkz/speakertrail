@@ -5,16 +5,16 @@ first change of a session. The user is Tim.
 
 ## The project
 
-Speaker Trail finds in-person events across North Rhine-Westphalia and the
-people who speak, pitch or host at them. A crawler checks a growing list of
-sources every night and learns which ones are worth checking. The front is a
-public event calendar, "Who's on stage in NRW", useful to many people. Behind
-a single login is Tim's workspace: the numbers, the people, the sources and
-the crawl runs.
+Speaker Trail finds people in North Rhine-Westphalia who run their own
+business and could be guests on Tim's podcast, *My First Memory*. It is a
+Mac app, built like Tim's FrameFairy: Go with Wails v3 for the window, the
+Svelte interface built in, and everything it knows in one JSON file in
+`~/Library/Application Support/Speaker Trail`. Runs ask profile searches
+through Exa. No Docker, no database, no server.
 
-It began as a way to find guests for Tim's podcast, *My First Memory*. The
-direction since is a calendar for everyone, kept apart from Tim's LinkedIn,
-which stays about the podcast.
+It once also crawled event pages for a public calendar. That engine, its
+Postgres database, Docker and the Scaleway deploy were removed on 10
+November 2026 and are in git history.
 
 ## Where things are
 
@@ -22,17 +22,17 @@ Start with [README.md](README.md). In short:
 
 | Part | Code | Docs |
 | --- | --- | --- |
-| fetching, robots.txt, the headless browser | `internal/fetch/` | |
-| events and people out of pages | `internal/extract/` | |
-| source checks, resolving, lifecycle, nightly run | `internal/pipeline/` | |
-| job queue | `internal/queue/` | |
-| HTTP API and login | `internal/server/` | [docs/api.md](docs/api.md) |
+| the app, its window | `cmd/speakertrail-app/` | |
+| the file: people, searches, runs, settings | `internal/store/` | |
+| runs of profile searches | `internal/engine/` | |
+| HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
+| the Exa key in the keychain | `internal/keys/` | |
+| updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
+| Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
-| starting data from the brief | `internal/importer/` | |
-| build, Docker | `Makefile`, `compose.yaml`, `Dockerfile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md), `.claude/skills/docker/` |
+| build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
 | working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
-| deployment | `Dockerfile`, `deploy/`, `.github/` | [deploy/scaleway/README.md](deploy/scaleway/README.md) |
 
 ## The skills
 
@@ -51,20 +51,19 @@ file wins.
 | [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
 | [collaboration](.claude/skills/collaboration/SKILL.md) | replies, issues with a priority and a size, writing rules |
 | [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
-| [docker](.claude/skills/docker/SKILL.md) | this repository's Docker setup |
 
 Where the generic skills meet this repository:
 
 | The skills say | Here it is |
 | --- | --- |
 | the user | Tim |
-| the people using the product | whoever looks for events on the calendar, and Tim in his workspace |
+| the people using the product | Tim, in the app on his Mac |
 | the product's goals | The project above, and the issue the pull request names |
 | the architecture as the project writes it | Where things are above and [README.md](README.md) for now, and the records in [docs/decisions/](docs/decisions/README.md) |
 | the place the project names for a review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed and never posted on GitHub |
 | logged | a GitHub issue, laid out the way [the issue template](.github/ISSUE_TEMPLATE/issue.md) says |
 | how a pull request is described | [the pull request template](.github/pull_request_template.md) |
-| a path a person waits on | opening the calendar, a page of the workspace, and a run |
+| a path a person waits on | opening a screen of the app, a run, and an update |
 | a trade-off the user accepted | Tim's yes in the thread of the session |
 
 `.claude/settings.json` raises the room Claude Code gives the list of
@@ -74,20 +73,21 @@ that, the skills listed last show their name without what they are for.
 ## How Tim works
 
 - He uses Claude through claude.ai, in chat and in cloud sessions at
-  claude.ai/code. Changes reach him as pull requests on GitHub. After a
-  merge he runs `git pull && make run`. Never hand him zip files or ask him
-  to copy files around.
+  claude.ai/code. Changes reach him as pull requests on GitHub. He tries
+  one by picking it on the app's Updates page, which downloads its build
+  and relaunches, see [docs/UPDATES.md](docs/UPDATES.md). No terminal, no
+  `git pull`. Never hand him zip files or ask him to copy files around.
 - **Every piece of work becomes a pull request, always.** A branch he has to
   find himself is work he cannot see.
 - **The pull request comes first, not last.** Push the first commit and open
   the pull request straight away, without being asked, and keep pushing to
   it. The first commit does not have to be worth looking at. It exists so
   the pull request exists, because that is where Tim follows the work.
-- His machine is an M2 Max with 32 GB of memory, on the latest macOS. He
-  does not want apps and tools installed on it. Docker Desktop is the one
-  exception, everything else runs in containers.
-- He tests the interface himself on his phone and his Mac. After each change
-  say exactly what to look at and what should happen.
+- His machine is an M2 Max with 32 GB of memory, on the latest macOS. What
+  the build needs, Go and Node.js, make installs with Homebrew, as it does
+  for FrameFairy. Nothing beyond that, and never as a step he has to do.
+- He tests the app himself on his Mac. After each change say exactly what
+  to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
 - Measurements are metric.
 
@@ -119,40 +119,27 @@ messages, pull request text, code comments and chat replies.
 - **Never use semicolons.** Use commas and full stops. Semicolons in code
   syntax are fine, in prose and comments they are not.
 - Plain, direct language. Short sentences.
-- **One name per thing.** A **source** is a page the crawler checks again
-  and again. A **check** is one look at one source. A **read** is the
-  language model's look at one event's own page, for the people on stage.
-  A **portfolio** is a source that lists startups, a **directory** one that
-  lists businesses run by people, like gyms or coaches, and a **lookup** is
-  one look at one startup's or business's website, its imprint and its
-  about page, for who runs it.
-  A **search** is a source that asks a search provider, like "BJJ Gym
-  Köln", and its results are websites to look up.
-  A **post search** is a source that asks Exa for LinkedIn posts, like
-  "Ein Jahr selbstständig #köln", and its results are the people in NRW
-  who wrote them.
-  A **profile search** is a source that asks Exa for LinkedIn profiles,
-  like "Yogalehrerin Köln", and keeps the people in NRW who were active
-  lately and run their own business. Runs take only these for now.
-  An **exclusion** is a word or phrase, like "Online Marketing", that
-  leaves a person out of profile searches and People.
-  A **run** is one pass over the due sources, nightly or started by hand. A
-  link to one event, added as a source, becomes the calendar it belongs to.
-  Seeds exist only in the starting data, never in the interface. An
-  **event** is kept or dropped, never accepted or rejected. A **person** is
-  connected or not, never kept or skipped: Tim marks whom he connected
-  with on LinkedIn, and the rest is simply open. A **profile** is
-  confirmed or rejected. The public page is the **calendar**, Tim's side is
-  the **workspace**. Whatever a thing is called in the interface, it is
-  called that in the docs and the code comments too.
-- Docs live in `docs/`. Only `README.md` and this file sit at the top, and
-  the deployment guide sits beside what it deploys, in `deploy/`.
+- **One name per thing.** A **profile search**, or **search** for short,
+  asks Exa for LinkedIn profiles, like "Yogalehrerin Köln", and keeps the
+  people in NRW who were active lately and run their own business. An
+  **exclusion** is a word or phrase, like "Online Marketing", that leaves a
+  person out of profile searches and People. A **run** is one pass over the
+  due searches, started by hand. A **check** is one search asked once in a
+  run. A **person** is connected or not, never kept or skipped: Tim marks
+  whom he connected with on LinkedIn, and the rest is simply open. A
+  **profile** is confirmed or rejected. A **channel** is what the app
+  updates from, main or one pull request, and a **build** is the app made
+  from one commit of it. The API still says `sources` for
+  searches, the interface and the docs never do. Whatever a thing is
+  called in the interface, it is called that in the docs and the code
+  comments too.
+- Docs live in `docs/`. Only `README.md` and this file sit at the top.
 - When behaviour changes, update the matching doc in the same change.
 
 ## Interface rules
 
-- **Phone first.** Tim reviews on his phone. Every screen works at 390 px
-  wide with no sideways scrolling, and the first view of every screen
+- **Narrow first.** The window goes down to 390 px wide. Every screen works
+  there with no sideways scrolling, and the first view of every screen
   answers its main question without scrolling.
 - **The interface is the mechanism, not the machinery.** Every control has
   to earn its place by serving what the person is there to do. What the
@@ -187,72 +174,64 @@ messages, pull request text, code comments and chat replies.
 
 - **Go, latest version.** One module, `go 1.27` in `go.mod`. Upgrade with Go
   releases.
-- **Nothing on Tim's Mac but Docker.** Every tool the project needs, Go,
-  Node.js, Postgres, Chromium and whatever comes later, lives in a container
-  from `compose.yaml` and the `Dockerfile`. A new tool goes into the `dev`
-  stage of the `Dockerfile`, never into instructions for his Mac. Never tell
-  him to `brew install` or `npm install -g` anything.
+- **Built like FrameFairy.** A native Mac app with Wails v3, no Docker, no
+  database process, no server. What the app knows lives in one JSON file,
+  written whole to a new file that then replaces the old one. Secrets live
+  in the macOS keychain, never in a file.
 - **One command.** `make run` goes from a fresh clone to a running app.
-  Nobody should have to remember a second command. On a laptop make drives
-  Docker. Build runners, cloud sessions and the toolbox run the same targets
-  directly, see `DOCKER` in the `Makefile`. Neither make nor the program
-  ever installs anything. A new target works both ways, and CI's `toolbox`
-  job proves the Docker way.
-- **No LinkedIn, no Instagram.** The engine never requests them, not even
-  for robots.txt, and the headless browser goes through a filter that
-  refuses them. `TestNeverRequestsLinkedInOrInstagram` and
-  `TestBrowserNeverReachesBlockedHosts` prove it. Never weaken either.
+  Nobody should have to remember a second command. On a Mac make installs
+  what is missing with Homebrew, `scripts/tools.sh`, and nothing else ever
+  installs anything. Never tell Tim to `brew install` or `npm install -g`
+  anything himself. With `CI` set make installs nothing.
+- **It builds on Linux too.** Build runners and cloud sessions build the
+  window against GTK 4 and WebKitGTK 6 and run every test there. CI's
+  `macos` job proves the Mac build, the bundle and the keychain.
+- **No LinkedIn, no Instagram.** The app never requests them. Profiles
+  come from Exa's index, asked with `livecrawl` never. Never add a request
+  to either.
 - **LinkedIn opens in Tim's Chrome profile.** The app never requests
   LinkedIn itself, it hands the link to Chrome with
   `open -n -a "Google Chrome" --args --profile-directory=<folder>`, the
   profile where Tim is logged in. Never plain `open <link>`, which lands in
   whichever profile was used last. See [docs/open-in-profile.md](docs/open-in-profile.md).
-- **Polite crawling.** robots.txt is respected, the bot names itself, one
-  request every 5 seconds per website. A site that refuses the bot becomes
-  a manual source. No workarounds.
-- **Personal data.** Names, roles and profile links of speakers are personal
-  data. Store only what the data model lists, never email addresses or phone
-  numbers. Names stay out of the public calendar unless
-  `public_show_people` is on. Real names never go into test fixtures, mock
-  data or anything committed: invent them.
-- **Untrusted input.** Every crawled page, feed and pasted link is
-  untrusted. Stored pages are served as sandboxed plain text, never as HTML.
+- **Personal data.** Names, roles and profile links are personal data.
+  Store only what the data model lists, never email addresses or phone
+  numbers. The app's file stays on Tim's Mac. Real names never go into
+  test fixtures, mock data or anything committed: invent them.
+- **Untrusted input.** What Exa answers is untrusted. The interface shows
+  it as text, never as HTML.
 - **What runs on its own goroutine is tested from several at once.** Every
-  Go test runs under the race detector, and anything asynchronous, the
-  queue above all, has a test that uses it from several goroutines at once.
+  Go test runs under the race detector, and anything asynchronous, a run
+  above all, has a test that uses it from several goroutines at once.
   A fix starts as a test that fails on the code before it.
-- **Tests** need no network and never touch a live website. Pages go in
-  `testdata/`, with invented people. Run `make test` before every push that
+- **Tests** need no network and never call Exa. Answers go in the test,
+  with invented people. Run `make test` before every push that
   touches Go. A change only to `web/` or `docs/` runs `make interface`.
-- **Short transactions.** No job holds a transaction open for more than a
-  moment, because long ones break the database's automatic backups.
+- **Short updates.** The file is written on every change, so nothing
+  slow, above all no call to Exa, happens inside `Store.Update`.
 - `gofmt` and `go vet` must pass.
 - The interface is built by make into `web/dist/`, which Go embeds. Only
-  `web/dist/.keep` is in the repository. Never commit build output or
-  `.env`.
-- **The language model runs locally.** It runs on Tim's Mac through Docker
-  Model Runner, with no paid model API, no key and no credit card. The
-  engine works without it and only reads people better with it.
+  `web/dist/.keep` is in the repository. Never commit build output, `.env`
+  or the app's file.
+- **No paid language model.** Whatever reads text needs no paid model
+  API, no key and no credit card.
 - Every paid API gets a monthly budget in Settings, and the engine stops
   calling it once the budget is reached.
 
 ## Cloud sessions
 
 Sessions at claude.ai/code run on Ubuntu 24.04 with the setup script from
-`scripts/cloud-setup.sh`, which provides Go 1.27 and a local Postgres 16.
-`scripts/session-start.sh` starts Postgres and sets `DATABASE_URL` and
-`TEST_DATABASE_URL` in every session.
+`scripts/cloud-setup.sh`, which provides Go 1.27, and GTK 4 and WebKitGTK 6
+for the window.
 
-- If `go version` does not show 1.27, run `bash scripts/cloud-setup.sh`.
-- `make test` and `make` before pushing anything that touches Go. They run
-  directly here, because `CLAUDE_CODE_REMOTE` is set.
-- Docker works in a session, with limits. Before changing the Docker side,
-  read the skill in `.claude/skills/docker/`.
-- The network is limited to an allowlist set in the environment. Event sites
-  that are not on it cannot be fetched from a session, and the deployed app
-  has no such limit.
-- There is no screen. Interface work goes through the skill in
-  `.claude/skills/interface/`. Read it before changing anything in `web/`.
+- If `go version` does not show 1.27, or `pkg-config --exists gtk4
+  webkitgtk-6.0` fails, run `bash scripts/cloud-setup.sh`.
+- `make test` and `make` before pushing anything that touches Go.
+- The network is limited to an allowlist set in the environment. Exa may
+  not be on it, and tests never call it anyway.
+- There is no screen, and the window cannot open. Interface work goes
+  through the skill in `.claude/skills/interface/`. Read it before changing
+  anything in `web/`.
 
 ## Where guidance goes
 

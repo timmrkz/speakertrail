@@ -1,0 +1,958 @@
+package main
+
+import (
+	"context"
+	_ "embed"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/updater"
+	"log/slog"
+
+	"github.com/timmrkz/speakertrail/internal/updates"
+	"github.com/timmrkz/speakertrail/internal/wake"
+)
+
+// What the build workflow says about a build, with -ldflags -X. A build
+// made by make leaves them empty: it has no channel, and its version is
+// appVersion with -local after it.
+var (
+	buildVersion string
+	buildChannel string
+	buildCommit  string
+)
+
+// The public half of the update key. Every build trusts this key and no
+// other. Empty until the key is made, see docs/UPDATES.md.
+//
+//go:embed update-key.txt
+var updateKeyText string
+
+// checkEvery is how often a build from a channel looks for a newer one. The
+// channel list is a few hundred bytes, and a pull request gets a new build
+// a few minutes after each push.
+const checkEvery = 10 * time.Minute
+
+// checkBuilding is how often it looks while the channel followed has a
+// commit being built. A build takes a few minutes, and at the pace above
+// it was found up to ten minutes after it was there. A look is one small
+// file, and only a build it does not have yet is downloaded, so looking
+// this often costs nothing.
+const checkBuilding = 20 * time.Second
+
+// nextCheck is how long to wait before looking again.
+func nextCheck(s UpdateState) time.Duration {
+	if s.Building != "" {
+		return checkBuilding
+	}
+	return checkEvery
+}
+
+func runningVersion() string {
+	if buildVersion != "" {
+		return buildVersion
+	}
+	return appVersion + "-local"
+}
+
+// UpdateState is everything the interface shows about updates.
+type UpdateState struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	// Channel is where the running build came from, empty for one made by
+	// make.
+	Channel string `json:"channel"`
+	// Off says why this build does not update itself, empty when it does.
+	Off      string          `json:"off"`
+	Channels []UpdateChannel `json:"channels"`
+	// Picked is the channel picked in the app, and Follows the one followed
+	// now: the one picked, or with none picked the one this build came from.
+	Picked  string `json:"picked"`
+	Follows string `json:"follows"`
+	// Gone is the channel followed when it is not on the list any more, a
+	// pull request merged or closed. Nothing is downloaded for it, and
+	// nothing else is either until another channel is picked. Whenever it
+	// is set, Phase is gone, see settle.
+	Gone string `json:"gone"`
+	// Building is the newest commit of the channel followed when its build
+	// has not come yet, so the page does not offer the build there is as
+	// the newest. Empty when the build is the newest.
+	Building string `json:"building"`
+	// Phase is "", checking, current, gone, downloading, ready or failed.
+	Phase      string `json:"phase"`
+	Next       string `json:"next"`
+	NextName   string `json:"nextName"`
+	NextCommit string `json:"nextCommit"`
+	// Checked is when the last check ended, whatever it found, so the
+	// interface can say a check really happened.
+	Checked time.Time `json:"checked"`
+	Written int64     `json:"written"`
+	Total   int64     `json:"total"`
+	// Problem is what went wrong in a person's words, with what to do.
+	// Detail is what the system said, as it said it, for a report.
+	Problem string `json:"problem"`
+	Detail  string `json:"detail"`
+}
+
+// settle keeps the state saying one thing. A channel followed that has
+// left the list is gone, whatever the last check said and whatever a
+// download went on to do: the list read for the page set Gone and left the
+// phase as it was, so the page called the pull request closed in the list
+// and Not checked yet under it, and a build that was ready went in on the
+// way out while the page said its pull request was closed. Every change to
+// the state ends here, so the two can never disagree.
+func (s *UpdateState) settle() {
+	if s.Gone == "" {
+		return
+	}
+	s.Phase = "gone"
+	s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
+}
+
+// UpdateChannel is a channel as the interface lists it.
+type UpdateChannel struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	// Conflict is true for a pull request that no longer merges into
+	// main. Its build can still be installed, see updates.Build.
+	Conflict bool `json:"conflict"`
+}
+
+// updating finds, fetches and installs a newer build, through Wails'
+// updater and the channel list. See docs/UPDATES.md.
+type updating struct {
+	// u is the updater that looks. Every build is downloaded by an updater
+	// of its own, see download, and the one whose build is ready is held.
+	u   *updater.Updater
+	src *updates.Source
+	// cfg is how every updater here is set up, and fresh makes one for a
+	// download. Restart quits the app through the updater that holds the
+	// build, so in the app it is the app's.
+	cfg   updater.Config
+	fresh func() *updater.Updater
+	// own is the channel this build came from, empty for a build made on
+	// the Mac. It never changes.
+	own string
+
+	mu    sync.Mutex
+	state UpdateState
+	// held is the updater whose build is ready, nil when none is. It is
+	// replaced only once a newer build has fully arrived and passed its
+	// checks, so quitting always has the newest build that is whole.
+	held *updater.Updater
+	// checking is set while a check runs. again is set when a check was
+	// asked for while one ran, so the one running looks once more when it
+	// is done. Picking a channel during a download must not be lost. Both
+	// are only ever read and written together, see check.
+	checking bool
+	again    bool
+	// changed tells whoever waits on the state of every change to it, of
+	// a check asked for while one runs, and of a check that has ended, see
+	// wake. Only the tests wait on it.
+	changed wake.Wake
+	// ended is told when a check has decided it is done, before it has
+	// returned. Nil but in the tests, which hold a check there.
+	ended    func()
+	lastSent time.Time
+	// listed is when the channel list was last read for the settings.
+	listed time.Time
+
+	// picking keeps two picks from writing updates.json at once.
+	picking sync.Mutex
+	// round counts picks. A check belongs to the pick it started under, and
+	// once another channel is picked, whatever it goes on to find is thrown
+	// away rather than shown: a download of the channel before, finishing
+	// after the pick, would otherwise have the last word. stop cancels the
+	// check in hand, so the new channel's check starts at once. The
+	// download it waited for goes on into the cache, see updates/fetch.go,
+	// and going back to that channel finds it there or on its way.
+	round int
+	stop  context.CancelFunc
+	emit  func(UpdateState)
+	// idle says whether no work runs, and when none does it takes no new
+	// work until reopen is called, see engine.CloseIfIdle.
+	idle func() (reopen func(), ok bool)
+	// load and save keep the picked channel, in updates.json beside the
+	// settings. Not in the settings themselves: the settings screen saves
+	// what it read, and would put back a channel picked since.
+	load func() string
+	save func(string) error
+	// install starts the step that puts a ready build in place once the
+	// app has quit, see install.go. relaunching is set once Relaunch has
+	// begun, which puts the build in place by itself.
+	install     func(target, from string) error
+	relaunching bool
+	// app is the .app the build is put in place of, runningApp when it
+	// is empty. A test names one of its own.
+	app func() string
+	// leaving is set once quitting has started putting the build held in
+	// place. From then on, as after Relaunch, nothing removes that build,
+	// whatever arrives after it: the step that puts it in place reads it
+	// once the app is gone.
+	leaving bool
+	// looking is set once the loop that looks now and then has started,
+	// see loop. after is the wait between two looks, which ends when the
+	// channel it gives says so, nextCheck from now unless a test hands
+	// the looks in itself.
+	looking bool
+	after   func(UpdateState) <-chan time.Time
+	// life ends with shutDown, and every check runs under it. halted is
+	// set then, under c.mu, so no check and no loop starts after it, and
+	// running counts the checks and the loop that are still going, which
+	// shutDown waits for.
+	life    context.Context
+	end     context.CancelFunc
+	halted  bool
+	running sync.WaitGroup
+}
+
+type updatesFile struct {
+	Follow string `json:"follow"`
+}
+
+func newUpdating(u *updater.Updater, quit func(), folder string, idle func() (func(), bool), emit func(UpdateState)) *updating {
+	c := &updating{
+		own:  buildChannel,
+		idle: idle,
+		emit: emit,
+		// Every build is downloaded by an updater of its own, and Relaunch
+		// quits the app through the one that holds it.
+		fresh: func() *updater.Updater { return updater.New(quitHost{quit: quit}) },
+		load: func() string {
+			var f updatesFile
+			loadJSON(filepath.Join(folder, "updates.json"), &f)
+			return f.Follow
+		},
+		save:    func(ch string) error { return saveJSON(filepath.Join(folder, "updates.json"), updatesFile{Follow: ch}) },
+		install: startInstall,
+	}
+	exe, _ := os.Executable()
+	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Entries: updates.EntriesURL, Client: &http.Client{}}
+	// The builds already downloaded, so going back to a channel has its
+	// build at once. In the user's caches, which is where macOS expects a
+	// file that can always be fetched again.
+	if dir, err := os.UserCacheDir(); err == nil {
+		src.Cache = filepath.Join(dir, "Speaker Trail", "builds")
+	}
+	c.setUp(u, updateKeyText, src, exe, runtime.GOOS)
+	return c
+}
+
+// quitHost is what an updater of one download is attached to. The app
+// shows updates through its own events, so the updater's go nowhere, and
+// its window is never asked for. Restart quits the app through it.
+type quitHost struct{ quit func() }
+
+func (quitHost) Emit(string, ...any) bool                              { return false }
+func (quitHost) OnEvent(string, func(any)) func()                      { return func() {} }
+func (quitHost) OpenWindow(updater.WindowOptions) updater.WindowHandle { return nil }
+func (h quitHost) Quit() {
+	if h.quit != nil {
+		h.quit()
+	}
+}
+
+// setUp decides whether this build can update itself at all, and if it
+// can, hands Wails' updater the source and the key.
+//
+// A build made on the Mac starts out following nothing, whatever
+// updates.json says. It is a build somebody made on purpose, not one that
+// came from a channel, so the channel an earlier build followed is not
+// carried over to it: Tim made one and found it following the pull request
+// an earlier build had picked. updates.json stays as it is, for the builds
+// from a channel that read it.
+func (c *updating) setUp(u *updater.Updater, keyText string, src *updates.Source, exe, goos string) {
+	c.life, c.end = context.WithCancel(context.Background())
+	c.state = UpdateState{
+		Version: runningVersion(),
+		Commit:  buildCommit,
+		Channel: c.own,
+	}
+	if c.own != "" {
+		c.state.Picked = c.load()
+	}
+	if c.after == nil {
+		c.after = func(s UpdateState) <-chan time.Time { return time.After(nextCheck(s)) }
+	}
+	key, err := updates.PublicKey(keyText)
+	switch {
+	case err != nil:
+		c.state.Off = "The update key built into this app is not a key."
+	case key == nil:
+		c.state.Off = "This build has no update key yet, so it cannot tell a build of ours from anybody else's."
+	case goos != "darwin":
+		c.state.Off = "Only the Mac app updates itself, for now."
+	case !strings.Contains(filepath.ToSlash(exe), ".app/"):
+		c.state.Off = "Only the app updates itself. This is the program on its own, not Speaker Trail.app."
+	}
+	if c.state.Off != "" {
+		return
+	}
+	src.Own = c.own
+	src.Key = key
+	src.Picked = c.picked
+	src.Seen = c.seen
+	src.Progress = c.progress
+	src.Newer, src.Refused = newerEntry, refusedEntry
+	c.cfg = updater.Config{
+		CurrentVersion: c.state.Version,
+		Providers:      []updater.Provider{src},
+		PublicKey:      key,
+		Window:         updater.WindowNone,
+	}
+	if c.fresh == nil {
+		c.fresh = func() *updater.Updater { return updater.New(quitHost{}) }
+	}
+	err = u.Init(c.cfg)
+	if err != nil {
+		c.state.Off = "The updater did not start: " + err.Error()
+		return
+	}
+	c.u, c.src = u, src
+}
+
+// start looks at once, and then now and then, for a build from a channel.
+// At once, because the moment the app is opened is when a newer build is
+// wanted: it used to wait five seconds first, and a person who opened the
+// app to try a change sat on the Updates page waiting for it to start.
+// The first answer reaches the interface when it asks, since nothing is
+// on screen yet to hear the event. A build made on the Mac follows
+// nothing when it starts, so there is nothing to look for, and it starts
+// looking once a channel is picked, see Follow.
+//
+// The looks go on while a build is ready, so a newer commit replaces the
+// build waiting for a relaunch, see checkOnce.
+func (c *updating) start() {
+	if c.u == nil || c.own == "" {
+		return
+	}
+	c.loop()
+}
+
+// loop starts looking at once and then now and then, the first time it is
+// called. It says whether it started, so a pick that starts it does not
+// look a second time.
+func (c *updating) loop() bool {
+	c.mu.Lock()
+	started := c.looking || c.halted
+	c.looking = true
+	if !started {
+		c.running.Add(1)
+	}
+	c.mu.Unlock()
+	if started {
+		return false
+	}
+	go func() {
+		defer c.running.Done()
+		for {
+			c.check()
+			select {
+			case <-c.life.Done():
+				return
+			case <-c.after(c.State()):
+			}
+		}
+	}()
+	return true
+}
+
+func (c *updating) State() UpdateState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	s := c.state
+	s.Channels = append([]UpdateChannel(nil), c.state.Channels...)
+	return s
+}
+
+func (c *updating) change(f func(*UpdateState)) {
+	c.mu.Lock()
+	f(&c.state)
+	c.state.settle()
+	c.lastSent = time.Now()
+	c.changed.WakeLocked()
+	c.mu.Unlock()
+	if c.emit != nil {
+		c.emit(c.State())
+	}
+}
+
+func (c *updating) picked() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.state.Picked
+}
+
+func (c *updating) seen(l updates.List) {
+	var chans []UpdateChannel
+	for _, b := range l.Channels {
+		chans = append(chans, UpdateChannel{ID: b.Channel, Name: b.Name, Version: b.Version, Conflict: b.Conflict})
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.state.Channels = chans
+	c.state.Follows, c.state.Gone, c.state.Building = "", "", ""
+	if b, ok := l.Follow(c.state.Picked, c.own); ok {
+		c.state.Follows = b.Channel
+		c.state.Building = b.Newest
+	} else {
+		c.state.Gone = updates.Followed(c.state.Picked, c.own)
+	}
+	c.state.settle()
+	c.changed.WakeLocked()
+}
+
+// newerEntry says in the log that the followed channel's own entry was of
+// a newer build than the list, and is offered in its place.
+func newerEntry(listed, entry updates.Build) {
+	theLog.line(slog.LevelInfo, "updates").Str("channel", entry.Channel).Str("listed", listed.Version).
+		Str("build", entry.Version).Msg("the channel's own entry is newer than the list, so its build is offered")
+}
+
+// refusedEntry says in the log why the followed channel's own entry was
+// not taken, so a report tells a missing or broken entry from a list
+// that had the newest build already.
+func refusedEntry(channel string, why error) {
+	theLog.line(slog.LevelDebug, "updates").Str("channel", channel).Err(why).
+		Msg("the channel's own entry was not taken, so the list's build is offered")
+}
+
+// progress is told about every quarter of a megabyte, and passes it on a
+// few times a second, which is as often as a fill can be seen to move.
+func (c *updating) progress(written, total int64) {
+	c.mu.Lock()
+	// A download that was let go of goes on reporting for a moment until
+	// it hears, and what it says is no longer anything on screen.
+	if c.state.Phase != "downloading" {
+		c.mu.Unlock()
+		return
+	}
+	c.state.Written, c.state.Total = written, total
+	c.changed.WakeLocked()
+	due := time.Since(c.lastSent) > 200*time.Millisecond || written == total
+	c.mu.Unlock()
+	if due {
+		c.change(func(*UpdateState) {})
+	}
+}
+
+// refreshList reads the channel list, so the settings can offer the
+// channels to a build that has not looked yet. At most once a minute.
+func (c *updating) refreshList() {
+	if c.u == nil {
+		return
+	}
+	c.mu.Lock()
+	due := time.Since(c.listed) > time.Minute
+	if due {
+		c.listed = time.Now()
+	}
+	c.mu.Unlock()
+	if !due {
+		return
+	}
+	if _, err := c.src.Fetch(context.Background()); err != nil {
+		theLog.line(slog.LevelWarn, "updates").Err(err).Msg("the channels could not be read")
+		return
+	}
+	c.change(func(*UpdateState) {})
+}
+
+// Follow picks a channel and looks at once. The wait for a download of the
+// channel before is stopped and what it found forgotten, and the state
+// shown is the new channel's from this moment: a click shows at once. The
+// download itself goes on, so going back has it. Following nothing is not
+// a choice: a build made on the Mac starts out following nothing, and once
+// a channel is picked another channel is what follows it. The first pick
+// on such a build follows the channel fully, the way a build from a
+// channel does: it looks at once, and then every ten minutes.
+func (c *updating) Follow(channel string) error {
+	if !updates.ValidChannel(channel) {
+		return fmt.Errorf("%q is not a channel", channel)
+	}
+	if c.u == nil {
+		return errors.New(c.state.Off)
+	}
+	c.picking.Lock()
+	if err := c.save(channel); err != nil {
+		c.picking.Unlock()
+		return err
+	}
+	c.mu.Lock()
+	c.round++
+	if c.stop != nil {
+		c.stop()
+	}
+	c.mu.Unlock()
+	c.change(func(s *UpdateState) {
+		s.Picked = channel
+		s.Phase, s.Problem, s.Detail = "checking", "", ""
+		s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
+		s.Follows, s.Gone = "", ""
+		for _, ch := range s.Channels {
+			if ch.ID == updates.Followed(channel, c.own) {
+				s.Follows = ch.ID
+			}
+		}
+	})
+	c.picking.Unlock()
+	theLog.line(slog.LevelInfo, "updates").Str("channel", channel).Msg("channel picked, its newest build is looked for")
+	if !c.loop() {
+		go c.check()
+	}
+	return nil
+}
+
+// changeIn is change for a check, which only counts while no other channel
+// has been picked since it began.
+func (c *updating) changeIn(round int, f func(*UpdateState)) {
+	c.mu.Lock()
+	if c.round != round {
+		c.mu.Unlock()
+		return
+	}
+	c.mu.Unlock()
+	c.change(func(s *UpdateState) {
+		// Asked again under the lock, since a pick may have landed between.
+		if c.round == round {
+			f(s)
+		}
+	})
+}
+
+// checkNow is Check on the Updates page and in the app menu: it reads the
+// channel list at once, so a channel made a moment ago is on the list
+// whatever else is going on, and then looks for the followed channel's
+// build. The list used to be read only by the check, which waited for a
+// check already running, and by the page at most once a minute.
+func (c *updating) checkNow() {
+	if c.u == nil {
+		return
+	}
+	c.mu.Lock()
+	c.listed = time.Now()
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	if _, err := c.src.Fetch(ctx); err != nil {
+		theLog.line(slog.LevelWarn, "updates").Err(err).Msg("the channels could not be read")
+	} else {
+		c.change(func(*UpdateState) {})
+	}
+	cancel()
+	c.check()
+}
+
+// check looks for the followed channel's build, and downloads it when it
+// is not the one running. One at a time: a check asked for while one runs
+// is done when that one ends. A build following nothing has nothing to
+// look for.
+//
+// Whether a check runs, and whether it looks once more, are both decided
+// under c.mu, so a check asked for is never lost. They were a lock tried
+// on one side and a flag read on the other, and a check that had read
+// there was nothing more still held the lock for a moment: a pick that
+// landed then only left word nobody read, and stayed in Checking until
+// the next look, ten minutes later.
+func (c *updating) check() {
+	if c.u == nil || updates.Followed(c.picked(), c.own) == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.halted {
+		c.mu.Unlock()
+		return
+	}
+	if c.checking {
+		c.again = true
+		c.changed.WakeLocked()
+		c.mu.Unlock()
+		return
+	}
+	c.checking = true
+	c.running.Add(1)
+	c.mu.Unlock()
+	defer c.running.Done()
+	for {
+		c.checkOnce()
+		c.mu.Lock()
+		again := c.again && !c.halted
+		c.again = false
+		c.checking = again
+		c.changed.WakeLocked()
+		c.mu.Unlock()
+		if !again {
+			if c.ended != nil {
+				c.ended()
+			}
+			return
+		}
+	}
+}
+
+func (c *updating) checkOnce() {
+	ctx, cancel := context.WithTimeout(c.life, 30*time.Minute)
+	c.mu.Lock()
+	round := c.round
+	c.stop = cancel
+	c.mu.Unlock()
+	defer func() {
+		cancel()
+		c.mu.Lock()
+		if c.round == round {
+			c.stop = nil
+		}
+		c.mu.Unlock()
+	}()
+	mine := func(f func(*UpdateState)) { c.changeIn(round, f) }
+
+	mine(func(s *UpdateState) {
+		if s.Phase != "ready" {
+			s.Phase = "checking"
+		}
+		s.Problem, s.Detail = "", ""
+	})
+	rel, err := c.u.Check(ctx)
+	if err != nil {
+		if ctx.Err() == context.Canceled {
+			return
+		}
+		theLog.line(slog.LevelWarn, "updates").Str("channel", updates.Followed(c.picked(), c.own)).Err(err).Msg("the check failed")
+		mine(func(s *UpdateState) {
+			if s.Phase != "ready" {
+				s.Phase = "failed"
+			}
+			s.Problem, s.Detail = updateProblem(err, false), plainUpdateError(err)
+			s.Checked = time.Now()
+		})
+		return
+	}
+	if rel == nil {
+		theLog.line(slog.LevelInfo, "updates").Str("channel", updates.Followed(c.picked(), c.own)).
+			Str("build", c.cfg.CurrentVersion).Msg("the build running is the channel's newest")
+		c.drop(round)
+		mine(func(s *UpdateState) {
+			s.Phase, s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "current", "", "", "", 0, 0
+			s.Checked = time.Now()
+		})
+		return
+	}
+	c.mu.Lock()
+	mineNow := c.round == round
+	have := mineNow && c.state.Phase == "ready" && c.state.Next == rel.Version
+	// A build of this channel is ready and a newer one has come. The one
+	// that is ready stays ready, on the page and on the way out, until the
+	// newer one is whole: Tim's rule is that the app always holds the
+	// newest build of its channel, and never none while one is on its way.
+	swap := mineNow && c.state.Phase == "ready"
+	c.mu.Unlock()
+	if have {
+		mine(func(s *UpdateState) { s.Checked = time.Now() })
+		return
+	}
+	commit, _ := rel.Metadata["commit"].(string)
+	theLog.line(slog.LevelInfo, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
+		Msg("the channel's newest build is fetched, from the builds kept if it is there")
+	mine(func(s *UpdateState) {
+		if !swap {
+			s.Phase, s.Next, s.NextName, s.NextCommit = "downloading", rel.Version, rel.Name, commit
+			s.Written, s.Total = 0, rel.Artifact.Size
+		}
+		s.Checked = time.Now()
+	})
+	w, err := c.download(ctx, rel)
+	if err != nil {
+		// Let go of because another channel was picked: nothing went
+		// wrong, the download goes on into the cache, and the next check
+		// is already on its way.
+		if ctx.Err() == context.Canceled {
+			return
+		}
+		theLog.line(slog.LevelWarn, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Err(err).Msg("the download failed")
+		// The newer build did not come whole, and the one that is ready
+		// still is. The next look tries again.
+		if swap {
+			return
+		}
+		c.drop(round)
+		mine(func(s *UpdateState) {
+			s.Phase = "failed"
+			s.Problem, s.Detail = updateProblem(err, true), plainUpdateError(err)
+		})
+		return
+	}
+	// The new build is whole and checked: it is the one held from now on,
+	// and the one it replaces is removed, in one step with the state, so
+	// the page and the way out never name two different builds. Unless
+	// that one is already being put in place by Relaunch or on the way
+	// out: then it stays where it is until it has gone in.
+	var gone *updater.Updater
+	c.change(func(s *UpdateState) {
+		if c.round != round {
+			gone = w
+			return
+		}
+		gone, c.held = c.held, w
+		if c.relaunching || c.leaving {
+			gone = nil
+		}
+		s.Phase, s.Next, s.NextName, s.NextCommit = "ready", rel.Version, rel.Name, commit
+		s.Written, s.Total = rel.Artifact.Size, rel.Artifact.Size
+	})
+	unstage(gone)
+	if gone != w {
+		theLog.line(slog.LevelInfo, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Str("file", w.DownloadedPath()).
+			Msg("the build is ready for Relaunch")
+	}
+}
+
+// download fetches, checks and unpacks a build with an updater of its own,
+// the way every build is fetched. Wails' updater throws away the build it
+// holds before it downloads another, so a build that is ready would be
+// gone for as long as a newer one downloads, and for good if that one
+// failed. With an updater per build, the one that is ready is not touched
+// until its replacement has passed every check the first one did.
+func (c *updating) download(ctx context.Context, rel *updater.Release) (*updater.Updater, error) {
+	w := c.fresh()
+	cfg := c.cfg
+	r := *rel
+	cfg.Providers = []updater.Provider{offer{src: c.src, rel: &r}}
+	if err := w.Init(cfg); err != nil {
+		return nil, err
+	}
+	if _, err := w.Check(ctx); err != nil {
+		return nil, err
+	}
+	if err := w.DownloadAndInstall(ctx); err != nil {
+		return nil, err
+	}
+	return w, nil
+}
+
+// offer is what an updater of one build reads from: the build the check
+// found, its claim already checked, downloaded through the channel list's
+// source, cache and all.
+type offer struct {
+	src *updates.Source
+	rel *updater.Release
+}
+
+func (o offer) Name() string { return o.src.Name() }
+
+func (o offer) Check(context.Context, updater.CheckRequest) (*updater.Release, error) {
+	return o.rel, nil
+}
+
+func (o offer) Download(ctx context.Context, r *updater.Release, dst io.Writer, onProgress func(written, total int64)) error {
+	return o.src.Download(ctx, r, dst, onProgress)
+}
+
+// drop lets go of the build held, when a check of this round finds there
+// is nothing of its channel to install: it is current, gone, or failed.
+func (c *updating) drop(round int) {
+	c.mu.Lock()
+	var gone *updater.Updater
+	if c.round == round {
+		gone, c.held = c.held, nil
+	}
+	if c.relaunching || c.leaving {
+		gone = nil
+	}
+	c.mu.Unlock()
+	unstage(gone)
+}
+
+// unstage removes what an updater unpacked and nobody will install. Only a
+// folder of Wails' own in the temporary folder, the one it unpacked into.
+func unstage(w *updater.Updater) {
+	if w == nil {
+		return
+	}
+	p := w.DownloadedPath()
+	if p == "" {
+		return
+	}
+	dir := filepath.Dir(p)
+	if !strings.HasPrefix(filepath.Base(dir), "wails-update-") || filepath.Dir(dir) != filepath.Clean(os.TempDir()) {
+		return
+	}
+	_ = os.RemoveAll(dir)
+}
+
+// Restart quits into the build that is ready. Never while work runs: the
+// helper that swaps the app waits for this one to end, and a run would
+// be stopped half way. And no work starts once it has found
+// none running, so none is stopped by the quit either. The Updates page
+// keeps Relaunch from being pressed while work runs, and this is what
+// holds when it is pressed all the same.
+func (c *updating) Restart() error {
+	if c.u == nil {
+		return errors.New(c.state.Off)
+	}
+	c.mu.Lock()
+	ready := c.state.Phase == "ready" && c.held != nil
+	c.mu.Unlock()
+	if !ready {
+		return errors.New("no update is ready")
+	}
+	reopen := func() {}
+	if c.idle != nil {
+		var ok bool
+		if reopen, ok = c.idle(); !ok {
+			theLog.line(slog.LevelInfo, "updates").Msg("Relaunch waits, work is still running")
+			return errors.New("work is still running. Relaunch when it is done")
+		}
+	}
+	// The build held now is the one Relaunch puts in place, and nothing
+	// replaces it from here on.
+	c.mu.Lock()
+	held := c.held
+	ready = c.state.Phase == "ready" && held != nil
+	c.relaunching = ready
+	c.mu.Unlock()
+	if !ready {
+		reopen()
+		return errors.New("no update is ready")
+	}
+	if err := held.Restart(context.Background()); err != nil {
+		c.mu.Lock()
+		c.relaunching = false
+		c.mu.Unlock()
+		reopen()
+		return err
+	}
+	return nil
+}
+
+// relaunchingNow says whether Relaunch is putting a new build in place, so
+// the app quits into it without asking first.
+func (c *updating) relaunchingNow() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.relaunching
+}
+
+// installOnQuit puts a build that is ready in place once the app has
+// quit, the way Chrome does, so the next start is the new build and
+// nothing opens by itself in between. Nothing is done when no build is
+// ready, or when Relaunch is already putting it in place.
+func (c *updating) installOnQuit() {
+	if c == nil || c.u == nil || c.install == nil {
+		return
+	}
+	c.mu.Lock()
+	ready := c.state.Phase == "ready" && !c.relaunching && c.held != nil
+	staged := ""
+	if ready {
+		staged = c.held.DownloadedPath()
+		c.leaving = true
+	}
+	c.mu.Unlock()
+	if !ready {
+		return
+	}
+	from := c.app
+	if from == nil {
+		from = runningApp
+	}
+	target := from()
+	if staged == "" || target == "" {
+		return
+	}
+	if err := c.install(target, staged); err != nil {
+		theLog.line(slog.LevelError, "updates").Err(err).Msg("the build could not be put in place on the way out")
+		return
+	}
+	theLog.line(slog.LevelInfo, "updates").Str("build", staged).Str("app", target).Msg("the build goes in place of the app once it has quit")
+}
+
+// plainUpdateError takes the updater's prefixes off an error, which say
+// where in the updater it happened and nothing a person can act on. What
+// is left is what the system said, shown apart from the words a person
+// reads, for a report, see updateProblem.
+func plainUpdateError(err error) string {
+	msg := err.Error()
+	for _, p := range []string{"updater: all providers failed: ", "updater: ", "channels: "} {
+		msg = strings.ReplaceAll(msg, p, "")
+	}
+	msg = strings.TrimSuffix(msg, ".")
+	if msg == "" {
+		return ""
+	}
+	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+}
+
+// updateProblem says in a person's words what kept a check or a download
+// from getting through, and what to do. Tim saw the Go error itself on
+// the Updates page, an address and a port and a socket, wrapped over three
+// lines. What the system said is still shown, apart, see
+// plainUpdateError.
+//
+// It reads the error's words as well as its kind: the updater joins the
+// errors of its providers into one text, which keeps their words and
+// loses what they were.
+func updateProblem(err error, downloading bool) string {
+	msg := strings.ToLower(err.Error())
+	has := func(words ...string) bool {
+		for _, w := range words {
+			if strings.Contains(msg, w) {
+				return true
+			}
+		}
+		return false
+	}
+	var netErr net.Error
+	switch {
+	case has("answered 404"):
+		if downloading {
+			return "The new build was not found. Try again in a few minutes."
+		}
+		return "The list of builds was not found. Try again in a few minutes."
+	case has("answered 429", "answered 5"):
+		return "GitHub is busy. Try again in a few minutes."
+	case has("answered "):
+		return "GitHub turned the request down. Try again later."
+	// A certificate that does not hold is the network's, before the
+	// build's signature: Go says "x509: certificate signed by unknown
+	// authority" when a hotel's Wi-Fi, a captive portal or a company's
+	// proxy stands between the Mac and GitHub, and signed is a word the
+	// signature's errors use too.
+	case has("x509:", "certificate", "tls:"):
+		if downloading {
+			return "The download broke off. Check your internet connection."
+		}
+		return "Could not reach GitHub. Check your internet connection."
+	case has("signed with", "not signed", "signature", "claim", "checksum", "digest mismatch", "did not arrive as the channel list says"):
+		return "The new build could not be verified, so it was not used."
+	case has("no space left", "disk full", "disk quota"):
+		return "The new build could not be saved. Check that the disk has room."
+	case has("written to the cache", "kept in the cache"):
+		return "The new build could not be saved."
+	case errors.As(err, &netErr), errors.Is(err, context.DeadlineExceeded), has(
+		"dial tcp", "read tcp", "write tcp", "no such host", "connection refused", "connection reset",
+		"network is unreachable", "can't assign requested address", "i/o timeout", "tls handshake",
+		"deadline exceeded", "could not be fetched", "could not be downloaded", "download stopped"):
+		if downloading {
+			return "The download broke off. Check your internet connection."
+		}
+		return "Could not reach GitHub. Check your internet connection."
+	case !downloading && has("not readable", "too large", "could not be read", "has no"):
+		return "The list of builds could not be read. Try again later."
+	}
+	if downloading {
+		return "The new build could not be downloaded."
+	}
+	return "Could not look for a newer build."
+}

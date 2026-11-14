@@ -1,0 +1,242 @@
+# Builds the app for every push to main and to a pull request, so the app
+# on Tim's Mac can update itself to it from its Updates page. Signing it
+# with the update key and publishing it where the app looks is
+# publish.yml's work, not this one's. See docs/UPDATES.md. Ported from
+# FrameFairy, which works the same way.
+#
+# This workflow runs the branch's own code, so it gets no secret and asks
+# for no token that can write. A branch is code nobody has reviewed yet,
+# and a push to a branch runs the workflow file of that branch, so
+# whatever this file is given, any branch can take, and a branch's copy
+# can ask for more. What keeps the key from a branch is not this file but
+# the environment updates, which only main enters, and what keeps a
+# branch's build from passing as another's is publish.yml, which checks
+# the commit built against the channel it is published for. publish.yml runs from main whenever
+# this workflow starts or ends, takes the zip this one leaves as an
+# artifact, and signs and publishes it with main's own tools. The zip is
+# the only thing it takes from here: which channel, which commit and which
+# version it works out again from GitHub's own record of the run.
+#
+# A push to a pull request is built on the push, not on the pull request's
+# synchronize. GitHub runs no pull_request workflow while a pull request is
+# in conflict with main, so a commit pushed in that state would get no
+# build. GitHub runs push whatever the conflict, so every push to a branch
+# of this repository comes here, finds the branch's open pull request and
+# builds its channel. A branch with no open pull request builds nothing.
+#
+# Only a push builds. Opening a pull request builds nothing, so a pull
+# request is built from its first push after it was opened. The
+# pull_request event is left with the close, which builds nothing and only
+# has publish.yml write the list again without it. The build is of the
+# branch as it is, not merged with main, so a conflict does not make it
+# wrong to test.
+#
+# A commit that is built already, or that only changes the docs against
+# the build there is, gets no build of its own. scripts/needs-build.sh
+# decides that for the build and for the list alike.
+#
+# Two jobs:
+#
+# 0. which, what a push or a pull request is a build of: main, the open pull
+#    request of the branch pushed, or nothing.
+# 1. build, on macOS, per channel. A second push to a pull request stops the
+#    build of the first, whose result nobody wants any more. It leaves the
+#    zip as an artifact called build, and nothing else.
+#
+# Only branches of this repository are built. Until the key is made,
+# nothing is built and the build says why.
+name: Builds to update to
+
+on:
+  pull_request:
+    types: [closed]
+  push:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+jobs:
+  which:
+    # A branch deleted is a push too, of nothing.
+    if: >-
+      (github.event_name == 'push' && !github.event.deleted) ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      channel: ${{ steps.which.outputs.channel }}
+      number: ${{ steps.which.outputs.number }}
+      sha: ${{ steps.which.outputs.sha }}
+      build: ${{ steps.which.outputs.build }}
+    steps:
+      - id: which
+        name: What this is a build of
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          BRANCH: ${{ github.ref_name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        # A branch's pull request is only one opened from this repository:
+        # a fork can have a branch of the same name.
+        run: |
+          build=true
+          if [ "$EVENT" = pull_request ]; then
+            build=false
+          elif [ "$BRANCH" = main ]; then
+            NUMBER=
+          else
+            found=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
+            if [ -z "$found" ]; then
+              echo "::notice::$BRANCH has no open pull request, so it has no channel to build for."
+              exit 0
+            fi
+            NUMBER=$(printf '%s' "$found" | jq -r .number)
+          fi
+          if [ -n "$NUMBER" ]; then channel="pr-$NUMBER"; else channel=main; fi
+          {
+            echo "channel=$channel"
+            echo "number=$NUMBER"
+            echo "sha=$SHA"
+            echo "build=$build"
+          } >> "$GITHUB_OUTPUT"
+          echo "$SHA is a build of $channel"
+
+  build:
+    needs: which
+    if: needs.which.outputs.build == 'true'
+    runs-on: macos-15
+    timeout-minutes: 45
+    concurrency:
+      group: builds-build-${{ needs.which.outputs.channel }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The branch as it is, not merged with main: the build Tim tests is
+          # the pull request's own. The history of both commits is fetched
+          # by needs-build.sh when it asks.
+          ref: ${{ needs.which.outputs.sha }}
+
+      # Only the public half is looked at here. The private half is
+      # publish.yml's, and a build made without it would never be signed.
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ ! -s cmd/speakertrail-app/update-key.txt ]; then
+            echo "::notice::No update key yet, so nothing is built to update to. See docs/UPDATES.md, The keys."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A pull request's commit that is built already, or that only changes
+      # the docs against the build there is, gets no build of its own, and
+      # Tim no restart for nothing. It is measured against the build and
+      # not against the push before. main is always built.
+      - id: needs
+        if: steps.key.outputs.ready == 'true'
+        name: Does this commit need a build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANNEL: ${{ needs.which.outputs.channel }}
+          SHA: ${{ needs.which.outputs.sha }}
+        run: |
+          run=true
+          if [ "$CHANNEL" != main ]; then
+            built=""
+            if gh release download dev --pattern "channel-$CHANNEL.json" --dir built 2>/dev/null; then
+              built=$(jq -r '.commit // empty' "built/channel-$CHANNEL.json")
+            fi
+            rm -rf built
+            case $(sh scripts/needs-build.sh "$built" "$SHA") in
+            built)
+              echo "::notice::$SHA is built already."
+              run=false
+              ;;
+            docs)
+              echo "::notice::Only the docs changed against the build there is, so this commit has no build of its own."
+              run=false
+              ;;
+            esac
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
+      - id: what
+        if: steps.needs.outputs.run == 'true'
+        name: What this build is
+        env:
+          NUMBER: ${{ needs.which.outputs.number }}
+          SHA: ${{ needs.which.outputs.sha }}
+        # A build is named by the commit it was made from, the way git and
+        # GitHub shorten it, so its version says what is in it. Nothing
+        # orders builds by their version: the app installs whatever build
+        # its channel has when it is not the one running. publish.yml works
+        # the version out again by the same rule, so what the app says it
+        # is and what the list says it is are one.
+        run: |
+          app=$(awk -F'"' '/^const appVersion = /{ print $2; exit }' cmd/speakertrail-app/appfiles.go)
+          short=$(echo "$SHA" | cut -c1-7)
+          if [ -n "$NUMBER" ]; then
+            channel="pr-$NUMBER"
+            version="$app-pr$NUMBER.$short"
+          else
+            channel=main
+            version="$app-main.$short"
+          fi
+          {
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "commit=$(echo "$SHA" | cut -c1-12)"
+          } >> "$GITHUB_OUTPUT"
+
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: The app
+        if: steps.needs.outputs.run == 'true'
+        run: >-
+          make app
+          BUILD_VERSION='${{ steps.what.outputs.version }}'
+          BUILD_CHANNEL='${{ steps.what.outputs.channel }}'
+          BUILD_COMMIT='${{ steps.what.outputs.commit }}'
+
+      # One entry at the top, Speaker Trail.app, which is what Wails'
+      # updater asks of a zip. --norsrc, because ditto otherwise adds a ._
+      # file beside every file for its extended attributes, and the updater
+      # would unpack them into the bundle. The signature is inside the
+      # program, not in attributes, so nothing is lost. The zip is named and
+      # signed by publish.yml.
+      - id: zip
+        if: steps.needs.outputs.run == 'true'
+        name: Pack it
+        run: |
+          mkdir -p dist
+          ditto -c -k --norsrc --keepParent "bin/Speaker Trail.app" dist/app.zip
+          ls -l dist
+          echo "built=true" >> "$GITHUB_OUTPUT"
+
+      - if: steps.zip.outputs.built == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build
+          path: dist/app.zip
+          # The app is zipped already, by ditto above.
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 3

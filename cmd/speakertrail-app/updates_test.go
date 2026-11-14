@@ -1,0 +1,1249 @@
+package main
+
+import (
+	"archive/zip"
+	"bytes"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/wailsapp/wails/v3/pkg/updater"
+
+	"github.com/timmrkz/speakertrail/internal/updates"
+	"github.com/timmrkz/speakertrail/internal/wake"
+)
+
+const inApp = "/Applications/Speaker Trail.app/Contents/MacOS/speakertrail-app"
+
+// An updater with nothing to show it to and nothing to quit.
+type quietHost struct{}
+
+func (quietHost) Emit(string, ...any) bool                              { return false }
+func (quietHost) OnEvent(string, func(any)) func()                      { return func() {} }
+func (quietHost) OpenWindow(updater.WindowOptions) updater.WindowHandle { return nil }
+func (quietHost) Quit()                                                 {}
+
+// A channel list and two builds on a server of their own. slow holds each
+// download until it is let go.
+type channelServer struct {
+	srv  *httptest.Server
+	key  ed25519.PrivateKey
+	mu   sync.Mutex
+	list []byte
+	zips map[string][]byte
+	slow chan struct{}
+	// slowOnly holds back only the builds whose path has this in it.
+	slowOnly string
+	// asked is told the path of each build held back, as it is asked for,
+	// when it is set.
+	asked chan string
+	hits  atomic.Int32
+	// fetched counts the downloads of each build, by its path.
+	fetched map[string]int
+	// newest is a channel's commit still to be built, as the list says it.
+	newest map[string]string
+	// conflict is a pull request the list says no longer merges into main.
+	conflict map[string]bool
+	// status is what the list answers with instead of itself, when set.
+	status int
+	// client is what the app reaches the server with, when it is not the
+	// server's own, which trusts its certificate.
+	client *http.Client
+}
+
+func newChannelServer(t *testing.T) *channelServer {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := &channelServer{key: key, zips: map[string][]byte{}, fetched: map[string]int{}}
+	cs.srv = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cs.mu.Lock()
+		list, data, ok, status := cs.list, cs.zips[r.URL.Path], false, cs.status
+		_, ok = cs.zips[r.URL.Path]
+		if ok {
+			cs.fetched[r.URL.Path]++
+		}
+		slow, asked := cs.slow, cs.asked
+		if cs.slowOnly != "" && !strings.Contains(r.URL.Path, cs.slowOnly) {
+			slow = nil
+		}
+		cs.mu.Unlock()
+		switch {
+		case r.URL.Path == "/channels.json":
+			cs.hits.Add(1)
+			if status != 0 {
+				http.Error(w, http.StatusText(status), status)
+				return
+			}
+			_, _ = w.Write(list)
+		case ok:
+			if slow != nil {
+				if asked != nil {
+					asked <- r.URL.Path
+				}
+				<-slow
+			}
+			_, _ = w.Write(data)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(cs.srv.Close)
+	return cs
+}
+
+func (cs *channelServer) publish(t *testing.T, builds ...[3]string) {
+	t.Helper()
+	var l updates.List
+	for _, b := range builds {
+		channel, version, says := b[0], b[1], b[2]
+		data := zipOf(t, says)
+		digest, size, _ := updates.Digest(bytes.NewReader(data))
+		path := "/" + channel + "-" + version + ".zip"
+		cs.mu.Lock()
+		cs.zips[path] = data
+		cs.mu.Unlock()
+		entry := updates.Build{
+			Channel: channel, Name: "#" + channel, Version: version, Commit: "abc1234",
+			URL: cs.srv.URL + path, Size: size, SHA256: hex.EncodeToString(digest),
+			Signature: updates.Sign(cs.key, digest), Published: time.Now(),
+			Newest: cs.newest[channel], Conflict: cs.conflict[channel],
+		}
+		entry.Claim = updates.SignClaim(cs.key, entry)
+		l.Channels = append(l.Channels, entry)
+	}
+	data, _ := json.Marshal(l)
+	cs.mu.Lock()
+	cs.list = data
+	cs.mu.Unlock()
+}
+
+func zipOf(t *testing.T, says string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	f, err := w.Create("Speaker Trail.app/Contents/MacOS/speakertrail-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.Write([]byte(says))
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+// sum is the SHA-256 of a build, by its path, the name it is kept under.
+func (cs *channelServer) sum(path string) string {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	digest, _, _ := updates.Digest(bytes.NewReader(cs.zips[path]))
+	return hex.EncodeToString(digest)
+}
+
+func (cs *channelServer) publicKey() string {
+	return base64.StdEncoding.EncodeToString(cs.key.Public().(ed25519.PublicKey))
+}
+
+// inApplications is the app a test's build is put in place of.
+func inApplications() string { return "/Applications/Speaker Trail.app" }
+
+// An updating as the app makes it, reading from the server above, and
+// what it has sent so far. The states are sent from the updating's own
+// goroutines, so they are read through sent, under the same lock. It is a
+// build made on the Mac, with nothing in updates.json.
+func newTestUpdating(t *testing.T, cs *channelServer, busy bool) (*updating, func(until func([]UpdateState) bool) []UpdateState) {
+	t.Helper()
+	return testUpdating(t, cs, busy, "", "")
+}
+
+// testUpdating is newTestUpdating for a build from the channel own, or
+// made on the Mac when own is empty, with stored in updates.json, picked
+// by a run before.
+func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string) (*updating, func(until func([]UpdateState) bool) []UpdateState) {
+	t.Helper()
+	var mu sync.Mutex
+	var sent []UpdateState
+	var told wake.Wake
+	picked := stored
+	c := &updating{
+		own:  own,
+		idle: func() (func(), bool) { return func() {}, !busy },
+		emit: func(s UpdateState) {
+			mu.Lock()
+			sent = append(sent, s)
+			told.WakeLocked()
+			mu.Unlock()
+		},
+		load: func() string {
+			mu.Lock()
+			defer mu.Unlock()
+			return picked
+		},
+		save: func(ch string) error {
+			mu.Lock()
+			defer mu.Unlock()
+			picked = ch
+			return nil
+		},
+	}
+	client := cs.srv.Client()
+	if cs.client != nil {
+		client = cs.client
+	}
+	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: client}
+	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
+	if c.state.Off != "" {
+		t.Fatalf("off: %s", c.state.Off)
+	}
+	// Nothing it started goes on into the next test.
+	t.Cleanup(c.shutDown)
+	// What the interface was told, at once with nil, or once until holds
+	// for it. A change wakes whoever waits on the state before it tells
+	// the interface, so waitFor can see a state the interface has yet to
+	// hear of.
+	return c, func(until func([]UpdateState) bool) []UpdateState {
+		for {
+			mu.Lock()
+			if until == nil || until(sent) {
+				defer mu.Unlock()
+				return append([]UpdateState(nil), sent...)
+			}
+			ch := told.WaitLocked()
+			mu.Unlock()
+			<-ch
+		}
+	}
+}
+
+// waitFor waits until ok holds for the state, and gives it. It looks
+// again at every change to the state, the moment it is made, see changed,
+// never on a clock. what names the state for whoever reads the test. A
+// state that never comes is ended by go test's -timeout, which shows
+// where it waited.
+func waitFor(t *testing.T, c *updating, what string, ok func(UpdateState) bool) UpdateState {
+	t.Helper()
+	for {
+		// Taken before the look, so a change between the look and the
+		// wait still ends the wait.
+		c.mu.Lock()
+		changed := c.changed.WaitLocked()
+		c.mu.Unlock()
+		if s := c.State(); ok(s) {
+			return s
+		}
+		<-changed
+	}
+}
+
+// waitDone is waitFor that also waits for the check that got there to
+// end. A check says what it found before it has finished: the build a
+// newer one replaced is removed after the state says the newer one is
+// ready, and a check asked for until then only leaves word for the one
+// running and returns at once.
+func waitDone(t *testing.T, c *updating, what string, ok func(UpdateState) bool) UpdateState {
+	t.Helper()
+	return waitFor(t, c, what, func(s UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.checking && ok(s)
+	})
+}
+
+// cleanStaged removes what was unpacked once nothing can unpack more.
+//
+// On the real disk: an update is unpacked on the disk, where it is run from.
+func cleanStaged(t *testing.T, c *updating) {
+	t.Cleanup(func() {
+		c.shutDown()
+		if p := c.staged(); p != "" {
+			_ = os.RemoveAll(filepath.Dir(p))
+		}
+	})
+}
+
+// What stops a build from updating itself says so, in words.
+func TestUpdatesSayWhyTheyAreOff(t *testing.T) {
+	cs := newChannelServer(t)
+	for _, c := range []struct{ key, exe, goos, says string }{
+		{"", inApp, "darwin", "no update key"},
+		{"nonsense", inApp, "darwin", "not a key"},
+		{cs.publicKey(), inApp, "linux", "Only the Mac app"},
+		{cs.publicKey(), "/Users/tim/framefairy/bin/speakertrail-app", "darwin", "not Speaker Trail.app"},
+	} {
+		u := &updating{load: func() string { return "" }}
+		u.setUp(updater.New(quietHost{}), c.key, &updates.Source{URL: cs.srv.URL}, c.exe, c.goos)
+		if !strings.Contains(u.state.Off, c.says) || u.u != nil {
+			t.Errorf("%s on %s with %q: off says %q", c.exe, c.goos, c.key, u.state.Off)
+		}
+		if err := u.Follow("main"); err == nil {
+			t.Error("a build that is off followed a channel")
+		}
+		u.check()
+	}
+}
+
+// Picking a pull request downloads its build and says when it is ready,
+// with the fill on the way.
+//
+// On the real disk: an update is a program that is downloaded, unpacked and run.
+func TestPickingAChannelFetchesItsBuild(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, sent := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	if err := c.Follow("pr-20"); err != nil {
+		t.Fatal(err)
+	}
+	s := waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" || s.NextCommit != "abc1234" || s.Follows != "pr-20" || s.Picked != "pr-20" || len(s.Channels) != 2 {
+		t.Errorf("ready as %+v", s)
+	}
+	if s.Written != s.Total || s.Total == 0 {
+		t.Errorf("the fill ended at %d of %d", s.Written, s.Total)
+	}
+	// The interface hears of ready just after the state is.
+	told := sent(func(all []UpdateState) bool {
+		return slices.ContainsFunc(all, func(st UpdateState) bool { return st.Phase == "ready" })
+	})
+	var phases []string
+	for _, st := range told {
+		if st.Phase != "" && (len(phases) == 0 || phases[len(phases)-1] != st.Phase) {
+			phases = append(phases, st.Phase)
+		}
+	}
+	if strings.Join(phases, " ") != "checking downloading ready" {
+		t.Errorf("went through %v", phases)
+	}
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/speakertrail-app")); string(got) != "twenty" {
+		t.Errorf("staged %q", got)
+	}
+}
+
+// A pull request that was merged leaves the list, and a build that followed
+// it downloads nothing: not main, not anything, until another channel is
+// picked. Tim followed pull request 25, it was merged, and the app went on
+// to download main by itself.
+func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	_ = c.Follow("pr-18")
+	s := waitFor(t, c, "gone", func(s UpdateState) bool { return s.Phase == "gone" })
+	if s.Gone != "pr-18" || s.Follows != "" || s.Next != "" || c.staged() != "" {
+		t.Errorf("%+v, staged %q", s, c.staged())
+	}
+	// Picking main is how it goes on.
+	_ = c.Follow("main")
+	s = waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Follows != "main" || s.Gone != "" || s.Next != "0.3.0-main.5" {
+		t.Errorf("%+v", s)
+	}
+}
+
+// A push whose build has not come yet is said beside the channel
+// followed, and only that channel's. The build there is still downloads:
+// it is the newest there is.
+func TestACommitStillToBeBuiltIsSaid(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.newest = map[string]string{"pr-20": "def5678abcde", "main": "0123456789ab"}
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	// Nothing looks again by itself while the test runs.
+	c.after = never
+	_ = c.Follow("pr-20")
+	// The check below is the test's own only once the pick's has ended.
+	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Building != "def5678abcde" || s.Next != "0.3.0-pr20.9" {
+		t.Errorf("%+v", s)
+	}
+	// Once it is built the list says nothing more, and neither does the
+	// page.
+	cs.newest = nil
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c.check()
+	if s := c.State(); s.Building != "" {
+		t.Errorf("still says %q is being built", s.Building)
+	}
+}
+
+// A pull request that no longer merges into main is listed and says so,
+// and its build still downloads: it is the branch as it is.
+func TestAPullRequestInConflictIsListedAndSaysSo(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.conflict = map[string]bool{"pr-20": true}
+	cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	c.after = never
+	_ = c.Follow("pr-20")
+	s := waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" {
+		t.Errorf("the build of a pull request in conflict did not download: %+v", s)
+	}
+	said := map[string]bool{}
+	for _, ch := range s.Channels {
+		said[ch.ID] = ch.Conflict
+	}
+	if !said["pr-20"] || said["main"] {
+		t.Errorf("the channels say %v, want pr-20 in conflict and main not", said)
+	}
+}
+
+// never is a wait between two looks that does not end, so a test looks
+// only when it asks to.
+func never(UpdateState) <-chan time.Time { return nil }
+
+// lookNow is a wait that is already over.
+func lookNow() <-chan time.Time {
+	over := make(chan time.Time, 1)
+	over <- time.Time{}
+	return over
+}
+
+// While a commit is being built the app looks every twenty seconds, so the
+// build is downloaded soon after it lands, and every ten minutes when
+// nothing is on its way.
+func TestItLooksOftenWhileACommitIsBeingBuilt(t *testing.T) {
+	if got := nextCheck(UpdateState{Building: "def5678abcde"}); got != 20*time.Second {
+		t.Errorf("while building, looks every %v", got)
+	}
+	if got := nextCheck(UpdateState{}); got != 10*time.Minute {
+		t.Errorf("otherwise, looks every %v", got)
+	}
+}
+
+// The running build is the channel's build, so there is nothing to fetch.
+func TestTheRunningBuildIsCurrent(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", runningVersion(), "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
+	c.check()
+	if s := c.State(); s.Phase != "current" || s.Next != "" || s.Checked.IsZero() {
+		t.Errorf("%+v", s)
+	}
+	if err := c.Restart(); err == nil {
+		t.Error("restarted with nothing ready")
+	}
+}
+
+// A channel list nobody can reach is a problem said in words, and the app
+// carries on as it was.
+func TestAFailedCheckSaysWhy(t *testing.T) {
+	cs := newChannelServer(t)
+	c, _ := newTestUpdating(t, cs, false)
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
+	c.check()
+	s := c.State()
+	if s.Phase != "failed" || s.Problem != "The list of builds could not be read. Try again later." || s.Checked.IsZero() {
+		t.Errorf("%+v", s)
+	}
+	if !strings.HasPrefix(s.Detail, "The channel list is not readable") || strings.Contains(s.Detail, "updater:") {
+		t.Errorf("what the system said reads %q", s.Detail)
+	}
+}
+
+// Tim checked with Wi-Fi off and the page showed the Go error, an address
+// and a port, as the reason. A list that cannot be reached says so in
+// words, and what the system said is kept apart. FrameFairy issue #417. A server
+// that has closed is what a Mac without a network answers with.
+func TestACheckWithNoNetworkSaysSoInWords(t *testing.T) {
+	cs := newChannelServer(t)
+	c, _ := newTestUpdating(t, cs, false)
+	cs.srv.Close()
+	c.mu.Lock()
+	c.state.Picked = "main"
+	c.mu.Unlock()
+	c.check()
+	s := c.State()
+	if s.Phase != "failed" || s.Problem != "Could not reach GitHub. Check your internet connection." {
+		t.Errorf("%+v", s)
+	}
+	if !strings.HasPrefix(s.Detail, "The channel list could not be fetched") || strings.Contains(s.Problem, "tcp") {
+		t.Errorf("the problem reads %q, what the system said %q", s.Problem, s.Detail)
+	}
+}
+
+// What a failed check says, from the error the updater really hands back
+// for what the server did, so words reworded where an error is made fail
+// here and not on Tim's Mac. A certificate the Mac does not trust is what
+// a hotel's Wi-Fi or a company's proxy shows it, and is the network's.
+func TestAFailedCheckSaysInWordsWhatTheServerDid(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  func(*channelServer)
+		says string
+	}{
+		{"not found", func(cs *channelServer) { cs.status = http.StatusNotFound }, "The list of builds was not found. Try again in a few minutes."},
+		{"busy", func(cs *channelServer) { cs.status = http.StatusServiceUnavailable }, "GitHub is busy. Try again in a few minutes."},
+		{"too many", func(cs *channelServer) { cs.status = http.StatusTooManyRequests }, "GitHub is busy. Try again in a few minutes."},
+		{"refused", func(cs *channelServer) { cs.status = http.StatusForbidden }, "GitHub turned the request down. Try again later."},
+		{"not a list", func(cs *channelServer) { cs.list = []byte("<html>Sign in to the Wi-Fi</html>") }, "The list of builds could not be read. Try again later."},
+		{"untrusted", func(cs *channelServer) { cs.client = &http.Client{Transport: &http.Transport{}} }, "Could not reach GitHub. Check your internet connection."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			cs := newChannelServer(t)
+			cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"})
+			c.set(cs)
+			u, _ := newTestUpdating(t, cs, false)
+			u.mu.Lock()
+			u.state.Picked = "main"
+			u.mu.Unlock()
+			u.check()
+			if s := u.State(); s.Phase != "failed" || s.Problem != c.says || s.Detail == "" {
+				t.Errorf("says %q, not %q, with %q apart", s.Problem, c.says, s.Detail)
+			}
+		})
+	}
+}
+
+// What a failed download says, from the error the updater really hands
+// back for the build the server sent.
+//
+// On the real disk: a build is downloaded into the cache and unpacked.
+func TestAFailedDownloadSaysInWordsWhatTheServerDid(t *testing.T) {
+	path := "/main-0.3.0-main.4.zip"
+	for _, c := range []struct {
+		name string
+		set  func(*channelServer)
+		says string
+	}{
+		{"not found", func(cs *channelServer) { delete(cs.zips, path) }, "The new build was not found. Try again in a few minutes."},
+		{"changed on the way", func(cs *channelServer) {
+			b := bytes.Clone(cs.zips[path])
+			b[len(b)/2] ^= 0xff
+			cs.zips[path] = b
+		}, "The new build could not be verified, so it was not used."},
+		{"cut short", func(cs *channelServer) { cs.zips[path] = cs.zips[path][:10] }, "The download broke off. Check your internet connection."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+			cs := newChannelServer(t)
+			cs.publish(t, [3]string{"main", "0.3.0-main.4", "main"})
+			cs.mu.Lock()
+			c.set(cs)
+			cs.mu.Unlock()
+			u, _ := newTestUpdating(t, cs, false)
+			cleanStaged(t, u)
+			u.mu.Lock()
+			u.state.Picked = "main"
+			u.mu.Unlock()
+			u.check()
+			if s := u.State(); s.Phase != "failed" || s.Problem != c.says || s.Detail == "" {
+				t.Errorf("says %q, not %q, with %q apart", s.Problem, c.says, s.Detail)
+			}
+		})
+	}
+}
+
+// What a check or a download says in words, for the errors no test server
+// can make: what Tim's Mac said, a disk that is full, a build removed from
+// the cache while it came. What the server can do is said in the two tests
+// above, from the errors the updater really makes.
+func TestUpdateProblemInWords(t *testing.T) {
+	offline := "Could not reach GitHub. Check your internet connection."
+	for _, c := range []struct {
+		err         string
+		downloading bool
+		says        string
+	}{
+		// What Tim's Mac said with Wi-Fi off, on 2026-10-20.
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/timmrkz/framefairy/releases/download/dev/channels.json": read tcp 192.168.178.31:54974->20.250.119.67:443: read: can't assign requested address`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": dial tcp: lookup github.com: no such host`, false, offline},
+		{`updater: all providers failed: channels: the channel list could not be fetched: Get "https://github.com/x": context deadline exceeded (Client.Timeout exceeded while awaiting headers)`, false, offline},
+		{`the build could not be downloaded: Get "https://github.com/x": tls: failed to verify certificate: x509: certificate signed by unknown authority`, true, "The download broke off. Check your internet connection."},
+		{"the build of main is not signed with this key", true, "The new build could not be verified, so it was not used."},
+		{"the download stopped: read tcp 10.0.0.2:5000->1.2.3.4:443: connection reset by peer", true, "The download broke off. Check your internet connection."},
+		// Wails' updater, when the disk is full.
+		{"updater: fsync: write /Users/tim/Library/Caches/framefairy/updates/main.zip: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
+		{"the build could not be written to the cache: no space left on device", true, "The new build could not be saved. Check that the disk has room."},
+		{"the build could not be kept in the cache: rename: permission denied", true, "The new build could not be saved."},
+		// The channel was removed while its build came, the disk is fine.
+		{"the build went from the cache as it arrived", true, "The new build could not be downloaded."},
+		{"the build has no address", true, "The new build could not be downloaded."},
+		{"something nobody foresaw", false, "Could not look for a newer build."},
+		{"something nobody foresaw", true, "The new build could not be downloaded."},
+	} {
+		if got := updateProblem(errors.New(c.err), c.downloading); got != c.says {
+			t.Errorf("%s\nsays %q\nnot  %q", c.err, got, c.says)
+		}
+	}
+}
+
+// Restart waits for work in hand: the swap happens once the app has quit,
+// and quitting now would stop a search or a render half way.
+func TestRestartWaitsForWork(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, true)
+	cleanStaged(t, c)
+	_ = c.Follow("main")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	if err := c.Restart(); err == nil || !strings.Contains(err.Error(), "still running") {
+		t.Errorf("restarted while work ran: %v", err)
+	}
+}
+
+// A channel picked while a download runs takes over at once: the download
+// of the channel before is stopped, the state shown is the new channel's
+// from the moment of the pick, and nothing the old download says after it
+// reaches the screen. Tim picked pull request 23 while main downloaded,
+// and watched main's download to the end before anything changed. Here
+// main's download never finishes at all, so the new pick only gets to
+// ready if the old one really was let go of.
+func TestAPickStopsTheDownloadBefore(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = make(chan struct{}), "/main-"
+	cs.mu.Unlock()
+	t.Cleanup(func() { close(cs.slow) })
+	c, sent := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool {
+		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
+	})
+
+	before := len(sent(nil))
+	_ = c.Follow("pr-20")
+	after := len(sent(nil))
+	// At once, before any check has answered: the state the pick itself
+	// sends. The state read after Follow returns is no proof of that,
+	// since the check Follow starts may already have found pr-20 and be
+	// downloading it, which is how this failed on CI's Mac.
+	if picked := sent(nil)[before:after]; len(picked) == 0 {
+		t.Errorf("the pick sent no state")
+	} else if s := picked[0]; s.Picked != "pr-20" || s.Phase != "checking" || s.Next != "" || s.Follows != "pr-20" {
+		t.Errorf("right after the pick: %+v", s)
+	}
+	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	})
+	if s.Follows != "pr-20" || s.Problem != "" {
+		t.Errorf("%+v", s)
+	}
+	for _, st := range sent(nil)[after:] {
+		if st.Next == "0.3.0-main.5" || st.Phase == "failed" {
+			t.Errorf("after the pick the screen was told %+v", st)
+		}
+	}
+}
+
+// Everything the interface and the timer can do, at once.
+func TestUpdatesFromEverywhereAtOnce(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			for j := range 10 {
+				switch (i + j) % 4 {
+				case 0:
+					_ = c.Follow([]string{"main", "pr-20"}[j%2])
+				case 1:
+					c.check()
+				case 2:
+					_ = c.State()
+				case 3:
+					_ = c.Restart()
+				}
+			}
+		})
+	}
+	wg.Wait()
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-pr20.9" })
+}
+
+func TestFollowRefusesWhatIsNotAChannel(t *testing.T) {
+	cs := newChannelServer(t)
+	c, _ := newTestUpdating(t, cs, false)
+	for _, bad := range []string{"", "../x", "pr-", "pr-0", "Main", "pr-18 "} {
+		if err := c.Follow(bad); err == nil {
+			t.Errorf("followed %q", bad)
+		}
+	}
+}
+
+func TestPlainUpdateError(t *testing.T) {
+	got := plainUpdateError(errors.New("updater: all providers failed: channels: the channel list answered 404 Not Found"))
+	if got != "The channel list answered 404 Not Found." {
+		t.Errorf("%q", got)
+	}
+}
+
+// Opening the settings lists the channels, even for a build made by make
+// that has never looked, and downloads nothing.
+func TestTheSettingsListTheChannelsWithoutDownloading(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.refreshList()
+	c.refreshList()
+	s := c.State()
+	// A build made by make follows nothing until a channel is picked.
+	if len(s.Channels) != 2 || s.Phase != "" || s.Follows != "" || s.Gone != "" {
+		t.Errorf("%+v", s)
+	}
+	if n := cs.hits.Load(); n != 1 {
+		t.Errorf("read the list %d times", n)
+	}
+}
+
+// fetches is how often a build was downloaded.
+func (cs *channelServer) fetches(path string) int {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.fetched[path]
+}
+
+// A build downloaded once is kept: picking another channel and coming back
+// has it at once, with nothing downloaded again. Tim went from a channel
+// whose build was ready to another and back, nothing pushed in between,
+// and downloaded it a second time.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestABuildDownloadedIsKeptAcrossPicks(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	ready := func(version string) {
+		t.Helper()
+		waitFor(t, c, "ready with "+version, func(s UpdateState) bool { return s.Phase == "ready" && s.Next == version })
+	}
+	_ = c.Follow("pr-20")
+	ready("0.3.0-pr20.9")
+	_ = c.Follow("main")
+	ready("0.3.0-main.5")
+	_ = c.Follow("pr-20")
+	ready("0.3.0-pr20.9")
+	_ = c.Follow("main")
+	ready("0.3.0-main.5")
+	if n := cs.fetches("/pr-20-0.3.0-pr20.9.zip"); n != 1 {
+		t.Errorf("pull request 20 downloaded %d times", n)
+	}
+	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
+		t.Errorf("main downloaded %d times", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/speakertrail-app")); string(got) != "main" {
+		t.Errorf("staged %q", got)
+	}
+}
+
+// A download let go of because another channel was picked goes on, and
+// coming back to its channel has it without downloading it again. Tim
+// looked at another channel while one downloaded, came back, and it
+// downloaded from the start.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestADownloadLetGoOfIsThereOnComingBack(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly, cs.asked = release, "/main-", make(chan string, 4)
+	cs.mu.Unlock()
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	_ = c.Follow("main")
+	// Main's download is on its way into the cache once the server is
+	// asked for it, where it is held.
+	<-cs.asked
+	arrived := c.src.Arrived(cs.sum("/main-0.3.0-main.5.zip"))
+	// Arrived is closed already for a build that is not on its way, so a
+	// wrong path would make the wait below prove nothing.
+	select {
+	case <-arrived:
+		t.Fatal("main's download is not on its way into the cache")
+	default:
+	}
+	waitFor(t, c, "downloading main", func(s UpdateState) bool {
+		return s.Phase == "downloading" && s.Next == "0.3.0-main.5"
+	})
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready with pr-20", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-pr20.9"
+	})
+	// Main's download was waiting on the server all along, and arrives.
+	let()
+	<-arrived
+	if kept, _ := filepath.Glob(filepath.Join(c.src.Cache, "*.zip")); len(kept) != 2 {
+		t.Fatalf("main's download was not kept, the cache holds %v", kept)
+	}
+	_ = c.Follow("main")
+	waitFor(t, c, "ready with main", func(s UpdateState) bool {
+		return s.Phase == "ready" && s.Next == "0.3.0-main.5"
+	})
+	if n := cs.fetches("/main-0.3.0-main.5.zip"); n != 1 {
+		t.Errorf("main downloaded %d times", n)
+	}
+	if got, _ := os.ReadFile(filepath.Join(c.staged(), "Contents/MacOS/speakertrail-app")); string(got) != "main" {
+		t.Errorf("staged %q", got)
+	}
+}
+
+// A channel picked as the check before ends is looked for. A check asked
+// for while another ran only left word for that one to look again, and
+// the one running could already have read that there was nothing more,
+// so the pick waited in Checking until the next look, ten minutes later.
+// The test holds the first check where it has decided it is done, picks
+// another channel there, and only then lets it return.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestAPickAsACheckEndsIsLookedFor(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	// Nothing looks again by itself while the test runs.
+	c.after = never
+	decided, goOn := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	c.ended = func() {
+		once.Do(func() {
+			close(decided)
+			<-goOn
+		})
+	}
+	let := sync.OnceFunc(func() { close(goOn) })
+	t.Cleanup(let)
+	_ = c.Follow("main")
+	<-decided
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Fatalf("the first check ended with %+v", s)
+	}
+	_ = c.Follow("pr-20")
+	// The pick has been heard: it ran a check of its own, or it left word
+	// for the one held.
+	waitFor(t, c, "the pick heard", func(s UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.again || s.Phase == "ready"
+	})
+	let()
+	// Every check ends, whatever it found, so the wait ends either way,
+	// and a pick that was lost fails here with the state it left. Only
+	// checking is asked: a lost pick leaves again set for ever.
+	s := waitFor(t, c, "every check ended", func(UpdateState) bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return !c.checking
+	})
+	if s.Phase != "ready" || s.Next != "0.3.0-pr20.9" {
+		t.Errorf("once every check ended: %+v", s)
+	}
+}
+
+// Check reads the channel list at once, even while a download is waited
+// for, so a channel made a moment ago is on the list. It waited for the
+// check already running.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestCheckReadsTheListAtOnce(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-"
+	cs.mu.Unlock()
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	c.after = never
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-21", "0.3.0-pr21.1", "twenty-one"})
+	c.checkNow()
+	var ids []string
+	for _, ch := range c.State().Channels {
+		ids = append(ids, ch.ID)
+	}
+	if strings.Join(ids, " ") != "main pr-21" {
+		t.Errorf("the list after Check: %v", ids)
+	}
+	// The download arrives, and the check ends with it, so nothing goes on
+	// into the next test.
+	let()
+	waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+}
+
+// The app holds the newest build of the channel it follows. A build that
+// is ready and not yet installed is replaced by a newer one once the newer
+// one has fully arrived and passed its checks, and the one it replaces is
+// removed. Until then, quitting installs the one that is ready: a newer
+// build that fails, or is still on its way, never leaves the app with
+// nothing to install. The second download used to throw the ready build
+// away before it began.
+//
+// On the real disk: an update is a program that is unpacked on the disk and put in place.
+func TestANewerBuildReplacesTheOneReady(t *testing.T) {
+	t.Parallel()
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.app = inApplications
+	cleanStaged(t, c)
+	var mu sync.Mutex
+	var from string
+	c.install = func(_, staged string) error {
+		mu.Lock()
+		from = staged
+		mu.Unlock()
+		return nil
+	}
+	// What quitting now would put in place, and what that build says.
+	quit := func() (string, string) {
+		t.Helper()
+		mu.Lock()
+		from = ""
+		mu.Unlock()
+		c.installOnQuit()
+		// The app did not really quit, so it goes on as before.
+		c.mu.Lock()
+		c.leaving = false
+		c.mu.Unlock()
+		mu.Lock()
+		defer mu.Unlock()
+		if from == "" {
+			return "", ""
+		}
+		got, _ := os.ReadFile(filepath.Join(from, "Contents/MacOS/speakertrail-app"))
+		return from, string(got)
+	}
+	// Nothing looks again by itself while the test runs, and every check
+	// below is the test's own: each waits for the one before to end.
+	c.after = never
+	_ = c.Follow("main")
+	waitDone(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	first, says := quit()
+	if says != "five" {
+		t.Fatalf("ready with main.5, quitting installs %q saying %q", first, says)
+	}
+
+	// A newer build that does not arrive whole leaves the one that is
+	// ready as it was.
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	cs.mu.Lock()
+	broken := append([]byte(nil), cs.zips["/main-0.3.0-main.6.zip"]...)
+	broken[len(broken)/2] ^= 0xff
+	cs.zips["/main-0.3.0-main.6.zip"] = broken
+	cs.mu.Unlock()
+	c.check()
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Errorf("after a newer build failed: %+v", s)
+	}
+	if at, says := quit(); at != first || says != "five" {
+		t.Errorf("after a newer build failed, quitting installs %q saying %q", at, says)
+	}
+
+	// While the next one is on its way, the page still says the one that
+	// is ready, and quitting installs it.
+	release := make(chan struct{})
+	let := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(let)
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly, cs.asked = release, "/main-0.3.0-main.7", make(chan string, 4)
+	cs.mu.Unlock()
+	cs.publish(t, [3]string{"main", "0.3.0-main.7", "seven"})
+	go c.check()
+	<-cs.asked
+	if s := c.State(); s.Phase != "ready" || s.Next != "0.3.0-main.5" {
+		t.Errorf("while main.7 downloads: %+v", s)
+	}
+	if at, says := quit(); at != first || says != "five" {
+		t.Errorf("while main.7 downloads, quitting installs %q saying %q", at, says)
+	}
+
+	// Once it is here, it is the one, and the one before is gone. It is
+	// removed after the state says main.7 is ready, so the check is waited
+	// for to the end.
+	let()
+	waitDone(t, c, "ready with main.7", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.7" })
+	if at, says := quit(); at == "" || says != "seven" {
+		t.Errorf("with main.7 ready, quitting installs %q saying %q", at, says)
+	}
+	if _, err := os.Stat(first); !os.IsNotExist(err) {
+		t.Errorf("the build main.7 replaced is still there: %v", err)
+	}
+}
+
+// The regular looks go on while a build is ready, and the newer build
+// they find takes its place without anybody clicking anything.
+func TestARegularLookReplacesTheBuildReady(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	// The test says when the wait between two looks is over.
+	looks := make(chan time.Time)
+	c.after = func(UpdateState) <-chan time.Time { return looks }
+	_ = c.Follow("main")
+	waitFor(t, c, "ready with main.5", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	looks <- time.Time{}
+	waitFor(t, c, "ready with main.6", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.6" })
+}
+
+// A newer build that arrives while quitting is putting the build ready in
+// place does not remove it: the step that puts it in place reads it once
+// the app is gone.
+//
+// On the real disk: an update is a program that is unpacked on the disk and put in place.
+func TestABuildBeingPutInPlaceStays(t *testing.T) {
+	t.Parallel()
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "five"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.app = inApplications
+	cleanStaged(t, c)
+	c.install = func(string, string) error { return nil }
+	_ = c.Follow("main")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	first := c.staged()
+	c.installOnQuit()
+	cs.publish(t, [3]string{"main", "0.3.0-main.6", "six"})
+	c.check()
+	waitFor(t, c, "ready with main.6", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.6" })
+	if _, err := os.Stat(first); err != nil {
+		t.Errorf("the build going in place was removed: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(filepath.Dir(first)) })
+}
+
+// A pull request followed that has left the list is closed, and the state
+// says so in one place: the phase is gone whenever gone is set. Reading
+// the list for the page used to set gone and leave the phase as it was,
+// so after a restart a build made on the Mac showed the pull request
+// closed in the list and Not checked yet under it.
+func TestAChannelGoneIsSaidInOnePlace(t *testing.T) {
+	t.Parallel()
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	// Pull request 138 picked in a run before, as updates.json gives it
+	// back to a build from a channel after a restart. Nothing has started
+	// it looking, so the only read is the page asking for the channels.
+	c, _ := testUpdating(t, cs, false, "main", "pr-138")
+	cleanStaged(t, c)
+	c.refreshList()
+	if s := c.State(); s.Gone != "pr-138" || s.Phase != "gone" {
+		t.Errorf("after a restart the list says %q is gone and the phase is %q", s.Gone, s.Phase)
+	}
+
+	// A build that is ready, of a pull request that is then closed, is
+	// not installed on the way out while the page says it is closed.
+	c.app = inApplications
+	var started int
+	c.install = func(string, string) error { started++; return nil }
+	_ = c.Follow("pr-20")
+	waitFor(t, c, "ready", func(s UpdateState) bool { return s.Phase == "ready" })
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c.mu.Lock()
+	c.listed = time.Time{}
+	c.mu.Unlock()
+	c.refreshList()
+	s := c.State()
+	if s.Gone != "pr-20" || s.Phase != "gone" || s.Next != "" {
+		t.Errorf("closed while ready: %+v", s)
+	}
+	c.installOnQuit()
+	if started != 0 {
+		t.Error("a closed pull request's build went in on the way out")
+	}
+}
+
+// A build made on the Mac that follows nothing, asked to look from the app
+// menu, reads the list and still follows nothing. It said it was the
+// newest build of main.
+func TestFollowingNothingIsNeverUpToDate(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	c.checkNow()
+	if s := c.State(); s.Phase != "" || s.Follows != "" || s.Gone != "" || len(s.Channels) != 1 {
+		t.Errorf("%+v", s)
+	}
+}
+
+// A build made on the Mac starts out following nothing, whatever an
+// earlier build picked: Tim made one with make install and found it
+// following pull request 143, picked by a build before it, and offering
+// a Check that would never look by itself. It does not look when it
+// starts, and Check from the app menu has nothing to look for. Picking a
+// channel follows it fully: it looks at once, the newest build downloads,
+// and it goes on looking after that.
+func TestABuildMadeOnTheMacStartsOutFollowingNothing(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-143", "0.3.0-pr143.2", "pr"})
+	c, _ := testUpdating(t, cs, false, "", "pr-143")
+	cleanStaged(t, c)
+	// Each look ends by asking for the wait before the next one. The
+	// first three waits are over at once. The fourth closes looked and
+	// never ends, so the loop waits until shutDown.
+	var looks atomic.Int32
+	looked := make(chan struct{})
+	c.after = func(UpdateState) <-chan time.Time {
+		switch n := looks.Add(1); {
+		case n < 4:
+			return lookNow()
+		case n == 4:
+			close(looked)
+		}
+		return nil
+	}
+	c.start()
+	c.check()
+	c.mu.Lock()
+	looking := c.looking
+	c.mu.Unlock()
+	if looking {
+		t.Error("it started looking now and then")
+	}
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Phase != "" || cs.hits.Load() != 0 {
+		t.Errorf("started as %+v, the list read %d times", s, cs.hits.Load())
+	}
+	// The page lists the channels, and still nothing is followed.
+	c.refreshList()
+	if s := c.State(); s.Picked != "" || s.Follows != "" || s.Gone != "" || s.Phase != "" || len(s.Channels) != 2 {
+		t.Errorf("with the list read: %+v", s)
+	}
+
+	read := cs.hits.Load()
+	if err := c.Follow("main"); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	looking = c.looking
+	c.mu.Unlock()
+	if !looking {
+		t.Fatal("the pick did not start looking now and then")
+	}
+	s := waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" && s.Next == "0.3.0-main.5" })
+	if s.Picked != "main" || s.Follows != "main" {
+		t.Errorf("ready as %+v", s)
+	}
+	// Each look reads the list, the one the pick asked for and three more.
+	<-looked
+	if n := cs.hits.Load() - read; n < 4 {
+		t.Errorf("after the pick it looked %d times, and stopped", n)
+	}
+}
+
+// A build from a channel goes on following what was picked in a run
+// before, and looks for it as it starts.
+func TestABuildFromAChannelFollowsWhatWasPicked(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"}, [3]string{"pr-20", "0.3.0-pr20.9", "twenty"})
+	c, _ := testUpdating(t, cs, false, "main", "pr-20")
+	cleanStaged(t, c)
+	if s := c.State(); s.Picked != "pr-20" || s.Channel != "main" {
+		t.Errorf("started as %+v", s)
+	}
+	c.start()
+	s := waitFor(t, c, "ready with pr-20", func(s UpdateState) bool { return s.Phase == "ready" })
+	if s.Next != "0.3.0-pr20.9" || s.Follows != "pr-20" {
+		t.Errorf("%+v", s)
+	}
+}
+
+// Shutting down ends the looks: the check in hand lets go of a download
+// that never comes, the loop stops, and nothing looks after. A loop left
+// looking every twenty milliseconds after its test read whichever later
+// test's server was given the same port, and the later test counted reads
+// it never made.
+//
+// On the real disk: an update is a program that is downloaded, kept and run.
+func TestShuttingDownEndsTheLooks(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	release := make(chan struct{})
+	cs.mu.Lock()
+	cs.slow, cs.slowOnly = release, "/main-"
+	cs.mu.Unlock()
+	t.Cleanup(func() { close(release) })
+	c, _ := newTestUpdating(t, cs, false)
+	c.src.Cache = t.TempDir()
+	cleanStaged(t, c)
+	c.after = func(UpdateState) <-chan time.Time { return lookNow() }
+	var ends atomic.Int32
+	c.ended = func() { ends.Add(1) }
+	_ = c.Follow("main")
+	waitFor(t, c, "downloading main", func(s UpdateState) bool { return s.Phase == "downloading" })
+	// A shutDown that waited for the download, which never comes, would
+	// be ended by go test's -timeout.
+	c.shutDown()
+	c.mu.Lock()
+	checking := c.checking
+	c.mu.Unlock()
+	n := ends.Load()
+	if checking || n != 1 {
+		t.Errorf("after shutting down a check runs: %v, %d ended", checking, n)
+	}
+	// Nothing starts a check after it.
+	c.check()
+	_ = c.Follow("main")
+	c.checkNow()
+	if got := ends.Load(); got != n {
+		t.Errorf("%d checks ran after shutting down", got-n)
+	}
+}
+
+// shutDown stops looking: the loop ends at its next wait, the check in
+// hand is let go of the way a pick lets go of one, and no check starts
+// after. It returns once they have all ended. The download a check waited
+// for goes on into the cache, see updates/fetch.go.
+//
+// The app's looks end with the app. This is for whatever holds an
+// updating for a while and then lets it go, the tests above all: a loop
+// left looking every twenty milliseconds after its test went on reading
+// whichever later test's server was given the same port.
+func (c *updating) shutDown() {
+	c.mu.Lock()
+	c.halted = true
+	c.mu.Unlock()
+	if c.end != nil {
+		c.end()
+	}
+	c.running.Wait()
+}
+
+// staged is where the build that is ready was unpacked, or empty.
+func (c *updating) staged() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.held == nil {
+		return ""
+	}
+	return c.held.DownloadedPath()
+}

@@ -1,0 +1,409 @@
+# Signs and publishes the builds builds.yml makes, and keeps the channel
+# list the app updates itself from. See docs/UPDATES.md. Ported from
+# FrameFairy, which works the same way.
+#
+# builds.yml runs a branch's own code, so it holds no secret and no token
+# that can write: a push runs the workflow file of the branch pushed, and
+# whatever that file is given, any branch can take. This workflow is
+# started by GitHub whenever builds.yml starts or ends, and GitHub always
+# runs it from main, whatever branch the build was of. So the update key,
+# the token that writes the release and the tools that use them are
+# main's, and nothing a branch holds runs beside them.
+#
+# The key is read in the environment called updates. Kept there, and that
+# environment limited to main in the repository's settings, no branch can
+# read it, not even one that rewrites this file: a branch's copy of this
+# file is never what runs, and a branch's copy of builds.yml cannot enter
+# an environment limited to main.
+#
+# From the build it takes the zip and nothing else. Which channel it is,
+# which commit and which version, it works out again from GitHub's own
+# record of the run, by the same rules builds.yml goes by. A build is still
+# a branch's code, so what the zip holds is as trusted as the branch: the
+# key is the development key, which only development builds carry.
+#
+# Three jobs:
+#
+# 1. announce, the moment a build starts, writes the channel list again,
+#    so the Updates page says for the whole of the build that the build it
+#    offers is not the newest.
+# 2. publish, per channel, one after another and never stopped half way,
+#    checks the zip, signs it and uploads it with its entry to the release
+#    dev. When it is a pull request's build, it marks the commit ready to
+#    update to.
+# 3. list, when a build ends, writes channels.json again from every entry.
+#    It also takes away the entry of any pull request that is not open any
+#    more, which is how a closed pull request leaves the list. A list job
+#    still waiting is replaced by the next one, which writes the same list
+#    and more, so nothing depends on any one of them running.
+#
+# announce and list share one queue, and each writes the list from what is
+# there when it runs, so the order they run in does not matter.
+#
+# And one beside them:
+#
+# 4. unstick cancels any publish that has waited to enter the environment
+#    for half an hour. updates has no reviewers and no wait timer, so a
+#    publish waits there for seconds, but in FrameFairy one of main once
+#    waited for good. publish never stops half way, so it holds its
+#    channel's queue while it waits, and every publish after it waited
+#    behind it. A wait is not a running job, so timeout-minutes does not
+#    end it.
+name: Publish builds
+
+on:
+  workflow_run:
+    workflows: ["Builds to update to"]
+    types: [requested, completed]
+
+permissions: {}
+
+jobs:
+  announce:
+    if: >-
+      github.event.action == 'requested' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Nothing is published until the key is made, and a list without it
+      # cannot be checked.
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ -s cmd/speakertrail-app/update-key.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No update key yet, so there is no list to write."
+          fi
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - if: steps.key.outputs.ready == 'true'
+        name: Write the channel list from every entry
+        run: sh scripts/channel-list.sh
+
+  unstick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Cancel a publish stuck before the environment
+        run: |
+          before=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh run list --workflow publish.yml --status waiting --limit 100 \
+            --json databaseId,createdAt \
+            --jq ".[] | select(.createdAt < \"$before\") | .databaseId" |
+          while read -r run; do
+            echo "::warning::Publish run $run has waited for the environment since before $before, so it is cancelled."
+            gh run cancel "$run" || true
+          done
+
+  # Only a run of builds.yml itself, started by a push. A workflow is
+  # matched above by its name, and any file can take that name.
+  publish:
+    if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.path == '.github/workflows/builds.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: updates
+    concurrency:
+      group: builds-publish-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+      statuses: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      # main, the default for a workflow_run, never the branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # What the build is a build of, from GitHub's record of the run and
+      # not from anything the build wrote. A run that left no zip is a
+      # commit that needed no build, a pull request that closed, or a
+      # branch with no pull request, and there is nothing to publish.
+      #
+      # The commit built has to be in what it is published for: in main's
+      # history for main, in the pull request's for a pull request. So a
+      # build is only ever offered as a build of the code it was made from.
+      - id: which
+        name: What this is a build of
+        env:
+          EVENT: ${{ github.event.workflow_run.event }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: |
+          zips=$(gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts" \
+            --jq '[.artifacts[] | select(.name == "build" and (.expired | not))] | length')
+          if [ "$zips" = 0 ]; then
+            echo "::notice::The run left no build, so there is nothing to publish."
+            exit 0
+          fi
+          if [ "$EVENT" = push ] && [ "$BRANCH" = main ]; then
+            channel=main
+            name=main
+            tag=main
+            head=main
+          else
+            found=$(gh pr list --head "$BRANCH" --state open --json number,title,isCrossRepository,headRefOid \
+              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
+            if [ -z "$found" ]; then
+              echo "::notice::$BRANCH has no open pull request any more, so its build has no channel."
+              exit 0
+            fi
+            number=$(printf '%s' "$found" | jq -r .number)
+            title=$(printf '%s' "$found" | jq -r .title | tr -d '\r' | head -n 1)
+            head=$(printf '%s' "$found" | jq -r .headRefOid)
+            channel="pr-$number"
+            name="#$number $title"
+            tag="pr$number"
+          fi
+          # identical: the commit is the newest. ahead: newer commits came
+          # after it. Anything else is a commit from somewhere else.
+          status=$(gh api "repos/$GH_REPO/compare/$SHA...$head" --jq .status)
+          case $status in
+          identical | ahead) ;;
+          *)
+            echo "::warning::$SHA is not in the history of $channel ($status), so it is not published as a build of it."
+            exit 0
+            ;;
+          esac
+          # The app's version at the commit built, read and not run, the
+          # way builds.yml reads it.
+          app=$(gh api "repos/$GH_REPO/contents/cmd/speakertrail-app/appfiles.go?ref=$SHA" \
+            -H 'Accept: application/vnd.github.raw' 2>/dev/null |
+            awk -F'"' '/^const appVersion = /{ print $2; exit }')
+          if ! printf '%s' "$app" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::The app's version at $SHA is not a version: $app"
+            exit 1
+          fi
+          short=$(echo "$SHA" | cut -c1-7)
+          version="$app-$tag.$short"
+          mkdir -p dist
+          # The name can hold anything a title can, so it goes by file.
+          printf '%s' "$name" > dist/name.txt
+          {
+            echo "run=true"
+            echo "channel=$channel"
+            echo "version=$version"
+            echo "commit=$(echo "$SHA" | cut -c1-12)"
+            echo "zip=app-$channel-$version.zip"
+          } >> "$GITHUB_OUTPUT"
+          echo "$SHA is $version, for $channel"
+
+      - if: steps.which.outputs.run == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: build
+          path: ${{ runner.temp }}/build
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - id: zip
+        if: steps.which.outputs.run == 'true'
+        name: Is there a zip to sign
+        env:
+          BUILT: ${{ runner.temp }}/build/app.zip
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          if [ -f "$BUILT" ]; then
+            mv "$BUILT" "dist/$ZIP"
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The build left no app.zip, so there is nothing to sign."
+          fi
+
+      - if: steps.zip.outputs.ready == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # What the zip holds is read here, in a step that has no key, and a
+      # build that is refused never reaches the step that has one. sign
+      # reads it again before it signs, so the tool never signs what it
+      # has not read, whoever runs it.
+      - id: check
+        if: steps.zip.outputs.ready == 'true'
+        name: Check what it could do
+        env:
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          if ! go run ./cmd/speakertrail-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
+
+      - id: key
+        if: steps.check.outcome == 'success'
+        name: Is there an update key
+        env:
+          KEY: ${{ secrets.SPEAKERTRAIL_UPDATE_KEY }}
+        run: |
+          if [ -z "$KEY" ] || [ ! -s cmd/speakertrail-app/update-key.txt ]; then
+            echo "::notice::No update key yet, so nothing is published. See docs/UPDATES.md, The keys."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: sign
+        if: steps.key.outputs.ready == 'true'
+        name: Sign it
+        env:
+          SPEAKERTRAIL_UPDATE_KEY: ${{ secrets.SPEAKERTRAIL_UPDATE_KEY }}
+          ZIP: ${{ steps.which.outputs.zip }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+          VERSION: ${{ steps.which.outputs.version }}
+          COMMIT: ${{ steps.which.outputs.commit }}
+        run: |
+          if ! go run ./cmd/speakertrail-release sign \
+            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
+            -version "$VERSION" -commit "$COMMIT" \
+            -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \
+            -out "dist/channel-$CHANNEL.json" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
+          ls -l dist
+
+      # This workflow runs from main, so a build it refuses fails here, on
+      # main's runs, and the pull request would only miss its Ready to
+      # update to with no reason given. The refusal goes on the commit
+      # that was built, where the pull request shows it.
+      - name: Say on the commit why it is not signed
+        if: failure() && (steps.check.outcome == 'failure' || steps.sign.outcome == 'failure')
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          why=$(grep -m1 '^  ' "$RUNNER_TEMP/refused.txt" | sed 's/^ *//' || true)
+          [ -n "$why" ] || why=$(head -n 1 "$RUNNER_TEMP/refused.txt" | sed 's/^speakertrail-release: //')
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=failure -f context="Ready to update to" \
+            -f description="Not signed: $(printf '%s' "$why" | cut -c1-120)" \
+            -f target_url="$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID" >/dev/null
+
+      - name: The release the builds live in
+        if: steps.sign.outcome == 'success'
+        run: |
+          gh release view dev >/dev/null 2>&1 ||
+            gh release create dev --prerelease --latest=false --target main \
+              --title "Builds to update to" \
+              --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. See docs/UPDATES.md." ||
+            gh release view dev >/dev/null
+
+      # The two files of this channel by name, never a pattern: one channel
+      # has no business with another's entry. The zip goes up first and the
+      # entry only once it is there, because the app reads the entry of the
+      # channel it follows and would be offered a build it cannot download
+      # yet. One command sends its files side by side, so the small entry
+      # would be up long before the zip.
+      - id: upload
+        if: steps.sign.outcome == 'success'
+        name: Upload the build and its entry
+        env:
+          ZIP: ${{ steps.which.outputs.zip }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          gh release upload dev "dist/$ZIP" --clobber
+          gh release upload dev "dist/channel-$CHANNEL.json" --clobber
+
+      # This workflow runs from main, so its checks show on main's commit
+      # and not on the pull request. The pull request learns its build is
+      # ready from a status on the commit that was built. It is set here,
+      # once the entry is up, and not by the list job, which can be
+      # replaced before it runs. The app reads the entry of the channel it
+      # follows, so the build is there for it from now on.
+      - name: Mark the commit ready to update to
+        if: steps.upload.outcome == 'success' && steps.which.outputs.channel != 'main'
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          gh api "repos/$GH_REPO/statuses/$SHA" \
+            -f state=success -f context="Ready to update to" \
+            -f description="On the Updates page as $CHANNEL" >/dev/null
+
+  # Also when publish was skipped, for a run that was no push of
+  # builds.yml: the close of a pull request is how it leaves the list.
+  list:
+    needs: publish
+    if: >-
+      always() && github.event.action == 'completed' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    concurrency:
+      group: builds-list
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: key
+        name: Is there an update key
+        run: |
+          if [ -s cmd/speakertrail-app/update-key.txt ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::No update key yet, so there is no list to write."
+          fi
+      - if: steps.key.outputs.ready == 'true'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - if: steps.key.outputs.ready == 'true'
+        name: Write the channel list from every entry
+        run: sh scripts/channel-list.sh
+
+      # A zip no entry points at is gone an hour after it was made. Not at
+      # once: a publish that runs beside this job may have uploaded a zip
+      # whose entry this job has not seen yet.
+      - if: steps.key.outputs.ready == 'true'
+        name: Remove builds nobody can reach any more
+        run: |
+          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
+          now=$(date -u +%s)
+          gh release view dev --json assets \
+            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
+          while read -r name created; do
+            grep -qxF "$name" kept.txt && continue
+            age=$(( now - $(date -u -d "$created" +%s) ))
+            if [ "$age" -gt 3600 ]; then
+              echo "removing $name"
+              gh release delete-asset dev "$name" -y || true
+            fi
+          done

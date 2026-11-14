@@ -25,7 +25,7 @@
   let all = $derived(searches.data ?? [])
   // The searches that led to the most connections on top, then those that
   // found the most people. Paused ones last. Runs take them in much the
-  // same order, see RankSearches in internal/pipeline.
+  // same order, see RankSearches in internal/store.
   let ranked = $derived(
     [...all].sort(
       (a, b) =>

@@ -5,7 +5,9 @@ where such people are found in NRW, how the engine tells them apart, and in
 which order to build it. What is built so far is under
 [Where it stands](#where-it-stands). Since 8 November 2026 runs take only
 profile searches, see [Profile searches only](#profile-searches-only).
-The sections after it describe the wider engine, which is paused.
+The sections after it describe the wider engine of events, portfolios,
+directories and post searches. Since 10 November 2026 Speaker Trail is a
+Mac app and that engine is gone from the code, it stays in git history.
 
 Speaker Trail stays the code name while the idea finds its shape. The
 engine has moved from speakers at events towards people worth a
@@ -69,10 +71,10 @@ first, see [Connections steer the searches](#connections-steer-the-searches).
 Each asks for 25 profiles (`profile_search_results`) and is due again
 after 30 days (`profile_search_check_days`).
 
-**Paused, not deleted**: events, portfolios, directories, website
-searches, lookups, reads by the local model and post searches. The
-calendar stays online but does not update. The setting
-`profile_searches_only` brings them back.
+**Removed on 10 November 2026**, with the move to a Mac app: events,
+portfolios, directories, website searches, lookups, reads by the local
+model, post searches and the public calendar. They are in git history,
+before pull request #9.
 
 A live check on 8 November 2026, two runs of ten profile searches, each
 run done in 4 seconds. The first took the ten aimed at younger people in
@@ -86,18 +88,14 @@ practices, most of them between 30 and 50. A founder who writes
 **The workspace** has three screens now:
 
 - **People**, with the Run button. Only people a profile search found,
-  and whoever Tim kept before, the likely youngest first. Each row says
+  and whoever Tim connected with before, the likely youngest first. Each row says
   about how old the person is and when they were last active on
   LinkedIn. Filters: all, under 30, connected.
 - **Searches**, the profile searches. Add one, pause one, see how many
   people each found and how many of them Tim connected with, those that
   led to the most connections on top. A search Tim adds runs before the
   starting ones. The exclusions sit here too, behind one click.
-- **Settings**, those for profile searches first, the paused engine's
-  behind one click.
-
-Events, sources, runs and the overview are out of the navigation while
-the rest of the engine is paused.
+- **Settings**, the Exa key and the settings for profile searches.
 
 ## Connections steer the searches
 
@@ -112,7 +110,7 @@ as connected too.
 
 **The best searches first.** Each profile search counts the people it
 found and how many of them Tim connected with. Of the due searches, a run
-takes, in this order, `RankSearches` in `internal/pipeline/rank.go`:
+takes, in this order, `RankSearches` in `internal/store/rank.go`:
 
 1. Searches that never ran, so each gets one try. Those Tim added come
    before the starting ones.
@@ -129,7 +127,7 @@ marketing experts, and Tim wants more kinds of people. An **exclusion**
 is a word or phrase, like "Online Marketing". A profile search leaves out
 anyone whose headline or current roles contain one, and People hides
 those found before, unless Tim connected with them. They stay in the
-database, so removing an exclusion brings them back. A phrase matches at
+file, so removing an exclusion brings them back. A phrase matches at
 the start of a word, in any case and whatever stands between its words,
 so "Online Marketing" also leaves out "Online-Marketing-Expertin" and
 "#onlinemarketing", see `rubric.Excluded`. Six to start with: Online

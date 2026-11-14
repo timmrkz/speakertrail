@@ -305,6 +305,12 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-3); flex: none; }
 .dot.busy { position: relative; background: var(--accent); }
+/* A newer build that is ready stands still, something that needs a look
+   is a dot in the colour of a warning or a failure. */
+.dot.ready { background: var(--accent); }
+.dot.warn { background: var(--warn); }
+.dot.warn.busy::after { border-color: var(--warn); }
+.dot.err { background: var(--bad); }
 .dot.busy::after {
   content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1px solid var(--accent);
   animation: pulse 1.9s cubic-bezier(.25, 0, .3, 1) infinite;

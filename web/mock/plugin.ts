@@ -5,8 +5,8 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, Check, FitSignal, EventPerson, Fit, Json, Person, PersonDetail, PrivateEvent, Profile, PublicEvent,
-  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, Stats,
+  Activity, Appearance, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -27,12 +27,7 @@ interface Res {
   end(body?: string): void
 }
 
-const PASSWORD = 'speakertrail'
-const SESSION = 'st_session=mock'
 const DELAY_MS = 280
-
-const dayOf = (iso: string) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso))
 
 interface PersonRow {
   id: number
@@ -163,6 +158,30 @@ function createState() {
 
 type State = ReturnType<typeof createState>
 
+const UPDATE_CHANNELS: UpdateChannel[] = [
+  { id: 'main', name: 'main', version: '0.1.0-main.4b1c0de', conflict: false },
+  { id: 'pr-9', name: '#9 Speaker Trail as a Mac app, without Docker', version: '0.1.0-pr9.e808a87', conflict: false },
+  { id: 'pr-12', name: '#12 A calmer layout, list and detail', version: '0.1.0-pr12.77aa310', conflict: true },
+]
+const upd = { running: 'pr-9', picked: '', lookFrom: Date.now(), downloadFrom: 0 }
+function updateState(): UpdateState {
+  const now = Date.now()
+  const follows = upd.picked || upd.running
+  const ch = UPDATE_CHANNELS.find((c) => c.id === follows)!
+  const base: UpdateState = {
+    version: '0.1.0-pr9.e808a87', commit: 'e808a87ee3a7', channel: upd.running, off: '', channels: UPDATE_CHANNELS,
+    picked: upd.picked, follows, gone: '', building: '', phase: 'current', next: '', nextName: '', nextCommit: '',
+    checked: new Date(upd.lookFrom + 600).toISOString(), written: 0, total: 0, problem: '', detail: '',
+  }
+  if (now - upd.lookFrom < 600) return { ...base, phase: 'checking' }
+  if (!upd.downloadFrom) return base
+  const total = 21 << 20
+  const done = Math.min(1, Math.max(0, (now - upd.downloadFrom) / 6000))
+  const next = { next: ch.version, nextName: ch.name, nextCommit: ch.version.slice(-7) }
+  if (done < 1) return { ...base, ...next, phase: 'downloading', written: Math.floor(total * done), total }
+  return { ...base, ...next, phase: 'ready' }
+}
+
 // Like the server: what failed, one per source, in plain words, with the
 // action that fixes it. Reads that failed are grouped by reason.
 function failuresOf(s: State, run: Run): RunFailure[] {
@@ -188,16 +207,6 @@ function failuresOf(s: State, run: Run): RunFailure[] {
 
 function setting(s: State, key: string): Json | undefined {
   return s.settings.find((x) => x.key === key)?.value
-}
-
-function toPublic(e: PrivateEvent, showPeople: boolean): PublicEvent {
-  const { fit: _f, fit_reason: _r, sources: _s, first_seen: _fs, people, ...rest } = e
-  return { ...rest, people: showPeople ? people.map(({ name, role, affiliation }): EventPerson => ({ name, role, affiliation })) : [] }
-}
-
-function inRange(e: PrivateEvent, from: string, to: string): boolean {
-  const d = dayOf(e.starts_at)
-  return d >= from && d <= to
 }
 
 function appearancesOf(s: State, id: number): Appearance[] {
@@ -243,25 +252,6 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
     add('backed', 'Backed by a startup programme', false, 'In the portfolio of Beispiel Hub', 'portfolio')
   }
   return out.sort((a, b) => Number(b.for) - Number(a.for))
-}
-
-// Like the server: keeps and skips per signal, and the top 20 by fit.
-function fitStats(s: State): Stats['fit'] {
-  const list = s.people.map((p) => personList(s, p))
-  const labels = new Map<string, [string, boolean]>()
-  labels.set('young', ['Likely under 30', true])
-  for (const [, key, label, isFor] of MOCK_RUBRIC) labels.set(key, [label, isFor])
-  labels.set('active_on_linkedin', ['Active on LinkedIn', true])
-  labels.set('backed', ['Backed by a startup programme', false])
-  const signals = [...labels].map(([key, [label, isFor]]) => ({
-    key, label, for: isFor,
-    connected: list.filter((p) => p.connected && p.signals.some((x) => x.key === key)).length,
-  }))
-  const top = [...list].sort((a, b) => b.fit_score - a.fit_score || b.first_seen.localeCompare(a.first_seen)).slice(0, 20)
-  return {
-    signals,
-    top: { size: top.length, connected: top.filter((p) => p.connected).length, open: top.filter((p) => !p.connected).length },
-  }
 }
 
 function personList(s: State, p: PersonRow): Person {
@@ -330,38 +320,6 @@ function sourceOut(m: MockSource, s?: State): Source {
   }
 }
 
-function stats(s: State): Stats {
-  const now = new Date().toISOString()
-  const upcoming = s.events.filter((e) => e.starts_at >= now)
-  const kept = upcoming.filter((e) => e.fit === 'kept')
-  const byStatus = { active: 0, probation: 0, candidate: 0, retired: 0, manual: 0 } as Record<SourceStatus, number>
-  for (const src of s.sources) byStatus[src.status]++
-  const cityCount = new Map<string, number>()
-  for (const e of kept) if (e.format !== 'online') cityCount.set(e.city, (cityCount.get(e.city) ?? 0) + 1)
-  // Plausible growth over 8 weeks, oldest first, Mondays.
-  const today = todayBerlin()
-  const monday = addDays(today, -((new Date(`${today}T12:00:00Z`).getUTCDay() + 6) % 7))
-  const shape: [number, number, number][] = [[4, 3, 2], [9, 6, 5], [14, 9, 7], [22, 12, 9], [31, 18, 6], [27, 15, 8], [38, 21, 11], [29, 17, 6]]
-  const weekly = shape.map(([people, events, sources], i) => ({ week_start: addDays(monday, (i - 7) * 7), people, events, sources }))
-  return {
-    totals: {
-      people: s.people.length + 262, organisations: 140, profiles: s.people.reduce((a, p) => a + p.profiles.length, 0) + 61,
-      events_upcoming: upcoming.length + 31, events_kept_upcoming: kept.length + 29, sources: byStatus,
-    },
-    last_7_days: { people: 41, events: 23, organisations: 12, sources: 9 },
-    weekly,
-    cities: [...cityCount.entries()].map(([city, events]) => ({ city, events })).sort((a, b) => b.events - a.events),
-    last_run: s.runs[0] ?? null,
-    fit: fitStats(s),
-    // Exa has a key and has spent part of its budget. The others have none.
-    searches: [
-      { provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: true },
-      { provider: 'tavily', used: 0, budget: Number(setting(s, 'tavily_monthly_searches') ?? 1000), set: false },
-      { provider: 'brave', used: 0, budget: Number(setting(s, 'brave_monthly_searches') ?? 1000), set: false },
-    ],
-  }
-}
-
 // Routing
 
 interface Out {
@@ -370,7 +328,7 @@ interface Out {
   type?: string
   cookie?: string
 }
-type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>, loggedIn: boolean) => Out | undefined
+type Handler = (s: State, m: RegExpMatchArray, q: URLSearchParams, body: Record<string, unknown>) => Out | undefined
 
 // Like rubric.Excluded on the server: a phrase matches at the start of a
 // word, whatever stands between its words, or written as one word.
@@ -405,71 +363,15 @@ function exclusionsOf(s: State) {
 const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
-const PUBLIC_ROUTES: [string, RegExp, Handler][] = [
-  ['GET', /^\/api\/public\/config$/, (s, _m, _q, _b, loggedIn) => {
-    const open = setting(s, 'public_calendar') === true
-    const show_people = setting(s, 'public_show_people') === true
-    if (!open && !loggedIn) return ok({ public_calendar: false, owner: false, show_people, cities: [] })
-    const now = new Date().toISOString()
-    const count = new Map<string, number>()
-    for (const e of s.events) if (e.fit === 'kept' && e.format !== 'online' && e.starts_at >= now) count.set(e.city, (count.get(e.city) ?? 0) + 1)
-    const cities = [...count.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
-    return ok({ public_calendar: open, owner: loggedIn, show_people, cities })
-  }],
-  ['GET', /^\/api\/public\/events$/, (s, _m, q, _b, loggedIn) => {
-    if (setting(s, 'public_calendar') !== true && !loggedIn) return err(404, 'The calendar is not open yet')
-    const from = q.get('from') || todayBerlin()
-    const to = q.get('to') || addDays(from, Number(setting(s, 'collect_ahead_days') ?? 30))
-    const show = setting(s, 'public_show_people') === true
-    const events = s.events
-      .filter((e) => e.fit === 'kept' && e.format !== 'online' && inRange(e, from, to))
-      .filter((e) => !q.get('city') || e.city === q.get('city'))
-      .filter((e) => !q.get('type') || e.type === q.get('type'))
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-      .map((e) => toPublic(e, show))
-    return ok({ events })
-  }],
-  ['POST', /^\/api\/login$/, (_s, _m, _q, b) => {
-    if (b.password !== PASSWORD) return err(401, 'Wrong password')
-    return { status: 204, cookie: `${SESSION}; Path=/; HttpOnly; SameSite=Lax` }
-  }],
-  ['POST', /^\/api\/logout$/, () => ({ status: 204, cookie: `${SESSION}; Path=/; HttpOnly; SameSite=Lax; Max-Age=0` })],
-  ['GET', /^\/api\/me$/, (_s, _m, _q, _b, loggedIn) => ok({ logged_in: loggedIn })],
-]
-
-const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
-  ['GET', /^\/api\/stats$/, (s) => ok(stats(s))],
-  ['GET', /^\/api\/events$/, (s, _m, q) => {
-    const from = q.get('from') || todayBerlin()
-    const to = q.get('to') || addDays(from, Number(setting(s, 'collect_ahead_days') ?? 30))
-    const fit = q.get('fit') || 'kept'
-    const needle = (q.get('q') ?? '').toLowerCase()
-    const events = s.events
-      .filter((e) => inRange(e, from, to))
-      .filter((e) => fit === 'all' || e.fit === fit)
-      .filter((e) => !q.get('city') || e.city === q.get('city'))
-      .filter((e) => !q.get('type') || e.type === q.get('type'))
-      .filter((e) => !needle || [e.title, e.venue, e.city, ...e.organisers, ...e.people.map((p) => p.name)].join(' ').toLowerCase().includes(needle))
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
-    return ok({ events })
-  }],
-  ['PATCH', /^\/api\/events\/(\d+)$/, (s, m, _q, b) => {
-    const e = s.events.find((x) => x.id === Number(m[1]))
-    if (!e) return err(404, 'No such event')
-    if (b.fit !== 'kept' && b.fit !== 'dropped') return err(400, 'fit must be kept or dropped')
-    e.fit = b.fit as Fit
-    e.fit_reason = typeof b.fit_reason === 'string' && b.fit_reason ? b.fit_reason : `set by hand: ${b.fit}`
-    return ok(e)
-  }],
+const ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
     const sort = q.get('sort') || 'next'
     const filter = q.get('filter') || 'all'
-    // Like the server while runs take only profile searches: whom they
-    // found, and whoever Tim connected with.
-    const only = s.settings.find((x) => x.key === 'profile_searches_only')?.value !== false
+    // Like the app: whom profile searches found, and whoever Tim connected
+    // with, less whom the exclusions hide.
     const hidden = hiddenBy(s)
-    let list = s.people.filter((p) => !hidden.has(p.id) && (!only || p.linkedin || p.connected)).map((p) => personList(s, p))
+    let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
@@ -530,6 +432,30 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
       .map((x) => sourceOut(x, s))
     return ok({ sources: list })
   }],
+  // Updates, like cmd/speakertrail-app/updates_api.go: a build of pull
+  // request 9 that follows its channel. Check finds nothing newer. Picking
+  // another channel looks, downloads it over six seconds and has it ready.
+  // The app sends each change as an event, which the mock cannot, so what
+  // the page shows here moves on only when it asks: on opening the page.
+  ['GET', /^\/api\/updates$/, () => ok(updateState())],
+  ['POST', /^\/api\/updates\/check$/, () => {
+    upd.lookFrom = Date.now()
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/updates\/follow$/, (_s, _m, _q, b) => {
+    const ch = String(b.channel ?? '')
+    if (!UPDATE_CHANNELS.some((c) => c.id === ch)) return err(409, `There is no channel ${ch}`)
+    upd.picked = ch
+    upd.lookFrom = Date.now()
+    upd.downloadFrom = ch === upd.running ? 0 : Date.now() + 1200
+    return ok(updateState())
+  }],
+  ['POST', /^\/api\/updates\/relaunch$/, () => {
+    const st = updateState()
+    if (st.phase !== 'ready') return err(409, 'No newer build is ready')
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/updates\/commit$/, () => ({ status: 204 })],
   ['GET', /^\/api\/exclusions$/, (s) => ok(exclusionsOf(s))],
   ['POST', /^\/api\/exclusions$/, (s, _m, _q, b) => {
     const phrase = words(String(b.phrase ?? '')).length ? String(b.phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ') : ''
@@ -687,12 +613,6 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     const run = s.runs.find((r) => r.id === Number(m[1]))
     return run ? ok({ run, checks: s.checks.get(run.id) ?? [], failures: failuresOf(s, run) }) : err(404, 'No such run')
   }],
-  ['GET', /^\/api\/fetches\/(\d+)\/(text|html|screenshot)$/, (s, m) => {
-    const id = Number(m[1])
-    const check = [...s.checks.values()].flat().find((c) => c.fetch_id === id)
-    if (!check || id < 3130) return err(404, 'This fetch is older than 30 days and was deleted')
-    return fetchBody(check, m[2])
-  }],
   ['GET', /^\/api\/settings$/, (s) => ok({ settings: s.settings })],
   ['PATCH', /^\/api\/settings\/([^/]+)$/, (s, m, _q, b) => {
     const row = s.settings.find((x: Setting) => x.key === decodeURIComponent(m[1]))
@@ -703,26 +623,16 @@ const PRIVATE_ROUTES: [string, RegExp, Handler][] = [
     row.updated_at = new Date().toISOString()
     return ok(row)
   }],
+  // Like the app: whether the Exa key is saved, never the key.
+  ['GET', /^\/api\/keys$/, (s) => ok({ keys: [{ provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: exaKey !== '' }] })],
+  ['PUT', /^\/api\/keys\/exa$/, (_s, _m, _q, b) => {
+    exaKey = String(b.key ?? '').trim()
+    return { status: 204 }
+  }],
 ]
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
-}
-
-function fetchBody(c: Check, kind: string) {
-  const title = escapeHtml(c.source.name)
-  if (kind === 'text') {
-    return { status: 200, type: 'text/plain; charset=utf-8', body: `${c.source.name}\n\nUpcoming events\n\nMon 18:00  Rheinland Pitch #129  Startplatz, Köln\nWed 18:30  Gateway Sundowner  InnoDom, Köln\n\n(Mock text of fetch ${c.fetch_id}, checked ${c.checked_at})\n` }
-  }
-  if (kind === 'html') {
-    return { status: 200, type: 'text/html; charset=utf-8', body: `<!doctype html><title>${title}</title><h1>${title}</h1><p>Mock HTML of fetch ${c.fetch_id}.</p><ul><li>Rheinland Pitch #129</li><li>Gateway Sundowner</li></ul>` }
-  }
-  // The real server answers a PNG. An SVG stands in here.
-  return {
-    status: 200, type: 'image/svg+xml',
-    body: `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="800" viewBox="0 0 1280 800"><rect width="1280" height="800" fill="#f3f5f8"/><rect x="0" y="0" width="1280" height="72" fill="#2448b8"/><text x="40" y="46" font-family="sans-serif" font-size="26" fill="#fff">${title}</text><text x="40" y="150" font-family="sans-serif" font-size="22" fill="#141b26">Mock screenshot of fetch ${c.fetch_id}</text>${[0, 1, 2, 3].map((i) => `<rect x="40" y="${200 + i * 120}" width="1200" height="96" rx="10" fill="#fff" stroke="#dde2ea"/>`).join('')}</svg>`,
-  }
-}
+// The mock's Exa key, saved as the app saves it in the keychain.
+let exaKey = 'invented'
 
 function readBody(req: Req): Promise<Record<string, unknown>> {
   return new Promise((resolve) => {
@@ -754,32 +664,24 @@ export function mockApi(): Plugin {
     name: 'speakertrail-mock-api',
     apply: 'serve',
     configureServer(server) {
-      server.config.logger.info(`\n  Mock API on. Log in with the password "${PASSWORD}".\n`)
+      server.config.logger.info(`\n  Mock API on, with invented data.\n`)
       server.middlewares.use(async (rawReq: unknown, rawRes: unknown, next: () => void) => {
         const req = rawReq as Req
         const res = rawRes as Res
         const url = new URL(req.url ?? '/', 'http://mock')
         if (!url.pathname.startsWith('/api/')) return next()
-        const body = req.method === 'POST' || req.method === 'PATCH' ? await readBody(req) : {}
+        const body = req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT' ? await readBody(req) : {}
         await new Promise((r) => setTimeout(r, DELAY_MS))
-        const cookie = String(req.headers.cookie ?? '')
-        const loggedIn = cookie.split(/;\s*/).includes(SESSION)
         const send = (out: Out) => {
           res.statusCode = out.status
-          if (out.cookie) res.setHeader('Set-Cookie', out.cookie)
           if (out.status === 204 || out.body === undefined) return res.end()
           res.setHeader('Content-Type', out.type ?? 'application/json; charset=utf-8')
           res.end(typeof out.body === 'string' && out.type ? out.body : JSON.stringify(out.body))
         }
-        for (const [method, re, handler] of PUBLIC_ROUTES) {
+        // The app has no login, so neither has the mock.
+        for (const [method, re, handler] of ROUTES) {
           const m = url.pathname.match(re)
-          if (m && req.method === method) return send(handler(state, m, url.searchParams, body, loggedIn) ?? err(500, 'No answer'))
-        }
-        for (const [method, re, handler] of PRIVATE_ROUTES) {
-          const m = url.pathname.match(re)
-          if (!m || req.method !== method) continue
-          if (!loggedIn) return send(err(401, 'Log in first'))
-          return send(handler(state, m, url.searchParams, body, loggedIn) ?? err(500, 'No answer'))
+          if (m && req.method === method) return send(handler(state, m, url.searchParams, body) ?? err(500, 'No answer'))
         }
         send(err(404, 'Not found'))
       })

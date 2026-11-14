@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { cubicOut } from 'svelte/easing'
   import { untrack } from 'svelte'
   import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail as Detail } from '../lib/api'
   import { plural } from '../lib/format'
@@ -108,6 +109,7 @@
   // Wide enough for the list and the person beside it, like Mail. Below
   // that the person slides in over the list.
   let wide = $state(false)
+  const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
   $effect(() => {
     const mq = window.matchMedia('(min-width: 1000px)')
     wide = mq.matches
@@ -137,6 +139,79 @@
     requestAnimationFrame(() => document.getElementById(`person-row-${list[next].id}`)?.scrollIntoView({ block: 'nearest' }))
   }
 
+  // The person beside the list takes a share of the window that Tim sets
+  // by dragging its edge. It snaps to steps of 5 %, so it lands on 40 %
+  // or 50 % rather than anywhere near them. Each pane keeps room for its
+  // words, so the steps on offer depend on how wide the window is. Closed,
+  // the person takes nothing and the list has the whole width.
+  const STEP = 0.05
+  const SHARE_KEY = 'people.detail-share'
+  let width = $state(0)
+  let share = $state(readShare())
+  let dragging = $state(false)
+  function readShare(): number {
+    try {
+      const v = Number(localStorage.getItem(SHARE_KEY))
+      return v > 0 && v < 1 ? v : 0.45
+    } catch {
+      return 0.45
+    }
+  }
+  // The smallest and largest share that leave the person 360 px and the
+  // list 320 px, between a quarter and three quarters of the width.
+  let least = $derived(Math.min(0.75, Math.ceil(Math.max(0.25, 360 / (width || 1)) / STEP - 1e-6) * STEP))
+  let most = $derived(Math.max(least, Math.floor(Math.min(0.75, 1 - 320 / (width || 1)) / STEP + 1e-6) * STEP))
+  let shown = $derived(Math.min(most, Math.max(least, share)))
+  let percent = $derived(Math.round(shown * 100))
+
+  function setShare(v: number) {
+    share = Math.min(most, Math.max(least, Math.round(v / STEP) * STEP))
+    try {
+      localStorage.setItem(SHARE_KEY, String(share))
+    } catch {
+      // A private window keeps the width for this visit only.
+    }
+  }
+
+  // The person grows in from the right edge and shrinks back into it. Its
+  // words keep their final width meanwhile, so they slide rather than
+  // wrap anew on every frame.
+  function grow(node: HTMLElement) {
+    const w = node.getBoundingClientRect().width
+    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `flex-basis: ${t * w}px; overflow: hidden; --pane-w: ${w}px` }
+  }
+
+  let peopleEl = $state<HTMLElement>()
+  function startDrag(e: PointerEvent) {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const edge = e.currentTarget as HTMLElement
+    edge.setPointerCapture(e.pointerId)
+    dragging = true
+    const move = (ev: PointerEvent) => {
+      const r = peopleEl?.getBoundingClientRect()
+      if (r) setShare((r.right - ev.clientX) / r.width)
+    }
+    const end = () => {
+      dragging = false
+      edge.removeEventListener('pointermove', move)
+      edge.removeEventListener('pointerup', end)
+      edge.removeEventListener('pointercancel', end)
+    }
+    edge.addEventListener('pointermove', move)
+    edge.addEventListener('pointerup', end)
+    edge.addEventListener('pointercancel', end)
+  }
+
+  // The edge answers the keyboard too: the arrows move it a step, Home and
+  // End to the ends.
+  function edgeKey(e: KeyboardEvent) {
+    const to = { ArrowLeft: shown + STEP, ArrowRight: shown - STEP, Home: most, End: least }[e.key]
+    if (to === undefined) return
+    e.preventDefault()
+    setShare(to)
+  }
+
   let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
@@ -148,7 +223,8 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="people" class:wide>
+<div class="people" class:wide class:open={wide && openId !== null} class:dragging bind:this={peopleEl} bind:clientWidth={width}
+  style:--detail-w="{percent}%">
   <section class="list-pane" aria-label="People">
     <header class="bar">
       <h1>People{#if counts}<span class="num-count">{counts.all}</span>{/if}</h1>
@@ -214,13 +290,14 @@
           {#each people.data as p (p.id)}
             <li>
               <a class="prow" id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
-                <span class="line1">
+                <span class="who">
                   <b class="ellipsis name">{p.name}</b>
                   {#if isNew(p)}<span class="dot new" title="Found by this run"></span><span class="sr-only">, new</span>{/if}
                   {#if p.connected}<span class="ok" title="Connected"><Icon name="check" size={14} line={2} /></span><span class="sr-only">, connected</span>{/if}
-                  {#if age(p)}<span class="age" title="Age, a guess from the LinkedIn profile">{age(p)}</span>{/if}
                 </span>
                 <span class="ellipsis sub">{p.headline || p.city || 'No headline yet'}</span>
+                <span class="ellipsis city">{p.headline ? p.city : ''}</span>
+                <span class="age" title={age(p) ? 'Age, a guess from the LinkedIn profile' : undefined}>{age(p) ?? ''}</span>
               </a>
             </li>
           {/each}
@@ -229,25 +306,23 @@
     </div>
   </section>
 
-  {#if wide}
-    <section class="detail-pane" aria-label="Person">
+  {#if wide && openId !== null}
+    <section class="detail-pane" aria-label="Person" transition:grow>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+      <div class="edge" role="separator" aria-orientation="vertical" aria-label="Width of the person"
+        aria-valuemin={Math.round(least * 100)} aria-valuemax={Math.round(most * 100)} aria-valuenow={percent} aria-valuetext="{percent} % of the window"
+        tabindex="0" title="Drag to make the person wider or narrower. It snaps to steps of 5 %. Double-click for 45 %"
+        onpointerdown={startDrag} onkeydown={edgeKey} ondblclick={() => setShare(0.45)}>
+        {#if dragging}<span class="share">{percent} %</span>{/if}
+      </div>
       <header class="bar">
         <span class="grow"></span>
-        {#if openId !== null}
-          <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
-        {/if}
+        <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
       </header>
       <div class="detail-body">
-        {#if openId !== null}
-          {#key openId}
-            <PersonDetail id={openId} onupdate={updated} />
-          {/key}
-        {:else}
-          <div class="nobody">
-            <Icon name="people" size={28} line={1.5} />
-            <p>{people.data?.length ? 'Pick someone to see why they fit' : 'Nobody to show yet'}</p>
-          </div>
-        {/if}
+        {#key openId}
+          <PersonDetail id={openId} onupdate={updated} />
+        {/key}
       </div>
     </section>
   {/if}
@@ -266,10 +341,34 @@
 <style>
   /* The list on the left and the person on the right, each a pane of its
      own that scrolls by itself, the way Mail is laid out. */
-  .people { display: grid; grid-template-columns: minmax(0, 1fr); height: 100dvh; min-width: 0; }
-  .people.wide { grid-template-columns: var(--list-w) minmax(0, 1fr); }
+  .people { display: flex; height: 100dvh; min-width: 0; }
   .list-pane, .detail-pane { min-width: 0; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
-  .detail-pane { border-left: 1px solid var(--line); }
+  .list-pane { flex: 1 1 0; container-type: inline-size; }
+  /* The person comes in from the right and takes its share of the width.
+     Closed, it is not there at all. */
+  /* Its body scrolls, not the pane, so the edge can reach out over the
+     list a little and still be caught. */
+  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--surface); }
+  .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .detail-pane > .bar, .detail-body { min-width: var(--pane-w, 0); }
+  .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
+  /* The edge to drag: wider than the line it sits on, so it is easy to
+     catch, and lit while it is held or has the keyboard. */
+  .edge {
+    position: absolute; z-index: 3; top: 0; bottom: 0; left: -5px; width: 9px; cursor: col-resize; touch-action: none;
+    --wails-draggable: no-drag;
+  }
+  .edge::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; background: transparent;
+    transition: background .15s;
+  }
+  .edge:hover::after { background: var(--line-strong); }
+  .dragging .edge::after, .edge:focus-visible::after { background: var(--accent); }
+  .edge:focus-visible { outline: none; }
+  .share {
+    position: absolute; top: calc(var(--bar-h) + 10px); left: 14px; padding: 3px 8px; border-radius: 6px; white-space: nowrap;
+    background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
+  }
   /* Where everything in the list pane starts and ends. In a window too
      narrow for the person beside it, the list reads in the same centred
      column as the other pages. */
@@ -294,17 +393,29 @@
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row's words stand where the bar's words stand: the row reaches 12
      px past them on either side for its highlight. */
+  /* A row is two lines in a narrow list: name and age, then the
+     headline. With room it is one line of columns, name, headline, city
+     and age, so a wide list uses its width rather than leaving it empty. */
   .prow {
-    display: grid; gap: 2px; padding: 9px 12px; border-radius: 8px; color: inherit; text-decoration: none; min-width: 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who age" "sub sub";
+    gap: 2px 8px; padding: 9px 12px; border-radius: 8px; color: inherit; text-decoration: none; min-width: 0; align-items: center;
+  }
+  .who { grid-area: who; } .sub { grid-area: sub; } .age { grid-area: age; } .city { display: none; }
+  @container (min-width: 760px) {
+    .prow { grid-template-columns: minmax(0, 2fr) minmax(0, 4fr) minmax(0, 1.2fr) 2.5em; grid-template-areas: "who sub city age"; gap: 16px; }
+    .city { display: block; grid-area: city; font-size: 13px; color: var(--ink-3); }
+    .controls { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .controls .filters { width: auto; grid-auto-columns: minmax(7.5em, auto); grid-template-columns: none; grid-auto-flow: column; }
+    .controls .run-now { grid-column: 1 / -1; }
   }
   .prow:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); text-decoration: none; }
   .prow[aria-current="true"] { background: var(--accent-soft); }
   .prow:focus-visible { outline-offset: -2px; }
-  .line1 { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .name { font-weight: 600; font-size: 14px; }
   .dot.new { width: 7px; height: 7px; background: var(--accent); }
   .ok { color: var(--good); display: inline-flex; }
-  .age { margin-left: auto; padding-left: 8px; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
+  .age { text-align: right; font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: none; }
   .sub { font-size: 13px; color: var(--ink-2); }
   .prow[aria-current="true"] .sub, .prow[aria-current="true"] .age { color: var(--ink-2); }
   .grow { flex: 1 1 auto; }
@@ -312,6 +423,5 @@
      bar over it ends where the column ends. */
   .detail-pane > .bar { padding-inline: var(--dx); }
   .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
-  .detail-body { padding: 28px var(--dx) 48px; min-width: 0; }
-  .nobody { display: grid; justify-items: center; gap: 10px; padding-top: 18vh; color: var(--ink-3); font-size: 14px; }
+  .detail-body { padding: 28px var(--dx) 48px; }
 </style>

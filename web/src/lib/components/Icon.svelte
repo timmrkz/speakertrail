@@ -14,6 +14,7 @@
   import Check from '@lucide/svelte/icons/check'
   import Plus from '@lucide/svelte/icons/plus'
   import UserPlus from '@lucide/svelte/icons/user-plus'
+  import UserX from '@lucide/svelte/icons/user-x'
   import Undo2 from '@lucide/svelte/icons/undo-2'
   import ExternalLink from '@lucide/svelte/icons/external-link'
   import ChevronRight from '@lucide/svelte/icons/chevron-right'
@@ -51,6 +52,7 @@
     check: Check,
     plus: Plus,
     connect: UserPlus,
+    'not-them': UserX,
     undo: Undo2,
     external: ExternalLink,
     chevron: ChevronRight,

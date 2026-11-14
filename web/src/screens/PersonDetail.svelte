@@ -3,7 +3,7 @@
   // why they fit, which search found them, and Tim's notes. The pane
   // beside the list in a wide window and the sheet in a narrow one both
   // show this, so the two never drift apart.
-  import { api, ApiError, type PersonDetail } from '../lib/api'
+  import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { fmtDay, initials } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, toast } from '../lib/toast.svelte'
@@ -36,7 +36,34 @@
       .join(' · ')
   })
   // The LinkedIn profile the search found, unless Tim said it is not them.
-  let linkedin = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin' && x.review !== 'rejected')?.url ?? '')
+  let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin' && x.review !== 'rejected'))
+  let linkedin = $derived(profile?.url ?? '')
+
+  // A search can find the wrong person's profile. Not this person sets it
+  // aside, so LinkedIn no longer opens it, and Undo in the toast brings it
+  // back as it was.
+  let settingAside = $state(false)
+  async function review(of: Profile, next: Review) {
+    if (!person.data) return
+    await api.patchProfile(of.id, next)
+    if (person.data) person.data = { ...person.data, profiles: person.data.profiles.map((x) => (x.id === of.id ? { ...x, review: next } : x)) }
+  }
+  async function notThem() {
+    if (!profile || settingAside) return
+    const of = profile
+    settingAside = true
+    try {
+      await review(of, 'rejected')
+      toast.show('LinkedIn profile set aside as not this person', 'plain', {
+        label: 'Undo',
+        run: () => review(of, of.review).catch((e) => toast.show(errorText(e), 'bad')),
+      })
+    } catch (e) {
+      toast.show(errorText(e), 'bad')
+    } finally {
+      settingAside = false
+    }
+  }
   let reasons = $derived((person.data?.signals ?? []).filter((s) => s.for))
   let doubts = $derived((person.data?.signals ?? []).filter((s) => !s.for))
 
@@ -124,6 +151,10 @@
             title="Open the LinkedIn profile in the browser profile chosen in Settings">
             {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
           </a>
+          <button class="btn icon" type="button" disabled={settingAside} onclick={notThem}
+            title="Not this person. The LinkedIn profile the search found is someone else's" aria-label="Not this person">
+            <Icon name="not-them" />
+          </button>
         {/if}
       </div>
       {#if openProblem}

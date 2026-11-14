@@ -27,6 +27,21 @@ func (l *logLine) Str(key, value string) *logLine {
 	return l
 }
 
+func (l *logLine) Float64(key string, value float64) *logLine {
+	l.attrs = append(l.attrs, key, value)
+	return l
+}
+
+func (l *logLine) Bool(key string, value bool) *logLine {
+	l.attrs = append(l.attrs, key, value)
+	return l
+}
+
+func (l *logLine) Interface(key string, value any) *logLine {
+	l.attrs = append(l.attrs, key, value)
+	return l
+}
+
 func (l *logLine) Err(err error) *logLine {
 	if err != nil {
 		l.attrs = append(l.attrs, "error", err.Error())

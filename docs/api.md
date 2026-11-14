@@ -150,6 +150,15 @@ chosen, or a browser that is gone, it answers 409 with what to do.
 `/api/updates` is answered by the app itself, not by `internal/api`. See
 [UPDATES.md](UPDATES.md).
 
+## The title bar
+
+`GET /api/chrome` is answered by the app itself, not by `internal/api`.
+It says how tall the title bar macOS laid out is and where its three
+buttons are, in whole CSS pixels, `{"bar": 30, "left": 12, "right": 72}`.
+All zeros mean the system draws its own title bar. The page asks once
+when it starts and hears every change after on the Wails event called
+`chrome`. See `cmd/speakertrail-app/chrome.go`.
+
 ## Exclusions
 
 An exclusion is a word or phrase, like "Online Marketing". A profile

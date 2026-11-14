@@ -7,8 +7,9 @@
     <div class="toast" class:bad={toast.tone === 'bad'}>
       <span>{toast.message}</span>
       {#if toast.action}
-        {@const action = toast.action}
-        <button class="act" type="button" onclick={() => (toast.hide(), action.run())}>{action.label}</button>
+        <!-- The action is taken before the toast goes: hiding it empties
+             toast.action, and a const in the template reads it again. -->
+        <button class="act" type="button" onclick={() => { const run = toast.action?.run; toast.hide(); run?.() }}>{toast.action.label}</button>
       {/if}
     </div>
   {/if}

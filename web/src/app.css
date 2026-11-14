@@ -54,6 +54,10 @@
   /* A page of its own, Searches, Settings and Updates, reads in a column
      this wide at most, centred in the window. */
   --col-w: 880px;
+  /* Two gaps and no others on a page: between its sections, and between
+     the parts of one section, like a heading and its list. */
+  --gap-page: 24px;
+  --gap-group: 12px;
   --side: rgba(255, 255, 255, .45);
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the
@@ -301,7 +305,14 @@ button { -webkit-tap-highlight-color: transparent; }
   cursor: pointer; white-space: nowrap;
 }
 .segmented button:hover { color: var(--ink); }
-.segmented button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); box-shadow: 0 1px 2px rgba(20, 27, 38, .12); }
+.segmented button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); }
+/* What is chosen, a filter, a page in the sidebar, the person open, is a
+   piece of glass laid over what it sits on: it blurs what is under it
+   and has the same bright edge on top as every pane. */
+.segmented button[aria-pressed="true"], .lit {
+  backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
+  box-shadow: inset 0 1px var(--glass-hi), 0 1px 3px rgba(20, 27, 38, .12);
+}
 
 /* Pills */
 .pill {
@@ -417,7 +428,10 @@ a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-dr
 .page > .bar { padding: 0 max(var(--pad), calc((100% - var(--col-w)) / 2)); }
 .page-body {
   width: 100%; max-width: calc(var(--col-w) + 2 * var(--pad)); margin: 0 auto;
-  padding: 24px var(--pad) 64px; display: grid; gap: 24px; align-content: start; min-width: 0;
+  padding: var(--gap-page) var(--pad) 64px; display: grid; gap: var(--gap-page); align-content: start; min-width: 0;
+}
+/* The parts of one section, like a heading, a search field and a list. */
+.group { display: grid; gap: var(--gap-group); min-width: 0; align-content: start;
 }
 
 /* An icon button at the end of a bar: its glyph, not its box, lines up

@@ -119,6 +119,7 @@
   {:else if !all.length}
     <EmptyState icon="search" title="No searches yet" text="Add one above, like Personal Trainer Düsseldorf." />
   {:else}
+    <div class="group">
     {#if all.length > 8 || q}
       <SearchInput bind:value={q} placeholder="Find a search" label="Find a search" />
     {/if}
@@ -144,6 +145,7 @@
         {/each}
       </ul>
     {/if}
+    </div>
   {/if}
 </div>
 </div>
@@ -152,7 +154,7 @@
   .add { display: flex; gap: 8px; }
   .add .input { flex: 1; min-width: 0; }
   .add .btn { flex: none; min-width: 6.4em; justify-content: center; }
-  .summary { font-size: 13px; color: var(--ink-2); margin-bottom: -10px; }
+  .summary { font-size: 13px; color: var(--ink-2); }
   .search {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center;
     padding: 12px 16px;

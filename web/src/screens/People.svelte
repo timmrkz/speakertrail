@@ -187,12 +187,14 @@
     }
   }
 
-  // The person slides in from the right edge and back out into it. The
-  // pane takes its whole share at once and only moves, so the list beside
-  // it changes its width once, not on every frame, and nothing in it
-  // shuffles while the person comes and goes.
-  function grow(_node: HTMLElement) {
-    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `transform: translateX(${(1 - t) * 100}%)` }
+  // The person grows in from the right edge and shrinks back into it, and
+  // the list gives way beside it the whole time, so both move together
+  // and nothing jumps at either end. A row has the same lines at any
+  // width, so the list only narrows. The person's words keep their final
+  // width meanwhile and slide in rather than wrap anew on every frame.
+  function grow(node: HTMLElement) {
+    const w = node.getBoundingClientRect().width
+    return { duration: reduced ? 0 : 220, easing: cubicOut, css: (t: number) => `flex-basis: ${t * w}px; overflow: hidden; --pane-w: ${w}px` }
   }
 
   let peopleEl = $state<HTMLElement>()
@@ -358,6 +360,7 @@
      list a little and still be caught. */
   .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi); }
   .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .detail-top, .detail-body { min-width: var(--pane-w, 0); }
   .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
   /* The edge to drag: wider than the line it sits on, so it is easy to
      catch, and lit while it is held or has the keyboard. */
@@ -380,7 +383,7 @@
      of what is known. The column is the same with a person open or not,
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .controls { display: grid; gap: 10px; padding: 24px var(--x) 14px; }
+  .controls { display: grid; gap: var(--gap-group); padding: var(--gap-page) var(--x) var(--gap-group); }
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
@@ -406,7 +409,7 @@
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
   .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
-  .prow[aria-current="true"] { background: var(--accent-soft); }
+  .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 0 1px var(--glass-hi); }
   /* The person open is marked already, the keyboard on it adds nothing. */
   .prow[aria-current="true"]:focus-visible { background-image: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }

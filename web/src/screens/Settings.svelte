@@ -64,6 +64,5 @@
 </div>
 
 <style>
-  .group { display: grid; gap: 10px; }
   .group h2 { font-size: 15px; margin: 0; }
 </style>

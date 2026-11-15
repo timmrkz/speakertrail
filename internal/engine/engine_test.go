@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -417,8 +418,9 @@ func (l *lines) all(t *testing.T) []map[string]any {
 
 // Every check of a run is a line of the log with the run, the search,
 // how long it took and what it found, and a failed one with its error
-// too, while several are asked side by side. The lines name nobody: no
-// name, headline or profile link of a person found.
+// too, while several are asked side by side. Each keeps the act that
+// started the run, though the person goes on to others. The lines name
+// nobody: no name, headline or profile link of a person found.
 func TestEveryCheckIsALineOfTheLog(t *testing.T) {
 	e, st := newEngine(t, &finder{profiles: invented})
 	if err := st.Update(func(d *store.Data) error {
@@ -433,7 +435,11 @@ func TestEveryCheckIsALineOfTheLog(t *testing.T) {
 	}
 	var out lines
 	e.Log = slog.New(slog.NewJSONHandler(&out, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	var acting atomic.Value
+	acting.Store("a5")
+	e.Act = func() string { return acting.Load().(string) }
 	id, _, err := e.Start("manual", 0)
+	acting.Store("a6")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,7 +451,7 @@ func TestEveryCheckIsALineOfTheLog(t *testing.T) {
 			continue
 		}
 		asked++
-		if l["run"] != float64(id) || l["search"] == nil || l["ms"] == nil || l["found"] != float64(1) || l["new"] == nil || l["profiles"] != float64(len(invented)) {
+		if l["run"] != float64(id) || l["act"] != "a5" || l["search"] == nil || l["ms"] == nil || l["found"] != float64(1) || l["new"] == nil || l["profiles"] != float64(len(invented)) {
 			t.Errorf("a check's line is %v", l)
 		}
 	}

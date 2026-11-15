@@ -67,6 +67,10 @@ func main() {
 	// made, see chrome.go.
 	var chrome atomic.Pointer[chromeWatch]
 	api.Handle("/api/chrome", chromeAPI{get: chrome.Load})
+	// The window's lines and acts, and the log as Settings shows it, see
+	// applog_api.go.
+	api.Handle("/api/log", logAPI{log: theLog, show: showInFolder})
+	api.Handle("/api/log/", logAPI{log: theLog, show: showInFolder})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",
@@ -105,6 +109,11 @@ func main() {
 		app.Event.Emit("updates", u)
 	})
 	ups.Store(c)
+	// The log as Settings shows it, while Settings is open, as lines are
+	// written, about once a second at most, as the event applog. See
+	// watch in applog.go.
+	go theLog.watch(func(st LogStatus) { app.Event.Emit("applog", st) },
+		func() <-chan time.Time { return time.After(time.Second) })
 	c.start()
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Speaker Trail",
@@ -169,7 +178,7 @@ func open() (http.Handler, *engine.Engine, string, error) {
 		return nil, nil, "", err
 	}
 	exa := keys.NewExa()
-	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Finder: func() engine.Finder {
+	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Act: theLog.acting, Finder: func() engine.Finder {
 		if key := exa.Get(); key != "" {
 			return &search.Exa{Key: key}
 		}

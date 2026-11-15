@@ -51,6 +51,11 @@ type Engine struct {
 	// Finder is the search provider, nil while there is no key.
 	Finder func() Finder
 	Log    *slog.Logger
+	// Act is what the person did last, the id the app's log ties lines
+	// to, or nil. A run keeps the act that started it on every line it
+	// writes, however long it goes, the way a job keeps it in
+	// FrameFairy. See docs/LOGGING.md.
+	Act func() string
 
 	mu    sync.Mutex
 	going *going
@@ -68,6 +73,8 @@ type going struct {
 	// running are the searches being asked now, by id, with when they
 	// started.
 	running map[int64]time.Time
+	// log is the engine's log with the act that started the run.
+	log *slog.Logger
 }
 
 func (e *Engine) log() *slog.Logger {
@@ -163,10 +170,15 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 		return 0, false, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	g := &going{id: run.ID, cancel: cancel, done: make(chan struct{}), running: map[int64]time.Time{}}
+	g := &going{id: run.ID, cancel: cancel, done: make(chan struct{}), running: map[int64]time.Time{}, log: e.log()}
+	if e.Act != nil {
+		if act := e.Act(); act != "" {
+			g.log = g.log.With("act", act)
+		}
+	}
 	e.going = g
 	go e.run(ctx, g, run.Searches)
-	e.log().Info("a run started", "run", run.ID, "searches", len(run.Searches))
+	g.log.Info("a run started", "run", run.ID, "searches", len(run.Searches))
 	return run.ID, true, nil
 }
 
@@ -241,12 +253,12 @@ feed:
 		}
 		return nil
 	}); err != nil {
-		e.log().Error("the end of a run was not saved", "run", g.id, "error", err)
+		g.log.Error("the end of a run was not saved", "run", g.id, "error", err)
 	}
 	e.mu.Lock()
 	e.going = nil
 	e.mu.Unlock()
-	e.log().Info("a run ended", "run", g.id, "ended", cmpOr(ended, "finished"))
+	g.log.Info("a run ended", "run", g.id, "ended", cmpOr(ended, "finished"))
 }
 
 // check asks one search and keeps whom it finds.
@@ -269,11 +281,11 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 		return nil
 	})
 	if err != nil || query == "" {
-		e.log().Error("a search could not start", "run", g.id, "search", id, "error", err)
+		g.log.Error("a search could not start", "run", g.id, "search", id, "error", err)
 		return
 	}
 	if !reserved {
-		e.log().Info("a search waits, no Exa searches left this month", "run", g.id, "search", id)
+		g.log.Info("a search waits, no Exa searches left this month", "run", g.id, "search", id)
 		return
 	}
 	e.mu.Lock()
@@ -295,14 +307,14 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 	if ctx.Err() != nil {
 		// Stopped. The search is due again in the next run, and the call
 		// stays counted, because Exa may bill it.
-		e.log().Debug("a search was stopped", "run", g.id, "search", id)
+		g.log.Debug("a search was stopped", "run", g.id, "search", id)
 		return
 	}
 	c := store.Check{SearchID: id, At: e.Store.Now()}
 	c.DurationMS = c.At.Sub(start).Milliseconds()
 	if err != nil {
 		c.Error = err.Error()
-		e.log().Warn("a search failed", "run", g.id, "search", id, "ms", c.DurationMS, "error", err)
+		g.log.Warn("a search failed", "run", g.id, "search", id, "ms", c.DurationMS, "error", err)
 	}
 	err = e.Store.Update(func(d *store.Data) error {
 		s := d.Search(id)
@@ -336,13 +348,13 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 		return nil
 	})
 	if err != nil {
-		e.log().Error("what a search found was not saved", "run", g.id, "search", id, "error", err)
+		g.log.Error("what a search found was not saved", "run", g.id, "search", id, "error", err)
 		return
 	}
 	// Every check is a line, by ids and counts and never by whom it
 	// found, which is personal data.
 	if c.Error == "" {
-		e.log().Debug("a search was asked", "run", g.id, "search", id, "ms", c.DurationMS,
+		g.log.Debug("a search was asked", "run", g.id, "search", id, "ms", c.DurationMS,
 			"profiles", len(profiles), "found", c.PeopleFound, "new", c.PeopleNew)
 	}
 }

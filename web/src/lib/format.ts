@@ -309,3 +309,13 @@ export function runBrought(r: {
   const list = failed.length > 1 ? `${failed.slice(0, -1).join(', ')} and ${failed[failed.length - 1]}` : failed[0] ?? ''
   return { brought: parts.join(', '), failed: list ? `${list} failed` : '' }
 }
+
+// A size in bytes the way a download is always quoted: metric, a thousand
+// bytes to the kilobyte, and never more than one decimal. Under a megabyte
+// it is kilobytes, for a file as small as a log. As in FrameFairy.
+export function size(bytes: number): string {
+  if (!isFinite(bytes) || bytes <= 0) return ''
+  if (bytes < 999_500) return `${Math.max(1, Math.round(bytes / 1e3))} KB`
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`
+  return `${Math.round(bytes / 1e6)} MB`
+}

@@ -9,7 +9,16 @@
     onclose,
     head,
     children,
-  }: { label: string; onclose: () => void; head?: Snippet; children: Snippet } = $props()
+    personal = false,
+  }: {
+    label: string
+    onclose: () => void
+    head?: Snippet
+    children: Snippet
+    // The sheet shows a person, so the app's log names nothing in it by
+    // what it says, its label neither, see control in lib/said.ts.
+    personal?: boolean
+  } = $props()
 
   let panel: HTMLElement | undefined = $state()
 
@@ -53,7 +62,7 @@
 <svelte:window onkeydown={windowKeydown} />
 
 <div class="scrim" onclick={onclose} aria-hidden="true"></div>
-<div class="sheet" role="dialog" aria-modal="true" aria-label={label} tabindex="-1" bind:this={panel} onkeydown={keydown}>
+<div class="sheet" data-personal={personal ? '' : undefined} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" bind:this={panel} onkeydown={keydown}>
   <div class="bar sheet-bar">
     <div class="head-body">{@render head?.()}</div>
     <button class="btn quiet icon close flush-end" type="button" onclick={onclose} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>

@@ -209,6 +209,8 @@ messages, pull request text, code comments and chat replies.
   Store only what the data model lists, never email addresses or phone
   numbers. The app's file stays on Tim's Mac. Real names never go into
   test fixtures, mock data or anything committed: invent them.
+  The app's log never names a person either: whatever shows a person's
+  words is marked `data-personal`, see [docs/LOGGING.md](docs/LOGGING.md).
 - **Untrusted input.** What Exa answers is untrusted. The interface shows
   it as text, never as HTML.
 - **What runs on its own goroutine is tested from several at once.** Every

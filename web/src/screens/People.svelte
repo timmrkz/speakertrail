@@ -298,7 +298,7 @@
           {/if}
         </EmptyState>
       {:else}
-        <ul class="list rows" class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
+        <ul class="list rows" data-personal class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
           {#each people.data as p (p.id)}
             <li>
               <a class="prow" id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>

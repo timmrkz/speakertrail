@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -14,8 +12,7 @@ import (
 
 // Ported from FrameFairy's chrome_test.go at 57bca0c. Its test of the
 // report window has nothing to test here, with one window. Telling the
-// interface is tested on publish itself, through the tell it is given,
-// and the log through slog rather than FrameFairy's log file.
+// interface is tested on publish itself, through the tell it is given.
 
 // A measurement crosses to the interface on whole pixels and never as a
 // fraction, because something sitting between two pixels is painted in one
@@ -218,49 +215,22 @@ func TestThePageAsksWhereTheTitleBarIs(t *testing.T) {
 	}
 }
 
-// lockedBuffer is written by whatever logs while a test listens.
-type lockedBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *lockedBuffer) lines() []map[string]any {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	var out []map[string]any
-	for _, l := range bytes.Split(b.buf.Bytes(), []byte("\n")) {
-		var m map[string]any
-		if json.Unmarshal(l, &m) == nil {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
 // The log says what macOS answered about the title bar, in points with
 // their fractions and with the close button's frame, and what the
 // interface was told, once for each change. If the bar looks wrong on the
 // Mac, this line is the only number from the real window. FrameFairy's
-// #399 was read from it. The app's log keeps info and above, so the line
-// is info. It listens to the app's log, so it runs alone.
+// #399 was read from it. It reads the app's log, so it runs alone.
+//
+// On the real disk: lumberjack writes the log and knows only the disk.
 func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
-	was := slog.Default()
-	var out lockedBuffer
-	slog.SetDefault(slog.New(slog.NewJSONHandler(&out, &slog.HandlerOptions{Level: slog.LevelInfo})))
-	t.Cleanup(func() { slog.SetDefault(was) })
+	_, read := testLog(t)
 
 	answer := chromeRaw{bar: 29.5, left: 12, right: 72, closeTop: 6, closeBottom: 22}
 	c := &chromeWatch{ask: func(*application.WebviewWindow) chromeRaw { return answer }}
 	c.publish()
 	c.publish()
 	var said []map[string]any
-	for _, l := range out.lines() {
+	for _, l := range read() {
 		if l["msg"] == "the title bar was measured" {
 			said = append(said, l)
 		}
@@ -269,7 +239,7 @@ func TestTheLogSaysWhatMacOSAnswered(t *testing.T) {
 		t.Fatalf("two measurements of an unmoved app logged %d lines, want 1", len(said))
 	}
 	want := map[string]any{
-		"level": "INFO", "part": "window", "event": "chrome",
+		"level": "debug", "from": "window", "event": "chrome",
 		"bar": 29.5, "left": 12.0, "right": 72.0, "close_top": 6.0, "close_bottom": 22.0, "fullscreen": false,
 	}
 	for k, v := range want {

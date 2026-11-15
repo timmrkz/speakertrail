@@ -14,15 +14,16 @@ import (
 	"github.com/timmrkz/speakertrail/internal/browser"
 	"io"
 	"io/fs"
-	"log/slog"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	apipkg "github.com/timmrkz/speakertrail/internal/api"
@@ -38,22 +39,21 @@ func main() {
 	// see install.go.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	// make carry-over hands over the people connected in the Docker version,
-	// see scripts/carry-over.sh. It writes the app's file and opens no
-	// window.
+	// see scripts/carry-over.sh. It writes the app's file, opens no window
+	// and says what went wrong in the terminal it was started in.
 	if len(os.Args) == 2 && os.Args[1] == "carry-over" {
 		if err := carryOver(os.Stdin); err != nil {
-			slog.Error("carrying over failed", "error", err)
+			fmt.Fprintln(os.Stderr, "carrying over failed:", err)
 			os.Exit(1)
 		}
 		return
 	}
-	slog.Info("speakertrail starting", "version", runningVersion(), "channel", buildChannel, "commit", buildCommit)
+	theLog.started()
 
 	answers, e, dir, err := open()
 	if err != nil {
-		slog.Error("speakertrail cannot start", "error", err)
+		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app cannot start")
 		os.Exit(1)
 	}
 	// The updates are made once the app is, since Wails' updater is the
@@ -88,7 +88,14 @@ func main() {
 				c.installOnQuit()
 			}
 		},
-		Logger: slog.Default(),
+		// What Wails says goes into the app's log. Its debug lines are one
+		// for every request the window makes.
+		Logger: theLog.slog("wails", zerolog.InfoLevel),
+		// A panic Wails catches, in a window's event, an event of the app
+		// or a call from the window, goes into the app's log and the app
+		// goes on. Without a handler of ours Wails ends the app. The
+		// window's requests Wails does not recover, see handler.
+		PanicHandler: wailsPanicked,
 	})
 	// Where updates stand is sent to the page as it changes, as an event
 	// called updates, the way FrameFairy sends it. The page asks
@@ -126,7 +133,7 @@ func main() {
 	// event called chrome whenever it changes, see lib/chrome.svelte.ts.
 	chrome.Store(watchChrome(func(c Chrome) { app.Event.Emit("chrome", c) }, window))
 	if err := app.Run(); err != nil {
-		slog.Error("speakertrail failed", "error", err)
+		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app stopped")
 		os.Exit(1)
 	}
 }
@@ -157,12 +164,12 @@ func open() (http.Handler, *engine.Engine, string, error) {
 	if err != nil {
 		return nil, nil, "", err
 	}
-	slog.Info("the app's file", "path", st.Path())
+	theLog.line(zerolog.InfoLevel, "app").Str("file", st.Path()).Msg("the app's file is read")
 	if err := st.Update(func(d *store.Data) error { return d.Start(st.Now()) }); err != nil {
 		return nil, nil, "", err
 	}
 	exa := keys.NewExa()
-	e := &engine.Engine{Store: st, Finder: func() engine.Finder {
+	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Finder: func() engine.Finder {
 		if key := exa.Get(); key != "" {
 			return &search.Exa{Key: key}
 		}
@@ -171,7 +178,7 @@ func open() (http.Handler, *engine.Engine, string, error) {
 	if err := e.Recover(); err != nil {
 		return nil, nil, "", err
 	}
-	a := apipkg.New(st, e, exa, slog.Default())
+	a := apipkg.New(st, e, exa, theLog.slog("api", zerolog.TraceLevel))
 	a.Browsers = apipkg.Mac{Support: browser.Support()}
 	return a, e, dir, nil
 }
@@ -211,6 +218,24 @@ func carryOver(r io.Reader) error {
 // interface's own router takes over.
 func handler(ui fs.FS, api http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Wails serves each request on a goroutine of its own with no
+		// recover, so a panic in one ended the whole app. Now it fails
+		// that request and says so in the app's log, with its stack.
+		// http.ErrAbortHandler is how a handler ends a response on
+		// purpose, which net/http expects to see again, so it goes on.
+		defer func() {
+			caught := recover()
+			if caught == nil {
+				return
+			}
+			if caught == http.ErrAbortHandler {
+				panic(caught)
+			}
+			theLog.line(zerolog.ErrorLevel, "api").Str("path", r.URL.Path).Str("stack", string(debug.Stack())).
+				Msgf("the window's request stopped unexpectedly: %v", caught)
+			said, _ := json.Marshal(map[string]string{"error": fmt.Sprintf("the request stopped unexpectedly: %v", caught)})
+			http.Error(w, string(said), http.StatusInternalServerError)
+		}()
 		if r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/") {
 			if api == nil {
 				http.Error(w, `{"error":"Not ready yet"}`, http.StatusServiceUnavailable)

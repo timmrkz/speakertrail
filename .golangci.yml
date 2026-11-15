@@ -1,0 +1,26 @@
+# What golangci-lint holds every pull request to, run by make lint. Ported
+# from FrameFairy's, with only the rule this repository has use for so far.
+#
+# No code of ours writes to the standard library's log, outside the tests:
+# the app logs through theLog and the engine and the API through the slog
+# logger the app gives them, the ones that reach the app's log, see
+# docs/LOGGING.md. What a library writes there still reaches it, see
+# takeStandardLog in cmd/speakertrail-app/applog.go.
+version: "2"
+linters:
+  default: none
+  enable: [forbidigo]
+  settings:
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)$
+          pkg: ^log$
+          msg: "our code logs through theLog in the app and through the slog logger the app gives the engine and the API, which reach the app's log, see docs/LOGGING.md"
+  exclusions:
+    rules:
+      - path: _test\.go$
+        linters: [forbidigo]
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

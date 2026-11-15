@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/updater"
-	"log/slog"
 
 	"github.com/timmrkz/speakertrail/internal/updates"
 	"github.com/timmrkz/speakertrail/internal/wake"
@@ -415,7 +415,7 @@ func (c *updating) seen(l updates.List) {
 // newerEntry says in the log that the followed channel's own entry was of
 // a newer build than the list, and is offered in its place.
 func newerEntry(listed, entry updates.Build) {
-	theLog.line(slog.LevelInfo, "updates").Str("channel", entry.Channel).Str("listed", listed.Version).
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", entry.Channel).Str("listed", listed.Version).
 		Str("build", entry.Version).Msg("the channel's own entry is newer than the list, so its build is offered")
 }
 
@@ -423,7 +423,7 @@ func newerEntry(listed, entry updates.Build) {
 // not taken, so a report tells a missing or broken entry from a list
 // that had the newest build already.
 func refusedEntry(channel string, why error) {
-	theLog.line(slog.LevelDebug, "updates").Str("channel", channel).Err(why).
+	theLog.line(zerolog.DebugLevel, "updates").Str("channel", channel).Err(why).
 		Msg("the channel's own entry was not taken, so the list's build is offered")
 }
 
@@ -462,7 +462,7 @@ func (c *updating) refreshList() {
 		return
 	}
 	if _, err := c.src.Fetch(context.Background()); err != nil {
-		theLog.line(slog.LevelWarn, "updates").Err(err).Msg("the channels could not be read")
+		theLog.line(zerolog.WarnLevel, "updates").Err(err).Msg("the channels could not be read")
 		return
 	}
 	c.change(func(*UpdateState) {})
@@ -506,7 +506,7 @@ func (c *updating) Follow(channel string) error {
 		}
 	})
 	c.picking.Unlock()
-	theLog.line(slog.LevelInfo, "updates").Str("channel", channel).Msg("channel picked, its newest build is looked for")
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", channel).Msg("channel picked, its newest build is looked for")
 	if !c.loop() {
 		go c.check()
 	}
@@ -544,7 +544,7 @@ func (c *updating) checkNow() {
 	c.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	if _, err := c.src.Fetch(ctx); err != nil {
-		theLog.line(slog.LevelWarn, "updates").Err(err).Msg("the channels could not be read")
+		theLog.line(zerolog.WarnLevel, "updates").Err(err).Msg("the channels could not be read")
 	} else {
 		c.change(func(*UpdateState) {})
 	}
@@ -626,7 +626,7 @@ func (c *updating) checkOnce() {
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		theLog.line(slog.LevelWarn, "updates").Str("channel", updates.Followed(c.picked(), c.own)).Err(err).Msg("the check failed")
+		theLog.line(zerolog.WarnLevel, "updates").Str("channel", updates.Followed(c.picked(), c.own)).Err(err).Msg("the check failed")
 		mine(func(s *UpdateState) {
 			if s.Phase != "ready" {
 				s.Phase = "failed"
@@ -637,7 +637,7 @@ func (c *updating) checkOnce() {
 		return
 	}
 	if rel == nil {
-		theLog.line(slog.LevelInfo, "updates").Str("channel", updates.Followed(c.picked(), c.own)).
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", updates.Followed(c.picked(), c.own)).
 			Str("build", c.cfg.CurrentVersion).Msg("the build running is the channel's newest")
 		c.drop(round)
 		mine(func(s *UpdateState) {
@@ -660,7 +660,7 @@ func (c *updating) checkOnce() {
 		return
 	}
 	commit, _ := rel.Metadata["commit"].(string)
-	theLog.line(slog.LevelInfo, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
+	theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
 		Msg("the channel's newest build is fetched, from the builds kept if it is there")
 	mine(func(s *UpdateState) {
 		if !swap {
@@ -677,7 +677,7 @@ func (c *updating) checkOnce() {
 		if ctx.Err() == context.Canceled {
 			return
 		}
-		theLog.line(slog.LevelWarn, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Err(err).Msg("the download failed")
+		theLog.line(zerolog.WarnLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Err(err).Msg("the download failed")
 		// The newer build did not come whole, and the one that is ready
 		// still is. The next look tries again.
 		if swap {
@@ -710,7 +710,7 @@ func (c *updating) checkOnce() {
 	})
 	unstage(gone)
 	if gone != w {
-		theLog.line(slog.LevelInfo, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Str("file", w.DownloadedPath()).
+		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).Str("file", w.DownloadedPath()).
 			Msg("the build is ready for Relaunch")
 	}
 }
@@ -808,7 +808,7 @@ func (c *updating) Restart() error {
 	if c.idle != nil {
 		var ok bool
 		if reopen, ok = c.idle(); !ok {
-			theLog.line(slog.LevelInfo, "updates").Msg("Relaunch waits, work is still running")
+			theLog.line(zerolog.InfoLevel, "updates").Msg("Relaunch waits, work is still running")
 			return errors.New("work is still running. Relaunch when it is done")
 		}
 	}
@@ -872,10 +872,10 @@ func (c *updating) installOnQuit() {
 		return
 	}
 	if err := c.install(target, staged); err != nil {
-		theLog.line(slog.LevelError, "updates").Err(err).Msg("the build could not be put in place on the way out")
+		theLog.line(zerolog.ErrorLevel, "updates").Err(err).Msg("the build could not be put in place on the way out")
 		return
 	}
-	theLog.line(slog.LevelInfo, "updates").Str("build", staged).Str("app", target).Msg("the build goes in place of the app once it has quit")
+	theLog.line(zerolog.InfoLevel, "updates").Str("build", staged).Str("app", target).Msg("the build goes in place of the app once it has quit")
 }
 
 // plainUpdateError takes the updater's prefixes off an error, which say

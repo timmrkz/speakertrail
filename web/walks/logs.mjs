@@ -56,6 +56,29 @@ const walks = [
     },
   },
   {
+    // In a narrow window the person opens in a sheet, labelled with their
+    // name. A click and a key there are acts, and neither names them.
+    name: 'Acts in the narrow window\'s person sheet never name a person',
+    async run(page) {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      const names = await page.evaluate(() => fetch('/api/people').then((r) => r.json()).then((d) => d.people.flatMap((p) => [p.name, p.headline ?? ''].filter(Boolean))))
+      await page.locator('.prow').nth(1).click()
+      const sheet = page.locator('.sheet[role=dialog]')
+      await sheet.waitFor()
+      await sheet.locator('h1, h2').first().click()
+      await page.keyboard.press('ArrowDown')
+      const h = await until(page, (h) => h.acts.some((a) => a.what.startsWith('ArrowDown')))
+      const all = JSON.stringify(h)
+      const named = names.find((n) => all.includes(n))
+      if (named) return `the log names a person: ${named}`
+      const key = h.acts.find((a) => a.what.startsWith('ArrowDown')).what
+      if (!/^ArrowDown on \S+$/.test(key)) return `the key in the sheet is "${key}", want it named by its kind`
+      return ''
+    },
+  },
+  {
     // An error the window meets goes into the log at error, with the act
     // the person was at.
     name: 'An error in the window reaches the log',
@@ -87,7 +110,7 @@ const walks = [
       const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
       if (wide > 0) return `the page is ${wide} px wider than the window`
       const show = page.waitForRequest((r) => r.url().endsWith('/api/log/show') && r.method() === 'POST')
-      await page.getByRole('button', { name: "Show the app's log in Finder" }).click()
+      await page.getByRole('button', { name: "Show the app's log in folder" }).click()
       await show
       await page.getByRole('button', { name: "Remove the app's log" }).click()
       const box = page.locator('dialog[open]')

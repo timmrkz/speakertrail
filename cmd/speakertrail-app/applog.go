@@ -388,22 +388,28 @@ type fileCount struct {
 }
 
 // count is what the file at path holds now, from what it held when was
-// was read. An older file never changes, so it is read once. The file in
-// use only grows until it is turned over, so only what was written since
-// is read, up to its last whole line, and a line being written is read
-// the next time. A file of the same name that is not the same file is a
-// new one, the log turned over or removed, and is read whole.
+// was read. An older file never changes, so once it was read whole it is
+// not read again. The file in use only grows until it is turned over, so
+// only what was written since is read, up to its last whole line, and a
+// line being written is read the next time. A file of the same name that
+// is not the same file is a new one, the log turned over or removed, and
+// is read whole.
+//
+// An older file is packed, so its size on the disk says nothing of the
+// bytes read from it, which are unpacked. FrameFairy's count compares the
+// two, and so reads every older file again on every look.
 func count(path string, info os.FileInfo, was fileCount) fileCount {
-	if was.file == nil || !os.SameFile(was.file, info) || info.Size() < was.read {
+	packed := strings.HasSuffix(path, ".gz")
+	if was.file == nil || !os.SameFile(was.file, info) || !packed && info.Size() < was.read {
 		was = fileCount{}
 	}
 	was.file = info
 	size := info.Size()
-	if was.read > 0 && (size == was.read || strings.HasSuffix(path, ".gz")) {
+	if was.read > 0 && (size == was.read || packed) {
 		return was
 	}
 	var data []byte
-	if strings.HasSuffix(path, ".gz") {
+	if packed {
 		all, err := readLog(path)
 		if err != nil {
 			return was

@@ -511,6 +511,38 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 	}
 }
 
+// An older file of the log is packed and never changes, so Settings
+// unpacks it once and not again on every look. Its packed size is far
+// smaller than the lines in it, which once had it read again each time,
+// about 0.1 s a look with a full log.
+func TestAnOlderFileIsReadOnce(t *testing.T) {
+	path, _ := testLog(t)
+	theLog.line(zerolog.InfoLevel, "app").Msg("a line in use")
+	var older bytes.Buffer
+	z := gzip.NewWriter(&older)
+	_, _ = z.Write(bytes.Repeat([]byte(`{"level":"debug","msg":"an older line"}`+"\n"), 1000))
+	_ = z.Close()
+	packed := filepath.Join(filepath.Dir(path), "app-2026-10-09T10-00-00.000.log.gz")
+	if err := os.WriteFile(packed, older.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st := theLog.status(); st.Files != 2 || st.Lines != 1001 {
+		t.Fatalf("the log is %d files with %d lines, want 2 with 1001", st.Files, st.Lines)
+	}
+	// Changed in place, the same file, it would read as no lines at all
+	// if it were read again.
+	f, err := os.OpenFile(packed, os.O_WRONLY|os.O_TRUNC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString("not a packed file")
+	_ = f.Close()
+	theLog.line(zerolog.InfoLevel, "app").Msg("another line in use")
+	if st := theLog.status(); st.Lines != 1002 {
+		t.Fatalf("the log has %d lines, want 1002: the older file was read again", st.Lines)
+	}
+}
+
 // Settings shows the last five toasts about something that went wrong,
 // newest first, read back from the log, the older files too, with when
 // each came. A toast said again stands once, where it was said last. A
@@ -593,10 +625,6 @@ func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
 	told := make(chan LogStatus, 4)
 	beat := make(chan time.Time)
 	done := make(chan struct{})
-	go func() {
-		l.watch(func(st LogStatus) { told <- st }, func() <-chan time.Time { return beat })
-		close(done)
-	}()
 	toast := func(text string) { l.line(zerolog.WarnLevel, "window").Bool("toast", true).Msg(text) }
 	shows := func(st LogStatus, files, lines int, texts ...string) {
 		t.Helper()
@@ -609,9 +637,18 @@ func TestSettingsSeesTheLogAsItIsWritten(t *testing.T) {
 		}
 	}
 
-	// Nothing is sent while Settings is not open.
+	// Settings opens on a log already written, and is told of it once.
+	// Watched from here, so the line before it and the opening leave one
+	// wake between them. A watch already waiting may take the line's wake
+	// and then the opening's, which tells Settings twice, a beat apart.
+	// That is harmless in the app, and a test that counts messages would
+	// not know which it got.
 	toast("before")
 	l.watchFor(true)
+	go func() {
+		l.watch(func(st LogStatus) { told <- st }, func() <-chan time.Time { return beat })
+		close(done)
+	}()
 	shows(<-told, 1, 1, "before")
 	beat <- time.Time{}
 	toast("one")

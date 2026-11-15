@@ -44,7 +44,8 @@
   }
 
   // When a toast came, the way Finder writes a date in its lists: the day
-  // and the time.
+  // and the time. Day first, as every date in Speaker Trail is, see
+  // format.ts, where FrameFairy writes the month first.
   const when = (at: number) =>
     new Date(at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false })
 
@@ -72,10 +73,10 @@
         {/if}
       </div>
       <div class="actions">
-        <button class="btn icon" type="button" disabled={!log.path} title="Show in Finder" aria-label="Show the app's log in Finder" onclick={show}>
+        <button class="btn quiet icon" type="button" disabled={!log.path} title="Show in folder" aria-label="Show the app's log in folder" onclick={show}>
           <Icon name="folder" />
         </button>
-        <button class="btn icon danger" type="button" disabled={!log.path} title="Remove the log, the older files too"
+        <button class="btn quiet icon danger" type="button" disabled={!log.path} title="Remove the log, the older files too"
           aria-label="Remove the app's log" aria-haspopup="dialog" onclick={() => (removing = true)}>
           <Icon name="trash" />
         </button>

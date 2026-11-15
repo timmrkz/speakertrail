@@ -93,8 +93,9 @@ Exa key. A person is named by id.
 What the person did is the thread a fault is followed by. Each act is a
 line at `info` from `window` with a short id of its own, `a1`, `a2` and
 on: every click, and every key that is not typing. It is named by the
-control it was on, `pressed button.btn "Run"`, `⌘F on input.input "Search
-settings"`. Everything that act sets off carries its id, in the window and
+control it was on, by its `aria-label`, its tooltip or its words, as in
+FrameFairy: `pressed button.btn "Run the due searches now. Takes about a
+minute"`, `⌘F on input.input "Search settings"`. Everything that act sets off carries its id, in the window and
 on the Go side: the requests it makes, Wails's, the engine's and the
 API's lines. The window tells the Go side of each act the moment it
 happens, before the requests it makes for it, and the Go side's lines
@@ -140,9 +141,9 @@ files with the older ones, their size and their lines. While Settings is
 open the app sends it again as lines are written, as the Wails event
 `applog`, at most once a second. Each file is read once, and the file in
 use from where it was read last, so keeping up costs the lines written
-since. The folder button shows the log in Finder. The trash can removes
-every file of it after asking, and the next line starts a new log that
-says how many files, bytes and lines went.
+since. The folder button, Show in folder, shows the log in Finder. The
+trash can removes every file of it after asking, and the next line starts
+a new log that says how many files, bytes and lines went.
 
 Under it are the last five toasts about something that went wrong, read
 back from the lines marked `"toast":true`, newest first, a toast said

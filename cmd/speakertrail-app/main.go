@@ -20,11 +20,13 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	apipkg "github.com/timmrkz/speakertrail/internal/api"
 	"github.com/timmrkz/speakertrail/internal/engine"
@@ -67,6 +69,20 @@ func main() {
 	// made, see chrome.go.
 	var chrome atomic.Pointer[chromeWatch]
 	api.Handle("/api/chrome", chromeAPI{get: chrome.Load})
+	// Nothing the app started outlives it: a run that goes is stopped, and
+	// a build that is ready goes in place, once, see closeDown. On macOS
+	// app.Run never returns, Cmd+Q ends the process from inside Cocoa once
+	// the shutdown hooks have run, so this has to be one of them.
+	quit := sync.OnceFunc(func() { closeDown(e, ups.Load()) })
+	// What Cmd+Q does, see quit.go. The hook above stays for whatever ends
+	// the app without asking, a signal from the terminal among them.
+	leave := &leaving{
+		asked: func() bool { return ups.Load().relaunchingNow() },
+		say:   func(what string) { app.Event.Emit("quit", what) },
+		stop:  quit,
+		quit:  func() { app.Quit() },
+	}
+	api.Handle("/api/quit/", quitAPI{leave: leave})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",
@@ -77,17 +93,8 @@ func main() {
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
-		// A run that goes when the app closes is stopped, and what it did
-		// not get to waits for the next run. A build that is ready goes in
-		// place once the app is gone, see installOnQuit.
-		OnShutdown: func() {
-			if id, _ := e.Going(); id != 0 {
-				e.Stop(id)
-			}
-			if c := ups.Load(); c != nil {
-				c.installOnQuit()
-			}
-		},
+		OnShutdown: quit,
+		ShouldQuit: leave.shouldQuit,
 		// What Wails says goes into the app's log. Its debug lines are one
 		// for every request the window makes.
 		Logger: theLog.slog("wails", zerolog.InfoLevel),
@@ -132,6 +139,7 @@ func main() {
 	// than chosen, the way FrameFairy does it. The page hears it on the
 	// event called chrome whenever it changes, see lib/chrome.svelte.ts.
 	chrome.Store(watchChrome(func(c Chrome) { app.Event.Emit("chrome", c) }, window))
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { leave.closing() })
 	if err := app.Run(); err != nil {
 		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app stopped")
 		os.Exit(1)

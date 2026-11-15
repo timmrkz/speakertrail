@@ -18,7 +18,7 @@ static bool quitAsked(void) {
 	if (ev == nil || [ev eventClass] != kCoreEventClass || [ev eventID] != kAEQuitApplication) {
 		return false;
 	}
-	return [ev attributeDescriptorForKeyword:keyAEQuitReason] != nil;
+	return [ev attributeDescriptorForKeyword:kAEQuitReason] != nil;
 }
 */
 import "C"

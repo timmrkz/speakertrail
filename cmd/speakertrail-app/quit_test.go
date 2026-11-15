@@ -2,15 +2,11 @@ package main
 
 // Ported from FrameFairy's cmd/framefairy-app/quit_test.go at abb9007,
 // with a test each for what Speaker Trail adds: the time the question
-// lasts held to quitAgain, and POST /api/quit/stay.
+// lasts told with it, a logout of the Mac, and POST /api/quit/stay.
 
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -30,7 +26,8 @@ type leaveProbe struct {
 func newLeaving(asked bool) (*leaving, *leaveProbe) {
 	p := &leaveProbe{quit: make(chan struct{}, 4)}
 	l := &leaving{
-		asked: func() bool { return asked },
+		asked:  func() bool { return asked },
+		system: func() bool { return false },
 		say: func(what string) {
 			p.mu.Lock()
 			p.said = append(p.said, what)
@@ -191,21 +188,36 @@ func TestCmdQAfterTheQuestionWasTakenAwayAsksAgain(t *testing.T) {
 	})
 }
 
-// The question lasts on screen as long as the second Cmd+Q may come. The
-// interface hides it after QUIT_AGAIN_MS in web/src/lib/api.ts, and
-// FrameFairy kept its own 3000 equal to quitAgain by a comment alone.
-func TestTheQuestionLastsAsLongAsTheSecondPressMayCome(t *testing.T) {
-	src, err := os.ReadFile(filepath.Join("..", "..", "web", "src", "lib", "api.ts"))
-	if err != nil {
-		t.Fatal(err)
+// The question lasts on screen as long as the second Cmd+Q may come: the
+// interface is told how long with it. FrameFairy's interface kept its own
+// 3000, equal to quitAgain by a comment alone.
+func TestTheQuestionSaysHowLongItStays(t *testing.T) {
+	if got := quitSaid("ask"); got.What != "ask" || got.MS != quitAgain.Milliseconds() {
+		t.Errorf(`"ask" is told as %+v`, got)
 	}
-	m := regexp.MustCompile(`(?m)^export const QUIT_AGAIN_MS = (\d+)$`).FindSubmatch(src)
-	if m == nil {
-		t.Fatal("web/src/lib/api.ts has no line export const QUIT_AGAIN_MS = <ms>")
+	if got := quitSaid("going"); got != (Quitting{What: "going"}) {
+		t.Errorf(`"going" is told as %+v`, got)
 	}
-	if got, want := string(m[1]), strconv.FormatInt(quitAgain.Milliseconds(), 10); got != want {
-		t.Errorf("the interface shows the question for %s ms, the second press may come for %s ms", got, want)
-	}
+}
+
+// A logout, restart or shutdown of the Mac quits at once, with nothing
+// asked and nothing said: an answer of no cancels the logout. The
+// shutdown hook stops everything then, so leaving starts nothing.
+func TestALogoutQuitsAtOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l, p := newLeaving(false)
+		l.system = func() bool { return true }
+		if !l.shouldQuit() {
+			t.Fatal("the logout was cancelled")
+		}
+		synctest.Wait()
+		if got := p.words(); len(got) != 0 {
+			t.Errorf("the interface heard %v", got)
+		}
+		if p.stopped.Load() != 0 {
+			t.Errorf("leaving stopped %d times, the shutdown hook does that", p.stopped.Load())
+		}
+	})
 }
 
 // Escape or a click on the question asks POST /api/quit/stay, and the next

@@ -77,10 +77,11 @@ func main() {
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever ends
 	// the app without asking, a signal from the terminal among them.
 	leave := &leaving{
-		asked: func() bool { return ups.Load().relaunchingNow() },
-		say:   func(what string) { app.Event.Emit("quit", what) },
-		stop:  quit,
-		quit:  func() { app.Quit() },
+		asked:  func() bool { return ups.Load().relaunchingNow() },
+		system: quitBySystem,
+		say:    func(what string) { app.Event.Emit("quit", quitSaid(what)) },
+		stop:   quit,
+		quit:   func() { app.Quit() },
 	}
 	api.Handle("/api/quit/", quitAPI{leave: leave})
 	api.Handle("/", answers)

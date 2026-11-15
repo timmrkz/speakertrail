@@ -170,12 +170,15 @@ or not. A click or Escape takes the question away, and the next press
 asks again. The second press says Quitting while the app stops a run that
 goes and puts a ready build in place, and then it goes. Closing the
 window quits without asking, and so does **Relaunch** on the Updates
-page, which was asked for with a click. The stopping happens away from
-the main thread, see `cmd/speakertrail-app/quit.go`.
+page, which was asked for with a click. So does a logout, restart or
+shutdown of the Mac, which a question would cancel. The stopping happens
+away from the main thread, see `cmd/speakertrail-app/quit.go`.
 
-The Go side tells the page on the Wails event called `quit`, `"ask"` for
-the first press and `"going"` once the app is on its way out. The page
-answers over HTTP, answered by the app itself, not by `internal/api`:
+The Go side tells the page on the Wails event called `quit`,
+`{"what": "ask", "ms": 3000}` for the first press, with how long the
+question stays, and `{"what": "going"}` once the app is on its way out.
+The page answers over HTTP, answered by the app itself, not by
+`internal/api`:
 
 `POST /api/quit/stay` is the question taken away, with Escape or a click,
 so the next Cmd+Q asks again rather than quitting. It answers 204.

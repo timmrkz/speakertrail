@@ -97,7 +97,7 @@ export class Sidebar {
   // first, and the person behind it only on the next press. Heard before
   // the page hears it, and marked as used so the page lets it be.
   escape(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || this.pinned || !this.near || typing()) return
+    if (e.key !== 'Escape' || e.defaultPrevented || this.pinned || !this.near || typing()) return
     e.preventDefault()
     this.reach(false)
     this.asking = false

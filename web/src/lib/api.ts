@@ -446,14 +446,16 @@ export const api = {
 }
 
 // Cmd+Q heard by the Go side: "ask" for the first press, which only asks,
+// with how long the question stays, as long as the second press may come,
 // and "going" once the app is on its way out. See cmd/speakertrail-app/quit.go.
-export function onQuit(fn: (what: 'ask' | 'going') => void): () => void {
-  return Events.On('quit', (ev) => fn(ev.data as 'ask' | 'going'))
+export interface Quitting {
+  what: 'ask' | 'going'
+  ms?: number
 }
 
-// How long the question stays, as long as the Go side waits for the second
-// press, quitAgain in quit.go. A test there holds the two equal.
-export const QUIT_AGAIN_MS = 3000
+export function onQuit(fn: (q: Quitting) => void): () => void {
+  return Events.On('quit', (ev) => fn(ev.data as Quitting))
+}
 
 export function fetchUrl(fetchId: number, kind: 'text' | 'html' | 'screenshot'): string {
   return `/api/fetches/${fetchId}/${kind}`

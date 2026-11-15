@@ -10,14 +10,31 @@ import (
 
 // Ported from FrameFairy's cmd/framefairy-app/quit.go at abb9007, issue
 // #17. What differs: the question is taken away over POST /api/quit/stay
-// rather than a Wails binding, and closeDown stops what Speaker Trail
-// starts, a run and a build waiting to go in place.
+// rather than a Wails binding, the question carries how long it stays,
+// a logout, restart or shutdown of the Mac quits without asking, and
+// closeDown stops what Speaker Trail starts, a run and a build waiting
+// to go in place.
 
 // quitAgain is how long the second Cmd+Q has to come after the first. The
-// interface shows the question for as long, QUIT_AGAIN_MS in
-// web/src/lib/api.ts, which TestTheQuestionLastsAsLongAsTheSecondPressMayCome
-// holds equal to this.
+// interface shows the question for as long, told with it, see Quitting.
 const quitAgain = 3 * time.Second
+
+// Quitting is what the interface hears on the Wails event called quit:
+// "ask" for the question, with how long it stays, and "going" once the
+// app is on its way out. FrameFairy sends the word alone, and its
+// interface kept its own 3000 ms, a second copy of quitAgain.
+type Quitting struct {
+	What string `json:"what"`
+	MS   int64  `json:"ms,omitempty"`
+}
+
+// quitSaid is what the interface is told for the word leaving says.
+func quitSaid(what string) Quitting {
+	if what == "ask" {
+		return Quitting{What: what, MS: quitAgain.Milliseconds()}
+	}
+	return Quitting{What: what}
+}
 
 // leaving decides what Cmd+Q, Quit in the menu and closing the app's window
 // do, and it is where Wails asks, ShouldQuit.
@@ -48,6 +65,11 @@ type leaving struct {
 	// Relaunch on the Updates page, which quits into the new build and has
 	// nothing to ask about.
 	asked func() bool
+	// system says whether the Mac itself asks the app to quit, to log out,
+	// restart or shut down, see quitBySystem. FrameFairy has no such
+	// case: its first answer no cancelled the logout, and macOS said the
+	// app had stopped it.
+	system func() bool
 	// say tells the interface: "ask" for the question, "going" once the app
 	// is on its way out.
 	say func(string)
@@ -61,6 +83,12 @@ func (l *leaving) shouldQuit() bool {
 	defer l.mu.Unlock()
 	switch {
 	case l.gone:
+		return true
+	case l.system():
+		// Said at once, so macOS goes on with the logout. The shutdown
+		// hook stops everything on the main thread then, and macOS waits
+		// for it. When the second press has started stopping already, the
+		// hook waits for that, since both run the one closeDown.
 		return true
 	case l.going:
 		return false

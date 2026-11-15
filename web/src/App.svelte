@@ -1,6 +1,6 @@
 <script lang="ts">
   import { navigate, router } from './lib/router.svelte'
-  import { api, onQuit, QUIT_AGAIN_MS } from './lib/api'
+  import { api, onQuit } from './lib/api'
   import Toast from './lib/components/Toast.svelte'
   import PrivateApp from './screens/PrivateApp.svelte'
 
@@ -17,33 +17,43 @@
   // The question taken away, with Escape or a click. The Go side hears it
   // too, so the next Cmd+Q asks again: the question went from the screen
   // and the press still counted, so the next one quit on what looked like
-  // the first press.
-  function stayOpen() {
-    if (leaving !== 'ask') return
+  // the first press. It says whether there was a question to take away.
+  function stayOpen(): boolean {
+    if (leaving !== 'ask') return false
     leaving = null
     api.stayOpen().catch(() => {})
+    return true
+  }
+
+  // Escape closes one thing at a time: the question goes, and what is
+  // under it, an open person, a sheet or the sidebar, only on the next
+  // press. Heard before the page hears it, on the window ahead of the
+  // sidebar's own, and kept from the rest. FrameFairy let the same press
+  // close what was under the question too.
+  function dismiss(e: KeyboardEvent) {
+    if (e.key === 'Escape' && stayOpen()) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
   }
 
   $effect(() => {
     // The question lasts as long as the Go side waits for the second
-    // press, quitAgain in quit.go.
+    // press, quitAgain in quit.go, which it says with the question.
     let asked: ReturnType<typeof setTimeout> | undefined
-    const dismiss = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') stayOpen()
-    }
-    window.addEventListener('keydown', dismiss)
-    const noQuit = onQuit((what) => {
+    const noQuit = onQuit((q) => {
       clearTimeout(asked)
-      leaving = what
-      if (what === 'ask') asked = setTimeout(() => (leaving = null), QUIT_AGAIN_MS)
+      leaving = q.what
+      if (q.what === 'ask') asked = setTimeout(() => (leaving = null), q.ms)
     })
     return () => {
       clearTimeout(asked)
-      window.removeEventListener('keydown', dismiss)
       noQuit()
     }
   })
 </script>
+
+<svelte:window onkeydowncapture={dismiss} />
 
 <a class="skip-link" href="#main">Skip to content</a>
 
@@ -70,7 +80,7 @@
   /* Cmd+Q heard. The dim is the one a sheet over the app brings,
      Sheet.svelte, so the app looks the same whenever it is waiting on an
      answer. FrameFairy's is the dim of its box, and the same as --scrim
-     in Dusk Fog. The words are the size of a box's title. */
+     in Dusk Fog. The words are FrameFairy's, the size of its box's title. */
   .leaving {
     position: fixed;
     inset: 0;

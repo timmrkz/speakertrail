@@ -7,7 +7,7 @@
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 
 if (!existsSync(chromium.executablePath())) {
   console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
@@ -20,27 +20,33 @@ const server = await createServer({ root: web, configFile: `${web}/vite.config.t
 await server.listen()
 const url = server.resolvedUrls.local[0].replace(/\/$/, '')
 
-// How long the question stays, from the one place the interface keeps it.
-const quitAgain = Number(readFileSync(`${web}/src/lib/api.ts`, 'utf8').match(/^export const QUIT_AGAIN_MS = (\d+)$/m)?.[1])
+// How long the question stays, which the Go side says with it, quitAgain
+// in quit.go.
+const quitAgain = 3000
 
 // The app's window on Tim's Mac, so the key reads ⌘Q.
 const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)'
 
 // The page open on People, with the clock the walk moves itself, and every
 // POST /api/quit/stay counted.
-async function open(page) {
+async function open(page, path = '/app/people') {
   const stays = { n: 0 }
   page.on('request', (r) => {
     if (r.method() === 'POST' && new URL(r.url()).pathname === '/api/quit/stay') stays.n++
   })
   await page.clock.install()
-  await page.goto(`${url}/app/people`)
+  await page.goto(`${url}${path}`)
   await page.waitForSelector('header.titlebar')
+  // The clock stands still from here and moves only when the walk moves
+  // it, so the real time a step takes never counts towards the question's.
+  // A second on, since the page's clock runs on while it is asked.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000))
   return stays
 }
 
-// What the Go side says, the way it says it.
-const say = (page, what) => page.evaluate((what) => window._wails.dispatchWailsEvent({ name: 'quit', data: what }), what)
+// What the Go side says, the way it says it, see Quitting in quit.go.
+const say = (page, what) =>
+  page.evaluate((data) => window._wails.dispatchWailsEvent({ name: 'quit', data }), what === 'ask' ? { what, ms: quitAgain } : { what })
 
 // What the layer shows, or null when there is none.
 const shown = (page) =>
@@ -97,7 +103,6 @@ const walks = [
   {
     name: 'The question goes by itself when the second press may no longer come',
     async run(page) {
-      if (!(quitAgain > 0)) return 'web/src/lib/api.ts says no QUIT_AGAIN_MS'
       const stays = await open(page)
       await say(page, 'ask')
       await page.clock.runFor(quitAgain - 1)
@@ -126,6 +131,43 @@ const walks = [
       if (s?.words !== 'Quitting') return `Quitting went from the screen, it shows ${s ? `"${s.words}"` : 'nothing'}`
       await settled(page)
       if (stays.n !== 0) return `Quitting asked POST /api/quit/stay ${stays.n} times`
+      return ''
+    },
+  },
+  {
+    // The question over an open person: Escape takes the question away,
+    // and the person goes only on the next press. One Escape did both.
+    name: 'Escape takes the question away and leaves the person open',
+    async run(page) {
+      await open(page, '/app/people/1001')
+      await page.locator('.actions a.btn').waitFor()
+      await say(page, 'ask')
+      await page.keyboard.press('Escape')
+      if (await shown(page)) return 'Escape left the question on screen'
+      if (!page.url().endsWith('/app/people/1001')) return `the same Escape put the person away, the app is at ${new URL(page.url()).pathname}`
+      await page.keyboard.press('Escape')
+      await page.waitForURL(/\/app\/people$/, { timeout: 2000 }).catch(() => {})
+      if (!page.url().endsWith('/app/people')) return 'the next Escape left the person open'
+      return ''
+    },
+  },
+  {
+    // The question over the sidebar the pointer opened: Escape takes the
+    // question away, and the sidebar shuts only on the next press.
+    name: 'Escape takes the question away and leaves the sidebar open',
+    async run(page) {
+      await open(page)
+      const isOpen = () => page.evaluate(() => document.querySelector('aside').classList.contains('open'))
+      await page.mouse.move(750, 400)
+      await page.mouse.move(20, 500)
+      await page.waitForFunction(() => document.querySelector('aside').classList.contains('open'), null, { timeout: 2000 }).catch(() => {})
+      if (!(await isOpen())) return 'the pointer on the rail did not open the sidebar'
+      await say(page, 'ask')
+      await page.keyboard.press('Escape')
+      if (await shown(page)) return 'Escape left the question on screen'
+      if (!(await isOpen())) return 'the same Escape shut the sidebar'
+      await page.keyboard.press('Escape')
+      if (await isOpen()) return 'the next Escape left the sidebar open'
       return ''
     },
   },

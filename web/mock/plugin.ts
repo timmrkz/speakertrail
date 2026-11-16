@@ -785,7 +785,7 @@ function readBody(req: Req): Promise<Record<string, unknown>> {
 const SPEECH_MODELS = [{
   name: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', title: 'Parakeet TDT 0.6B v3',
   about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.", maker: 'NVIDIA',
-  languages: '25 European languages, German and English among them', download: 487_170_055, unpacked: 671_239_000,
+  languages: '25 European languages, German and English among them', download: 487_211_443, unpacked: 671_341_917,
   url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2', recommended: true,
 }]
 const SPEECH_MS = 6000
@@ -809,7 +809,7 @@ function speechState() {
     }
   }
   return {
-    models: SPEECH_MODELS.map((m) => ({ ...m, installed: speechHere.has(m.name) })),
+    models: SPEECH_MODELS.map((m) => ({ ...m, installed: speechHere.has(m.name), inUse: m.name === SPEECH_MODELS.find((n) => speechHere.has(n.name))?.name })),
     folder: '~/Library/Application Support/Speaker Trail/models',
     job,
   }

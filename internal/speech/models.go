@@ -43,26 +43,29 @@ type Model struct {
 	Recommended bool `json:"recommended"`
 }
 
-// Models is every model that can be installed, best first. The same as
-// FrameFairy's, so a model fetched for one is the model of the other.
+// Models is every model that can be installed, best first. The same
+// model as FrameFairy's.
 func Models() []Model {
 	return []Model{{
-		Name:        "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
-		Title:       "Parakeet TDT 0.6B v3",
-		About:       "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
-		Maker:       "NVIDIA",
-		Languages:   "25 European languages, German and English among them",
-		Download:    487_170_055,
-		Unpacked:    671_239_000,
+		Name:      "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8",
+		Title:     "Parakeet TDT 0.6B v3",
+		About:     "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.",
+		Maker:     "NVIDIA",
+		Languages: "25 European languages, German and English among them",
+		// sherpa-onnx put a new archive under the same name on 7 November
+		// 2026, and the one pinned before, which FrameFairy still pins,
+		// no longer arrives. Measured from the archive of that day.
+		Download:    487_211_443,
+		Unpacked:    671_341_917,
 		URL:         "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2",
-		SHA256:      "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf",
+		SHA256:      "1495e91b59d7fc53ddca91f3431758ec99f8fa253fdb0e1e851be0f72b14b0f9",
 		Recommended: true,
 	}}
 }
 
-// ByName finds one by the name it unpacks to.
-func ByName(name string) (Model, bool) {
-	for _, m := range Models() {
+// ByName finds one of models by the name it unpacks to.
+func ByName(models []Model, name string) (Model, bool) {
+	for _, m := range models {
 		if m.Name == name {
 			return m, true
 		}
@@ -92,10 +95,11 @@ func Ready(dir string) bool {
 	return err == nil && !info.IsDir() && info.Size() > 0
 }
 
-// InUse is the model Dictate hears with: the first installed one, best
-// first, and false when none is.
-func InUse(dir string) (Model, bool) {
-	for _, m := range Models() {
+// InUse is the model Dictate hears with: the first of models installed
+// in dir, best first, and false when none is. The one place that says
+// which, for Dictate and for Settings alike.
+func InUse(models []Model, dir string) (Model, bool) {
+	for _, m := range models {
 		if m.Installed(dir) {
 			return m, true
 		}

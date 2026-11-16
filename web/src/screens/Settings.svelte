@@ -7,6 +7,7 @@
   import SearchInput from '../lib/components/SearchInput.svelte'
   import KeyRow from '../lib/components/KeyRow.svelte'
   import LinkedinRow from '../lib/components/LinkedinRow.svelte'
+  import LogsRow from '../lib/components/LogsRow.svelte'
   import SettingRow from '../lib/components/SettingRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import ThemeRow from '../lib/components/ThemeRow.svelte'
@@ -40,6 +41,8 @@
   <LinkedinRow />
 
   <ThemeRow />
+
+  <LogsRow />
 
   {#if settings.error && !settings.data}
     <EmptyState icon="alert" tone="bad" title="Could not load the settings" text={settings.error}>

@@ -364,7 +364,56 @@ function qs(params: object): string {
   return out ? `?${out}` : ''
 }
 
+// Every request to the Go side. One that fails, or takes longer than a
+// person waits without noticing, goes to the app's log, and so do the
+// requests of a second with more of them than the app makes on its own,
+// which is what a loop gone wrong looks like. A request is named by its
+// method and path, never its query, which can hold what was typed in a
+// search. Ported from FrameFairy's lib/api.ts, see lib/said.ts.
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const call = `${method} ${path.split('?')[0]}`
+  const from = performance.now()
+  counted(call)
+  try {
+    const v = await send<T>(method, path, body)
+    const ms = performance.now() - from
+    if (ms > SLOW) tell(`calls: ${call} took ${Math.round(ms)} ms`)
+    return v
+  } catch (e) {
+    tell(`calls: ${call} failed after ${Math.round(performance.now() - from)} ms: ${e instanceof Error ? e.message : String(e)}`)
+    throw e
+  }
+}
+
+// What the log is told through, set by lib/said.ts, which needs this file
+// and so cannot be imported here.
+let tell: (line: string) => void = () => {}
+export function tellTo(fn: (line: string) => void) {
+  tell = fn
+}
+
+// A request slower than this is said, in ms. Low enough to catch what a
+// person feels as the app taking a moment, see SLOWLY in said.ts.
+const SLOW = 150
+// More requests than this in a second are said, with which they were.
+const MANY = 60
+let second = 0
+let calls = new Map<string, number>()
+function counted(call: string) {
+  const now = Math.floor(performance.now() / 1000)
+  if (now !== second) {
+    const n = [...calls.values()].reduce((a, b) => a + b, 0)
+    if (n > MANY) {
+      const most = [...calls].sort((a, b) => b[1] - a[1]).slice(0, 5)
+      tell(`calls: ${n} in one second, ${most.map(([m, k]) => `${m} ${k}`).join(', ')}`)
+    }
+    second = now
+    calls = new Map()
+  }
+  calls.set(call, (calls.get(call) ?? 0) + 1)
+}
+
+async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, {
@@ -406,7 +455,45 @@ export interface LinkedinWhere {
   browsers: { app: string; profiles: BrowserProfile[] }[]
 }
 
+// A line the window says for the app's log, see lib/said.ts and
+// cmd/speakertrail-app/applog.go.
+export interface SaidLine {
+  at: number
+  level?: 'error' | 'warn' | 'info' | 'debug' | 'trace'
+  act?: string
+  toast?: boolean
+  text: string
+}
+
+// The app's log as Settings shows it, as LogStatus in
+// cmd/speakertrail-app/applog.go: the file in use, how many files there
+// are with the older ones, their bytes and lines, and the last toasts
+// about something that went wrong, newest first.
+export interface LogStatus {
+  path: string
+  files: number
+  bytes: number
+  lines: number
+  toasts: { at: number; text: string }[]
+}
+
+// The log's own requests are sent as they are, never timed or said: a
+// line about the request that carries lines would be one more line to
+// carry, without end.
+const quietly = (path: string, body: unknown) =>
+  send<void>('POST', path, body)
+
 export const api = {
+  said: (lines: SaidLine[]) => quietly('/api/log/said', lines),
+  acted: (act: { id: string; at: number; what: string }) => quietly('/api/log/acted', act),
+  appLog: () => request<LogStatus>('GET', '/api/log'),
+  // Whether Settings is open, so the log is sent to it as lines are
+  // written, see onAppLog in lib/applog.svelte.ts.
+  watchAppLog: (on: boolean) => request<void>('POST', '/api/log/watch', { on }),
+  showAppLog: () => request<void>('POST', '/api/log/show', {}),
+  // Every file of the log goes, after Settings asked. It gives the log as
+  // it is then: the one line that says so.
+  removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),

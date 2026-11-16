@@ -243,6 +243,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn.good[aria-pressed="true"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .btn.bad[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
 .btn.quiet { border-color: transparent; background: none; color: var(--ink-2); }
+/* What cannot be taken back, in the colour of something going wrong. */
+.btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
+.btn.quiet.danger { border-color: transparent; }
 .btn.quiet:hover { background: var(--surface-2); color: var(--ink); }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }

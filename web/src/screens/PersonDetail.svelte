@@ -144,7 +144,7 @@
   </EmptyState>
 {:else if person.data}
   {@const p = person.data}
-  <article class="person" aria-labelledby="person-{p.id}">
+  <article class="person" data-personal aria-labelledby="person-{p.id}">
     <header class="who">
       <span class="avatar xl" class:connected={p.connected} aria-hidden="true">{initials(p.name)}</span>
       <div class="names">

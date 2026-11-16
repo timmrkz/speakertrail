@@ -77,7 +77,7 @@
       const n = await api.patchSource(s.id, { status })
       searches.data = all.map((x) => (x.id === n.id ? n : x))
     } catch (err) {
-      toast.show(errorText(err))
+      toast.show(errorText(err), 'bad')
     } finally {
       busy = null
     }

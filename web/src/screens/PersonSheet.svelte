@@ -8,6 +8,6 @@
   let { id, name = 'Person', onclose, onupdate }: { id: number; name?: string; onclose: () => void; onupdate?: (p: Detail) => void } = $props()
 </script>
 
-<Sheet label={name} {onclose}>
+<Sheet label={name} personal {onclose}>
   <PersonDetail {id} {onupdate} />
 </Sheet>

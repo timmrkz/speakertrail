@@ -1,0 +1,99 @@
+#!/bin/sh
+# Prints the folder holding the speech libraries to ship, fetching them the
+# first time.
+#
+#   speech-libs.sh
+#
+# The sherpa-onnx Go module brings prebuilt libraries, and they have
+# espeak-ng compiled into them, for speech synthesis. espeak-ng is GPL 3,
+# and Speaker Trail never synthesises speech, so it ships none of it, the
+# way FrameFairy ships none. Ported from FrameFairy's speech-libs.sh.
+#
+# sherpa-onnx publishes the same release built without speech synthesis,
+# the -no-tts archives. There every synthesis function is still there and
+# only says "TTS is not enabled", so the Go module works against them
+# unchanged: the program is built against the module's libraries as ever,
+# and these are the ones that go beside it. Both were compared function by
+# function, and the Go module calls nothing these do not have.
+#
+# The archive is pinned by its sha256, and what is inside is read back:
+# a library that still carries espeak-ng is refused. See docs/BUILD.md.
+set -e
+
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+VERSION=$(awk '/k2-fsa\/sherpa-onnx-go(\/v[0-9]+)? /{ print $2; exit }' "$ROOT/go.mod")
+
+case "$(uname -s)-$(uname -m)" in
+Darwin-arm64)
+	NAME=sherpa-onnx-$VERSION-osx-arm64-shared-no-tts-lib
+	SUM=ac5594ad237db56ec4a6c4b3fc48700441b33a07bb71c235f35530a52a93f2e3
+	LIB=libsherpa-onnx-c-api.dylib
+	;;
+Linux-x86_64)
+	NAME=sherpa-onnx-$VERSION-linux-x64-shared-no-tts-lib
+	SUM=ce437357915491e6f2754b52bec7dcf62ff6fc6aaed9cdcd66f17807bbaef374
+	LIB=libsherpa-onnx-c-api.so
+	;;
+*)
+	# Nothing ships from here yet. The module's own libraries do for
+	# running on this machine, and they are not fit to give to anybody.
+	echo "speech-libs.sh: no speech library without espeak-ng is pinned for" >&2
+	echo "  $(uname -s) $(uname -m), so this build carries the module's, which is" >&2
+	echo "  not fit to ship. See docs/BUILD.md." >&2
+	exit 3
+	;;
+esac
+
+DIR="$ROOT/.build/speech"
+OUT="$DIR/$NAME/lib"
+STAMP="$DIR/$NAME.ok"
+
+sha256() {
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256sum "$1" | cut -d' ' -f1
+	else
+		shasum -a 256 "$1" | cut -d' ' -f1
+	fi
+}
+
+# The archive is checked when it arrives, and the library unpacked from it
+# is checked on every build against the SHA-256 it had then, which the
+# stamp holds. make asks this on every build, and one sum of one library is
+# a fraction of a second. It used to be a file test, so a library changed
+# after it was unpacked went into the program unseen. One that no longer
+# matches is unpacked again from the archive, which is checked first.
+if [ -f "$STAMP" ] && [ -f "$OUT/$LIB" ] && [ "$(sha256 "$OUT/$LIB")" = "$(cat "$STAMP")" ]; then
+	echo "$OUT"
+	exit 0
+fi
+
+mkdir -p "$DIR"
+ARCHIVE="$DIR/$NAME.tar.bz2"
+if [ ! -f "$ARCHIVE" ] || [ "$(sha256 "$ARCHIVE")" != "$SUM" ]; then
+	echo "Fetching the speech library without speech synthesis, $NAME" >&2
+	curl -sSL --fail --retry 2 --max-time 600 -o "$ARCHIVE.part" \
+		"https://github.com/k2-fsa/sherpa-onnx/releases/download/$VERSION/$NAME.tar.bz2"
+	mv "$ARCHIVE.part" "$ARCHIVE"
+fi
+got=$(sha256 "$ARCHIVE")
+if [ "$got" != "$SUM" ]; then
+	echo "speech-libs.sh: $NAME.tar.bz2 is not the file that was checked." >&2
+	echo "  expected $SUM" >&2
+	echo "  got      $got" >&2
+	rm -f "$ARCHIVE"
+	exit 1
+fi
+
+rm -rf "${DIR:?}/$NAME"
+tar xjf "$ARCHIVE" -C "$DIR"
+if [ ! -f "$OUT/$LIB" ]; then
+	echo "speech-libs.sh: $NAME.tar.bz2 holds no $LIB." >&2
+	exit 1
+fi
+# Read back rather than trusted by its name.
+if grep -aq 'espeak-ng' "$OUT/$LIB"; then
+	echo "speech-libs.sh: $OUT/$LIB still carries espeak-ng." >&2
+	exit 1
+fi
+sha256 "$OUT/$LIB" >"$STAMP"
+echo "$OUT"

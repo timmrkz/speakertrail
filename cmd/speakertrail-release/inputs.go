@@ -91,18 +91,37 @@ var linked = map[string][]string{
 		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib", "/usr/lib/libresolv.9.dylib",
+		// The speech library Dictate hears with, carried in
+		// Contents/Frameworks, see scripts/carry-libs.sh.
+		"@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
+	},
+	// The speech library itself, sherpa-onnx's release without speech
+	// synthesis, and the ONNX runtime under it, as FrameFairy lists them.
+	"libonnxruntime.dylib": {
+		"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+		"/System/Library/Frameworks/CoreML.framework/Versions/A/CoreML",
+		"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "/usr/lib/libiconv.2.dylib", "/usr/lib/libobjc.A.dylib",
+	},
+	"libsherpa-onnx-c-api.dylib": {
+		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib",
+	},
+	"libsherpa-onnx-cxx-api.dylib": {
+		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
 	},
 }
 
 // asks are the reasons Info.plist may give the person for what the app
-// asks to reach. Speaker Trail asks for nothing: no folder, no microphone,
-// no camera. A reason added fails.
-var asks = []string{}
+// asks to reach: the microphone, for Dictate on Report a Problem, and
+// nothing else. No folder, no camera, no screen. A reason added fails.
+var asks = []string{"NSMicrophoneUsageDescription"}
 
 // entitled are the entitlements a program may be signed with: none. Above
 // all not the camera, the microphone, Apple events, or what lets other code
 // into the app, library validation turned off, the dyld environment or
-// get-task-allow.
+// get-task-allow. Dictate needs no entitlement for the microphone, since
+// the app is signed ad hoc without the hardened runtime, and macOS asks
+// the person all the same, in the words of NSMicrophoneUsageDescription.
 var entitled = []string{}
 
 // maxUnpacked is the most the files of a build may hold once unpacked,

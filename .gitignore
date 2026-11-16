@@ -7,3 +7,4 @@
 /cmd/*/speakertrail-app
 /cmd/*/speakertrail-release
 vite.log
+/.build/

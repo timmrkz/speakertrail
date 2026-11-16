@@ -150,6 +150,27 @@ const walks = [
       return ''
     },
   },
+  {
+    // A toast that ran out unread is in Settings, Logs, and Report beside
+    // it opens Report a Problem with its words, as the toast's own does.
+    name: 'A toast in Settings, Logs offers Report',
+    async run(page) {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/settings`)
+      const row = page.locator('.logged').first()
+      await row.waitFor()
+      await row.hover()
+      const report = row.getByRole('button', { name: 'Report' })
+      if ((await report.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'Report does not show on the toast in hand'
+      const about = page.waitForRequest((r) => r.url().endsWith('/api/report/about'))
+      await report.click()
+      const body = JSON.parse((await about).postData() ?? '{}')
+      if (body.text !== 'Could not reach the app. Try again.') return `Report sent ${JSON.stringify(body)}`
+      const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
+      if (wide > 0) return `the page is ${wide} px wider than the window`
+      return ''
+    },
+  },
 ]
 
 const browser = await chromium.launch()

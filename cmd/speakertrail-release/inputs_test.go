@@ -358,12 +358,12 @@ func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
 	}
 }
 
-// What bundle-macos.sh writes as the app's Info.plist asks for nothing, so
-// a pull request that adds a reason for the camera or the screen fails
-// here, before its build is refused.
+// What bundle-macos.sh writes as the app's Info.plist asks for nothing
+// the lists refuse, so a pull request that adds a reason for the camera or
+// the screen fails here, before its build is refused.
 //
 // On the real disk: what this reads is the script that writes Info.plist.
-func TestTheShippedInfoPlistAsksForNoInput(t *testing.T) {
+func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	script, err := os.ReadFile("../../scripts/bundle-macos.sh")
 	if err != nil {
 		t.Fatal(err)

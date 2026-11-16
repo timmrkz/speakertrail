@@ -92,7 +92,7 @@ var linked = map[string][]string{
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib", "/usr/lib/libresolv.9.dylib",
 		// The speech library Dictate hears with, carried in
-		// Contents/Frameworks, see scripts/carry-libs.sh.
+		// Contents/Frameworks by the build, see docs/BUILD.md.
 		"@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
 	},
 	// The speech library itself, sherpa-onnx's release without speech

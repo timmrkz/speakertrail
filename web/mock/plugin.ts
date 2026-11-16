@@ -465,6 +465,35 @@ const ROUTES: [string, RegExp, Handler][] = [
     return { status: 204 }
   }],
   ['POST', /^\/api\/updates\/commit$/, () => ({ status: 204 })],
+  // The speech models, like speechAPI in cmd/speakertrail-app/speech_api.go.
+  // A download runs for six seconds from Download and is done after. The
+  // app sends where it stands as the event speech, which the mock cannot,
+  // so its state is worked out from the clock whenever it is asked.
+  ['GET', /^\/api\/speech$/, () => ok(speechState())],
+  ['POST', /^\/api\/speech\/install$/, (_s, _m, _q, b) => {
+    const st = speechState()
+    if (st.job && st.job.state === 'running') return ok(st.job)
+    const m = SPEECH_MODELS.find((x) => x.name === b.name)
+    speechJobs++
+    if (!m) {
+      speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: 'Speech model', state: 'failed', error: `There is no speech model called ${String(b.name)}` }
+      return ok(speechJob)
+    }
+    speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: m.title, state: 'running', from: Date.now() }
+    return ok(speechState().job)
+  }],
+  ['POST', /^\/api\/speech\/cancel$/, (_s, _m, _q, b) => {
+    const st = speechState()
+    if (!st.job || st.job.state !== 'running' || st.job.id !== b.id) return err(409, `There is no download ${String(b.id)} running`)
+    speechJob = { ...speechJob!, state: 'cancelled', from: undefined }
+    return { status: 204 }
+  }],
+  ['DELETE', /^\/api\/speech\/models\/(.+)$/, (_s, m) => {
+    const name = decodeURIComponent(m[1])
+    if (!SPEECH_MODELS.some((x) => x.name === name)) return err(409, `There is no speech model called ${name}`)
+    speechHere.delete(name)
+    return { status: 204 }
+  }],
   // The app's log, like logAPI in cmd/speakertrail-app/applog_api.go.
   // What the window says and does is kept, so a walk can read what the
   // log would hold. Settings shows a log of two files with one toast.
@@ -704,6 +733,40 @@ function readBody(req: Req): Promise<Record<string, unknown>> {
     })
     req.on('error', () => resolve({}))
   })
+}
+
+// The speech models the mock offers, the app's one, and which are here.
+const SPEECH_MODELS = [{
+  name: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', title: 'Parakeet TDT 0.6B v3',
+  about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.", maker: 'NVIDIA',
+  languages: '25 European languages, German and English among them', download: 487_170_055, unpacked: 671_239_000,
+  url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2', recommended: true,
+}]
+const SPEECH_MS = 6000
+const speechHere = new Set<string>()
+let speechJobs = 0
+let speechJob: { id: string; kind: 'model'; title: string; state: string; error?: string; from?: number } | undefined
+function speechState() {
+  let job: Record<string, unknown> | undefined
+  if (speechJob) {
+    const { from, ...rest } = speechJob
+    job = rest
+    if (speechJob.state === 'running' && from !== undefined) {
+      const share = Math.min(1, (Date.now() - from) / SPEECH_MS)
+      if (share >= 1) {
+        speechHere.add(SPEECH_MODELS[0].name)
+        speechJob = { ...rest, state: 'done' }
+        job = speechJob
+      } else {
+        job = { ...rest, progress: { text: 'fetching', fraction: share, remaining: (SPEECH_MS * (1 - share)) / 1000 } }
+      }
+    }
+  }
+  return {
+    models: SPEECH_MODELS.map((m) => ({ ...m, installed: speechHere.has(m.name) })),
+    folder: '~/Library/Application Support/Speaker Trail/models',
+    job,
+  }
 }
 
 // What the window told the app's log, for the walks, and whether Settings

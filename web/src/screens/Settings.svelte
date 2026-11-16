@@ -9,6 +9,7 @@
   import LinkedinRow from '../lib/components/LinkedinRow.svelte'
   import LogsRow from '../lib/components/LogsRow.svelte'
   import SettingRow from '../lib/components/SettingRow.svelte'
+  import SpeechRow from '../lib/components/SpeechRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import ThemeRow from '../lib/components/ThemeRow.svelte'
 
@@ -41,6 +42,8 @@
   <LinkedinRow />
 
   <ThemeRow />
+
+  <SpeechRow />
 
   <LogsRow />
 

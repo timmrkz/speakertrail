@@ -370,6 +370,46 @@ function qs(params: object): string {
 // which is what a loop gone wrong looks like. A request is named by its
 // method and path, never its query, which can hold what was typed in a
 // search. Ported from FrameFairy's lib/api.ts, see lib/said.ts.
+// The speech models in Settings, see docs/api.md, Speech models.
+export interface SpeechModel {
+  name: string
+  title: string
+  about: string
+  maker: string
+  languages: string
+  // The archive's size and what it takes once unpacked, in bytes.
+  download: number
+  unpacked: number
+  url: string
+  recommended: boolean
+  installed: boolean
+}
+
+// How far a download has come: what it does now, the share done from 0
+// to 1 and the seconds left, -1 where it cannot say.
+export interface SpeechProgress {
+  text: string
+  fraction: number
+  remaining: number
+}
+
+// A download of a speech model, in the shape of FrameFairy's job.
+export interface SpeechJob {
+  id: string
+  kind: 'model'
+  title: string
+  state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+  progress?: SpeechProgress
+  error?: string
+}
+
+export interface SpeechState {
+  models: SpeechModel[]
+  // The models folder, with the home folder as ~.
+  folder: string
+  job?: SpeechJob
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const call = `${method} ${path.split('?')[0]}`
   const from = performance.now()
@@ -521,6 +561,12 @@ export const api = {
   // Opens a profile link in the chosen browser profile.
   openLinkedin: (id: number) => request<void>('POST', `/api/people/${id}/linkedin`, {}),
   chrome: () => request<Chrome>('GET', '/api/chrome'),
+  // The speech models, fetched and removed in Settings. Where a download
+  // stands comes as the event speech.
+  speech: () => request<SpeechState>('GET', '/api/speech'),
+  installSpeechModel: (name: string) => request<SpeechJob>('POST', '/api/speech/install', { name }),
+  cancelSpeechDownload: (id: string) => request<void>('POST', '/api/speech/cancel', { id }),
+  removeSpeechModel: (name: string) => request<void>('DELETE', `/api/speech/models/${encodeURIComponent(name)}`, {}),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),

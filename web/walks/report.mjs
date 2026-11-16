@@ -64,10 +64,12 @@ const walks = [
   },
   {
     // A picture put back a moment after it was removed stays, even when
-    // the answer to the remove comes while the put back is on its way,
-    // and Clear right after takes it, and Cmd+Z brings the words and the
+    // the answer to the remove comes after the put back was shown, and
+    // Clear after it takes it, and Cmd+Z brings the words and the
     // picture back. The answer to the remove once took the picture away
-    // again, and Clear then had nothing to bring back.
+    // again, and Clear then had nothing to bring back. The put back is
+    // asked only once the remove is answered, so the app does the two in
+    // the order they were pressed.
     name: 'A picture put back stays, and Undo after Clear brings it back',
     async run(page) {
       await openReport(page)
@@ -75,30 +77,51 @@ const walks = [
       await page.keyboard.type('It froze.')
       await page.locator('button.attach').click()
       await page.locator('.pictures figure').waitFor()
-      // The put back is done at once, and its answer held until the
-      // remove is answered and Clear is pressed, so it comes last.
-      const [cleared, clear] = later()
-      await page.route('**/api/report/put-back', async (route) => {
+      // The remove's answer is held until Put it back is pressed, and the
+      // put back's until the page was looked at in between.
+      const [pressed, press] = later()
+      const [looked, look] = later()
+      let putBackAsked = false
+      await page.route('**/api/report/remove', async (route) => {
         const answer = await route.fetch()
-        await cleared
+        await pressed
+        await route.fulfill({ response: answer })
+      })
+      await page.route('**/api/report/put-back', async (route) => {
+        putBackAsked = true
+        const answer = await route.fetch()
+        await looked
         await route.fulfill({ response: answer })
       })
       await page.locator('.tile').hover()
+      // The bin is FrameFairy's: 24 px, with no box of its own until the
+      // pointer is on it.
+      const bin = await page.locator('.tile .bin').evaluate((b) => ({ w: b.offsetWidth, h: b.offsetHeight, bg: getComputedStyle(b).backgroundColor }))
+      if (bin.w !== 24 || bin.h !== 24 || bin.bg !== 'rgba(0, 0, 0, 0)') return `the bin is ${bin.w} by ${bin.h} px on ${bin.bg}`
       const removed = page.waitForResponse((r) => r.url().endsWith('/api/report/remove'))
       await page.locator('.tile .bin').click()
       await page.getByRole('button', { name: 'Put it back' }).click()
+      await page.waitForTimeout(0)
+      if (putBackAsked) return 'the put back was asked before the remove was answered'
+      const asked = page.waitForRequest((r) => r.url().endsWith('/api/report/put-back'))
+      press()
       await removed
-      await page.waitForFunction(() => document.querySelectorAll('.pictures figure').length === 1)
+      await asked
+      const between = await page.locator('.pictures figure').count()
+      const putBack = page.waitForResponse((r) => r.url().endsWith('/api/report/put-back'))
+      look()
+      await putBack
+      await page.unroute('**/api/report/remove')
+      await page.unroute('**/api/report/put-back')
+      if (between !== 1) return `the answer to the remove left ${between} pictures while the put back was on its way`
+      if ((await page.locator('.pictures figure').count()) !== 1) return 'the picture put back is gone'
       await page.locator('button.clear').click()
       await page.locator('dialog[open] button.danger').click()
       await page.waitForResponse((r) => r.url().endsWith('/api/report/clear'))
-      clear()
-      await page.waitForResponse((r) => r.url().endsWith('/api/report/put-back'))
-      await page.unroute('**/api/report/put-back')
       if ((await page.locator('.pictures figure').count()) !== 0) return 'Clear left a picture'
-      const putBack = page.waitForResponse((r) => r.url().endsWith('/api/report/put-back'))
+      const back = page.waitForResponse((r) => r.url().endsWith('/api/report/put-back'))
       await page.keyboard.press('ControlOrMeta+z')
-      await putBack
+      await back
       const text = await page.locator('textarea.telling').inputValue()
       const pictures = await page.locator('.pictures figure').count()
       if (text !== 'It froze.' || pictures !== 1) return `after Undo the field reads ${JSON.stringify(text)} with ${pictures} pictures, want the words and 1`

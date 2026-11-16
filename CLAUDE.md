@@ -169,8 +169,8 @@ messages, pull request text, code comments and chat replies.
   stays short enough to watch, and what does not fit waits for the next.
 - **The sidebar is FrameFairy's.** A rail of icons until the pointer
   reaches it, open over the page while it is there, kept open by the
-  button at its top. People and Searches at the top, Settings and then
-  Updates at the foot. `lib/sidebar.svelte.ts` and its walks in
+  button at its top. People and Searches at the top, Settings, Bugs and
+  then Updates at the foot. `lib/sidebar.svelte.ts` and its walks in
   `web/walks/sidebar.mjs` are ported from FrameFairy, so a fix there is a
   fix here.
 - **Consistency over novelty.** A visual treatment used in one place is used

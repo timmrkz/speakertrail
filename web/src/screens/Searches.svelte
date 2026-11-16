@@ -2,7 +2,7 @@
   import { api, type Source } from '../lib/api'
   import { fmtAgo, fmtDay, plural } from '../lib/format'
   import { Load } from '../lib/load.svelte'
-  import { errorText, toast } from '../lib/toast.svelte'
+  import { errorText, fault, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Exclusions from '../lib/components/Exclusions.svelte'
   import Icon from '../lib/components/Icon.svelte'
@@ -77,7 +77,7 @@
       const n = await api.patchSource(s.id, { status })
       searches.data = all.map((x) => (x.id === n.id ? n : x))
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     } finally {
       busy = null
     }

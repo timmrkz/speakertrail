@@ -6,6 +6,7 @@
   import Busy from './Busy.svelte'
   import Confirm from './Confirm.svelte'
   import Icon from './Icon.svelte'
+  import Info from './Info.svelte'
 
   // The speech model Dictate hears with, in an area of its own: the model,
   // the one line under it that says how it stands, Download beside it
@@ -108,7 +109,15 @@
 </script>
 
 <section class="group speech">
-  <h2 title="What you dictate in Report a Problem is heard on this Mac, and nothing of it is sent anywhere. The model is downloaded once from whoever published it, into {watch.state.folder || 'the app’s folder'}.">Speech model</h2>
+  <div class="headrow">
+    <h2>Speech model</h2>
+    <span class="ask">
+      <Info label="About the speech model" side="left">
+        What you dictate in Report a Problem is heard on this Mac, and nothing of it is sent anywhere. The
+        model is downloaded once from whoever published it, into <b>{watch.state.folder || 'the app’s folder'}</b>.
+      </Info>
+    </span>
+  </div>
   <div class="list">
     <div class="setting">
       <span class="mark {line.state}" aria-hidden="true">
@@ -182,6 +191,9 @@
 <style>
   .group { display: grid; gap: 10px; }
   .group h2 { font-size: 15px; margin: 0; }
+  /* The heading with its info mark at the far end, as in FrameFairy. */
+  .headrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .headrow .ask { align-self: flex-start; margin: 1px 1px 0 0; }
   /* The same row as every other setting, see SettingRow, with the mark
      before it that LogsRow's toasts have. */
   .setting {

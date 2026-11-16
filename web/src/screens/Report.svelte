@@ -165,7 +165,7 @@
     saving = null
     cleared = { text, pics, undone: false }
     try {
-      tookNewest(await newest(api.clearReport()))
+      tookNewest(await newest(() => api.clearReport()))
     } catch (e) {
       oops(sentence(e))
     }
@@ -174,7 +174,8 @@
   // Undo of Clear puts its pictures back one call at a time, and Redo
   // clears with a call of its own. Each waits for the one before to be
   // answered, or a Redo pressed while Undo was still putting pictures
-  // back cleared between them.
+  // back cleared between them. Every other change to the draft waits its
+  // turn here too, see newest.
   let turn: Promise<void> = Promise.resolve()
 
   // Undo and Redo in the Edit menu, see menu.go, and the field's own
@@ -242,10 +243,18 @@
   // picture put back a moment after it was removed went again until the
   // answer to the put back came, and a Clear pressed meanwhile had nothing
   // to bring back. FrameFairy has this too. So only the answer to the
-  // latest change is shown.
+  // latest change is shown. And each change is asked once the one before
+  // is answered, in the turn Undo and Redo keep, since the app answers
+  // each request on its own goroutine and two asked at once could be done
+  // in the other order, a remove after the put back that came later.
   let draftsAsked = 0
-  function newest(call: Promise<ReportDraft>): Promise<ReportDraft | null> {
+  function newest(ask: () => Promise<ReportDraft>): Promise<ReportDraft | null> {
     const n = ++draftsAsked
+    const call = turn.then(ask)
+    turn = call.then(
+      () => {},
+      () => {},
+    )
     return call.then((d) => (n === draftsAsked ? d : null))
   }
   const tookNewest = (d: ReportDraft | null) => d && took(d)
@@ -261,7 +270,7 @@
     unclear()
     attaching = true
     try {
-      tookNewest(await newest(api.attachPictures()))
+      tookNewest(await newest(() => api.attachPictures()))
     } catch (e) {
       oops(sentence(e))
     } finally {
@@ -289,7 +298,7 @@
     unclear()
     removed[p.id] = { picture: p }
     pictures = pictures.filter((q) => q.id !== p.id)
-    newest(api.removePicture(p.id)).then(tookNewest, (e) => oops(sentence(e)))
+    newest(() => api.removePicture(p.id)).then(tookNewest, (e) => oops(sentence(e)))
   }
 
   // The picture is back in its place at once, the way a removed one goes
@@ -303,7 +312,7 @@
     const again = () => {
       if (!pictures.some((p) => p.id === id)) removed[id] = r
     }
-    newest(api.putBackPicture(id)).then(
+    newest(() => api.putBackPicture(id)).then(
       (d) => {
         // A later change, like Clear, has the say over this picture.
         if (!d) return
@@ -329,7 +338,7 @@
       const reader = new FileReader()
       reader.onload = () => {
         const data = String(reader.result).replace(/^data:[^,]*,/, '')
-        newest(api.attachPasted(f.name || 'Pasted picture.png', data)).then(tookNewest, (err) => oops(sentence(err)))
+        newest(() => api.attachPasted(f.name || 'Pasted picture.png', data)).then(tookNewest, (err) => oops(sentence(err)))
       }
       reader.readAsDataURL(f)
     }
@@ -852,7 +861,7 @@
               <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
                 <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
               </figure>
-              <button class="btn icon quiet bin" type="button" title="Remove" aria-label="Remove" onclick={() => removePicture(t.p)}>
+              <button class="btn icon quiet bin" type="button" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
                 <Icon name="trash" />
               </button>
             {/if}
@@ -946,13 +955,21 @@
   /* The picture is fitted into the tile whole, in its middle. */
   .tile img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
   /* The bin in the tile's top right corner, only while the pointer is on
-     the tile or the keyboard is in it, over a shade from that corner so it
-     reads on any picture. */
+     the tile or the keyboard is in it. As FrameFairy has it: the quiet
+     trash can of every list, 24 px square and 6 px in from the corner,
+     with no box of its own, since on a solid square it looked pasted on,
+     Tim found there. A shade falls from that corner instead, so it reads
+     on any picture, and the tile's edge lifts the way a row's does. */
   .tile .bin {
-    position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; opacity: 0; pointer-events: none;
-    color: var(--ink); background: var(--surface);
+    position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; opacity: 0; pointer-events: none;
+    color: var(--ink);
+  }
+  .tile figure::after {
+    content: ''; position: absolute; inset: 0; opacity: 0; pointer-events: none;
+    background: radial-gradient(circle at 100% 0, var(--scrim), transparent calc(3 * var(--control-h)));
   }
   .tile:hover figure, .tile:focus-within figure { border-color: var(--line-strong); }
+  .tile:hover figure::after, .tile:focus-within figure::after,
   .tile:hover .bin, .tile:focus-within .bin { opacity: 1; pointer-events: auto; }
   .tile .bin:hover { color: var(--bad); background: var(--bad-soft); }
 </style>

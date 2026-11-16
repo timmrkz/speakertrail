@@ -2,7 +2,7 @@
   import { Events } from '@wailsio/runtime'
   import { api, type LogStatus } from '../api'
   import { plural, size } from '../format'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText, fault, toast } from '../toast.svelte'
   import Confirm from './Confirm.svelte'
   import Icon from './Icon.svelte'
   import { reporting, reportTitle } from '../reporting.svelte'
@@ -22,7 +22,7 @@
     try {
       log = await api.appLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     }
   }
 
@@ -31,7 +31,7 @@
     try {
       log = await api.removeAppLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
       await read()
     }
   }
@@ -40,7 +40,7 @@
     try {
       await api.showAppLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     }
   }
 

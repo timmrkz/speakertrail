@@ -149,8 +149,10 @@ Under it are the last five toasts about something that went wrong, read
 back from the lines marked `"toast":true`, newest first, a toast said
 again once, where it was said last, so one that ran out unread is not
 lost. Each has Report beside it, as in FrameFairy, which opens Report a
-Problem with the toast's words in it. So does every toast about
-something that went wrong, while it is on screen.
+Problem with the toast's words in it. So does a toast on screen about a
+failure Tim cannot put right himself, such as a person that could not be
+saved, as FrameFairy marks one. A missing key or a spent budget is his to
+put right and offers none.
 
 ### Levels
 

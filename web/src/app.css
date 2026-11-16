@@ -34,6 +34,15 @@
   --shadow: 0 1px 2px rgba(30, 42, 51, .05), 0 10px 30px rgba(52, 72, 90, .1);
   --shadow-lg: 0 8px 40px rgba(30, 42, 51, .18);
   --radius: 10px;
+  /* FrameFairy's, for the one layer that came over from it, the question
+     Cmd+Q asks, see App.svelte, with FrameFairy's names and values. Its
+     --ink-0 is the darkest ground, not a colour of text like --ink here,
+     and it and its words are the same in both themes, the way macOS
+     shows the volume. */
+  --radius-m: 8px;
+  --size-l: 16px;
+  --ink-0: #16171a;
+  --on-ink-0: #ebe8e3;
   --control-h: 36px;
   --seg-on: rgba(255, 255, 255, .95);
   --gutter: 32px;

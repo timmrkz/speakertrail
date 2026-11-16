@@ -1,5 +1,6 @@
 // Typed client for the Speaker Trail HTTP API. See docs/api.md.
 // All times are RFC 3339 strings in UTC.
+import { Events } from '@wailsio/runtime'
 
 export type EventType = 'pitch' | 'talk' | 'panel' | 'meetup' | 'workshop' | 'conference' | 'sport' | 'other'
 export type EventFormat = 'in_person' | 'online' | 'hybrid'
@@ -526,6 +527,21 @@ export const api = {
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),
   relaunch: () => request<void>('POST', '/api/updates/relaunch', {}),
   openCommit: () => request<void>('POST', '/api/updates/commit', {}),
+  // The question Cmd+Q asked taken away, with Escape or a click, so the
+  // next Cmd+Q asks again rather than quitting.
+  stayOpen: () => request<void>('POST', '/api/quit/stay', {}),
+}
+
+// Cmd+Q heard by the Go side: "ask" for the first press, which only asks,
+// with how long the question stays, as long as the second press may come,
+// and "going" once the app is on its way out. See cmd/speakertrail-app/quit.go.
+export interface Quitting {
+  what: 'ask' | 'going'
+  ms?: number
+}
+
+export function onQuit(fn: (q: Quitting) => void): () => void {
+  return Events.On('quit', (ev) => fn(ev.data as Quitting))
 }
 
 export function fetchUrl(fetchId: number, kind: 'text' | 'html' | 'screenshot'): string {

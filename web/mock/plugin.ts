@@ -465,6 +465,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     return { status: 204 }
   }],
   ['POST', /^\/api\/updates\/commit$/, () => ({ status: 204 })],
+  // The question Cmd+Q asked taken away, like quitAPI in
+  // cmd/speakertrail-app/quit.go. The question itself is the Wails event
+  // called quit, which a walk sends the way the app does, through
+  // window._wails.dispatchWailsEvent, see walks/quit.mjs.
+  ['POST', /^\/api\/quit\/stay$/, () => ({ status: 204 })],
   // The app's log, like logAPI in cmd/speakertrail-app/applog_api.go.
   // What the window says and does is kept, so a walk can read what the
   // log would hold. Settings shows a log of two files with one toast.

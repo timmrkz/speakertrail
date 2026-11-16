@@ -179,6 +179,28 @@ All zeros mean the system draws its own title bar. The page asks once
 when it starts and hears every change after on the Wails event called
 `chrome`. See `cmd/speakertrail-app/chrome.go`.
 
+## Quitting
+
+Cmd+Q dims the app at once and says what happens next, the way
+FrameFairy does. The first press only asks, Press ⌘Q again to quit, for
+three seconds, the way Chrome does, on every page and whether a run goes
+or not. A click or Escape takes the question away, and the next press
+asks again. The second press says Quitting while the app stops a run that
+goes and puts a ready build in place, and then it goes. Closing the
+window quits without asking, and so does **Relaunch** on the Updates
+page, which was asked for with a click. So does a logout, restart or
+shutdown of the Mac, which a question would cancel. The stopping happens
+away from the main thread, see `cmd/speakertrail-app/quit.go`.
+
+The Go side tells the page on the Wails event called `quit`,
+`{"what": "ask", "ms": 3000}` for the first press, with how long the
+question stays, and `{"what": "going"}` once the app is on its way out.
+The page answers over HTTP, answered by the app itself, not by
+`internal/api`:
+
+`POST /api/quit/stay` is the question taken away, with Escape or a click,
+so the next Cmd+Q asks again rather than quitting. It answers 204.
+
 ## Exclusions
 
 An exclusion is a word or phrase, like "Online Marketing". A profile

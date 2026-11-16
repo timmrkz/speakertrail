@@ -1,5 +1,6 @@
 // Typed client for the Speaker Trail HTTP API. See docs/api.md.
 // All times are RFC 3339 strings in UTC.
+import { Events } from '@wailsio/runtime'
 
 export type EventType = 'pitch' | 'talk' | 'panel' | 'meetup' | 'workshop' | 'conference' | 'sport' | 'other'
 export type EventFormat = 'in_person' | 'online' | 'hybrid'
@@ -410,6 +411,77 @@ export interface SpeechState {
   job?: SpeechJob
 }
 
+// What is being written down while somebody dictates: every piece settled
+// so far, in order, and what follows them, still being heard. See
+// listen.go and docs/api.md, Dictate.
+export interface Dictation {
+  recording: number
+  said: string[]
+  hearing: string
+  error?: string
+  // Why the recording stopped by itself, with said all of it.
+  ended?: string
+  // Why the microphone hears nothing, while it goes on recording.
+  unheard?: string
+  // How many settleListening and breakListening calls said holds.
+  asked: number
+}
+
+// How loud the microphone is while it records, from 0 for a quiet room to
+// 1 for a raised voice, ten times a second. See listen.go.
+export interface Loudness {
+  recording: number
+  level: number
+}
+
+// A picture attached to a report, which the window shows from
+// /api/report/picture?id=.
+export interface ReportPicture {
+  id: string
+  name: string
+  width: number
+  height: number
+  // Removed by the person and kept to be put back. Never true in a draft
+  // the window is sent, which leaves removed pictures out.
+  removed?: boolean
+}
+
+// A report before it is made. error says why pictures just given were
+// left out.
+export interface ReportDraft {
+  text: string
+  pictures: ReportPicture[]
+  error?: string
+}
+
+export function onLoudness(fn: (n: Loudness) => void): () => void {
+  return Events.On('loudness', (ev) => fn(ev.data as Loudness))
+}
+
+export function onDictation(fn: (d: Dictation) => void): () => void {
+  return Events.On('dictation', (ev) => fn(ev.data as Dictation))
+}
+
+// The report window opened or closed, for Bugs in the sidebar.
+export function onReportWindow(fn: (open: boolean) => void): () => void {
+  return Events.On('report-window', (ev) => fn(Boolean(ev.data)))
+}
+
+// What became of files dropped on the report window.
+export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
+  return Events.On('report-draft', (ev) => fn(ev.data as ReportDraft))
+}
+
+// Undo or Redo in the Edit menu, sent to the window in front, see
+// menu.go. The menu takes Cmd+Z before the page sees it.
+export function onUndo(fn: (how: 'undo' | 'redo') => void): () => void {
+  return Events.On('undo', (ev) => fn(ev.data === 'redo' ? 'redo' : 'undo'))
+}
+
+export function pictureUrl(id: string): string {
+  return `/api/report/picture?id=${encodeURIComponent(id)}`
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const call = `${method} ${path.split('?')[0]}`
   const from = performance.now()
@@ -560,7 +632,39 @@ export const api = {
   setLinkedin: (app: string, folder: string) => request<LinkedinWhere>('PUT', '/api/linkedin', { app, folder }),
   // Opens a profile link in the chosen browser profile.
   openLinkedin: (id: number) => request<void>('POST', `/api/people/${id}/linkedin`, {}),
-  chrome: () => request<Chrome>('GET', '/api/chrome'),
+  chrome: (window: 'app' | 'report' = 'app') => request<Chrome>('GET', window === 'report' ? '/api/chrome?window=report' : '/api/chrome'),
+  // Report a Problem, in a window of its own, see docs/api.md. The report
+  // is made on the Desktop and its path, with the home folder as ~, comes
+  // back.
+  reportProblem: (what: string) => request<{ path: string }>('POST', '/api/report/send', { what }).then((r) => r.path),
+  // Opens the report window, or brings it forward, and says how it was
+  // asked for: "bugs" from the sidebar.
+  openReport: (how: string) => request<void>('POST', '/api/report/open', { how }),
+  // Opens it with a toast's words, as a report of its own.
+  reportAbout: (text: string) => request<void>('POST', '/api/report/about', { text }),
+  reportWindowOpen: () => request<{ open: boolean }>('GET', '/api/report/window').then((r) => r.open),
+  // The draft the Go side keeps until Report: what was written and the
+  // pictures, so closing the window loses nothing.
+  reportDraft: () => request<ReportDraft>('GET', '/api/report'),
+  saveReportText: (text: string) => request<void>('PUT', '/api/report/text', { text }),
+  // Attach asks in the open box, a paste hands the picture over in
+  // base64. Each gives the draft, with why something was left out.
+  attachPictures: () => request<ReportDraft>('POST', '/api/report/pick', {}),
+  attachPasted: (name: string, data: string) => request<ReportDraft>('POST', '/api/report/pasted', { name, data }),
+  removePicture: (id: string) => request<ReportDraft>('POST', '/api/report/remove', { id }),
+  putBackPicture: (id: string) => request<ReportDraft>('POST', '/api/report/put-back', { id }),
+  clearReport: () => request<ReportDraft>('POST', '/api/report/clear', {}),
+  // Dictate: listen gives the recording's number once the microphone is
+  // open, what is written down comes as the event dictation, and stopping
+  // gives every piece of it. Cancelling drops it.
+  listen: () => request<{ recording: number }>('POST', '/api/listen', {}).then((r) => r.recording),
+  stopListening: () => request<Dictation>('POST', '/api/listen/stop', {}),
+  cancelListening: () => request<void>('POST', '/api/listen/cancel', {}),
+  // The window took the first pieces of the recording in, the last of
+  // them as text, the way the person left it.
+  settleListening: (recording: number, pieces: number, text: string) => request<void>('POST', '/api/listen/settle', { recording, pieces, text }),
+  // The window took the first pieces in and moved on, a new line.
+  breakListening: (recording: number, pieces: number) => request<void>('POST', '/api/listen/break', { recording, pieces }),
   // The speech models, fetched and removed in Settings. Where a download
   // stands comes as the event speech.
   speech: () => request<SpeechState>('GET', '/api/speech'),

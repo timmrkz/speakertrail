@@ -161,6 +161,8 @@ func main() {
 	go theLog.watch(func(st LogStatus) { app.Event.Emit("applog", st) },
 		func() <-chan time.Time { return time.After(time.Second) })
 	c.start()
+	// Undo and Redo in Edit go to the page, see menu.go.
+	app.Menu.SetApplicationMenu(appMenu(app))
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "Speaker Trail",
 		Width:     1100,

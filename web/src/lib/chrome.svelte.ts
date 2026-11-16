@@ -1,6 +1,7 @@
-// Ported from FrameFairy's lib/chrome.svelte.ts at 57bca0c. Speaker Trail
-// has one window, so it follows that one, and it asks over /api/chrome
-// rather than through a Wails binding, the way lib/updates.svelte.ts asks.
+// Ported from FrameFairy's lib/chrome.svelte.ts at 57bca0c. It asks over
+// /api/chrome rather than through a Wails binding, the way
+// lib/updates.svelte.ts asks. The report window follows its own, on
+// /api/chrome?window=report and the event chrome-report.
 import { Events } from '@wailsio/runtime'
 import { api, type Chrome } from './api'
 
@@ -34,12 +35,12 @@ class TitleBar {
   // a resize, either way through fullscreen, another display, another
   // scale, light or dark, or back from the Dock, see watchChrome in
   // chrome.go.
-  follow(): () => void {
+  follow(window: 'app' | 'report' = 'app'): () => void {
     api
-      .chrome()
+      .chrome(window)
       .then((c) => (this.chrome = c))
       .catch(() => {})
-    return Events.On('chrome', (ev) => (this.chrome = ev.data as Chrome))
+    return Events.On(window === 'report' ? 'chrome-report' : 'chrome', (ev) => (this.chrome = ev.data as Chrome))
   }
 }
 

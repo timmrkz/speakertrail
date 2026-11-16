@@ -1,5 +1,20 @@
 <script lang="ts">
   import { toast } from '../toast.svelte'
+  import { api } from '../api'
+  import { reporting, reportTitle } from '../reporting.svelte'
+
+  // report says whether a toast about something that went wrong offers
+  // Report, which opens Report a Problem with its words in it, the way
+  // FrameFairy's toasts do. The report window's own toasts are about the
+  // report, so they offer none. There is one report at a time: while the
+  // report window is open, Report is greyed out and says why.
+  let { report = true }: { report?: boolean } = $props()
+
+  function reportIt() {
+    const words = toast.message
+    toast.hide()
+    api.reportAbout(words).catch(() => {})
+  }
 </script>
 
 <div class="toast-region" role="status" aria-live="polite">
@@ -10,6 +25,8 @@
         <!-- The action is taken before the toast goes: hiding it empties
              toast.action, and a const in the template reads it again. -->
         <button class="act" type="button" onclick={() => { const run = toast.action?.run; toast.hide(); run?.() }}>{toast.action.label}</button>
+      {:else if report && toast.tone === 'bad'}
+        <button class="act" type="button" disabled={reporting.open} title={reportTitle()} onclick={reportIt}>Report</button>
       {/if}
     </div>
   {/if}
@@ -28,8 +45,9 @@
   /* The action can be pressed, the rest of the region lets clicks through. */
   .act {
     pointer-events: auto; background: none; border: 0; padding: 0; font: inherit; color: inherit;
-    cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer; text-decoration: underline; text-underline-offset: 3px; flex: none;
   }
+  .act:disabled { opacity: .55; cursor: default; }
   .toast.bad { background: var(--bad-soft); color: var(--bad); border: 1px solid var(--bad); }
   @media (min-width: 761px) { .toast-region { bottom: 28px; } }
   @keyframes pop { from { transform: translateY(8px); opacity: 0; } }

@@ -494,6 +494,52 @@ const ROUTES: [string, RegExp, Handler][] = [
     speechHere.delete(name)
     return { status: 204 }
   }],
+  // Report a Problem, like reportAPI in cmd/speakertrail-app/report_api.go.
+  // The mock opens no window: the report window is the page at /report.
+  // Attach picks one invented screenshot, a picture is drawn as a plain
+  // SVG of its size, and Report gives the path a report would have.
+  ['GET', /^\/api\/report$/, () => ok(draftShown())],
+  ['GET', /^\/api\/report\/window$/, () => ok({ open: false })],
+  ['GET', /^\/api\/report\/picture$/, (_s, _m, q) => {
+    const p = report.pictures.find((x) => x.id === q.get('id'))
+    if (!p) return err(404, 'Not found')
+    return {
+      status: 200, type: 'image/svg+xml',
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${p.width}" height="${p.height}"><rect width="100%" height="100%" fill="#8fb3c0"/><rect x="8%" y="10%" width="84%" height="12%" rx="8" fill="#f7f9fa"/></svg>`,
+    }
+  }],
+  ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
+    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
+    return { status: 204 }
+  }],
+  ['PUT', /^\/api\/report\/text$/, (_s, _m, _q, b) => {
+    report.text = String(b.text ?? '')
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/report\/pick$/, () => attachMock('Screenshot 2026-11-16 at 10.12.04.png', 1440, 900)],
+  ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => attachMock(String(b.name || 'Pasted picture.png'), 800, 500)],
+  ['POST', /^\/api\/report\/(remove|put-back)$/, (_s, m, _q, b) => {
+    const p = report.pictures.find((x) => x.id === b.id)
+    if (p) p.removed = m[1] === 'remove'
+    return ok(draftShown())
+  }],
+  ['POST', /^\/api\/report\/clear$/, () => {
+    report.text = ''
+    for (const p of report.pictures) p.removed = true
+    return ok(draftShown())
+  }],
+  ['POST', /^\/api\/report\/send$/, () => {
+    report = { text: '', pictures: [], next: report.next }
+    return ok({ path: '~/Desktop/Speaker Trail report 2026-11-16 10.15.zip' })
+  }],
+  // Dictate, like listenAPI. The mock hears nothing and sends no events,
+  // so Stop gives one invented sentence, as if it had been said.
+  ['POST', /^\/api\/listen$/, () => {
+    listened++
+    return ok({ recording: listened })
+  }],
+  ['POST', /^\/api\/listen\/stop$/, () => ok({ recording: listened, said: ['The run stopped at the third search.'], hearing: '', asked: 0 })],
+  ['POST', /^\/api\/listen\/(settle|break|cancel)$/, () => ({ status: 204 })],
   // The app's log, like logAPI in cmd/speakertrail-app/applog_api.go.
   // What the window says and does is kept, so a walk can read what the
   // log would hold. Settings shows a log of two files with one toast.
@@ -767,6 +813,21 @@ function speechState() {
     folder: '~/Library/Application Support/Speaker Trail/models',
     job,
   }
+}
+
+// The draft of a report and the recordings Dictate started.
+type MockPicture = { id: string; name: string; width: number; height: number; removed?: boolean }
+let report: { text: string; pictures: MockPicture[]; next: number } = { text: '', pictures: [], next: 1 }
+let listened = 0
+function draftShown() {
+  return { text: report.text, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
+}
+function attachMock(name: string, width: number, height: number) {
+  if (report.pictures.filter((p) => !p.removed).length >= 10) {
+    return ok({ ...draftShown(), error: `${name} cannot be attached because it would be more than the 10 pictures a report takes` })
+  }
+  report.pictures.push({ id: `p${report.next++}`, name, width, height })
+  return ok(draftShown())
 }
 
 // What the window told the app's log, for the walks, and whether Settings

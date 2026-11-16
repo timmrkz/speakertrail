@@ -73,7 +73,9 @@ than read with the eye:
 | `from` | the part that wrote it: `app`, `api`, `engine`, `updates`, `wails`, `window` |
 | `msg` | what happened, in words |
 
-Other fields come where they mean something: `run` and `search` for the
+Other fields come where they mean something: `act` for what the person
+did that led to it, see Acts below, `toast` for a toast about something
+that went wrong, `run` and `search` for the
 run and the search a line is about, by id, `ms` for how long a check
 took, `profiles`, `found` and `new` for what it found, counted and never
 named, `path` for a request,
@@ -86,13 +88,76 @@ searches, so the start is `start`, and `run` is the run's id.
 No line holds a person's name, headline, profile link or notes, nor the
 Exa key. A person is named by id.
 
+### Acts
+
+What the person did is the thread a fault is followed by. Each act is a
+line at `info` from `window` with a short id of its own, `a1`, `a2` and
+on: every click, and every key that is not typing. It is named by the
+control it was on, by its `aria-label`, its tooltip or its words, as in
+FrameFairy: `pressed button.btn "Run the due searches now. Takes about a
+minute"`, `⌘F on input.input "Search settings"`. Everything that act sets off carries its id, in the window and
+on the Go side: the requests it makes, Wails's, the engine's and the
+API's lines. The window tells the Go side of each act the moment it
+happens, before the requests it makes for it, and the Go side's lines
+carry the act it was told of last. A run keeps the act that started it
+on every line it writes, however long it goes and however many acts
+follow, the way a job does in FrameFairy.
+
+An act never names a person. Whatever shows a person's words is marked
+`data-personal`: the rows of People, the person's view and the sheet it
+slides in on. A control there is named by its kind, `pressed a.prow`, or,
+for a button, by its own words, which are ours, `pressed button.btn
+"Connect"`. FrameFairy names a word clicked in its caption box as the
+caption box the same way.
+
+### What the window says
+
+`web/src/lib/said.ts`, as in FrameFairy, gathers the window's lines and
+sends them within a quarter of a second, at most 400 at a time, to
+`POST /api/log/said`. A line said again straight after itself is counted,
+`(said 3 more times)`. The Go side takes at most 400 lines of at most
+2000 characters from one request, and keeps the window's moment for each
+unless the window's clock is more than a minute off.
+
+- Errors and warnings of the console, what is thrown and not caught, and
+  promises rejected with nobody listening, at `error` or `warn`.
+- `window: started`, with the browser engine, the pixel ratio and the
+  window's size, and `window: hidden` and `shown`.
+- A request to the Go side slower than 150 ms, `calls: GET /api/people
+  took 212 ms`, one that failed with why, and more than 60 in one
+  second, which is a loop gone wrong. A request is named by its method
+  and path, never its query, which holds what was typed in a search.
+- An act that took over 150 ms from the hand to the first frame drawn
+  after it, at `warn`, with how much of that time the window was still
+  busy with something else before it heard the act.
+- Every toast. One about something that went wrong is a `warn` line
+  marked `"toast":true`. One that says what was done is an `info` line.
+  A toast that ran out, was replaced or acted on says so at `info`.
+
+### Settings, Logs
+
+Settings shows the log in an area of its own, Logs: where it is, how many
+files with the older ones, their size and their lines. While Settings is
+open the app sends it again as lines are written, as the Wails event
+`applog`, at most once a second. Each file is read once, and the file in
+use from where it was read last, so keeping up costs the lines written
+since. The folder button, Show in folder, shows the log in Finder. The
+trash can removes every file of it after asking, and the next line starts
+a new log that says how many files, bytes and lines went.
+
+Under it are the last five toasts about something that went wrong, read
+back from the lines marked `"toast":true`, newest first, a toast said
+again once, where it was said last, so one that ran out unread is not
+lost. FrameFairy has Report beside each. Here that comes with Report a
+Problem, #11.
+
 ### Levels
 
 | Level | What it is for |
 | --- | --- |
-| `error` | something failed: a run that could not be saved, a request that failed, a panic |
-| `warn` | something went wrong and the app carried on: a search that failed, a check for updates that failed |
-| `info` | the app starting, a run starting and ending, a channel picked |
+| `error` | something failed: a run that could not be saved, a request that failed, a panic, an error in the window |
+| `warn` | something went wrong and the app carried on: a search that failed, a check for updates that failed, a request slower than 150 ms, an act slower than 150 ms to reach the screen, a toast about something that went wrong |
+| `info` | the acts, the app starting, a run starting and ending, a channel picked, a toast that said what was done |
 | `debug` | the steps between: every check of a run, a search stopped, the title bar measured |
 | `trace` | lines that come with every step of something that repeats |
 
@@ -109,18 +174,23 @@ The log is JSON lines, read with [jq](https://jqlang.org). For example:
 jq -c 'select(.level == "error" or .level == "warn")' app.log
 # everything one run of searches did
 jq -c 'select(.run == 12)' app.log
+# everything one act set off
+jq -c 'select(.act == "a41")' app.log
+# what took long enough to be felt
+jq -c 'select(.msg | test("reach the screen|took [0-9]+ ms"))' app.log
 # the lines of the last start of the app
 jq -c --arg s "$(tail -n 1 app.log | jq -r .start)" 'select(.start == $s)' app.log
 ```
 
 ## The steps
 
-1. Done. zerolog and lumberjack in place of slog on the standard error:
-   the place, the cap, JSON lines, the levels, `start` and `from`, and
-   Wails's, the engine's and the API's lines in the same file. Panics,
-   the standard log, and the rule in `.golangci.yml`.
-2. The window's lines, `web/src/lib/said.ts` as in FrameFairy: its errors,
-   calls slower than 150 ms, and acts, each click and key with an id that
-   every line it sets off carries.
-3. Settings, Logs: where the log is, how much it holds, Show in Finder,
-   remove after asking, and the last five toasts.
+1. Done in #21. zerolog and lumberjack in place of slog on the standard
+   error: the place, the cap, JSON lines, the levels, `start` and `from`,
+   and Wails's, the engine's and the API's lines in the same file.
+   Panics, the standard log, the rule in `.golangci.yml`, and every check
+   of a run.
+2. Done. The window's lines and acts, `web/src/lib/said.ts`, over
+   `/api/log` where FrameFairy has Wails bindings, see
+   [api.md](api.md).
+3. Done. Settings, Logs.
+4. Report a Problem takes the log along, #11.

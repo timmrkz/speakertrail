@@ -470,6 +470,26 @@ const ROUTES: [string, RegExp, Handler][] = [
   // called quit, which a walk sends the way the app does, through
   // window._wails.dispatchWailsEvent, see walks/quit.mjs.
   ['POST', /^\/api\/quit\/stay$/, () => ({ status: 204 })],
+  // The app's log, like logAPI in cmd/speakertrail-app/applog_api.go.
+  // What the window says and does is kept, so a walk can read what the
+  // log would hold. Settings shows a log of two files with one toast.
+  // The app sends the log as it grows as an event, which the mock cannot.
+  ['POST', /^\/api\/log\/said$/, (_s, _m, _q, b) => {
+    if (Array.isArray(b)) logged.said.push(...(b as { text: string }[]))
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/log\/acted$/, (_s, _m, _q, b) => {
+    logged.acts.push(b as { id: string; what: string })
+    return { status: 204 }
+  }],
+  ['GET', /^\/api\/log\/heard$/, () => ok(logged)],
+  ['GET', /^\/api\/log$/, () => ok(logStatus())],
+  ['POST', /^\/api\/log\/watch$/, () => ({ status: 204 })],
+  ['POST', /^\/api\/log\/show$/, () => (logGone ? err(409, 'the app keeps no log yet') : { status: 204 })],
+  ['DELETE', /^\/api\/log$/, () => {
+    logGone = true
+    return ok(logStatus())
+  }],
   ['GET', /^\/api\/exclusions$/, (s) => ok(exclusionsOf(s))],
   ['POST', /^\/api\/exclusions$/, (s, _m, _q, b) => {
     const phrase = words(String(b.phrase ?? '')).length ? String(b.phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ') : ''
@@ -689,6 +709,18 @@ function readBody(req: Req): Promise<Record<string, unknown>> {
     })
     req.on('error', () => resolve({}))
   })
+}
+
+// What the window told the app's log, for the walks, and whether Settings
+// removed the log.
+const logged: { said: { text: string }[]; acts: { id: string; what: string }[] } = { said: [], acts: [] }
+let logGone = false
+function logStatus() {
+  if (logGone) return { path: '/Users/invented/Library/Logs/Speaker Trail/app.log', files: 1, bytes: 180, lines: 1, toasts: [] }
+  return {
+    path: '/Users/invented/Library/Logs/Speaker Trail/app.log', files: 2, bytes: 2_430_000, lines: 9_812,
+    toasts: [{ at: Date.now() - 3 * 60_000, text: 'Could not reach the app. Try again.' }],
+  }
 }
 
 export function mockApi(): Plugin {

@@ -31,6 +31,7 @@
   import Mic from '@lucide/svelte/icons/mic'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Trash2 from '@lucide/svelte/icons/trash-2'
+  import Folder from '@lucide/svelte/icons/folder'
   import Ban from '@lucide/svelte/icons/ban'
   import PanelLeftOpen from '@lucide/svelte/icons/panel-left-open'
   import PanelLeftClose from '@lucide/svelte/icons/panel-left-close'
@@ -69,6 +70,8 @@
     mic: Mic,
     more: Ellipsis,
     trash: Trash2,
+    // Shows a file in Finder, as FrameFairy draws it.
+    folder: Folder,
     exclude: Ban,
     // The button at the top of the sidebar, as FrameFairy draws it: a
     // panel opening while the sidebar is not kept, closing while it is.

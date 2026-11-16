@@ -152,6 +152,24 @@ chosen, or a browser that is gone, it answers 409 with what to do and
 `/api/updates` is answered by the app itself, not by `internal/api`. See
 [UPDATES.md](UPDATES.md).
 
+## The app's log
+
+`/api/log` is answered by the app itself, not by `internal/api`. See
+[LOGGING.md](LOGGING.md) and `cmd/speakertrail-app/applog_api.go`.
+
+| Request | What it does |
+| --- | --- |
+| `POST /api/log/said` | the window's lines, `[{"at": 1763215200000, "level": "warn", "act": "a3", "toast": false, "text": "…"}]`, at most 400 written from one request, each cut at 2000 characters, the body at most 2 MB |
+| `POST /api/log/acted` | the person's act, `{"id": "a3", "at": 1763215200000, "what": "pressed button.btn \"Run\""}` |
+| `GET /api/log` | the log as Settings shows it, `{"path": "…/app.log", "files": 2, "bytes": 2430000, "lines": 9812, "toasts": [{"at": 1763215200000, "text": "…"}]}` |
+| `POST /api/log/watch` | `{"on": true}` while Settings is open, so the log is sent as the Wails event `applog` as lines are written, at most once a second |
+| `POST /api/log/show` | shows the log in Finder, 409 while there is none |
+| `DELETE /api/log` | removes every file of the log, and nothing else in its folder, and answers the log as it is then |
+
+The two the window says the log with are sent as they are, never timed
+or said themselves. Every other request the window makes is timed, see
+What the window says in LOGGING.md.
+
 ## The title bar
 
 `GET /api/chrome` is answered by the app itself, not by `internal/api`.

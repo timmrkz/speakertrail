@@ -105,7 +105,7 @@ func TestInstallingASpeechModel(t *testing.T) {
 				t.Errorf("%s was left behind", leftover)
 			}
 		}
-		if got, ok := InUse(dir); ok {
+		if got, ok := InUse(Models(), dir); ok {
 			t.Errorf("the test model is in no list, and %s was taken for the one in use", got.Name)
 		}
 	})
@@ -384,14 +384,14 @@ func TestEverySpeechModelCanBeOffered(t *testing.T) {
 		if m.Recommended {
 			recommended++
 		}
-		if found, ok := ByName(m.Name); !ok || found.Name != m.Name {
+		if found, ok := ByName(Models(), m.Name); !ok || found.Name != m.Name {
 			t.Errorf("%s cannot be found by name", m.Name)
 		}
 	}
 	if recommended != 1 {
 		t.Errorf("%d models are recommended, want exactly 1", recommended)
 	}
-	if _, ok := ByName("no-such-model"); ok {
+	if _, ok := ByName(Models(), "no-such-model"); ok {
 		t.Error("found a model that does not exist")
 	}
 }
@@ -436,7 +436,7 @@ func TestRemovingASpeechModelLeavesTheRest(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got, ok := InUse(dir); !ok || got.Name != m.Name {
+	if got, ok := InUse(Models(), dir); !ok || got.Name != m.Name {
 		t.Fatalf("in use is %q, want %q", got.Name, m.Name)
 	}
 	if err := Remove(m, dir); err != nil {
@@ -450,7 +450,7 @@ func TestRemovingASpeechModelLeavesTheRest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "other/tokens.txt")); err != nil {
 		t.Error("something else in the models folder went too")
 	}
-	if _, ok := InUse(dir); ok {
+	if _, ok := InUse(Models(), dir); ok {
 		t.Error("a model is in use after it was removed")
 	}
 	if err := Remove(Model{Name: ".."}, dir); err == nil {

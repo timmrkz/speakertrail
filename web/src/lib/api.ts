@@ -384,6 +384,8 @@ export interface SpeechModel {
   url: string
   recommended: boolean
   installed: boolean
+  // The one Dictate hears with, as the app says.
+  inUse: boolean
 }
 
 // How far a download has come: what it does now, the share done from 0

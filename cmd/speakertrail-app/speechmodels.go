@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"sync"
 
@@ -26,6 +27,9 @@ import (
 type SpeechModelView struct {
 	speech.Model
 	Installed bool `json:"installed"`
+	// InUse marks the one Dictate hears with, see speech.InUse, as
+	// FrameFairy's Settings marks the model a search runs on.
+	InUse bool `json:"inUse"`
 }
 
 // SpeechJob is a download of a model, in the shape of FrameFairy's job,
@@ -85,8 +89,10 @@ func (s *speechModels) state() SpeechState {
 
 func (s *speechModels) stateLocked() SpeechState {
 	st := SpeechState{Models: []SpeechModelView{}, Folder: tildePath(s.dir)}
-	for _, m := range s.models() {
-		st.Models = append(st.Models, SpeechModelView{Model: m, Installed: m.Installed(s.dir)})
+	models := s.models()
+	using, _ := speech.InUse(models, s.dir)
+	for _, m := range models {
+		st.Models = append(st.Models, SpeechModelView{Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name})
 	}
 	if s.job != nil {
 		j := *s.job
@@ -104,12 +110,7 @@ func (s *speechModels) tell() {
 
 // byName is the model of that name.
 func (s *speechModels) byName(name string) (speech.Model, bool) {
-	for _, m := range s.models() {
-		if m.Name == name {
-			return m, true
-		}
-	}
-	return speech.Model{}, false
+	return speech.ByName(s.models(), name)
 }
 
 // install starts fetching a model, and gives the job at once, so the
@@ -220,10 +221,9 @@ func (s *speechModels) remove(name string) error {
 // inUse is the folder of the model Dictate hears with, "" when none is
 // here.
 func (s *speechModels) inUse() (speech.Model, string) {
-	for _, m := range s.models() {
-		if m.Installed(s.dir) {
-			return m, s.dir + "/" + m.Name
-		}
+	m, ok := speech.InUse(s.models(), s.dir)
+	if !ok {
+		return speech.Model{}, ""
 	}
-	return speech.Model{}, ""
+	return m, filepath.Join(s.dir, m.Name)
 }

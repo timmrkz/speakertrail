@@ -79,7 +79,7 @@ func (s *speechModels) waitForDownload() {
 func TestDownloadFetchesTheSpeechModel(t *testing.T) {
 	m := testSpeechModel(t, nil)
 	s, told := speechFor(t, m)
-	if st := s.state(); len(st.Models) != 1 || st.Models[0].Installed || st.Job != nil {
+	if st := s.state(); len(st.Models) != 1 || st.Models[0].Installed || st.Models[0].InUse || st.Job != nil {
 		t.Fatalf("before anything: %+v", st)
 	}
 	j := s.install(m.Name)
@@ -88,7 +88,7 @@ func TestDownloadFetchesTheSpeechModel(t *testing.T) {
 	}
 	s.waitForDownload()
 	st := s.state()
-	if !st.Models[0].Installed || st.Job == nil || st.Job.State != "done" {
+	if !st.Models[0].Installed || !st.Models[0].InUse || st.Job == nil || st.Job.State != "done" {
 		t.Fatalf("after the download: %+v", st)
 	}
 	if _, dir := s.inUse(); dir == "" {

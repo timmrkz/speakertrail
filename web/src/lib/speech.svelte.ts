@@ -12,8 +12,8 @@ class SpeechWatch {
   // Whether the app has answered once, so nothing is said about the
   // models before it is known.
   loaded = $state(false)
-  // The model Dictate hears with: the first one here, best first.
-  readonly inUse = $derived<SpeechModel | undefined>(this.state.models.find((m) => m.installed))
+  // The model Dictate hears with, as the app marks it.
+  readonly inUse = $derived<SpeechModel | undefined>(this.state.models.find((m) => m.inUse))
   private users = 0
   private off: (() => void) | undefined
 

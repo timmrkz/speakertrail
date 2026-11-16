@@ -30,6 +30,7 @@ import (
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/keys"
 	"github.com/timmrkz/speakertrail/internal/search"
+	"github.com/timmrkz/speakertrail/internal/speech"
 	"github.com/timmrkz/speakertrail/internal/store"
 	"github.com/timmrkz/speakertrail/web"
 )
@@ -71,6 +72,15 @@ func main() {
 	// applog_api.go.
 	api.Handle("/api/log", logAPI{log: theLog, show: showInFolder})
 	api.Handle("/api/log/", logAPI{log: theLog, show: showInFolder})
+	// The speech models in Settings, fetched and removed there, see
+	// speechmodels.go. Where a download stands is the event speech.
+	voices := newSpeechModels(speech.Dir(dir), func(st SpeechState) {
+		if app != nil {
+			app.Event.Emit("speech", st)
+		}
+	})
+	api.Handle("/api/speech", speechAPI{s: voices})
+	api.Handle("/api/speech/", speechAPI{s: voices})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",

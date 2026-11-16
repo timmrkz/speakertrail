@@ -3,7 +3,7 @@
 How the app keeps a record of what it did, so that a fault on Tim's Mac is
 found by reading what happened, not by asking him to try again. Ported
 from FrameFairy's log, which works the same way, and tracked in issue #16.
-The report that takes it along is #11.
+Report a Problem takes it along, see below.
 
 ## Where it is
 
@@ -148,8 +148,9 @@ a new log that says how many files, bytes and lines went.
 Under it are the last five toasts about something that went wrong, read
 back from the lines marked `"toast":true`, newest first, a toast said
 again once, where it was said last, so one that ran out unread is not
-lost. FrameFairy has Report beside each. Here that comes with Report a
-Problem, #11.
+lost. Each has Report beside it, as in FrameFairy, which opens Report a
+Problem with the toast's words in it. So does every toast about
+something that went wrong, while it is on screen.
 
 ### Levels
 
@@ -182,6 +183,31 @@ jq -c 'select(.msg | test("reach the screen|took [0-9]+ ms"))' app.log
 jq -c --arg s "$(tail -n 1 app.log | jq -r .start)" 'select(.start == $s)' app.log
 ```
 
+## Report a Problem
+
+Bugs in the sidebar opens Report a Problem in a window of its own. Tim
+writes or dictates what happened and attaches screenshots, and Report
+puts one zip on the Desktop, `Speaker Trail report 2026-11-16 10.15.zip`,
+and shows it in Finder. In it:
+
+| File | What it is |
+| --- | --- |
+| `what-happened.txt` | what Tim wrote, when he wrote anything |
+| `about.json` | when it was made, the build, `start`, macOS, the chip and the memory |
+| `settings.json` | the settings Settings shows. Never the people, the searches, the notes or a key |
+| `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
+| `pictures/` | the screenshots, as PNG |
+
+Paths under the home folder are written as `~` in every file but the
+pictures, so the Mac's user name does not travel. The report never holds
+the app's file. The draft is kept in `~/Library/Application
+Support/Speaker Trail/report` until Report is pressed, so closing the
+window or the app loses nothing.
+
+Dictate writes what Tim says into the field, on this Mac, with the speech
+model from Settings, Speech models. macOS asks for the microphone the
+first time.
+
 ## The steps
 
 1. Done in #21. zerolog and lumberjack in place of slog on the standard
@@ -193,4 +219,4 @@ jq -c --arg s "$(tail -n 1 app.log | jq -r .start)" 'select(.start == $s)' app.l
    `/api/log` where FrameFairy has Wails bindings, see
    [api.md](api.md).
 3. Done. Settings, Logs.
-4. Report a Problem takes the log along, #11.
+4. Done in #24. Report a Problem takes the log along.

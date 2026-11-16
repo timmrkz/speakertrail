@@ -43,6 +43,8 @@ while no key is saved.
 | The Exa key | the keychain, as **Speaker Trail: Exa API key** |
 | The channel the app follows | `~/Library/Application Support/Speaker Trail/updates.json` |
 | Builds downloaded to update to | `~/Library/Caches/Speaker Trail/builds` |
+| The speech models Dictate hears with | `~/Library/Application Support/Speaker Trail/models` |
+| The draft of a report | `~/Library/Application Support/Speaker Trail/report` |
 
 The file is written whole on every change, to a new file that then takes
 the old one's place, so a crash in the middle leaves the last good file.
@@ -82,11 +84,28 @@ docker volume rm speakertrail_postgres
 | `make test` | `lint`, `unit`, `interface` and `walks` |
 | `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |
 | `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
-| `make interface` | a type check of the interface |
+| `make interface` | a type check of the interface and its tests, with vitest |
 | `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/` |
 | `make check` | what this machine has and still needs |
 | `make clean` | removes what make built. The app's file stays |
 | `make help` | this list |
+
+## The speech library
+
+Dictate hears with sherpa-onnx, through `sherpa-onnx-go`, which brings
+the library as dylibs in the Go module cache, and cgo points the program
+there. That folder exists on no Mac but the one that built it, so a build
+from GitHub's Mac would not start on Tim's. `scripts/carry-libs.sh` copies
+the dylibs to `bin/lib` and points the program at
+`@executable_path/../Frameworks`, and `scripts/bundle-macos.sh` puts them
+in the bundle's `Contents/Frameworks` and checks that every one resolves
+there. The library is sherpa-onnx's release without speech synthesis,
+`scripts/speech-libs.sh`, since the one with it carries espeak-ng, which
+is GPL 3, and the bundle refuses it. As in FrameFairy.
+
+The bundle's `Info.plist` says why the app wants the microphone, which
+macOS asks Tim the first time Dictate is pressed. The app needs no
+entitlement for it, since it is signed without the hardened runtime.
 
 ## Elsewhere than on a Mac
 

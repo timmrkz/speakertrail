@@ -26,7 +26,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/spf13/afero"
-
 )
 
 // Bugs in the sidebar opens one report window. Asked again while it is

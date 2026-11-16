@@ -11,7 +11,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/timmrkz/speakertrail/internal/browser"
+	"image"
 	"io"
 	"io/fs"
 	"net/http"
@@ -24,13 +24,17 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/spf13/afero"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 
 	apipkg "github.com/timmrkz/speakertrail/internal/api"
+	"github.com/timmrkz/speakertrail/internal/browser"
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/keys"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/speech"
+	"github.com/timmrkz/speakertrail/internal/speech/asr"
 	"github.com/timmrkz/speakertrail/internal/store"
 	"github.com/timmrkz/speakertrail/web"
 )
@@ -66,8 +70,8 @@ func main() {
 	api.Handle("/api/updates/", updatesAPI{get: ups.Load, open: func(url string) error { return app.Browser.OpenURL(url) }})
 	// Where macOS put the title bar and its buttons, once the window is
 	// made, see chrome.go.
-	var chrome atomic.Pointer[chromeWatch]
-	api.Handle("/api/chrome", chromeAPI{get: chrome.Load})
+	var chrome, reportChrome atomic.Pointer[chromeWatch]
+	api.Handle("/api/chrome", chromeAPI{get: chrome.Load, report: reportChrome.Load})
 	// The window's lines and acts, and the log as Settings shows it, see
 	// applog_api.go.
 	api.Handle("/api/log", logAPI{log: theLog, show: showInFolder})
@@ -81,6 +85,36 @@ func main() {
 	})
 	api.Handle("/api/speech", speechAPI{s: voices})
 	api.Handle("/api/speech/", speechAPI{s: voices})
+	// Report a Problem in a window of its own, with Dictate, see bugs.go,
+	// report.go and listen.go. The speech model is loaded on the first
+	// press of Dictate and kept until it is removed or the app quits.
+	host := &speech.Host{Open: asr.OpenOne}
+	voices.hearing, voices.letGo = host.Held, host.KeepNone
+	emit := func(name string, data any) {
+		if app != nil {
+			app.Event.Emit(name, data)
+		}
+	}
+	dictate := &listening{host: host, models: voices,
+		say:  func(d Dictation) { emit("dictation", d) },
+		loud: func(n Loudness) { emit("loudness", n) },
+	}
+	report := newReporting(afero.NewOsFs(), filepath.Join(dir, "report"))
+	report.stop = dictate.CancelListening
+	report.told = func(open bool) { emit("report-window", open) }
+	report.said = func(d ReportDraft) { emit("report-draft", d) }
+	report.pick = func() ([]string, error) {
+		return app.Dialog.OpenFile().
+			SetTitle("Attach screenshots").
+			CanChooseFiles(true).
+			AddFilter("Screenshots", "*.png;*.jpg;*.jpeg").
+			PromptForMultipleSelection()
+	}
+	reports := reportMaker{report: report, st: e.Store}
+	api.Handle("/api/report", reportAPI{r: report, make: reports.ReportProblem})
+	api.Handle("/api/report/", reportAPI{r: report, make: reports.ReportProblem})
+	api.Handle("/api/listen", listenAPI{l: dictate})
+	api.Handle("/api/listen/", listenAPI{l: dictate})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",
@@ -95,6 +129,8 @@ func main() {
 		// not get to waits for the next run. A build that is ready goes in
 		// place once the app is gone, see installOnQuit.
 		OnShutdown: func() {
+			dictate.CancelListening()
+			host.Close()
 			if id, _ := e.Going(); id != 0 {
 				e.Stop(id)
 			}
@@ -151,10 +187,69 @@ func main() {
 	// than chosen, the way FrameFairy does it. The page hears it on the
 	// event called chrome whenever it changes, see lib/chrome.svelte.ts.
 	chrome.Store(watchChrome(func(c Chrome) { app.Event.Emit("chrome", c) }, window))
+	// The report window goes when the app's window does, see bugs.go.
+	window.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+		report.closeWindow("app")
+	})
+	report.make = func(closed func()) (front, shut func()) {
+		return openReportWindow(app, window, report, closed, func(w *application.WebviewWindow) {
+			reportChrome.Store(watchChrome(func(c Chrome) { app.Event.Emit("chrome-report", c) }, w))
+		})
+	}
 	if err := app.Run(); err != nil {
 		theLog.line(zerolog.ErrorLevel, "app").Err(err).Msg("the app stopped")
 		os.Exit(1)
 	}
+}
+
+// openReportWindow makes the report window, beside the app's window, with
+// the app's own page showing Report a Problem alone, at /report. It gives
+// what brings it forward and what closes it, and calls closed once it is
+// gone. Pictures dropped on it are attached to the report, see bugs.go.
+// Ported from FrameFairy's main.go.
+func openReportWindow(app *application.App, main *application.WebviewWindow, report *reporting, closed func(), watch func(*application.WebviewWindow)) (front, shut func()) {
+	x, y := 0, 0
+	start := application.WindowCentered
+	if main != nil {
+		b := main.Bounds()
+		at := image.Rect(b.X, b.Y, b.X+b.Width, b.Y+b.Height)
+		work := at
+		if screen, err := main.GetScreen(); err == nil && screen != nil {
+			wa := screen.WorkArea
+			work = image.Rect(wa.X, wa.Y, wa.X+wa.Width, wa.Y+wa.Height)
+		}
+		p := beside(at, work, reportWidth, reportHeight)
+		x, y, start = p.X, p.Y, application.WindowXY
+	}
+	w := app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "report",
+		Title:           "Report a Problem",
+		Width:           reportWidth,
+		Height:          reportHeight,
+		MinWidth:        reportMinWidth,
+		MinHeight:       reportMinHeight,
+		InitialPosition: start,
+		X:               x,
+		Y:               y,
+		URL:             "/report",
+		Mac: application.MacWindow{
+			Backdrop:                application.MacBackdropNormal,
+			InvisibleTitleBarHeight: 28,
+			TitleBar:                application.MacTitleBarHidden,
+		},
+		// Pictures dropped anywhere on it are attached, see bugs.go.
+		EnableFileDrop: true,
+	})
+	w.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
+		files := e.Context().DroppedFiles()
+		go report.dropped(files)
+	})
+	w.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) { closed() })
+	// Its own title bar, measured on its own, before the page can ask.
+	watch(w)
+	w.Show()
+	w.Focus()
+	return func() { w.Show(); w.Focus() }, func() { w.Close() }
 }
 
 // Folder is where the app keeps its file: ~/Library/Application

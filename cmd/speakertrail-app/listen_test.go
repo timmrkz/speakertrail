@@ -132,7 +132,7 @@ func TestWhatIsSaidIsWrittenDown(t *testing.T) {
 // A microphone the app may not use gives nothing but zeros on a Mac, and
 // that is said, rather than an empty report. Without a speech model the
 // microphone does not start at all, so nobody talks for a minute to be
-// told so at the end. 
+// told so at the end.
 //
 // On the real disk: a speech model is a folder the speech library loads.
 func TestListeningSaysWhyNothingWasWrittenDown(t *testing.T) {
@@ -187,7 +187,7 @@ func (brokenMicrophone) stop()                       {}
 
 // The button can be pressed again and again, from a window that sends its
 // calls without waiting: every recording ends with words or nothing, never
-// a hang, a panic or a race. 
+// a hang, a panic or a race.
 func TestListeningAtOnce(t *testing.T) {
 	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
@@ -289,7 +289,6 @@ func awaitTold(t *testing.T, told chan Dictation, ok func(Dictation) bool) Dicta
 // does it: what follows the last pause is heard again and again as it
 // grows, and what came before it is settled and never changes again.
 // Stopping gives every piece, the last included. Tim asked for it.
-// 
 func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -318,7 +317,7 @@ func TestWordsAppearWhileTheyAreSaid(t *testing.T) {
 }
 
 // Dropping a recording drops what was said: the recording ends at once, the window is
-// told nothing more about it, and nothing is left to stop. 
+// told nothing more about it, and nothing is left to stop.
 func TestDroppingARecording(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -456,7 +455,7 @@ func TestAMicrophoneThatCannotStart(t *testing.T) {
 
 // A speech model that cannot load ends the recording while the person is
 // still talking, and says why, rather than letting them talk on for
-// nothing. 
+// nothing.
 func TestListeningSaysAtOnceWhenTheSpeechModelFails(t *testing.T) {
 	// Not parallel: bubbleLog points the program's one log at this test.
 	bubbleLog(t)
@@ -507,7 +506,7 @@ func (sentences) Close() {}
 // A pause settles the words before it, but they are written down with
 // what was said around them, so a pause in the middle of a sentence gives
 // it no full stop and the words after it no capital. Tim got "there
-// should be some text. written right in front of me." 
+// should be some text. written right in front of me."
 func TestAPauseIsNoFullStop(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -634,7 +633,7 @@ func room(t *testing.T, mic *talkingMicrophone) {
 // was said, while the room goes on sending its noise, and so does one
 // that has reached the longest a recording can be, rather than going on
 // listening and hearing nothing, which is what Tim found after ten
-// minutes. Stop pressed after that gives the same, once. 
+// minutes. Stop pressed after that gives the same, once.
 //
 // The bubble's clock is fake, so the quiet passes the moment everything
 // waits on it, on any machine. It is three passes long rather than two
@@ -678,7 +677,7 @@ func TestListeningStopsByItself(t *testing.T) {
 
 // Stop pressed while a recording that stopped by itself is still being
 // written down waits for it and gives every word, rather than nothing.
-// The review of #190 found the last piece lost that way. 
+// The review of #190 found the last piece lost that way.
 //
 // In the bubble the quiet of two minutes passes on a fake clock, and
 // synctest.Wait says when Stop is waiting for the words.
@@ -720,7 +719,7 @@ func TestStopWhileItStopsByItself(t *testing.T) {
 // A microphone that hands over nothing but zeros is said while it
 // records, so a Mac that may not use it says so before the person has
 // talked for minutes, and once it hears the room the window is told that
-// too. The review of #190 asked for it. 
+// too. The review of #190 asked for it.
 func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -739,7 +738,7 @@ func TestAMicrophoneThatHearsNothingIsSaidAtOnce(t *testing.T) {
 // A click in the words still being heard settles them there and then,
 // as the window shows them, so the cursor can go in and they can be
 // corrected while the person talks on, and what follows is heard from
-// where they ended. Tim could not click into them. 
+// where they ended. Tim could not click into them.
 func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -766,7 +765,6 @@ func TestClickingWhatIsHeardSettlesIt(t *testing.T) {
 // The words the window settles may have been settled in part on the Go
 // side since it showed them, at a pause. The window's piece takes the
 // place of that one, which it holds, so nothing is written twice.
-// 
 func TestClickingWhatWasHeardBeforeAPause(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
@@ -925,7 +923,7 @@ func TestSilenceChangesNothing(t *testing.T) {
 // said in the log once, and the line at the end says how many passes
 // there were and how long the slowest took, so a report from a slower
 // machine shows why the words fell behind. The review of #190 asked for
-// it. 
+// it.
 //
 // Each pass takes three times listenEvery on the fake clock of a
 // testing/synctest bubble, so the speech model is slower than the words on
@@ -970,7 +968,6 @@ func TestASlowSpeechModelIsSaidOnce(t *testing.T) {
 
 // The window is told how loud the microphone is, a few times a second, so
 // the button can move with the voice and the person sees they are heard.
-// 
 //
 // The bubble's clock is fake, so each piece said is followed by exactly
 // one tenth of a second in which the window is told once.

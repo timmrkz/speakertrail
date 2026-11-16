@@ -48,7 +48,6 @@ const (
 	picturePixelsDeepMax = 20_000_000
 )
 
-
 // ReportPicture is one picture attached to a report, known by its id.
 type ReportPicture struct {
 	ID string `json:"id"`
@@ -592,8 +591,6 @@ func (g handed) picture(decoding func()) (ReportPicture, []byte, error) {
 func deep(m color.Model) bool {
 	return m == color.RGBA64Model || m == color.NRGBA64Model || m == color.Gray16Model
 }
-
-
 
 // count is how many pictures the draft holds that are not removed.
 func (r *reporting) count() int {

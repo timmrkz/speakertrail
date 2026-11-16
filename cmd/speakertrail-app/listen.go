@@ -110,7 +110,7 @@ const listenQuiet = 2 * time.Minute
 
 // Loudness is how loud the microphone is, from 0 for a quiet room to 1
 // for a raised voice, told to the window ten times a second while it
-// records, so the button can move with the voice. 
+// records, so the button can move with the voice.
 type Loudness struct {
 	Recording int     `json:"recording"`
 	Level     float64 `json:"level"`
@@ -125,7 +125,7 @@ const listenEvery = 400 * time.Millisecond
 // every piece written down for good so far, in order, and Hearing is what
 // follows them, written down again on every pass as more of it is heard.
 // Every message carries all the pieces, because an event the window
-// misses is gone, so a missed one costs a piece nothing. 
+// misses is gone, so a missed one costs a piece nothing.
 type Dictation struct {
 	Recording int      `json:"recording"`
 	Said      []string `json:"said"`

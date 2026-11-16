@@ -60,8 +60,10 @@ type speechModels struct {
 	in speech.Installer
 	// told hears the state each time it changes, the event speech.
 	told func(SpeechState)
-	// hearing says whether Dictate holds the model now, see listen.go.
+	// hearing says whether Dictate holds the model now, and letGo closes
+	// the model kept loaded, so its files can go. See speech.Host.
 	hearing func() bool
+	letGo   func()
 	// The latest download, and how to stop it while it runs.
 	job    *SpeechJob
 	cancel context.CancelFunc
@@ -204,6 +206,9 @@ func (s *speechModels) remove(name string) error {
 	if s.cancel != nil {
 		s.mu.Unlock()
 		return errors.New("it is being downloaded. Cancel the download first")
+	}
+	if s.letGo != nil {
+		s.letGo()
 	}
 	err := speech.Remove(m, s.dir)
 	s.mu.Unlock()

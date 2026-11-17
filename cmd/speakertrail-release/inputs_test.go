@@ -222,10 +222,20 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"nothing asked for", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>CFBundleName</key><string>Speaker Trail</string>\n" +
 				"<!-- <key>NSCameraUsageDescription</key> -->\n</dict>\n</plist>\n"), nil},
+		// The microphone is asked for, for Dictate, and nothing beside it.
+		{"the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"), nil},
 		{"the camera and the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
 				"<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
-			[]string{"asks for NSCameraUsageDescription", "asks for NSMicrophoneUsageDescription"}},
+			[]string{"asks for NSCameraUsageDescription"}},
+		// The speech library goes in Contents/Frameworks, and links what
+		// it is listed with.
+		{"the speech library", "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib",
+			program{links: []string{"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib"}}.bytes(), nil},
+		{"the speech library linking the screen", "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib",
+			program{links: []string{"/usr/lib/libSystem.B.dylib", "/System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"}}.bytes(),
+			[]string{"links /System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"}},
 		// A key deeper in the dictionary is no reason Info.plist gives.
 		{"a key inside another", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
@@ -348,12 +358,12 @@ func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
 	}
 }
 
-// What bundle-macos.sh writes as the app's Info.plist asks for nothing, so
-// a pull request that adds a reason for the camera or the screen fails
-// here, before its build is refused.
+// What bundle-macos.sh writes as the app's Info.plist asks for nothing
+// the lists refuse, so a pull request that adds a reason for the camera or
+// the screen fails here, before its build is refused.
 //
 // On the real disk: what this reads is the script that writes Info.plist.
-func TestTheShippedInfoPlistAsksForNoInput(t *testing.T) {
+func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	script, err := os.ReadFile("../../scripts/bundle-macos.sh")
 	if err != nil {
 		t.Fatal(err)

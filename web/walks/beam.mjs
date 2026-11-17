@@ -131,6 +131,29 @@ const walks = [
     },
   },
   {
+    // Download carries the beam while it waits for the download to start.
+    name: 'Settings: the beam of Download starting runs on its line',
+    viewport: { width: 1280, height: 900 },
+    async run(page) {
+      await page.route('**/api/speech', async (route) => {
+        const res = await route.fetch()
+        const body = await res.json()
+        body.models = body.models.map((m) => ({ ...m, installed: false, inUse: false }))
+        body.job = null
+        await route.fulfill({ response: res, json: body })
+      })
+      const letGo = await hold(page, '/api/speech/install')
+      await page.goto(`${url}/app/settings`)
+      // Found by its place, since its words change to Starting.
+      const download = page.locator('.speech button.act')
+      await download.filter({ hasText: 'Download' }).waitFor()
+      await download.click()
+      const wrong = await measured(page, download, 'Download')
+      letGo()
+      return wrong
+    },
+  },
+  {
     name: 'Updates: the beam of Check runs on its line',
     viewport: { width: 1280, height: 900 },
     async run(page) {

@@ -127,5 +127,7 @@ reads it all again before it signs, see
 library not on its list, has a file that names what taps keys, records
 the screen, opens the camera or asks for administrator rights, has a
 file that looks like a program and cannot be read as one, or unpacks to
-more than 1 GB. A refused build says why on the commit, as a failed
-**Ready to update to**.
+more than 1 GB. It may ask for the microphone, for Dictate on Report a
+Problem, and for nothing else, and it may carry sherpa-onnx's speech
+library in `Contents/Frameworks`, linking only what the list names. A
+refused build says why on the commit, as a failed **Ready to update to**.

@@ -793,7 +793,9 @@ const SPEECH_MODELS = [{
   languages: '25 European languages, German and English among them', download: 487_211_443, unpacked: 671_341_917,
   url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2', recommended: true,
 }]
+// How long the mock's download takes, and then its unpacking.
 const SPEECH_MS = 6000
+const UNPACK_MS = 4000
 const speechHere = new Set<string>()
 let speechJobs = 0
 let speechJob: { id: string; kind: 'model'; title: string; state: string; error?: string; from?: number } | undefined
@@ -803,12 +805,16 @@ function speechState() {
     const { from, ...rest } = speechJob
     job = rest
     if (speechJob.state === 'running' && from !== undefined) {
-      const share = Math.min(1, (Date.now() - from) / SPEECH_MS)
-      if (share >= 1) {
+      const ran = Date.now() - from
+      if (ran >= SPEECH_MS + UNPACK_MS) {
         speechHere.add(SPEECH_MODELS[0].name)
         speechJob = { ...rest, state: 'done' }
         job = speechJob
+      } else if (ran >= SPEECH_MS) {
+        const share = (ran - SPEECH_MS) / UNPACK_MS
+        job = { ...rest, progress: { text: 'unpacking', fraction: share, remaining: (UNPACK_MS * (1 - share)) / 1000 } }
       } else {
+        const share = ran / SPEECH_MS
         job = { ...rest, progress: { text: 'fetching', fraction: share, remaining: (SPEECH_MS * (1 - share)) / 1000 } }
       }
     }

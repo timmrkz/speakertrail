@@ -6,7 +6,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -282,6 +284,135 @@ func TestADownloadSaysHowFarItHasCome(t *testing.T) {
 	}
 }
 
+// A clock whose every reading is two seconds after the one before, so
+// every piece written is a report.
+func ticking() func() time.Time {
+	var mu sync.Mutex
+	at := time.Unix(0, 0)
+	return func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		at = at.Add(2 * time.Second)
+		return at
+	}
+}
+
+// An archive with one file of n bytes in it, the way a model is mostly
+// its one large file, and how much it unpacks to.
+func bigArchive(t *testing.T, name string, n int) ([]byte, int64) {
+	t.Helper()
+	body := strings.Repeat("0123456789abcdef", n/16)
+	return modelArchive(t, map[string]string{name + "/tokens.txt": "a 0\n", name + "/model.onnx": body}), int64(len("a 0\n") + len(body))
+}
+
+// Unpacking says how far it has come too, against what the model is known
+// to take once unpacked, with the time left at the pace kept so far. Tim
+// saw only "Unpacking" for over a minute, testing #24 on 17 November.
+//
+// On the real disk: the model is unpacked into the models folder.
+func TestUnpackingSaysHowFarItHasCome(t *testing.T) {
+	const name = "test-model"
+	good, unpacked := bigArchive(t, name, 512*1024)
+	s := serving(t, good)
+	var said []Progress
+	in := Installer{Now: ticking(), Report: func(p *Progress) {
+		if p != nil && p.Text == "unpacking" {
+			said = append(said, *p)
+		}
+	}}
+	m := Model{Name: name, Title: "Test", URL: s.URL, Download: int64(len(good)), Unpacked: unpacked}
+	if err := in.Install(context.Background(), m, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if len(said) < 3 {
+		t.Fatalf("said %+v while unpacking, want how far it came as it went", said)
+	}
+	if said[0].Fraction != 0 {
+		t.Errorf("began at %v, want 0", said[0].Fraction)
+	}
+	between := false
+	for i, p := range said[1:] {
+		if p.Fraction < said[i].Fraction {
+			t.Errorf("went back from %v to %v", said[i].Fraction, p.Fraction)
+		}
+		if p.Fraction > 0 && p.Fraction < 1 {
+			between = true
+			// Each reading is two seconds on, so what is done came at a
+			// pace of done over the seconds since it began.
+			done := p.Fraction * float64(unpacked)
+			rate := done / (2 * float64(i+1))
+			if want := (float64(unpacked) - done) / rate; math.Abs(p.Remaining-want) > 0.01 {
+				t.Errorf("at %v said %.2f s left, want %.2f", p.Fraction, p.Remaining, want)
+			}
+		}
+	}
+	if !between {
+		t.Errorf("said %+v, want a share between none and all", said)
+	}
+	if last := said[len(said)-1]; last.Fraction != 1 {
+		t.Errorf("ended at %v, want 1", last.Fraction)
+	}
+}
+
+// Cancel is heard in the middle of the model's one large file, not only
+// once it is written, and nothing half unpacked is left. The archive had
+// arrived whole, so Download unpacks it again without fetching it again.
+//
+// On the real disk: the model is unpacked into the models folder.
+func TestCancelIsHeardWhileUnpacking(t *testing.T) {
+	const name = "test-model"
+	good, unpacked := bigArchive(t, name, 4<<20)
+	var mu sync.Mutex
+	asked := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked++
+		mu.Unlock()
+		w.Header().Set("content-length", strconv.Itoa(len(good)))
+		_, _ = w.Write(good)
+	}))
+	t.Cleanup(s.Close)
+	sum := sha256.Sum256(good)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	furthest := 0.0
+	in := Installer{Now: ticking(), Report: func(p *Progress) {
+		if p == nil || p.Text != "unpacking" {
+			return
+		}
+		furthest = max(furthest, p.Fraction)
+		if p.Fraction > 0 {
+			cancel()
+		}
+	}}
+	dir := t.TempDir()
+	m := Model{Name: name, Title: "Test", URL: s.URL, Download: int64(len(good)), Unpacked: unpacked, SHA256: hex.EncodeToString(sum[:])}
+	if err := in.Install(ctx, m, dir); !errors.Is(err, ErrCancelled) {
+		t.Fatalf("got %v, want it cancelled", err)
+	}
+	if furthest == 0 || furthest >= 0.5 {
+		t.Errorf("got to %v before it stopped, want it stopped early in the file", furthest)
+	}
+	if m.Installed(dir) {
+		t.Error("a cancelled unpacking left a model")
+	}
+	if _, err := os.Stat(filepath.Join(dir, name+".unpacking")); err == nil {
+		t.Error("the half unpacked folder was left behind")
+	}
+
+	if err := (Installer{}).Install(context.Background(), m, dir); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Installed(dir) {
+		t.Error("the second Download did not unpack the model")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if asked != 1 {
+		t.Errorf("fetched %d times, want once: the archive had arrived whole", asked)
+	}
+}
+
 // A tar can name anything it likes, including a way out of the folder it is
 // being written into. Nothing from a network gets to choose where it lands.
 //
@@ -300,7 +431,7 @@ func TestAnArchiveCannotWriteOutsideWhereItIsPut(t *testing.T) {
 			if err := os.WriteFile(archive, modelArchive(t, map[string]string{name: "got out"}), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			_ = unpackTarBz2(context.Background(), archive, into)
+			_ = unpackTarBz2(context.Background(), archive, into, nil)
 			body, _ := os.ReadFile(guard)
 			if string(body) != "untouched" {
 				t.Fatalf("%s wrote over a file outside the folder", name)
@@ -338,7 +469,7 @@ func TestLinksInAnArchiveAreNotWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	into := filepath.Join(dir, "into")
-	if err := unpackTarBz2(context.Background(), archive, into); err != nil {
+	if err := unpackTarBz2(context.Background(), archive, into, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(filepath.Join(into, "escape")); err == nil {

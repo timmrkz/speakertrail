@@ -236,8 +236,14 @@ what Settings shows under Speech models, see
 | --- | --- |
 | `GET /api/speech` | every model, whether it is on this Mac, the folder written with `~`, and the download under way, `{"models": [{"name": "…", "installed": false, …}], "folder": "~/Library/…/models", "job": {"id": "speech-1", "state": "running", "progress": {…}}}` |
 | `POST /api/speech/install` | `{"name": "…"}` fetches that model and answers the download at once |
-| `POST /api/speech/cancel` | `{"id": "speech-1"}` stops that download, what arrived stays and the next Download goes on from there |
+| `POST /api/speech/cancel` | `{"id": "speech-1"}` stops that download or its unpacking. What arrived stays and the next Download goes on from there, and an archive that arrived whole is unpacked again without being fetched again |
 | `DELETE /api/speech/models/{name}` | takes that model off the Mac, after Settings asked, and lets go of it if Dictate had it loaded |
+
+`progress` says what the download does now in `text`, `fetching …` or
+`unpacking`, the share done from 0 to 1 in `fraction` and the seconds left
+in `remaining`, each -1 where it cannot be said yet. While it unpacks, the
+share is of what the model takes once unpacked, and the seconds left are
+at the pace it has kept so far.
 
 Where a download stands is sent as the Wails event `speech`, in the same
 shape as `GET /api/speech`.

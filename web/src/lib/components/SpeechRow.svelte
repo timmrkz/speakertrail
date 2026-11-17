@@ -77,10 +77,13 @@
     if (!model) return { text: 'No speech model is offered.', tone: 'err', state: 'err' }
     if (running || starting) {
       const p = running?.progress
-      if (p?.text === 'unpacking') return { text: 'Unpacking', tone: '', state: 'busy' }
-      const done = p && p.fraction > 0 ? `${size(p.fraction * model.download)} of ${size(model.download)}` : size(model.download)
+      // Unpacking is told like the download, against what the model
+      // takes once unpacked, so neither is work with no end in sight.
+      const unpacking = p?.text === 'unpacking'
+      const whole = unpacking ? model.unpacked : model.download
+      const done = p && p.fraction > 0 ? `${size(p.fraction * whole)} of ${size(whole)}` : size(whole)
       const left = p && p.remaining > 0 ? `, ${fmtLeft(p.remaining)}` : ''
-      return { text: `Downloading, ${done}${left}`, tone: '', state: 'busy' }
+      return { text: `${unpacking ? 'Unpacking' : 'Downloading'}, ${done}${left}`, tone: '', state: 'busy' }
     }
     if (failed) return { text: failed, tone: 'err', state: 'err' }
     if (!model.installed) return { text: `Not downloaded yet. ${size(model.download)}.`, tone: 'warn', state: 'warn' }
@@ -138,7 +141,9 @@
           <!-- The download carries the beam and the fill in the one control
                that can do something about it. -->
           <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
-            title="Stop the download. What has arrived stays, and Download carries on from it">
+            title={running.progress?.text === 'unpacking'
+              ? 'Stop unpacking. The download stays, and Download unpacks it again'
+              : 'Stop the download. What has arrived stays, and Download carries on from it'}>
             <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
           </button>
         {:else if model && !model.installed}

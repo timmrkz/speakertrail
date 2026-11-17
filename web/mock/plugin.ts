@@ -465,6 +465,81 @@ const ROUTES: [string, RegExp, Handler][] = [
     return { status: 204 }
   }],
   ['POST', /^\/api\/updates\/commit$/, () => ({ status: 204 })],
+  // The speech models, like speechAPI in cmd/speakertrail-app/speech_api.go.
+  // A download runs for six seconds from Download and is done after. The
+  // app sends where it stands as the event speech, which the mock cannot,
+  // so its state is worked out from the clock whenever it is asked.
+  ['GET', /^\/api\/speech$/, () => ok(speechState())],
+  ['POST', /^\/api\/speech\/install$/, (_s, _m, _q, b) => {
+    const st = speechState()
+    if (st.job && st.job.state === 'running') return ok(st.job)
+    const m = SPEECH_MODELS.find((x) => x.name === b.name)
+    speechJobs++
+    if (!m) {
+      speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: 'Speech model', state: 'failed', error: `There is no speech model called ${String(b.name)}` }
+      return ok(speechJob)
+    }
+    speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: m.title, state: 'running', from: Date.now() }
+    return ok(speechState().job)
+  }],
+  ['POST', /^\/api\/speech\/cancel$/, (_s, _m, _q, b) => {
+    const st = speechState()
+    if (!st.job || st.job.state !== 'running' || st.job.id !== b.id) return err(409, `There is no download ${String(b.id)} running`)
+    speechJob = { ...speechJob!, state: 'cancelled', from: undefined }
+    return { status: 204 }
+  }],
+  ['DELETE', /^\/api\/speech\/models\/(.+)$/, (_s, m) => {
+    const name = decodeURIComponent(m[1])
+    if (!SPEECH_MODELS.some((x) => x.name === name)) return err(409, `There is no speech model called ${name}`)
+    speechHere.delete(name)
+    return { status: 204 }
+  }],
+  // Report a Problem, like reportAPI in cmd/speakertrail-app/report_api.go.
+  // The mock opens no window: the report window is the page at /report.
+  // Attach picks one invented screenshot, a picture is drawn as a plain
+  // SVG of its size, and Report gives the path a report would have.
+  ['GET', /^\/api\/report$/, () => ok(draftShown())],
+  ['GET', /^\/api\/report\/window$/, () => ok({ open: false })],
+  ['GET', /^\/api\/report\/picture$/, (_s, _m, q) => {
+    const p = report.pictures.find((x) => x.id === q.get('id'))
+    if (!p) return err(404, 'Not found')
+    return {
+      status: 200, type: 'image/svg+xml',
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${p.width}" height="${p.height}"><rect width="100%" height="100%" fill="#8fb3c0"/><rect x="8%" y="10%" width="84%" height="12%" rx="8" fill="#f7f9fa"/></svg>`,
+    }
+  }],
+  ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
+    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
+    return { status: 204 }
+  }],
+  ['PUT', /^\/api\/report\/text$/, (_s, _m, _q, b) => {
+    report.text = String(b.text ?? '')
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/report\/pick$/, () => attachMock('Screenshot 2026-11-16 at 10.12.04.png', 1440, 900)],
+  ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => attachMock(String(b.name || 'Pasted picture.png'), 800, 500)],
+  ['POST', /^\/api\/report\/(remove|put-back)$/, (_s, m, _q, b) => {
+    const p = report.pictures.find((x) => x.id === b.id)
+    if (p) p.removed = m[1] === 'remove'
+    return ok(draftShown())
+  }],
+  ['POST', /^\/api\/report\/clear$/, () => {
+    report.text = ''
+    for (const p of report.pictures) p.removed = true
+    return ok(draftShown())
+  }],
+  ['POST', /^\/api\/report\/send$/, () => {
+    report = { text: '', pictures: [], next: report.next }
+    return ok({ path: '~/Desktop/Speaker Trail report 2026-11-16 10.15.zip' })
+  }],
+  // Dictate, like listenAPI. The mock hears nothing and sends no events,
+  // so Stop gives one invented sentence, as if it had been said.
+  ['POST', /^\/api\/listen$/, () => {
+    listened++
+    return ok({ recording: listened })
+  }],
+  ['POST', /^\/api\/listen\/stop$/, () => ok({ recording: listened, said: ['The run stopped at the third search.'], hearing: '', asked: 0 })],
+  ['POST', /^\/api\/listen\/(settle|break|cancel)$/, () => ({ status: 204 })],
   // The question Cmd+Q asked taken away, like quitAPI in
   // cmd/speakertrail-app/quit.go. The question itself is the Wails event
   // called quit, which a walk sends the way the app does, through
@@ -709,6 +784,61 @@ function readBody(req: Req): Promise<Record<string, unknown>> {
     })
     req.on('error', () => resolve({}))
   })
+}
+
+// The speech models the mock offers, the app's one, and which are here.
+const SPEECH_MODELS = [{
+  name: 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8', title: 'Parakeet TDT 0.6B v3',
+  about: "NVIDIA's recogniser, quantised. Fast on any machine and accurate on speech.", maker: 'NVIDIA',
+  languages: '25 European languages, German and English among them', download: 487_211_443, unpacked: 671_341_917,
+  url: 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8.tar.bz2', recommended: true,
+}]
+// How long the mock's download takes, and then its unpacking.
+const SPEECH_MS = 6000
+const UNPACK_MS = 4000
+const speechHere = new Set<string>()
+let speechJobs = 0
+let speechJob: { id: string; kind: 'model'; title: string; state: string; error?: string; from?: number } | undefined
+function speechState() {
+  let job: Record<string, unknown> | undefined
+  if (speechJob) {
+    const { from, ...rest } = speechJob
+    job = rest
+    if (speechJob.state === 'running' && from !== undefined) {
+      const ran = Date.now() - from
+      if (ran >= SPEECH_MS + UNPACK_MS) {
+        speechHere.add(SPEECH_MODELS[0].name)
+        speechJob = { ...rest, state: 'done' }
+        job = speechJob
+      } else if (ran >= SPEECH_MS) {
+        const share = (ran - SPEECH_MS) / UNPACK_MS
+        job = { ...rest, progress: { text: 'unpacking', fraction: share, remaining: (UNPACK_MS * (1 - share)) / 1000 } }
+      } else {
+        const share = ran / SPEECH_MS
+        job = { ...rest, progress: { text: 'fetching', fraction: share, remaining: (SPEECH_MS * (1 - share)) / 1000 } }
+      }
+    }
+  }
+  return {
+    models: SPEECH_MODELS.map((m) => ({ ...m, installed: speechHere.has(m.name), inUse: m.name === SPEECH_MODELS.find((n) => speechHere.has(n.name))?.name })),
+    folder: '~/Library/Application Support/Speaker Trail/models',
+    job,
+  }
+}
+
+// The draft of a report and the recordings Dictate started.
+type MockPicture = { id: string; name: string; width: number; height: number; removed?: boolean }
+let report: { text: string; pictures: MockPicture[]; next: number } = { text: '', pictures: [], next: 1 }
+let listened = 0
+function draftShown() {
+  return { text: report.text, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
+}
+function attachMock(name: string, width: number, height: number) {
+  if (report.pictures.filter((p) => !p.removed).length >= 10) {
+    return ok({ ...draftShown(), error: `${name} cannot be attached because it would be more than the 10 pictures a report takes` })
+  }
+  report.pictures.push({ id: `p${report.next++}`, name, width, height })
+  return ok(draftShown())
 }
 
 // What the window told the app's log, for the walks, and whether Settings

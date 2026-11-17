@@ -118,10 +118,14 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   what lies under them is a plain fill or a pane that blurs already, and
   a second blur there changed no pixel a person could see.
 - **Focus is never a ring.** Tim found the outlines round focused
-  controls loud and wrong. A field in use shows the accent on its edge,
-  anything else reached with the keyboard a faint wash of the accent laid
-  over its own colour, see `:focus-visible` in `app.css`. What is selected
-  already, like the open person's row, shows nothing more.
+  controls loud and wrong. A field in use shows the accent on its edge.
+  Anything else reached with the keyboard shows it too, 2 px inside its
+  own edge, with a faint wash of the accent over its own colour: the
+  page's colour on a primary control, its red on one that removes. The
+  wash alone was too faint to find, Tim said on 17 November 2026, and
+  `walks/focus.mjs` measures that the edge changes by 3 to 1 in both
+  themes, see `:focus-visible` in `app.css`. What is selected already,
+  like the open person's row, shows nothing more.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
   frosted rows, each a name over one line of what is known, with what is

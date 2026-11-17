@@ -101,9 +101,17 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 	@echo "Building the interface"
 	@cd web && $(NPM) run --silent build -- --logLevel warn
 
+# On a Mac the speech library goes beside the program, and the program is
+# pointed at it rather than at the Go module cache, which is where cgo
+# points it and which exists on no Mac but the one that built it. A build
+# from GitHub's Mac, picked on the Updates page, would not start without
+# it. See scripts/carry-libs.sh and docs/BUILD.md.
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
 	@$(GO) build -trimpath -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
+ifeq ($(UNAME),Darwin)
+	@sh scripts/carry-libs.sh $@ $(BIN)/lib
+endif
 
 # The app as the folder Finder draws as one icon. Only on a Mac: elsewhere
 # the program in bin/ is the app.
@@ -188,11 +196,13 @@ unit:
 interface: web/node_modules/.package-lock.json
 	@out=$$(cd web && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tinterface types\n'
+	@out=$$(cd web && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tinterface tests\n'
 
 # The walks drive the interface with invented data in Chromium, the way
 # FrameFairy's walks drive its own, see web/walks/.
 walks: web/node_modules/.package-lock.json
-	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/quit.mjs
+	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/focus.mjs
 
 check:
 	@sh scripts/check.sh || true

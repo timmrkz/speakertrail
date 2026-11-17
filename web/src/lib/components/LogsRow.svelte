@@ -2,9 +2,10 @@
   import { Events } from '@wailsio/runtime'
   import { api, type LogStatus } from '../api'
   import { plural, size } from '../format'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText, fault, toast } from '../toast.svelte'
   import Confirm from './Confirm.svelte'
   import Icon from './Icon.svelte'
+  import { reporting, reportTitle } from '../reporting.svelte'
 
   // The app's own log, the file a report takes along, in an area of its
   // own, kept up to date as lines are written: while Settings is open the
@@ -21,7 +22,7 @@
     try {
       log = await api.appLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     }
   }
 
@@ -30,7 +31,7 @@
     try {
       log = await api.removeAppLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
       await read()
     }
   }
@@ -39,7 +40,7 @@
     try {
       await api.showAppLog()
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     }
   }
 
@@ -84,13 +85,17 @@
     </div>
     {#each log.toasts as t, i (i)}
       <!-- A toast the app showed about something that went wrong, in its
-           words, for one that ran out unread. -->
+           words, for one that ran out unread. Report opens Report a
+           Problem with them written in it, the way the toast's own Report
+           does. -->
       <div class="setting logged">
         <span class="mark" aria-hidden="true"><Icon name="alert" size={14} /></span>
         <div class="info">
           <span class="text">{t.text}</span>
           <span class="when small count">{when(t.at)}</span>
         </div>
+        <button class="btn quiet report" type="button" disabled={reporting.open} title={reportTitle()}
+          onclick={() => api.reportAbout(t.text).catch((err) => toast.show(errorText(err), 'bad'))}>Report</button>
       </div>
     {/each}
   </div>
@@ -121,7 +126,12 @@
   .path, .when { color: var(--ink-3); overflow-wrap: anywhere; user-select: text; }
   .actions { display: flex; gap: 8px; }
   .count { font-variant-numeric: tabular-nums; }
-  .logged { grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; align-items: start; }
+  .logged { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; }
+  /* Report shows on the toast in hand, as in FrameFairy, and greyed out
+     the way every button is while a report is being written. */
+  .logged .report { opacity: 0; }
+  .logged:hover .report, .logged .report:focus-visible { opacity: 1; }
+  .logged:hover .report:disabled { opacity: .55; }
   .mark { color: var(--bad); padding-top: 2px; }
   .text { font-size: 14px; overflow-wrap: anywhere; user-select: text; }
 </style>

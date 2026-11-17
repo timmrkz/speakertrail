@@ -3,10 +3,13 @@
   import { api, onQuit } from './lib/api'
   import Toast from './lib/components/Toast.svelte'
   import PrivateApp from './screens/PrivateApp.svelte'
+  import ReportWindow from './screens/ReportWindow.svelte'
 
-  // The app is the workspace and nothing else. It opens on People.
+  // The app is the workspace and nothing else. It opens on People. The
+  // report window shows the same page at /report, see bugs.go.
+  const reportWindow = router.path === '/report'
   $effect(() => {
-    if (!router.under('/app')) navigate('/app/people', { replace: true })
+    if (!reportWindow && !router.under('/app')) navigate('/app/people', { replace: true })
   })
 
   // Cmd+Q heard: the app dims at once and says what happens next. The
@@ -38,6 +41,8 @@
   }
 
   $effect(() => {
+    // Asked in the app's window only, see the markup below.
+    if (reportWindow) return
     // The question lasts as long as the Go side waits for the second
     // press, quitAgain in quit.go, which it says with the question.
     let asked: ReturnType<typeof setTimeout> | undefined
@@ -57,13 +62,20 @@
 
 <a class="skip-link" href="#main">Skip to content</a>
 
-{#if router.under('/app')}
-  <PrivateApp />
+{#if reportWindow}
+  <ReportWindow />
+{:else}
+  {#if router.under('/app')}
+    <PrivateApp />
+  {/if}
+  <Toast />
 {/if}
 
-{#if leaving}
-  <!-- Over everything, the moment the key is heard. A click or Escape
-       takes the question away, the same as waiting does. -->
+{#if leaving && !reportWindow}
+  <!-- Over everything in the app's window, the moment the key is heard.
+       A click or Escape takes the question away, the same as waiting
+       does. The report window shows none, as in FrameFairy, where it is
+       a page of its own. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="leaving"
@@ -73,8 +85,6 @@
     <p>{leaving === 'ask' ? `Press ${quitKey} again to quit` : 'Quitting'}</p>
   </div>
 {/if}
-
-<Toast />
 
 <style>
   /* Cmd+Q heard. The dim is the one a sheet over the app brings,

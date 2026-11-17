@@ -1,10 +1,10 @@
 package main
 
 // Ported from FrameFairy, cmd/framefairy-app/chrome.go at 57bca0c, as it
-// is. Speaker Trail has one window, so there is no report window and no
-// name for each window's event. The interface asks over /api/chrome
-// rather than through a Wails binding, and hears the event called chrome,
-// the way it hears updates.
+// is. The interface asks over /api/chrome rather than through a Wails
+// binding, and hears the event called chrome, the way it hears updates.
+// The report window asks /api/chrome?window=report and hears
+// chrome-report.
 
 import (
 	"math"
@@ -222,8 +222,10 @@ func (c *chromeWatch) set(full bool) {
 // own title bar. The interface asks once and is told again on the event
 // called chrome whenever the answer changes, see lib/chrome.svelte.ts.
 type chromeAPI struct {
-	// get is the watch once the window is made, nil before.
-	get func() *chromeWatch
+	// get is the watch once the window is made, nil before, and report
+	// the report window's, nil while it is not open.
+	get    func() *chromeWatch
+	report func() *chromeWatch
 }
 
 func (a chromeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +235,14 @@ func (a chromeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		answer(w, http.StatusMethodNotAllowed, map[string]string{"error": "Only GET"})
 		return
 	}
-	c := a.get()
+	get := a.get
+	if r.URL.Query().Get("window") == "report" {
+		get = a.report
+	}
+	var c *chromeWatch
+	if get != nil {
+		c = get()
+	}
 	if c == nil {
 		answer(w, http.StatusOK, Chrome{})
 		return

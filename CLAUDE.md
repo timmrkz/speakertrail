@@ -28,6 +28,7 @@ Start with [README.md](README.md). In short:
 | HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
 | the Exa key in the keychain | `internal/keys/` | |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
+| Report a Problem, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
@@ -168,8 +169,8 @@ messages, pull request text, code comments and chat replies.
   stays short enough to watch, and what does not fit waits for the next.
 - **The sidebar is FrameFairy's.** A rail of icons until the pointer
   reaches it, open over the page while it is there, kept open by the
-  button at its top. People and Searches at the top, Settings and then
-  Updates at the foot. `lib/sidebar.svelte.ts` and its walks in
+  button at its top. People and Searches at the top, Settings, Bugs and
+  then Updates at the foot. `lib/sidebar.svelte.ts` and its walks in
   `web/walks/sidebar.mjs` are ported from FrameFairy, so a fix there is a
   fix here.
 - **Consistency over novelty.** A visual treatment used in one place is used
@@ -177,9 +178,9 @@ messages, pull request text, code comments and chat replies.
   are the same size, in the same colour, in the same place.
 - Colours and sizes come from the tokens in `web/src/app.css`, in both
   themes. Tabular figures for times and counts.
-- **Quiet marks.** No outline rings for focus and no lines or patterns in
-  the background. What is in hand gets a faint tint, see the interface
-  skill.
+- **Quiet marks.** No rings around a control for focus and no lines or
+  patterns in the background. Focus is the control's own edge in the
+  accent. What is in hand gets a faint tint, see the interface skill.
 
 ## Engineering rules
 

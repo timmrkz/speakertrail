@@ -2,7 +2,7 @@
   import { api, type Exclusion } from '../api'
   import { plural } from '../format'
   import { Load } from '../load.svelte'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText, fault, toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
 
   // Tim's exclusions: words and phrases, like "Online Marketing", that
@@ -57,7 +57,7 @@
       list.data = all.filter((y) => y.id !== x.id)
       toast.show(`Removed ${x.phrase}`, 'plain', { label: 'Undo', run: () => void add(x.phrase) })
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      fault(err)
     } finally {
       removing = null
     }

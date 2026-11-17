@@ -3,7 +3,7 @@
 // live here too and show at once, before the server answers.
 
 import { api, type Run } from './api'
-import { errorText, toast } from './toast.svelte'
+import { errorText, fault, toast } from './toast.svelte'
 
 const GOING_MS = 2000
 const QUIET_MS = 5000
@@ -102,7 +102,7 @@ class RunWatch {
     } catch (e) {
       this.run = run
       this.ended = null
-      toast.show(errorText(e), 'bad')
+      fault(e)
     } finally {
       this.busy = ''
       this.seq++

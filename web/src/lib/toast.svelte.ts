@@ -18,14 +18,20 @@ class Toast {
   message = $state('')
   tone = $state<'plain' | 'bad'>('plain')
   action = $state<ToastAction | null>(null)
+  // Whether it offers Report: a failure the person cannot put right by
+  // themselves, as FrameFairy marks one, its issue #311. A key that is
+  // missing or a budget that is spent is theirs to put right, a file the
+  // app could not write is not.
+  report = $state(false)
   private timer: ReturnType<typeof setTimeout> | undefined
 
-  show(message: string, tone: 'plain' | 'bad' = 'plain', action: ToastAction | null = null) {
+  show(message: string, tone: 'plain' | 'bad' = 'plain', action: ToastAction | null = null, report = false) {
     if (this.message) said(`toast replaced: ${this.message}`, { level: 'info' })
     said(message, tone === 'bad' ? { level: 'warn', toast: true } : { level: 'info' })
     this.message = message
     this.tone = tone
     this.action = action
+    this.report = report && tone === 'bad'
     clearTimeout(this.timer)
     // Time to reach the action before it goes.
     this.timer = setTimeout(() => this.hide('ran out'), tone === 'bad' || action ? 5000 : 2600)
@@ -37,6 +43,7 @@ class Toast {
     clearTimeout(this.timer)
     this.message = ''
     this.action = null
+    this.report = false
   }
 }
 
@@ -44,4 +51,10 @@ export const toast = new Toast()
 
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : 'Something went wrong'
+}
+
+// fault says what went wrong in a failure the person cannot put right,
+// with Report beside it.
+export function fault(e: unknown) {
+  toast.show(errorText(e), 'bad', null, true)
 }

@@ -29,6 +29,8 @@
   import Code from '@lucide/svelte/icons/code'
   import Image from '@lucide/svelte/icons/image'
   import Mic from '@lucide/svelte/icons/mic'
+  import Bug from '@lucide/svelte/icons/bug'
+  import Paperclip from '@lucide/svelte/icons/paperclip'
   import Ellipsis from '@lucide/svelte/icons/ellipsis'
   import Trash2 from '@lucide/svelte/icons/trash-2'
   import Folder from '@lucide/svelte/icons/folder'
@@ -67,7 +69,12 @@
     doc: FileText,
     code: Code,
     image: Image,
+    // Dictate on Report a Problem.
     mic: Mic,
+    // Bugs in the sidebar, the mark issue trackers draw for a bug report,
+    // and the paperclip that attaches pictures to it, as in Mail.
+    report: Bug,
+    attach: Paperclip,
     more: Ellipsis,
     trash: Trash2,
     // Shows a file in Finder, as FrameFairy draws it.

@@ -177,7 +177,9 @@ It says how tall the title bar macOS laid out is and where its three
 buttons are, in whole CSS pixels, `{"bar": 30, "left": 12, "right": 72}`.
 All zeros mean the system draws its own title bar. The page asks once
 when it starts and hears every change after on the Wails event called
-`chrome`. See `cmd/speakertrail-app/chrome.go`.
+`chrome`. `GET /api/chrome?window=report` answers the same for the
+report window, whose changes come as `chrome-report`. See
+`cmd/speakertrail-app/chrome.go`.
 
 ## Quitting
 
@@ -222,3 +224,79 @@ one without a word 400.
 
 `DELETE /api/exclusions/{id}` removes one and answers 204. The people it
 hid come back.
+
+## Speech models
+
+`/api/speech` is answered by the app itself, not by `internal/api`. It is
+what Settings shows under Speech models, see
+`cmd/speakertrail-app/speech_api.go`. The models live in
+`~/Library/Application Support/Speaker Trail/models`.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/speech` | every model, whether it is on this Mac, the folder written with `~`, and the download under way, `{"models": [{"name": "…", "installed": false, …}], "folder": "~/Library/…/models", "job": {"id": "speech-1", "state": "running", "progress": {…}}}` |
+| `POST /api/speech/install` | `{"name": "…"}` fetches that model and answers the download at once |
+| `POST /api/speech/cancel` | `{"id": "speech-1"}` stops that download or its unpacking. What arrived stays and the next Download goes on from there, and an archive that arrived whole is unpacked again without being fetched again |
+| `DELETE /api/speech/models/{name}` | takes that model off the Mac, after Settings asked, and lets go of it if Dictate had it loaded |
+
+`progress` says what the download does now in `text`, `fetching …` or
+`unpacking`, the share done from 0 to 1 in `fraction` and the seconds left
+in `remaining`, each -1 where it cannot be said yet. While it unpacks, the
+share is of what the model takes once unpacked, and the seconds left are
+at the pace it has kept so far.
+
+Where a download stands is sent as the Wails event `speech`, in the same
+shape as `GET /api/speech`.
+
+## Report a Problem
+
+`/api/report` is answered by the app itself, not by `internal/api`. It
+keeps the draft of a report in `~/Library/Application Support/Speaker
+Trail/report`, so a draft outlives the window and the app. See
+`cmd/speakertrail-app/report_api.go`, `bugs.go` and `report.go`. Errors
+answer 409 with a sentence that can go in a toast.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}]}`. Pictures removed a moment ago are left out |
+| `GET /api/report/window` | `{"open": true}` while the report window is open |
+| `POST /api/report/open` | `{"how": "bugs"}` opens the report window, or brings it to the front |
+| `POST /api/report/about` | `{"text": "…"}` opens it with the words of a toast after what was written |
+| `PUT /api/report/text` | `{"text": "…"}` keeps what was written |
+| `GET /api/report/picture?id=p1` | the picture itself, as PNG |
+| `POST /api/report/pick` | asks for pictures in a Finder dialog, PNG or JPEG |
+| `POST /api/report/pasted` | `{"name": "…", "data": "<base64>"}` adds a pasted picture |
+| `POST /api/report/remove` | `{"id": "p1"}` takes a picture out, and keeps it aside for Put it back |
+| `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
+| `POST /api/report/clear` | empties the draft, and keeps it aside for Undo |
+| `POST /api/report/send` | `{"what": "…"}` makes the report, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
+
+At most 10 pictures, each at most 10 MB. The draft as it changes is sent
+as the Wails event `report-draft`, and whether the window is open as
+`report-window`. What goes into the zip is in
+[LOGGING.md](LOGGING.md), Report a Problem.
+
+## Dictate
+
+`/api/listen` is answered by the app itself, not by `internal/api`. Every
+request is a POST. See `cmd/speakertrail-app/listen.go`.
+
+| Request | What it does |
+| --- | --- |
+| `POST /api/listen` | opens the microphone and answers `{"recording": 3}`. Without a speech model 409 says to download it in Settings |
+| `POST /api/listen/stop` | closes it and answers what was said, `{"recording": 3, "said": ["…"], "hearing": ""}` |
+| `POST /api/listen/settle` | `{"recording": 3, "pieces": 2, "text": "…"}`, the window took those pieces into its field |
+| `POST /api/listen/break` | `{"recording": 3, "pieces": 2}`, the window took them in and moved on, so the next piece starts afresh |
+| `POST /api/listen/cancel` | closes it and drops what was heard, 204 |
+
+While the microphone is open, how loud it is goes out as the Wails event
+`loudness`, `{"recording": 3, "level": 0.4}`, and each piece the speech
+model wrote down as `dictation`.
+
+## Undo
+
+Edit, Undo and Redo in the app's menu do not reach the page as keys. The
+app sends the window in front the Wails event `undo`, `"undo"` or
+`"redo"`, and the page decides: Report a Problem undoes its own steps,
+and a text field anywhere undoes what was typed. See
+`cmd/speakertrail-app/menu.go`.

@@ -13,7 +13,17 @@
   // a beam its rounded clip and a stacking context, so the beam lies over
   // the control's background and under its words. It is the one way work
   // in hand is drawn on a control, so it is used, never copied.
-  let { fraction = -1, motes = true }: { fraction?: number; motes?: boolean } = $props()
+  //
+  // Given drain, the fill starts full and runs down to nothing in that
+  // many seconds, with no beam, and then onend: the time something
+  // removed can still be put back, see Removed.svelte. FrameFairy draws
+  // that time with the same fill.
+  let {
+    fraction = -1,
+    motes = true,
+    drain = 0,
+    onend,
+  }: { fraction?: number; motes?: boolean; drain?: number; onend?: () => void } = $props()
 
   // Where the motes rise and how long each takes. Fixed rather than drawn
   // at random, so they never jump about between renders.
@@ -27,13 +37,15 @@
 </script>
 
 <span class="beam" aria-hidden="true">
-  {#if fraction >= 0}
+  {#if drain > 0}
+    <span class="fill"><i class="drain" style="animation-duration: {drain}s" onanimationend={(e) => e.target === e.currentTarget && onend?.()}></i></span>
+  {:else if fraction >= 0}
     <!-- As wide as the control and slid in from the left, so it is moved
          by the compositor and never laid out again. -->
     <span class="fill"><i style="transform: translateX({(Math.min(Math.max(fraction, 0), 1) - 1) * 100}%)"></i></span>
   {/if}
-  <span class="ring"></span>
-  {#if motes}
+  {#if drain <= 0}<span class="ring"></span>{/if}
+  {#if motes && drain <= 0}
     {#each specks as m (m.at)}
       <i class="mote" style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"></i>
     {/each}
@@ -88,6 +100,10 @@
     box-shadow: inset -2px 0 var(--lit, var(--accent-lit)), 10px 0 14px -6px var(--lit, var(--accent-lit));
     transition: transform .25s cubic-bezier(.4, 0, .2, 1);
   }
+  /* The time to put something back, running down from full, moved by
+     the compositor like the fill. */
+  .fill i.drain { animation-name: drain; animation-timing-function: linear; animation-fill-mode: forwards; }
+  @keyframes drain { from { transform: translateX(0); } to { transform: translateX(-100%); } }
   .fill i::after {
     content: ""; position: absolute; inset: 0;
     background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, .16) 50%, transparent 100%);

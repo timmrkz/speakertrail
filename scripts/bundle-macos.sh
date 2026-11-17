@@ -29,8 +29,24 @@ fi
 
 APP="$BINDIR/$NAME.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
+
+# The speech library Dictate hears with. carry-libs.sh has already pointed
+# the program at @executable_path/../Frameworks, which from
+# Contents/MacOS is this folder, so copying it here is the whole of it.
+# Never one with espeak-ng in it, which is GPL 3: carry-libs.sh puts
+# sherpa-onnx's release without speech synthesis there, see
+# speech-libs.sh, and this is the last place that can say no. As in
+# FrameFairy.
+if [ -d "$BINDIR/lib" ]; then
+	cp "$BINDIR"/lib/*.dylib "$APP/Contents/Frameworks/"
+fi
+if grep -alq 'espeak-ng' "$APP/Contents/Frameworks/"*.dylib 2>/dev/null; then
+	echo "bundle-macos.sh: a speech library in the bundle carries espeak-ng:" >&2
+	grep -al 'espeak-ng' "$APP/Contents/Frameworks/"*.dylib | sed 's/^/  /' >&2
+	exit 1
+fi
 
 ICON=""
 if [ -f "$ROOT/build/icon.png" ]; then
@@ -78,6 +94,10 @@ $ICON
 	     nothing there for the housing to cover. -->
 	<key>NSPrefersDisplaySafeAreaLayoutGuide</key>
 	<false/>
+	<!-- Asked the first time Dictate is pressed on Report a Problem.
+	     Without it macOS ends an app that opens the microphone. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Speaker Trail writes down what you say about a problem, on this Mac, so you can send it in a report.</string>
 </dict>
 </plist>
 PLIST
@@ -89,5 +109,11 @@ printf 'APPL????' >"$APP/Contents/PkgInfo"
 codesign --remove-signature "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
 codesign -s - -f "$APP/Contents/MacOS/$EXE"
 codesign --verify --strict "$APP"
+
+# And read back: does every speech library the program needs resolve
+# inside the bundle, and does it still look in the Go module cache of the
+# machine that built it, which no other Mac has. carry-libs.sh asks it the
+# same way it asked of bin/.
+sh "$(dirname "$0")/carry-libs.sh" --verify "$APP/Contents/MacOS/$EXE"
 
 echo "Ready: $APP"

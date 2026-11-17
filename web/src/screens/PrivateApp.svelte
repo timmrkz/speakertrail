@@ -4,13 +4,17 @@
   // buttons and the name of what is on screen, and under it the sidebar
   // and the page. The sidebar is a rail of icons until the pointer
   // reaches it, see lib/sidebar.svelte.ts. What you go to at the top,
-  // what looks after the app at the foot: Settings, then Updates.
+  // what looks after the app at the foot: Settings, Bugs, then Updates.
   import { navigate, router } from '../lib/router.svelte'
   import { runWatch } from '../lib/run.svelte'
   import { sidebar } from '../lib/sidebar.svelte'
   import { titleBar } from '../lib/chrome.svelte'
   import { railDot, standing, updates } from '../lib/updates.svelte'
+  import { reporting } from '../lib/reporting.svelte'
+  import { api, onUndo } from '../lib/api'
+  import { typing } from '../lib/keys'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
+  import TitleBar from '../lib/components/TitleBar.svelte'
   import People from './People.svelte'
   import Settings from './Settings.svelte'
   import Searches from './Searches.svelte'
@@ -35,6 +39,13 @@
   // How tall the title bar macOS laid out is, and where its buttons are,
   // from the start, see lib/chrome.svelte.ts.
   $effect(() => titleBar.follow())
+
+  // Bugs is lit while the report window is open, see bugs.go.
+  $effect(() => reporting.listen())
+
+  // Undo and Redo in the Edit menu come to the page, see menu.go. Here
+  // they undo the field being typed in, as the stock ones did.
+  $effect(() => onUndo((how) => typing() && document.execCommand(how)))
   let update = $derived(updates.shown)
   let updateDot = $derived(railDot(update))
   let updateTitle = $derived.by(() => {
@@ -67,19 +78,7 @@
   onblur={() => sidebar.away()} />
 
 <div class="shell">
-  <!-- The title bar: the close, minimise and zoom buttons, and the name of
-       what is on screen beside them. It is the whole width of the app, so
-       the sidebar opens under it and never covers the name. -->
-  <!-- The bar is the title bar, the way FrameFairy's is. macOS lays it out
-       and puts its three buttons on its middle, and the bar takes the
-       height macOS gave it rather than asking for one. Then macOS centres
-       the buttons in the bar, and the name is centred between the edge of
-       the window macOS draws over its top and the line at its foot, see
-       .name below. Where the system draws its own title bar there is
-       nothing to agree with and the stylesheet keeps its own numbers. -->
-  <header class="titlebar" style={titleBar.style}>
-    <h1 class="name"><span class="what">{title}</span></h1>
-  </header>
+  <TitleBar {title} />
 
   <div class="body" class:kept={sidebar.pinned}>
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -109,6 +108,13 @@
           <span class="mark"><Icon name="settings" /></span>
           <span class="word">Settings</span>
         </a>
+        <!-- Report a Problem, in a window of its own, one at a time, so a
+             person can talk about a problem while going through it here.
+             Lit while that window is open, the way FrameFairy has it. -->
+        <button class="nav" type="button" aria-pressed={reporting.open} onclick={() => api.openReport('bugs').catch(() => {})} title="Report a problem">
+          <span class="mark"><Icon name="report" /></span>
+          <span class="word">Bugs</span>
+        </button>
         <!-- The build that is running, which is also the way to its
              updates, so a report from testing always names what was tested. -->
         <a class="nav" href="/app/updates" aria-current={current('/app/updates') ? 'page' : undefined} title={updateTitle}>
@@ -142,61 +148,6 @@
     display: flex; flex-direction: column; height: 100dvh;
     background: var(--mist), var(--bg); background-size: 100% 100%;
   }
-
-  /* The title bar: what the app is dragged by, and where macOS puts its
-     three buttons. Exactly as tall as the title bar macOS laid out, which
-     the bar's style sets from what macOS answers, or the token where the
-     system draws its own bar. The line at the foot is drawn inside that
-     height rather than under it, so the bar is the title bar and nothing
-     else. Its own style carries the measurement, not the shell's as in
-     FrameFairy, because here a sheet's bar is --bar-h tall too, and it
-     keeps the token. */
-  .titlebar {
-    flex: none; position: relative; height: var(--bar-h); background: var(--side);
-    backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
-    box-shadow: inset 0 -1px var(--line); --wails-draggable: drag;
-  }
-
-  /* The name stands in a box as tall as the bar, so it is centred on the
-     bar's middle, and starts one space after the buttons. Nothing is
-     moved by a transform, so nothing is put on a compositing surface of
-     its own and the whole pixel rule holds. */
-  .titlebar .name {
-    position: absolute; top: 0; height: var(--bar-h);
-    left: calc(var(--lights-r, 0px) + var(--gap)); right: var(--gap);
-    display: flex; align-items: center; overflow: hidden;
-  }
-
-  /* The name itself, as FrameFairy has it. A line box keeps more room
-     below the baseline than above the capitals, so a name centred by its
-     line box reads high. Trimming the box to the capitals and the
-     baseline puts the letters themselves on the middle. The box is also
-     what is clipped, for the ellipsis, so it is padded back out evenly,
-     deeper than any letter goes, and nothing is cut. */
-  .titlebar .what {
-    min-width: 0; font-size: 13px; font-weight: 600; line-height: 1;
-    text-box: trim-both cap alphabetic; padding: 6px 0;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-
-  /* Where the browser cannot trim a text box there is nothing to pad back
-     out, and a plain line box centred on the buttons is a small fraction
-     high rather than wrong. */
-  @supports not (text-box: trim-both cap alphabetic) {
-    .titlebar .what { line-height: normal; padding: 0; }
-  }
-
-  /* Where macOS puts its buttons in the bar, it draws the edge of the
-     window over the top 2 points of the page, and the line at the foot
-     takes the last point. What a person sees as the bar is what lies
-     between the two, and the name is centred in that. FrameFairy read it
-     off Tim's pictures, its #399. */
-  .titlebar[style*="--lights-r"] .name { top: 2px; height: calc(var(--bar-h) - 3px); }
-
-  /* Where the system draws its own title bar, and in fullscreen, the name
-     keeps the left of the bar, because there is nothing at the left to
-     make room for. */
-  .titlebar:not([style*="--lights-r"]) .name { left: var(--gap); }
 
   /* The rail keeps its own column, so nothing of the page ever hides under
      it. The sidebar grows over the page from there. Kept open, it takes
@@ -251,7 +202,12 @@
     color: var(--ink-2); font-size: 14px; font-weight: 500; text-decoration: none;
   }
   .nav:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); text-decoration: none; }
-  .nav[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: var(--chosen); }
+  .nav[aria-current="page"], .nav[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: var(--chosen); }
+  /* Bugs is a button, since it opens a window rather than a page, and
+     looks like the links beside it. */
+  button.nav { width: 100%; border: 0; background: none; font-family: inherit; text-align: left; cursor: pointer; }
+  button.nav:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  button.nav[aria-pressed="true"] { background: var(--accent-soft); }
   .nav .word { flex: 1; }
   /* The build stands at the far end of its row, whole, since it names
      what is being tested. */

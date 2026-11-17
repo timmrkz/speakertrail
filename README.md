@@ -40,7 +40,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 
 | Path | Contents |
 | --- | --- |
-| `cmd/speakertrail-app` | The app: the window, its updates, and `carry-over` |
+| `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate, and `carry-over` |
 | `cmd/speakertrail-release` | Makes the update key, signs builds, writes the channel list |
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
@@ -51,6 +51,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/place` | Whether a place lies in NRW, and which city it names |
 | `internal/browser` | Opening LinkedIn in the Chrome profile chosen in Settings, see [docs/open-in-profile.md](docs/open-in-profile.md) |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
+| `internal/speech` | The speech models in Settings and hearing with them on this Mac, for Dictate |
 | `web` | The interface, Svelte 5 with TypeScript |
 | `scripts` | Installing what is missing, bundling the app, the carry-over, the cloud session setup |
 | `docs` | Building, the API, the search strategy, working with Claude |

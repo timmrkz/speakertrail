@@ -3,7 +3,7 @@
   import { fmtDateTime, fmtDuration, STATUS_LABEL } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { runWatch } from '../lib/run.svelte'
-  import { errorText, toast } from '../lib/toast.svelte'
+  import { errorText, fault, toast } from '../lib/toast.svelte'
   import Chips from '../lib/components/Chips.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
@@ -75,7 +75,7 @@
       toast.show(`${src.name} is ${STATUS_LABEL[state.before]?.toLowerCase() ?? state.before} again`)
     } catch (e) {
       done[src.id] = state
-      toast.show(errorText(e), 'bad')
+      fault(e)
     } finally {
       working = null
     }

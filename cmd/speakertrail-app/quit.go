@@ -6,14 +6,15 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
+	"github.com/timmrkz/speakertrail/internal/speech"
 )
 
 // Ported from FrameFairy's cmd/framefairy-app/quit.go at abb9007, issue
 // #17. What differs: the question is taken away over POST /api/quit/stay
 // rather than a Wails binding, the question carries how long it stays,
 // a logout, restart or shutdown of the Mac quits without asking, and
-// closeDown stops what Speaker Trail starts, a run and a build waiting
-// to go in place.
+// closeDown stops what Speaker Trail starts, a run, a dictation and a
+// build waiting to go in place.
 
 // quitAgain is how long the second Cmd+Q has to come after the first. The
 // interface shows the question for as long, told with it, see Quitting.
@@ -131,10 +132,17 @@ func (l *leaving) closing() {
 
 // closeDown is the one way the app stops everything it started, on the
 // way out: a run that goes is stopped, and what it did not get to waits
-// for the next run, and a build that is ready goes in place once the app
-// is gone, see installOnQuit. main runs it once, as the shutdown hook and
-// as what Cmd+Q stops. A part that is to stop on the way out stops here.
-func closeDown(e *engine.Engine, c *updating) {
+// for the next run, a dictation is ended and the speech model let go, and
+// a build that is ready goes in place once the app is gone, see
+// installOnQuit. main runs it once, as the shutdown hook and as what
+// Cmd+Q stops. A part that is to stop on the way out stops here.
+func closeDown(e *engine.Engine, c *updating, l *listening, h *speech.Host) {
+	if l != nil {
+		l.CancelListening()
+	}
+	if h != nil {
+		h.Close()
+	}
 	if id, _ := e.Going(); id != 0 {
 		e.Stop(id)
 	}

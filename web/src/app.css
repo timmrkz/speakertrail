@@ -182,14 +182,27 @@ a:hover { text-decoration: underline; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 /* Focus is never a ring around a control. Tim found the rings loud and
-   wrong. A field in use takes the accent on its edge, anything else
-   reached with the keyboard a faint wash of it. */
+   wrong. A field in use takes the accent on its edge, and so does
+   anything else reached with the keyboard, with a faint wash of it laid
+   over its own colour. The wash alone was too faint to find, Tim said
+   testing #24 on 17 November 2026.
+   The edge is an outline 2 px wide drawn inside the control, over its
+   own border where it has one, so it follows its corners, lays nothing
+   out again and leaves its shadow alone. */
 :focus, :focus-visible { outline: none; }
-/* Laid over a control's own colour, not in place of it. */
 :is(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
+  outline: 2px solid var(--accent); outline-offset: -2px;
   background-image: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
 }
-.btn.primary:focus-visible { filter: brightness(1.08); }
+/* A primary control is the accent already, so its edge is cut in the
+   page's own colour instead. */
+.btn.primary:focus-visible { outline-color: var(--bg); }
+/* A control that removes something wears its own red, which is about as
+   bright as the accent in dark, so its edge turns that red in full. */
+.btn.danger:focus-visible { outline-color: var(--bad); }
+/* A pressed chip is filled with the ink, which the accent hardly stands
+   out from, so its edge is cut in the page's colour like a primary's. */
+.chip[aria-pressed="true"]:focus-visible { outline-color: var(--bg); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }

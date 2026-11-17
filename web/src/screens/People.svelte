@@ -411,7 +411,7 @@
   .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
   .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: var(--chosen); }
   /* The person open is marked already, the keyboard on it adds nothing. */
-  .prow[aria-current="true"]:focus-visible { background-image: none; }
+  .prow[aria-current="true"]:focus-visible { background-image: none; outline: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .who b { font-weight: 600; }
   .dot.new { width: 7px; height: 7px; background: var(--accent); }

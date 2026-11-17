@@ -1,0 +1,948 @@
+package main
+
+import (
+	"cmp"
+	"context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"math"
+	"runtime"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/gen2brain/malgo"
+	"github.com/rs/zerolog"
+
+	"github.com/timmrkz/speakertrail/internal/speech"
+)
+
+// Report a Problem's microphone: what Tim says is recorded by the app and
+// written down by the speech model on the Mac, into the report, where he
+// corrects it. Ported from FrameFairy's listen.go. Its bound calls,
+// Listen, StopListening, SettleListening, BreakListening and
+// CancelListening, are routes here, see listen_api.go, and what is heard
+// goes to the window as the events dictation and loudness.
+//
+// The app records, not the window. WKWebView on macOS asks for the
+// microphone in a box of its own on every launch, naming the page as
+// wails://wails, and Wails has no way to answer it on a Mac. A recording
+// made by the app gets the one prompt from macOS, with the words of
+// NSMicrophoneUsageDescription in scripts/bundle-macos.sh, and macOS
+// remembers the answer.
+
+// listenMost is the longest recording kept, ten minutes, 38 MB of samples.
+// A report is a few sentences, so this is only a bound.
+const listenMost = 10 * 60 * speech.SampleRate
+
+// microphone records, mono at speech.SampleRate. The tests put in one that
+// plays samples, see listening.mic.
+type microphone interface {
+	// start hands what it records to heard, from a goroutine of its own,
+	// until stop.
+	start(heard func([]float32)) error
+	stop()
+}
+
+// listening holds the recording in hand, at most one at a time.
+type listening struct {
+	// host keeps the speech model loaded, see speech.Host, and models
+	// says which one is here, see speechmodels.go.
+	host   *speech.Host
+	models *speechModels
+	// mic gives the microphone a recording uses, the system's when it is
+	// empty. A test hands in one that plays samples.
+	mic   func() microphone
+	mu    sync.Mutex
+	now   *recording
+	count int
+	// last is how the latest recording ended when it ended by itself,
+	// until StopListening hands it over or another recording starts. The
+	// person may press Stop while it is being written down, and Stop then
+	// gives this, so a recording's end reaches the window whichever way
+	// it goes.
+	last *Dictation
+	// say tells the window what is being written down, see Dictation.
+	say func(Dictation)
+	// loud tells the window how loud the microphone is, see Loudness.
+	loud func(Loudness)
+	// every is how often what is being said is written down again, 0 for
+	// listenEvery, quiet how long a recording goes on with no new words,
+	// 0 for listenQuiet, and most the longest a recording is, in samples,
+	// 0 for listenMost. The tests take them shorter.
+	every time.Duration
+	quiet time.Duration
+	most  int
+	// still, when set, says when the quiet is over, in place of quiet of
+	// the clock: a recording stops by itself for want of words the pass
+	// after it says so. A test sets it, so it does not wait the quiet out.
+	still <-chan struct{}
+	// beats, when set, stands in for the two clocks of a recording, see
+	// listenBeats. A test sets it, so it hears a recording at its own pace
+	// rather than at the pace of the app's timers.
+	beats *listenBeats
+	// running is every goroutine a recording started, which goes on for a
+	// moment after the recording ends and may still write a line to the
+	// log. A test waits on it before it lets go of what they use.
+	running sync.WaitGroup
+}
+
+// listenBeats is what a recording runs on in place of its two clocks: a
+// reading of how loud the microphone is for each value on levels, in place
+// of ten a second, and a pass of the speech model for each on passes, in
+// place of one every listenEvery. Once a reading or a pass is over it says
+// so on measured or passed, when there is room, so whoever hands the beats
+// knows the window has been told what it found, and that the next sound
+// goes into the next reading.
+type listenBeats struct {
+	levels, passes   <-chan time.Time
+	measured, passed chan<- struct{}
+}
+
+// listenQuiet is how long a recording goes on with no new words before it
+// stops by itself and keeps what was said. Tim left one running and came
+// back to find it had heard nothing for minutes. One minute is too short
+// to think about what to say next, he said, so it is two.
+const listenQuiet = 2 * time.Minute
+
+// Loudness is how loud the microphone is, from 0 for a quiet room to 1
+// for a raised voice, told to the window ten times a second while it
+// records, so the button can move with the voice.
+type Loudness struct {
+	Recording int     `json:"recording"`
+	Level     float64 `json:"level"`
+}
+
+// listenEvery is how often the words appear while somebody talks. A pass
+// writes down at most dictateLongest seconds, which the speech model does
+// in a fraction of this on a Mac, so the words keep up with the voice.
+const listenEvery = 400 * time.Millisecond
+
+// Dictation is what the window is told while somebody dictates. Said is
+// every piece written down for good so far, in order, and Hearing is what
+// follows them, written down again on every pass as more of it is heard.
+// Every message carries all the pieces, because an event the window
+// misses is gone, so a missed one costs a piece nothing.
+type Dictation struct {
+	Recording int      `json:"recording"`
+	Said      []string `json:"said"`
+	Hearing   string   `json:"hearing"`
+	// Error is why the recording could not go on, and Ended why it
+	// stopped by itself, with Said all of what was said.
+	Error string `json:"error,omitempty"`
+	Ended string `json:"ended,omitempty"`
+	// Unheard is why the microphone has handed over nothing but zeros
+	// for a while, said while it records, so a Mac that may not use it
+	// says so before the person has talked for minutes. It goes on
+	// recording, since the prompt that allows it may still be open.
+	Unheard string `json:"unheard,omitempty"`
+	// Asked is how many of the window's SettleListening and
+	// BreakListening calls are in Said, so it can tell an answer from
+	// before its last one.
+	Asked int `json:"asked"`
+}
+
+// listenUnheard is how long a microphone may hand over nothing but zeros
+// before the window says so, in samples. One that is there hears its
+// room at once.
+const listenUnheard = 2 * speech.SampleRate
+
+// recording is one press of the button, from Listen to StopListening or
+// CancelListening. Each keeps what it heard apart, so a recording started
+// while the one before is still being written down never takes its sound.
+type recording struct {
+	id  int
+	mic microphone
+	// hear loads the speech model that writes it down, see opener.
+	hear    func(dir string) (speech.Recognizer, error)
+	started time.Time
+	// act is what the person did that started it, which its log lines
+	// carry, not whatever they are at by the time it is written down.
+	act string
+	// What was recorded, behind a lock of its own, since the microphone
+	// hands it over from a thread of its own. It only ever grows, so a
+	// slice of it taken under the lock can be read after.
+	mu      sync.Mutex
+	samples []float32
+	most    int
+	// hushed stops the microphone once, whoever ends the recording.
+	// opened says the microphone has started and stopping that the
+	// recording asked it to stop, both behind mu, so whichever comes
+	// second stops it. A recording can end while its microphone still
+	// starts: on a Mac the first start waits for the person to answer
+	// whether the app may use it, #792.
+	// live is closed once the microphone is open and stays so.
+	hushed           sync.Once
+	opened, stopping bool
+	live             chan struct{}
+	// What the window asked to be settled, see SettleListening, behind
+	// mu, taken by the goroutine that writes it down.
+	settles []settle
+	// How many passes the speech model made and the slowest, kept by the
+	// goroutine that writes it down, for the log.
+	passes  int
+	slowest time.Duration
+	// The loudest the microphone was since it was last asked, in dB, and
+	// whether the recording is as long as it may be.
+	peak float64
+	full atomic.Bool
+	// voiced says whether the microphone was ever as loud as a voice,
+	// listenVoice. Until it was, nobody spoke, and nothing is written down.
+	// spokeTo is how much had been recorded when it last was, behind mu.
+	voiced  atomic.Bool
+	spokeTo int
+	// over is closed once the recording is written down or dropped.
+	over chan struct{}
+	// ended is closed when the person stops, kept says whether what they
+	// said is wanted, and written is what the hearing gives at the end.
+	ended   chan struct{}
+	kept    bool
+	dropped atomic.Bool
+	written chan writtenDown
+}
+
+// settle is the window's ask to settle the words it shows as being heard,
+// text, as the piece after the first pieces it has. Typing at its end
+// asks for a cut instead, see BreakListening: cut says so, and at is how much had
+// been recorded when it came.
+type settle struct {
+	pieces int
+	text   string
+	cut    bool
+	at     int
+}
+
+type writtenDown struct {
+	said []string
+	err  error
+}
+
+func (r *recording) heard(samples []float32) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	room := r.most - len(r.samples)
+	r.samples = append(r.samples, samples[:min(len(samples), max(room, 0))]...)
+	if len(r.samples) >= r.most {
+		r.full.Store(true)
+	}
+	power := 0.0
+	for _, s := range samples {
+		power += float64(s) * float64(s)
+	}
+	if len(samples) > 0 {
+		db := 10 * math.Log10(power/float64(len(samples))+1e-20)
+		r.peak = max(r.peak, db)
+		if db >= listenVoice {
+			r.voiced.Store(true)
+			r.spokeTo = len(r.samples)
+		}
+	}
+}
+
+// spoke says whether the microphone was as loud as a voice anywhere in
+// samples, a tenth of a second at a time, the way heard measures it.
+func spoke(samples []float32) bool {
+	for at := 0; at < len(samples); at += speech.SampleRate / 10 {
+		part := samples[at:min(at+speech.SampleRate/10, len(samples))]
+		power := 0.0
+		for _, s := range part {
+			power += float64(s) * float64(s)
+		}
+		if 10*math.Log10(power/float64(len(part))+1e-20) >= listenVoice {
+			return true
+		}
+	}
+	return false
+}
+
+// listenVoice is how loud the microphone has to be, in dB, for somebody to
+// be speaking into it: 10 dB over a quiet room, see loudness. The speech
+// model hears words in a room where nobody speaks. Tim pressed Dictate and
+// Stop a few times in a row, said nothing, and was given "yeah yeah".
+const listenVoice = -45.0
+
+// loudness is how loud the microphone was since it was last asked, from
+// 0 at -55 dB, a quiet room, to 1 at -15 dB, a raised voice.
+func (r *recording) loudness() float64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	db := r.peak
+	r.peak = -200
+	return math.Round(min(max((db+55)/40, 0), 1)*100) / 100
+}
+
+// line starts a log line about the recording.
+func (r *recording) line(level zerolog.Level) *zerolog.Event {
+	return withAct(theLog.lineAt(level, "listen", time.Now()), r.act).Int("recording", r.id)
+}
+
+// hush stops the microphone, the first time it is asked, or as soon as
+// it has started when it is still starting.
+func (r *recording) hush() {
+	r.hushed.Do(func() {
+		r.mu.Lock()
+		r.stopping = true
+		opened := r.opened
+		r.mu.Unlock()
+		if opened {
+			r.mic.stop()
+		}
+	})
+}
+
+// open says the microphone has started, and stops it at once when the
+// recording ended while it started. It says whether it stays open.
+func (r *recording) open() bool {
+	r.mu.Lock()
+	r.opened = true
+	stopping := r.stopping
+	r.mu.Unlock()
+	if stopping {
+		r.mic.stop()
+		return false
+	}
+	close(r.live)
+	return true
+}
+
+// spoken is how much had been recorded when the microphone was last as
+// loud as a voice.
+func (r *recording) spoken() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.spokeTo
+}
+
+func (r *recording) recorded() []float32 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.samples
+}
+
+// opener is how a recording gets the speech model: the one the host
+// keeps loaded, which every dictation shares, so the first words of the
+// next come with no load. A test hands in its own host, which is decided
+// as the recording starts.
+func (l *listening) opener() func(dir string) (speech.Recognizer, error) {
+	host := l.host
+	return func(dir string) (speech.Recognizer, error) {
+		rec, release, err := host.Speech(context.Background(), dir)
+		if err != nil {
+			return nil, err
+		}
+		// Kept loaded from the first dictation on, until the model is
+		// removed or the app quits.
+		host.Keep(dir)
+		return heldSpeech{rec, release}, nil
+	}
+}
+
+// heldSpeech is the speech model kept, held by a recording, which lets go
+// of it when it is closed.
+type heldSpeech struct {
+	speech.Recognizer
+	release func()
+}
+
+func (h heldSpeech) Close() { h.release() }
+
+// errNoSpeechModel is what Listen says when there is nothing to write
+// down with.
+var errNoSpeechModel = errors.New("The speech model is not on this Mac. Download it in Settings, under Speech model.")
+
+// Listen starts recording what the person says for a report, and gives
+// the recording's number, which every Dictation about it carries, once
+// the microphone is open. The speech model loads while they talk and
+// writes down what they say as they say it. A second call while one
+// records gives the same number.
+//
+// The recording is in hand before its microphone starts, and the
+// microphone starts outside the lock. On a Mac the first start waits
+// until the person answers whether the app may use the microphone, and
+// Tim's Mac asked for 45 s. Stop, Escape and Report waited on that lock
+// all the while, and the window took no clicks, #792. Now they end the
+// recording while it starts, and the microphone stops as soon as it has
+// started.
+func (l *listening) Listen() (int, error) {
+	r, dir, err := l.begin()
+	if err != nil {
+		return 0, err
+	}
+	if dir == "" {
+		return r.id, nil
+	}
+	every := cmp.Or(l.every, listenEvery)
+	quiet := cmp.Or(l.quiet, listenQuiet)
+	l.running.Go(func() { l.write(r, dir, every, quiet) })
+	l.running.Go(func() { l.measure(r) })
+	if err := r.mic.start(r.heard); err != nil {
+		theLog.line(zerolog.WarnLevel, "listen").Err(err).Msg("the microphone could not start")
+		l.drop(r)
+		return 0, fmt.Errorf("the microphone could not start: %s", err)
+	}
+	if !r.open() {
+		r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("the recording ended while the microphone started")
+		return r.id, nil
+	}
+	r.line(zerolog.InfoLevel).Dur("starting", time.Since(r.started).Round(time.Millisecond)).Msg("recording for a report")
+	return r.id, nil
+}
+
+// begin puts a new recording in hand and gives it with the folder of the
+// speech model that writes it down, or gives the one in hand already,
+// with no folder.
+func (l *listening) begin() (*recording, string, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.now != nil {
+		return l.now, "", nil
+	}
+	// The model downloaded in Settings, the first one here.
+	_, dir := l.models.inUse()
+	if dir == "" {
+		return nil, "", errNoSpeechModel
+	}
+	mic := l.mic
+	if mic == nil {
+		mic = func() microphone { return &systemMicrophone{} }
+	}
+	l.count++
+	l.last = nil
+	r := &recording{id: l.count, mic: mic(), hear: l.opener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
+		peak: -200, live: make(chan struct{}), over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
+	l.now = r
+	return r, dir, nil
+}
+
+// drop ends a recording whose microphone could not start, if it is still
+// in hand, and nothing it heard is written down.
+// One that was stopped meanwhile was ended by whoever stopped it.
+func (l *listening) drop(r *recording) {
+	l.mu.Lock()
+	took := l.now == r
+	if took {
+		l.now = nil
+	}
+	l.mu.Unlock()
+	if took {
+		r.dropped.Store(true)
+		close(r.ended)
+	}
+}
+
+// take ends whichever recording is in hand and gives it, with how the
+// one before ended if it ended by itself and nobody has been told.
+func (l *listening) take() (*recording, *Dictation) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	r, last := l.now, l.last
+	l.now, l.last = nil, nil
+	return r, last
+}
+
+// endItself ends the recording in hand, if it is still r, keeps how it
+// ended for StopListening, and tells the window. When the person stopped
+// or dropped it meanwhile, it is theirs: StopListening gives it, or
+// nobody wants it.
+func (l *listening) endItself(r *recording, d Dictation) bool {
+	d.Recording = r.id
+	l.mu.Lock()
+	if l.now != r {
+		l.mu.Unlock()
+		return false
+	}
+	l.now = nil
+	l.last = &d
+	l.mu.Unlock()
+	r.hush()
+	l.tell(r, d)
+	return true
+}
+
+// tell says how a recording is coming along, unless it was dropped.
+func (l *listening) tell(r *recording, d Dictation) {
+	if r.dropped.Load() || l.say == nil {
+		return
+	}
+	d.Recording = r.id
+	l.say(d)
+}
+
+// write writes down what is said while the recording runs, a pass every
+// so often: what came before the last pause is settled and never written
+// again, and what follows it is heard again on the next pass, with more
+// of it. When the person stops, the rest is written down.
+func (l *listening) write(r *recording, dir string, every, quiet time.Duration) {
+	var out writtenDown
+	defer close(r.over)
+	defer func() { r.written <- out }()
+	defer func() {
+		if caught := recover(); caught != nil {
+			r.line(zerolog.ErrorLevel).Interface("panic", caught).Msg("the speech model stopped unexpectedly")
+			out = writtenDown{err: fmt.Errorf("the speech model stopped unexpectedly: %v", caught)}
+			l.endItself(r, Dictation{Said: []string{}, Error: out.err.Error()})
+		}
+	}()
+	// The speech model loads once the microphone is open. A recording
+	// that ended before has nothing to write down. One that ended once it
+	// was open has, though both are ready by the time this looks, and a
+	// select picks either.
+	select {
+	case <-r.live:
+	case <-r.ended:
+		select {
+		case <-r.live:
+		default:
+			return
+		}
+	}
+	rec, err := r.hear(dir)
+	if err != nil {
+		r.line(zerolog.ErrorLevel).Err(err).Msg("the speech model could not load")
+		out.err = fmt.Errorf("the speech model could not load: %s", err)
+		l.endItself(r, Dictation{Said: []string{}, Error: out.err.Error()})
+		return
+	}
+	defer rec.Close()
+	var said []string
+	// Where in the recording each piece of said ends, so a cut knows
+	// where the pieces the window has end.
+	var ends []int
+	settled, passed, hearing, unheard, asked := 0, 0, "", "", 0
+	// How much had been said at the last pass of the speech model.
+	spokenAt := 0
+	worded := time.Now()
+	// The last few things told as being heard, and how far into the
+	// recording each was heard, so words the window settles are settled
+	// where they ended.
+	type heard struct {
+		text string
+		end  int
+	}
+	var told []heard
+	// settle takes what the window asked to be settled: its words become
+	// the next piece, where it has them, in place of any piece settled
+	// since, which they hold, and what follows them is heard from where
+	// they ended.
+	settle := func() bool {
+		r.mu.Lock()
+		asks := r.settles
+		r.settles = nil
+		r.mu.Unlock()
+		for _, ask := range asks {
+			n := min(ask.pieces, len(said))
+			text, end := ask.text, passed
+			if ask.cut {
+				// Everything said before the typing, written down now,
+				// however far behind the voice the passes were.
+				from := 0
+				if n > 0 {
+					from = ends[n-1]
+				}
+				// A stretch nobody spoke in, two new lines in a row, needs no
+				// pass of the speech model, which on a slow machine would
+				// hold up the answer to every one after it.
+				samples := r.recorded()
+				end, text = max(ask.at, from), ""
+				if spoke(samples[from:end]) {
+					text, _ = heardAround(rec, samples, from, end)
+				}
+			} else {
+				for _, t := range slices.Backward(told) {
+					if t.text == ask.text {
+						end = t.end
+						break
+					}
+				}
+			}
+			said, ends = append(said[:n], text), append(ends[:n], end)
+			settled, hearing, told = end, "", nil
+			asked++
+		}
+		return len(asks) > 0
+	}
+	tick := time.NewTicker(every)
+	defer tick.Stop()
+	pass := tick.C
+	if l.beats != nil {
+		pass = l.beats.passes
+	}
+	for first := true; ; first = false {
+		if !first && l.beats != nil {
+			select {
+			case l.beats.passed <- struct{}{}:
+			default:
+			}
+		}
+		select {
+		case <-r.ended:
+			settle()
+			out = l.finish(r, rec, said, settled, r.kept)
+			return
+		case <-pass:
+		}
+		if settle() {
+			worded = time.Now()
+			l.tell(r, Dictation{Said: slices.Clone(said), Unheard: unheard, Asked: asked})
+		}
+		// Nobody has said anything for a long while, or the recording is
+		// as long as it may be: it stops by itself and keeps what was
+		// said. It stays the recording in hand until it is written down,
+		// so Stop pressed meanwhile waits for it rather than finding
+		// nothing.
+		why := ""
+		hushed := time.Since(worded) > quiet
+		if l.still != nil {
+			select {
+			case <-l.still:
+				hushed = true
+			default:
+				hushed = false
+			}
+		}
+		if hushed {
+			why = fmt.Sprintf("stopped listening after %s without a word", minutes(quiet))
+		} else if r.full.Load() {
+			why = fmt.Sprintf("stopped listening after %s, the longest a recording can be", minutes(time.Duration(r.most)*time.Second/speech.SampleRate))
+		}
+		if why != "" {
+			r.hush()
+			settle()
+			out = l.finish(r, rec, said, settled, true)
+			if l.endItself(r, Dictation{Said: append([]string{}, out.said...), Ended: why, Error: errText(out.err)}) {
+				r.line(zerolog.InfoLevel).Str("why", why).Msg("the recording stopped by itself")
+			}
+			return
+		}
+		samples := r.recorded()
+		deaf := ""
+		if len(samples) >= listenUnheard && silent(samples) {
+			deaf = heardNothing()
+		}
+		// The speech model hears what was said and a pause after it, never
+		// the silence beyond: it heard words there, and changed the words
+		// before them, while Tim said nothing (29 October). It is asked
+		// only when something new was said, and once more when what was
+		// said is followed by a whole pause, which settles it. So while
+		// nobody speaks, nothing changes.
+		spoken := r.spoken()
+		end := min(len(samples), spoken+speech.SettleSamples)
+		paused := end == spoken+speech.SettleSamples && passed < end
+		changed, now := false, hearing
+		if r.voiced.Load() && end-settled >= listenLeast && (spoken-spokenAt >= listenLeast/2 || paused) {
+			passed, spokenAt = end, spoken
+			cut := speech.Settled(samples[settled:end])
+			began := time.Now()
+			var before string
+			before, now = heardAround(rec, samples[:end], settled, settled+cut)
+			r.paced(time.Since(began), end-max(settled-listenAround, 0), every)
+			if cut > 0 {
+				if before != "" {
+					said, ends = append(said, before), append(ends, settled+cut)
+					changed = true
+				}
+				settled += cut
+			}
+		}
+		if changed || now != hearing || deaf != unheard {
+			if changed || now != "" {
+				worded = time.Now()
+			}
+			hearing, unheard = now, deaf
+			told = append(told[max(len(told)-15, 0):], heard{now, passed})
+			l.tell(r, Dictation{Said: slices.Clone(said), Hearing: now, Unheard: deaf, Asked: asked})
+		}
+	}
+}
+
+// paced keeps how long a pass took, every one in the recent lines and the
+// slowest for the line at the end. A pass slower than every means the
+// words fall behind the voice on this machine, which is said once.
+func (r *recording) paced(took time.Duration, heard int, every time.Duration) {
+	r.passes++
+	r.line(zerolog.TraceLevel).Int64("ms", took.Milliseconds()).Float64("heard", math.Round(float64(heard)/speech.SampleRate*10)/10).Msg("a pass of the speech model")
+	if took > every && r.slowest <= every {
+		r.line(zerolog.WarnLevel).Int64("ms", took.Milliseconds()).Int64("every", every.Milliseconds()).
+			Float64("heard", math.Round(float64(heard)/speech.SampleRate*10)/10).Msg("the speech model is slower than the words should appear")
+	}
+	r.slowest = max(r.slowest, took)
+}
+
+// measure tells the window how loud the microphone is until the
+// recording is over.
+func (l *listening) measure(r *recording) {
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	level := tick.C
+	if l.beats != nil {
+		level = l.beats.levels
+	}
+	for {
+		select {
+		case <-r.over:
+			return
+		case <-r.ended:
+			return
+		case <-level:
+			if l.loud != nil && !r.dropped.Load() {
+				l.loud(Loudness{Recording: r.id, Level: r.loudness()})
+			}
+			if l.beats != nil {
+				select {
+				case l.beats.measured <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+}
+
+// minutes says a duration the way a person would, "2 minutes".
+func minutes(d time.Duration) string {
+	if m := int(d.Round(time.Minute).Minutes()); m == 1 {
+		return "a minute"
+	} else if m > 1 {
+		return fmt.Sprintf("%d minutes", m)
+	}
+	return fmt.Sprintf("%d seconds", int(d.Round(time.Second).Seconds()))
+}
+
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// listenAround is how much of what was settled is heard again before
+// what follows it, in samples. Written down on its own, a piece starts
+// with a capital and ends with a full stop wherever it was cut, so the
+// speech model is given the words around it too: the last few seconds
+// before it, and all that follows it.
+const listenAround = 5 * speech.SampleRate
+
+// heardAround writes down what was said from settled on, in two: what
+// came before cut, and what came after it. A cut at or before settled
+// leaves the first empty. The words are told apart by when they start,
+// and a cut is always in a pause, where no word is.
+func heardAround(rec speech.Recognizer, samples []float32, settled, cut int) (before, after string) {
+	from := max(settled-listenAround, 0)
+	if len(samples)-settled < listenLeast {
+		return "", ""
+	}
+	// A word that starts this close before settled was cut off there and
+	// belongs to what follows.
+	const slack = 0.05
+	start := float64(settled-from)/speech.SampleRate - slack
+	end := float64(cut-from) / speech.SampleRate
+	var first, second []speech.Word
+	// At most about 17 s, the longest a piece grows before it is settled
+	// and listenAround with it, which the speech model takes in one go.
+	for _, w := range speech.TokensToWords(rec.Recognize(samples[from:], speech.SampleRate), 0) {
+		switch {
+		case w.Start < start:
+		case cut > settled && w.Start < end:
+			first = append(first, w)
+		default:
+			second = append(second, w)
+		}
+	}
+	return joined(first), joined(second)
+}
+
+// joined is words as one text.
+func joined(words []speech.Word) string {
+	texts := make([]string, len(words))
+	for i, w := range words {
+		texts[i] = w.Text
+	}
+	return strings.Join(texts, " ")
+}
+
+// finish writes down the rest of a recording that ended, if what was
+// said is kept.
+func (l *listening) finish(r *recording, rec speech.Recognizer, said []string, settled int, kept bool) writtenDown {
+	if !kept || r.dropped.Load() {
+		return writtenDown{}
+	}
+	samples := r.recorded()
+	seconds := float64(len(samples)) / speech.SampleRate
+	if len(samples) < listenLeast {
+		return writtenDown{}
+	}
+	if silent(samples) {
+		r.line(zerolog.WarnLevel).Float64("seconds", seconds).Msg("the microphone gave only silence")
+		return writtenDown{err: errors.New(heardNothing())}
+	}
+	if !r.voiced.Load() {
+		r.line(zerolog.InfoLevel).Float64("seconds", math.Round(seconds*10)/10).Msg("nobody spoke, so nothing was written down")
+		return writtenDown{}
+	}
+	hearing := time.Now()
+	// What was said and a pause after it, not the silence beyond, see
+	// write.
+	samples = samples[:min(len(samples), r.spoken()+speech.SettleSamples)]
+	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {
+		said = append(said, rest)
+	}
+	// How much and how long, never what was said: that goes into the
+	// report only if the person keeps it there.
+	words := 0
+	for _, piece := range said {
+		words += len(strings.Fields(piece))
+	}
+	r.line(zerolog.InfoLevel).Float64("seconds", math.Round(seconds*10)/10).
+		Int("words", words).Int("pieces", len(said)).Int64("ms", time.Since(hearing).Milliseconds()).
+		Dur("recorded", time.Since(r.started).Round(time.Millisecond)).Int("passes", r.passes).
+		Int64("slowest", r.slowest.Milliseconds()).Msg("the recording was written down")
+	return writtenDown{said: said}
+}
+
+// listenLeast is the shortest recording written down, a quarter of a
+// second. Anything shorter is a click on the button, not something said.
+const listenLeast = speech.SampleRate / 4
+
+// StopListening ends the recording and gives what was said, written down,
+// every piece of it, the last included. When the recording had just
+// stopped by itself, it gives that, with why. Without a recording it
+// gives nothing.
+func (l *listening) StopListening() (Dictation, error) {
+	r, last := l.take()
+	if r == nil && last != nil {
+		if last.Error != "" {
+			return Dictation{Recording: last.Recording, Said: []string{}}, errors.New(last.Error)
+		}
+		return *last, nil
+	}
+	if r == nil {
+		return Dictation{Said: []string{}}, nil
+	}
+	r.hush()
+	r.kept = true
+	close(r.ended)
+	out := <-r.written
+	if out.err != nil {
+		return Dictation{Recording: r.id, Said: []string{}}, out.err
+	}
+	return Dictation{Recording: r.id, Said: append([]string{}, out.said...)}, nil
+}
+
+// SettleListening settles the words the window shows as being heard,
+// text, there and then, as the piece after the first pieces it has. A
+// click in them asks it, so the cursor can go in and the words can be
+// corrected while the person talks on, which Tim could not do. A
+// recording that is no longer in hand has nothing to settle.
+func (l *listening) SettleListening(recording, pieces int, text string) {
+	l.mu.Lock()
+	r := l.now
+	if r != nil && r.id == recording && text != "" {
+		r.mu.Lock()
+		r.settles = append(r.settles, settle{pieces: pieces, text: strings.TrimSpace(text)})
+		r.mu.Unlock()
+	}
+	l.mu.Unlock()
+}
+
+// BreakListening cuts the recording where it is when the person types at
+// the end of what they said, a new line, a letter or a paste, after the
+// first pieces the window has. Everything recorded before the cut is the
+// next piece, however much of it the speech model has written down by
+// then, and the window puts it in front of what was typed. Tim said a lot
+// quickly and pressed Shift+Enter, and the words the speech model wrote
+// down after that went below the new line, though he said them before
+// it, issues #573 and #584. A recording that is no longer in hand has
+// nothing to cut.
+func (l *listening) BreakListening(recording, pieces int) {
+	l.mu.Lock()
+	r := l.now
+	if r != nil && r.id == recording {
+		r.mu.Lock()
+		r.settles = append(r.settles, settle{pieces: pieces, cut: true, at: len(r.samples)})
+		r.mu.Unlock()
+	}
+	l.mu.Unlock()
+}
+
+// CancelListening ends the recording and drops what was said, at once,
+// without waiting for the speech model, when Report a Problem goes while
+// it listens. Escape keeps what was said, issue #355.
+func (l *listening) CancelListening() {
+	r, _ := l.take()
+	if r == nil {
+		return
+	}
+	r.dropped.Store(true)
+	r.hush()
+	close(r.ended)
+	r.line(zerolog.InfoLevel).Msg("the recording was dropped")
+}
+
+// silent says whether a recording is nothing but zeros. A microphone that
+// is there always hears a little noise, and macOS hands over zeros when
+// the app is not allowed to use it.
+func silent(samples []float32) bool {
+	for _, s := range samples {
+		if s != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func heardNothing() string {
+	if runtime.GOOS == "darwin" {
+		return "the microphone heard nothing. If Speaker Trail may not use it, allow it in System Settings, Privacy & Security, Microphone."
+	}
+	return "the microphone heard nothing. Check that one is connected and that Speaker Trail may use it."
+}
+
+// systemMicrophone is the machine's own microphone, the one the system
+// has chosen, through miniaudio: Core Audio on a Mac, WASAPI on Windows,
+// PulseAudio or ALSA on Linux. It asks for the speech model's own format,
+// so miniaudio does the converting.
+type systemMicrophone struct {
+	ctx *malgo.AllocatedContext
+	dev *malgo.Device
+}
+
+func (m *systemMicrophone) start(heard func([]float32)) error {
+	ctx, err := malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+	if err != nil {
+		return err
+	}
+	config := malgo.DefaultDeviceConfig(malgo.Capture)
+	config.Capture.Format = malgo.FormatF32
+	config.Capture.Channels = 1
+	config.SampleRate = speech.SampleRate
+	dev, err := malgo.InitDevice(ctx.Context, config, malgo.DeviceCallbacks{
+		Data: func(_, in []byte, frames uint32) {
+			samples := make([]float32, min(int(frames), len(in)/4))
+			for i := range samples {
+				samples[i] = math.Float32frombits(binary.LittleEndian.Uint32(in[i*4:]))
+			}
+			heard(samples)
+		},
+	})
+	if err != nil {
+		_ = ctx.Uninit()
+		ctx.Free()
+		return err
+	}
+	if err := dev.Start(); err != nil {
+		dev.Uninit()
+		_ = ctx.Uninit()
+		ctx.Free()
+		return err
+	}
+	m.ctx, m.dev = ctx, dev
+	return nil
+}
+
+func (m *systemMicrophone) stop() {
+	m.dev.Uninit()
+	_ = m.ctx.Uninit()
+	m.ctx.Free()
+}

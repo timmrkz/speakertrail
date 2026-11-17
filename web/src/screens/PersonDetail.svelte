@@ -6,7 +6,7 @@
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { fmtDay, initials } from '../lib/format'
   import { Load } from '../lib/load.svelte'
-  import { errorText, toast } from '../lib/toast.svelte'
+  import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
@@ -56,7 +56,7 @@
     try {
       await review(profile, 'open')
     } catch (e) {
-      toast.show(errorText(e), 'bad')
+      fault(e)
     } finally {
       settingAside = false
     }
@@ -69,10 +69,10 @@
       await review(of, 'rejected')
       toast.show('LinkedIn profile set aside as not this person', 'plain', {
         label: 'Undo',
-        run: () => review(of, of.review).catch((e) => toast.show(errorText(e), 'bad')),
+        run: () => review(of, of.review).catch((e) => fault(e)),
       })
     } catch (e) {
-      toast.show(errorText(e), 'bad')
+      fault(e)
     } finally {
       settingAside = false
     }
@@ -90,7 +90,7 @@
       noteState = 'saved'
     } catch (e) {
       noteState = 'error'
-      toast.show(errorText(e), 'bad')
+      fault(e)
     }
   }
 
@@ -131,7 +131,7 @@
     } catch (e) {
       person.data = { ...person.data, connected: before }
       onupdate?.(person.data)
-      toast.show(errorText(e), 'bad')
+      fault(e)
     } finally {
       deciding = false
     }

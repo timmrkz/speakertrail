@@ -200,6 +200,9 @@ button { -webkit-tap-highlight-color: transparent; }
 /* A control that removes something wears its own red, which is about as
    bright as the accent in dark, so its edge turns that red in full. */
 .btn.danger:focus-visible { outline-color: var(--bad); }
+/* A pressed chip is filled with the ink, which the accent hardly stands
+   out from, so its edge is cut in the page's colour like a primary's. */
+.chip[aria-pressed="true"]:focus-visible { outline-color: var(--bg); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }

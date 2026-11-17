@@ -104,6 +104,12 @@ const settings = [
   ['Light', (p) => p.locator('main button', { hasText: 'Light' })],
 ]
 
+const people = [
+  ['Run', (p) => p.locator('main button.start')],
+  ['the filter shown', (p) => p.locator('main .filters button[aria-pressed="true"]')],
+  ['a filter not shown', (p) => p.locator('main .filters button[aria-pressed="false"]').first()],
+]
+
 const walks = []
 for (const theme of ['light', 'dark']) {
   walks.push({
@@ -130,6 +136,29 @@ for (const theme of ['light', 'dark']) {
       await page.goto(`${url}/app/settings`)
       await page.locator('main button', { hasText: 'System' }).waitFor()
       return measure(page, settings)
+    },
+  })
+  walks.push({
+    theme,
+    name: `In ${theme}, People shows focus on its buttons, and nothing more on the open person`,
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      const row = page.locator('.prow').first()
+      await row.waitFor()
+      const weak = await measure(page, people)
+      if (weak) return weak
+      // The open person's row is marked already. Arrow keys move it, and
+      // the keyboard on it adds no edge, see the interface skill.
+      await row.click()
+      await page.keyboard.press('ArrowDown')
+      await page.waitForFunction(() => {
+        const e = document.activeElement
+        return e?.matches('.prow[aria-current="true"]') && e !== document.querySelector('.prow')
+      })
+      const mark = await page.evaluate(() => ({ focus: document.activeElement.matches(':focus-visible'), outline: getComputedStyle(document.activeElement).outlineStyle }))
+      if (!mark.focus) return 'the open person\'s row took focus without showing it as the keyboard\'s'
+      if (mark.outline !== 'none') return `the open person's row wears a ${mark.outline} edge`
+      return ''
     },
   })
 }

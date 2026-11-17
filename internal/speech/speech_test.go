@@ -298,11 +298,26 @@ func ticking() func() time.Time {
 }
 
 // An archive with one file of n bytes in it, the way a model is mostly
-// its one large file, and how much it unpacks to.
+// its one large file, and how much it unpacks to. The large file comes
+// first, so a stop heard in it is heard inside the file and never
+// between two files.
 func bigArchive(t *testing.T, name string, n int) ([]byte, int64) {
 	t.Helper()
 	body := strings.Repeat("0123456789abcdef", n/16)
-	return modelArchive(t, map[string]string{name + "/tokens.txt": "a 0\n", name + "/model.onnx": body}), int64(len("a 0\n") + len(body))
+	var plain bytes.Buffer
+	w := tar.NewWriter(&plain)
+	for _, f := range []struct{ name, body string }{{name + "/model.onnx", body}, {name + "/tokens.txt", "a 0\n"}} {
+		if err := w.WriteHeader(&tar.Header{Name: f.name, Mode: 0o644, Size: int64(len(f.body)), Typeflag: tar.TypeReg}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(f.body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return bzip(t, plain.Bytes()), int64(len("a 0\n") + len(body))
 }
 
 // Unpacking says how far it has come too, against what the model is known

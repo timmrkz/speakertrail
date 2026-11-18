@@ -1,3 +1,12 @@
+# A pull request starts only the jobs whose code it changed: the Go job
+# when Go changed, the interface's job when the interface changed, and
+# the job that builds the whole app on a Mac, macos, when either did. What
+# counts as which is the filters of the job changes, below. A change to
+# the docs alone starts nothing. A push to main starts every job. Ported
+# from FrameFairy, which works the same way.
+#
+# No branch rule requires a check, so nothing waits on a job that was
+# never started.
 name: CI
 
 on:
@@ -9,7 +18,42 @@ permissions:
   contents: read
 
 jobs:
+  # What the pull request changed, by the files GitHub lists for it. Go is
+  # every file outside web/, the docs and .claude/, so a script, the
+  # Makefile or a workflow is Go, and the Go files of web/, goread, the
+  # package that embeds the built interface. The interface is web/, the
+  # Makefile and the workflows. See CI in docs/BUILD.md.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
+      interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
+      app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
+    steps:
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          predicate-quantifier: every
+          filters: |
+            go:
+              - '**'
+              - '!web/**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.claude/**'
+            goread:
+              - 'web/*.go'
+            interface:
+              - '{web/**,.github/workflows/**,Makefile}'
+
   web:
+    needs: changes
+    if: needs.changes.outputs.interface == 'true'
     runs-on: ubuntu-24.04
     defaults:
       run:
@@ -33,6 +77,8 @@ jobs:
         run: make walks
 
   go:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -50,6 +96,8 @@ jobs:
   # The app on the machine it is for. Tim's Mac is Apple silicon, and so is
   # this runner.
   macos:
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v5

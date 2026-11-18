@@ -90,6 +90,12 @@ var linked = map[string][]string{
 		"/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore",
 		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
+		// Linked weakly by Wails: ServiceManagement to open the app at
+		// login with SMAppService's mainAppService, see raising, and
+		// UniformTypeIdentifiers for the file types of its dialogs. Both
+		// were in main's builds before the check read weak links.
+		"/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement",
+		"/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers",
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib", "/usr/lib/libresolv.9.dylib",
 		// The speech library Dictate hears with, carried in
 		// Contents/Frameworks by the build, see docs/BUILD.md.
@@ -158,6 +164,14 @@ func checkInputs(zipPath string) error {
 	for i, f := range z.File {
 		if f.Mode()&setID != 0 {
 			reads[i].found = append(reads[i].found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
+		}
+		// A link can point a folder of the build, Contents/Frameworks
+		// say, at one outside it, and the updater keeps a link that does,
+		// so every path the check reads as inside could lead out. No
+		// build of the app has one.
+		if f.Mode()&fs.ModeSymlink != 0 {
+			reads[i].found = append(reads[i].found, f.Name+": is a link, which could lead outside the build")
+			continue
 		}
 		if f.FileInfo().IsDir() {
 			continue
@@ -247,7 +261,7 @@ func inputsOf(name string, data []byte) []string {
 		return tidy(found)
 	}
 	for _, a := range files {
-		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
+		found = append(found, machoInputs(name, a.f, a.data)...)
 	}
 	return tidy(found)
 }
@@ -275,9 +289,11 @@ func looksMachO(data []byte) bool {
 }
 
 // machoInputs says what one program, or one architecture of it, imports,
-// links or is entitled to that could read input or ask for administrator
-// rights.
-func machoInputs(base string, f *macho.File, data []byte) []string {
+// links, loads from outside the build or is entitled to that could read
+// input or ask for administrator rights. name is where the program is in
+// the build.
+func machoInputs(name string, f *macho.File, data []byte) []string {
+	base := path.Base(name)
 	var found []string
 	syms, err := f.ImportedSymbols()
 	if err != nil {
@@ -293,12 +309,20 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 	if err != nil {
 		found = append(found, fmt.Sprintf("its libraries cannot be read: %v", err))
 	}
+	more, odd := otherLinks(f)
+	libs = append(libs, more...)
+	found = append(found, odd...)
 	known, ok := linked[base]
 	for _, l := range libs {
 		if !ok {
 			found = append(found, "is a program the list of linked libraries does not know, and links "+l)
 		} else if !slices.Contains(known, l) {
 			found = append(found, "links "+l)
+		}
+	}
+	for _, l := range f.Loads {
+		if r, ok := l.(*macho.Rpath); ok && !insideBuild(name, r.Path, f.Type == macho.TypeExec) {
+			found = append(found, "looks for libraries outside the build, in "+r.Path)
 		}
 	}
 	keys, err := entitlements(f, data)
@@ -311,6 +335,97 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 		}
 	}
 	return found
+}
+
+// Load commands Go's debug/macho does not read for itself. Each of the
+// first four links a library as LC_LOAD_DYLIB does, and loads it as
+// surely: weakly, which Wails does for ServiceManagement and
+// UniformTypeIdentifiers, re-exported, lazily or upward.
+const (
+	loadWeakDylib   = 0x80000018
+	reexportDylib   = 0x8000001f
+	lazyLoadDylib   = 0x20
+	loadUpwardDylib = 0x80000023
+	loadDylinker    = 0xe
+	dyldEnvironment = 0x27
+)
+
+// otherLinks are the libraries a program links with the load commands Go
+// does not read, and what else in its load commands could load code the
+// check never read: a loader other than macOS's own, or an environment
+// for it, which can set where it looks, like DYLD_LIBRARY_PATH.
+func otherLinks(f *macho.File) (libs, found []string) {
+	for _, l := range f.Loads {
+		raw := l.Raw()
+		cmd := f.ByteOrder.Uint32(raw)
+		switch cmd {
+		case loadWeakDylib, reexportDylib, lazyLoadDylib, loadUpwardDylib, loadDylinker, dyldEnvironment:
+		default:
+			continue
+		}
+		if len(raw) < 12 {
+			found = append(found, fmt.Sprintf("its load command %#x cannot be read", cmd))
+			continue
+		}
+		at := f.ByteOrder.Uint32(raw[8:])
+		if at >= uint32(len(raw)) {
+			found = append(found, fmt.Sprintf("its load command %#x cannot be read", cmd))
+			continue
+		}
+		name, _, _ := bytes.Cut(raw[at:], []byte{0})
+		switch cmd {
+		case loadDylinker:
+			if string(name) != "/usr/lib/dyld" {
+				found = append(found, "is loaded by "+string(name))
+			}
+		case dyldEnvironment:
+			found = append(found, "sets the loader's environment, "+string(name))
+		default:
+			libs = append(libs, string(name))
+		}
+	}
+	return libs, found
+}
+
+// insideBuild says whether a place a program looks for the libraries it
+// links as @rpath, an LC_RPATH, is inside the build. The list of linked
+// libraries allows @rpath for the speech library, so whatever is found
+// first under these places is what loads, and a place outside the build,
+// like the Go module cache of the Mac that built it or a folder anyone
+// can write to, would load a library nobody checked. Inside is where the
+// file is, @loader_path, or where the program that runs is,
+// @executable_path, and below them, never climbing out of the .app.
+// exe says the file is a program of its own, whose @executable_path is
+// its own folder. For a library it is the app's program, in
+// Contents/MacOS.
+//
+// The app's builds look in @executable_path, @executable_path/lib and
+// @executable_path/../Frameworks, and the speech library in @loader_path,
+// read from main's build of 18 November 2026.
+func insideBuild(name, rpath string, exe bool) bool {
+	// The .app the file is in, or the top of the zip when it is in none,
+	// which no rpath may climb out of either.
+	bundle, at := "", path.Dir(name)
+	if i := strings.Index(name, ".app/"); i >= 0 {
+		bundle = name[:i+len(".app")]
+		if !exe {
+			at = bundle + "/Contents/MacOS"
+		}
+	}
+	var rest string
+	switch {
+	case rpath == "@loader_path" || strings.HasPrefix(rpath, "@loader_path/"):
+		at, rest = path.Dir(name), strings.TrimPrefix(rpath, "@loader_path")
+	case rpath == "@executable_path" || strings.HasPrefix(rpath, "@executable_path/"):
+		rest = strings.TrimPrefix(rpath, "@executable_path")
+	default:
+		return false
+	}
+	where := path.Clean(path.Join(at, rest))
+	if bundle == "" {
+		return where != ".." && !strings.HasPrefix(where, "../")
+	}
+	return where == bundle || strings.HasPrefix(where, bundle+"/")
 }
 
 // entitlements are the keys of what the program was signed as entitled

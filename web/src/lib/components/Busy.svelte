@@ -9,10 +9,14 @@
   //   the fill   how far the work has come, when that is known, with a
   //              light passing over what is done
   //
-  // The control needs nothing of its own: app.css gives any button holding
-  // a beam its rounded clip and a stacking context, so the beam lies over
-  // the control's background and under its words. It is the one way work
-  // in hand is drawn on a control, so it is used, never copied.
+  // The control needs nothing of its own: app.css gives any control
+  // holding a beam a stacking context, so the beam lies over the control's
+  // background and its line and under its words, and says in --beam-edge
+  // how far outside the control the line round it lies. The beam runs on
+  // that line, not a pixel inside it, and the fill and the motes stay
+  // inside it, with corners that are the inside of its corners. It is the
+  // one way work in hand is drawn on a control, so it is used, never
+  // copied.
   //
   // Given drain, the fill starts full and runs down to nothing in that
   // many seconds, with no beam, and then onend: the time something
@@ -46,19 +50,35 @@
   {/if}
   {#if drain <= 0}<span class="ring"></span>{/if}
   {#if motes && drain <= 0}
-    {#each specks as m (m.at)}
-      <i class="mote" style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"></i>
-    {/each}
+    <span class="motes">
+      {#each specks as m (m.at)}
+        <i class="mote" style="left: {m.at}%; animation-delay: {m.wait}ms; animation-duration: {m.over}s; --sway: {m.sway}px"></i>
+      {/each}
+    </span>
   {/if}
 </span>
 
 <style>
-  .beam { position: absolute; inset: 0; z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
-  /* A square turning behind the control with only a 1 px rim of it
-     showing, so what is seen is light running round the edge. A turning
-     square is a transform, which the compositor does without painting. */
+  /* Behind the words of the control and over its background and its
+     line. The control makes the stacking context this is negative in, so
+     nothing else on the page is disturbed by it, and the browser paints
+     a context's own border before anything inside it, so the beam lies on
+     the line.
+
+     It covers the control and the line round it, which lies --beam-edge
+     outside what the control holds: the control's border. Its corners are
+     the control's own, which are the corners of the outside of that line,
+     so the light follows the line round the corners too. A box inside a
+     control is only ever as big as the inside of its border, and a beam
+     that size ran a pixel inside the line, which Tim saw, issue #29. */
+  .beam { position: absolute; inset: calc(-1 * var(--beam-edge, 0px)); z-index: -1; border-radius: inherit; overflow: hidden; pointer-events: none; }
+  /* A square turning behind the control with only a rim of it showing,
+     so what is seen is light running round the edge. A turning square is
+     a transform, which the compositor does without painting. The rim is
+     as thick as the line it runs on, and the mask keeps the rim and
+     throws the middle away. */
   .ring {
-    position: absolute; inset: 0; border-radius: inherit; padding: 1px; overflow: hidden;
+    position: absolute; inset: 0; border-radius: inherit; padding: max(1px, var(--beam-edge, 0px)); overflow: hidden;
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
     -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -83,6 +103,13 @@
   }
   @keyframes turn { from { transform: translate(-50%, -50%) rotate(0turn); } to { transform: translate(-50%, -50%) rotate(5turn); } }
   @keyframes lap { from { transform: translate(-50%, -50%) rotate(0turn); } to { transform: translate(-50%, -50%) rotate(3turn); } }
+  /* Inside the line, cut to the inside of its corners: a border as wide
+     as the line, which nothing is drawn in, makes the inside of the box
+     exactly what the line leaves, and the browser rounds the inside of a
+     border by the corner less the line, so no corner of the fill or a
+     mote is a hair rounder than the line round it. The same for the fill
+     below. */
+  .motes { position: absolute; inset: 0; border: var(--beam-edge, 0px) solid transparent; border-radius: inherit; overflow: hidden; }
   .mote {
     position: absolute; bottom: -3px; width: 3px; height: 3px; border-radius: 50%;
     background: var(--lit, var(--accent-lit)); box-shadow: 0 0 4px var(--lit, var(--accent-lit));
@@ -93,7 +120,7 @@
     18% { opacity: .85; }
     to { transform: translate(var(--sway), -32px) scale(1); opacity: 0; }
   }
-  .fill { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
+  .fill { position: absolute; inset: 0; border: var(--beam-edge, 0px) solid transparent; border-radius: inherit; overflow: hidden; }
   .fill i {
     display: block; position: relative; width: 100%; height: 100%; overflow: hidden;
     background: linear-gradient(90deg, var(--wash-from, var(--accent-fill)) 0%, var(--wash-to, var(--accent-fill-hi)) 100%);

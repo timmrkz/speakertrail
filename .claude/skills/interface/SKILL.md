@@ -89,6 +89,14 @@ Fairy's rules, without its styling:
   `runWatch.watch()` in an effect. Start and Stop go through it and show
   at once, before the app answers. How a run ended shows through
   `RunStatePill.svelte` and `RunOutcome.svelte`, everywhere the same.
+- **The beam runs on the line round the control**, not a pixel inside
+  it, with the fill and the motes inside that line. A control holding a
+  beam says how far out its line lies in `--beam-edge`, which is
+  `--line-w` for a `.btn`, and never clips with `overflow`, since that
+  cuts the light off at the inside of its border. `walks/beam.mjs`
+  measures every control that carries one. Tim saw the beam a pixel
+  inside the border testing #24, issue #29, and FrameFairy fixed the same
+  in its #795.
 - **It can be stopped**, in the same place it was started.
 - **One component per kind of work.** A run shows itself through
   `RunProgress.svelte` in the list and in its sheet alike. A new kind of

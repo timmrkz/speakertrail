@@ -28,6 +28,10 @@ type program struct {
 	imports  []string
 	text     string
 	entitled string
+	// signed puts a code directory with flags and team in the signature.
+	signed bool
+	flags  uint32
+	team   string
 }
 
 // bytes lays the program out: the header, its load commands, then its
@@ -55,7 +59,7 @@ func (p program) bytes() []byte {
 	// After the header and the commands: the symbols, the names, the
 	// text, the signature. The commands for them are 24, 80 and 16 bytes.
 	cmdsize := cmds.Len() + 24 + 80
-	if p.entitled != "" {
+	if p.entitled != "" || p.signed {
 		cmdsize += 16
 	}
 	symoff := 32 + cmdsize
@@ -77,18 +81,52 @@ func (p program) bytes() []byte {
 	add(0x2, 24, uint32(symoff), uint32(len(p.imports)), uint32(stroff), uint32(names.Len()))
 	add(0xb, 80, 0, 0, 0, 0, 0, uint32(len(p.imports)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 	var sig []byte
-	if p.entitled != "" {
+	if p.entitled != "" || p.signed {
 		be := binary.BigEndian
-		blob := be.AppendUint32(nil, 0xfade7171)
-		blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
-		blob = append(blob, p.entitled...)
-		// A blob of blobs with one, the entitlements in slot 5.
+		type slot struct {
+			kind uint32
+			blob []byte
+		}
+		var slots []slot
+		if p.signed {
+			// A code directory of version 0x20400: its flags at 12, the
+			// offset of its team's name at 48, the name after the header.
+			cd := make([]byte, 52)
+			be.PutUint32(cd, 0xfade0c02)
+			be.PutUint32(cd[8:], 0x20400)
+			be.PutUint32(cd[12:], p.flags)
+			if p.team != "" {
+				be.PutUint32(cd[48:], 52)
+				cd = append(cd, p.team...)
+				cd = append(cd, 0)
+			}
+			be.PutUint32(cd[4:], uint32(len(cd)))
+			slots = append(slots, slot{0, cd})
+		}
+		if p.entitled != "" {
+			blob := be.AppendUint32(nil, 0xfade7171)
+			blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
+			blob = append(blob, p.entitled...)
+			slots = append(slots, slot{5, blob})
+		}
+		// A blob of blobs: its header, an index of kind and offset per
+		// slot, then the slots.
+		at := 12 + 8*len(slots)
+		size := at
+		for _, sl := range slots {
+			size += len(sl.blob)
+		}
 		sig = be.AppendUint32(nil, 0xfade0cc0)
-		sig = be.AppendUint32(sig, uint32(20+len(blob)))
-		sig = be.AppendUint32(sig, 1)
-		sig = be.AppendUint32(sig, 5)
-		sig = be.AppendUint32(sig, 20)
-		sig = append(sig, blob...)
+		sig = be.AppendUint32(sig, uint32(size))
+		sig = be.AppendUint32(sig, uint32(len(slots)))
+		for _, sl := range slots {
+			sig = be.AppendUint32(sig, sl.kind)
+			sig = be.AppendUint32(sig, uint32(at))
+			at += len(sl.blob)
+		}
+		for _, sl := range slots {
+			sig = append(sig, sl.blob...)
+		}
 		add(0x1d, 16, uint32(sigoff), uint32(len(sig)))
 	}
 	cpu := p.cpu
@@ -197,7 +235,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
 			}),
-			[]string{"is entitled to com.apple.security.device.audio-input"}},
+			nil},
 		{"the camera, entitled", "speakertrail-app",
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"
@@ -382,6 +420,30 @@ func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	}
 	if got := inputsOf("Speaker Trail.app/Contents/Info.plist", []byte(plist)); got != nil {
 		t.Errorf("the app's Info.plist %s", strings.Join(got, ", "))
+	}
+}
+
+// What sign-macos.sh signs the app as entitled to is only what the lists
+// allow, so a pull request that adds an entitlement fails here, before its
+// build is refused.
+//
+// On the real disk: what this reads is the file the script signs with.
+func TestTheShippedEntitlementsAreAllowed(t *testing.T) {
+	data, err := os.ReadFile("../../build/entitlements.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := plistKeys(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(keys, "com.apple.security.device.audio-input") {
+		t.Errorf("read %q, without the microphone Dictate hears only silence", keys)
+	}
+	for _, k := range keys {
+		if !slices.Contains(entitled, k) {
+			t.Errorf("the app is signed as entitled to %s, which the list refuses", k)
+		}
 	}
 }
 

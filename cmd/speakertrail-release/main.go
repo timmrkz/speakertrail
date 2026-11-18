@@ -155,9 +155,15 @@ func sign(args []string) error {
 	commit := fs.String("commit", "", "the commit it was built from")
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
+	team := fs.String("team", "", "refuse a build not signed by this team's Developer ID with the hardened runtime")
 	_ = fs.Parse(args)
 	if err := checkInputs(*zipPath); err != nil {
 		return err
+	}
+	if *team != "" {
+		if err := checkHardened(*zipPath, *team); err != nil {
+			return err
+		}
 	}
 	private, public, err := keys()
 	if err != nil {

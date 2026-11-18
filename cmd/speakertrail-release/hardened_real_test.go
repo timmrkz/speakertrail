@@ -1,0 +1,65 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// The code directory and the entitlements are read the way codesign
+// really writes them, not only the way these tests write them. CI's macos
+// job signs the app with scripts/sign-macos.sh and a certificate made for
+// the test, then names that bundle SIGNED_APP and the one make signed ad
+// hoc ADHOC_APP. Anywhere else there is no codesign, and this is skipped.
+//
+// On the real disk: what this reads is the bundles codesign signed.
+func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
+	signedApp, adhocApp := os.Getenv("SIGNED_APP"), os.Getenv("ADHOC_APP")
+	if signedApp == "" || adhocApp == "" {
+		t.Skip("needs bundles signed on a Mac, see the macos job in ci.yml")
+	}
+	read := func(t *testing.T, file string) (signing, []string) {
+		t.Helper()
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		arches, err := archesOf(data)
+		if err != nil || len(arches) == 0 {
+			t.Fatalf("%s is no program: %v", file, err)
+		}
+		s, err := signingOf(arches[0])
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		keys, err := entitlements(arches[0].f, arches[0].data)
+		if err != nil {
+			t.Fatalf("%s: %v", file, err)
+		}
+		return s, keys
+	}
+	programs := func(t *testing.T, app string) []string {
+		t.Helper()
+		libs, err := filepath.Glob(filepath.Join(app, "Contents", "Frameworks", "*.dylib"))
+		if err != nil || len(libs) == 0 {
+			t.Fatalf("%s carries no speech library: %v", app, err)
+		}
+		return append([]string{filepath.Join(app, "Contents", "MacOS", "speakertrail-app")}, libs...)
+	}
+	for _, file := range programs(t, signedApp) {
+		s, _ := read(t, file)
+		if !s.signed || s.flags&flagRuntime == 0 || s.flags&flagAdhoc != 0 {
+			t.Errorf("%s signed by sign-macos.sh reads as signed %v with flags %#x", file, s.signed, s.flags)
+		}
+	}
+	if _, keys := read(t, programs(t, signedApp)[0]); !slices.Contains(keys, "com.apple.security.device.audio-input") {
+		t.Errorf("the app signed by sign-macos.sh reads as entitled to %q", keys)
+	}
+	for _, file := range programs(t, adhocApp) {
+		s, _ := read(t, file)
+		if !s.signed || s.flags&flagAdhoc == 0 || s.flags&flagRuntime != 0 || s.team != "" {
+			t.Errorf("%s signed by make reads as signed %v with flags %#x and team %q", file, s.signed, s.flags, s.team)
+		}
+	}
+}

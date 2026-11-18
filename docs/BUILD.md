@@ -107,7 +107,8 @@ A push to main starts every job. No branch rule requires a check, so
 a pull request of the docs alone waits on nothing. A Go test that read
 a file of `web/` or of the docs would not run on the pull request that
 changes it, so none does: a file of `web/` a Go test needs goes in
-`goread`.
+`goread`. `internal/workflows` reads every Go test and holds them to
+that.
 
 ## The speech library
 

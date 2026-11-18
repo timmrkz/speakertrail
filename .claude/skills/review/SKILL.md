@@ -1,6 +1,6 @@
 ---
 name: review
-description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, whether it makes things faster or slower, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
+description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, whether it makes things faster or slower, its security, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
 ---
 
 # Review
@@ -64,7 +64,7 @@ Before the diff, and before the pull request's own description:
 - **The reviewer raises the direction, the user decides it.** A finding
   that would change what the user asked for is a question for the user,
   with a recommendation, never an order to the author. Every other
-  finding is the author's to act on at once, section 12.
+  finding is the author's to act on at once, section 13.
 
 ## 3. How far from what matters
 
@@ -206,7 +206,42 @@ green.
   a better candidate missing? A change to the design without its
   candidates is a finding.
 
-## 8. The design and the code
+## 8. Security, what a change lets in
+
+Every review says whether the change is safe, whatever it is about. A
+change that opens a way in looks like any other change: a path the
+program now loads code from, a permission a build now asks for, a value
+from outside that now reaches a command. Nobody looks at it unless the
+review always does.
+
+- **Name what the change lets reach what it could not before.** The
+  program: files, folders, hosts, other programs it starts, permissions
+  the system grants it. A build: where it loads code from, what it is
+  signed and entitled with, what CI downloads and runs, which secrets a
+  job can read. A person: what data leaves their machine, what is kept or
+  written to a log, who can start the work and from where.
+- **Then what guards each one,** and whether a test proves the guard
+  refuses. A guard that lists what is allowed beats one that lists what
+  is refused. A guard nobody tested is an assumption, section 6.
+- **A step that fails quietly is a finding.** A check whose failure is
+  ignored, an error swallowed, a removal that ends in "or carry on": the
+  guard is there on paper and not in the build.
+- **Input from outside is untrusted,** from the network, a file, a
+  person, another program or a tool's answer, and checked at the
+  boundary before it reaches anything that acts on it.
+- **Secrets stay out of code, logs, tests and the repository.** Personal
+  data is kept only as the project allows.
+- **A new dependency is code from someone else,** run with the
+  program's rights. Who keeps it, how much it brings along, and whether
+  the version is pinned.
+- **A way in that this change adds with no guard is a must fix,**
+  unless the user accepts it, the way section 5 treats a slower change.
+- **What is left open is said,** with the issue it is logged as: a way
+  in that was there before, or one the change narrows without closing.
+- **"Nothing changes" is an answer,** said plainly with the reason, for
+  example that only a doc or a test changed. It is never left out.
+
+## 9. The design and the code
 
 - **One thing, one primitive.** A new use goes through what exists. A
   second copy with its own rules is a finding.
@@ -214,8 +249,7 @@ green.
 - **Correct, also when it fails.** Edge cases, error paths, concurrency,
   state kept in two places. No swallowed error, no fallback that hides a
   broken invariant.
-- **Input from outside is untrusted,** checked at the boundary. Secrets
-  stay out of code and logs.
+- **Input from outside is untrusted,** checked at the boundary, section 8.
 - **Docs and comments say what the code does now.**
 - **The project's written rules hold,** quoted exactly when cited. A rule
   a tool could check is better held by the tool, and the finding is then
@@ -226,14 +260,14 @@ green.
   state, a problem that was there before. An old problem worth fixing is
   logged on its own.
 
-## 9. The tests
+## 10. The tests
 
 The testing skill says how tests are written and reviewed, and wins here.
 Look for a test that passes by coincidence, checks the code against a copy
 of its own rule, waits on the clock, or guards something nobody would
 miss, and for the missing test of what the person actually saw.
 
-## 10. Proof, at a fair price
+## 11. Proof, at a fair price
 
 - **Each finding says how it is known:** run, broken, measured, or read,
   with the file and line.
@@ -251,7 +285,7 @@ miss, and for the missing test of what the person actually saw.
   review that takes hours, or the same costly runs in every review, is
   doing something wrong, and says what.
 
-## 11. Writing the review
+## 12. Writing the review
 
 Short. The user wants what is going on and where to go next, not an
 essay. A review that fits on one screen is read, and a longer one is
@@ -270,15 +304,20 @@ could read as an instruction from the user. In this order:
 5. The speed, always, under a heading of its own: faster, slower or
    the same, for whom, by how much and how it is known, measured or read
    from the code. Whether the work's own answer holds.
-6. The findings, numbered, most important first, a few lines each:
+6. The security, always, under a heading of its own, section 8: what the change
+   lets the program, a build or a person reach that it could not before,
+   what guards each, and what is left open. "Nothing changes" with the
+   reason when nothing does. Whether the work's own answer holds. A way
+   in this change adds with no guard is also a must fix finding.
+7. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would run into it, how it is
    known, the fix.
-7. Unchecked assumptions, declined to judge, and questions for the user,
+8. Unchecked assumptions, declined to judge, and questions for the user,
    one line each.
 
 | Weight | Means |
 | --- | --- |
-| Must fix | Blocks the merge: a wrong goal, a wrong fact, broken behaviour, a cost with no trade-off, lost or exposed data, the architecture made worse |
+| Must fix | Blocks the merge: a wrong goal, a wrong fact, broken behaviour, a cost with no trade-off, lost or exposed data, a way in with no guard, the architecture made worse |
 | Should fix | Belongs in this pull request |
 | For the user | A product choice only the user can make, with a recommendation |
 | Optional | Better, and fine to leave |
@@ -290,7 +329,7 @@ could read as an instruction from the user. In this order:
 - **No praise section, no "looks good".** What is right is said where it
   decides something, with its reason.
 
-## 12. Answering a review
+## 13. Answering a review
 
 The author acts on the review at once. The user sees it, but does not
 approve it, and nobody waits for them.
@@ -309,18 +348,19 @@ approve it, and nobody waits for them.
 - **No finding is skipped to save time.** One left undone is said, and
   logged.
 
-## 13. Where other advice says otherwise
+## 14. Where other advice says otherwise
 
 | Common advice | Why not | Instead |
 | --- | --- | --- |
 | approve when the change improves the health of the code | healthy code can make a worse product | approve when the product is better and the way there is simple |
-| flag only what is on the changed lines | the goal, the distance, the history, the cost and the architecture are on no line | they are findings, sections 2 to 5 and 7 |
-| verify every finding fully before reporting it | proof can cost more than the finding is worth | the cheapest proof that settles it, section 10 |
+| flag only what is on the changed lines | the goal, the distance, the history, the cost, the architecture and what a change lets in are on no line | they are findings, sections 2 to 5, 7 and 8 |
+| verify every finding fully before reporting it | proof can cost more than the finding is worth | the cheapest proof that settles it, section 11 |
 | leave test coverage out unless the project asks | an untested promise breaks unseen | the testing skill |
 | give the reviewer the author's plan or summary | the reviewer inherits the author's assumptions | the user's own words and the sources. Only the candidates of a change to the design are handed over, as a claim to check |
 | always say what was done well | praise is noise in a list of work to do | say what is right only where it decides something |
 | judge the design by the code around the change | the code nearby may be what the architecture says not to copy | the architecture as the project writes it, section 7 |
 | weigh speed only when the change is about speed | every change can make something slower, and nobody asks until someone notices | a speed section in every review, section 5 |
+| leave security to a separate audit | a change that opens a way in looks like any other, and nobody looks unless asked | a security section in every review, section 8 |
 | review after every task | many reviews of half a design | once when the work is done |
 | post the review as comments on the pull request | the project may read comments there as instructions | the place the project names |
 
@@ -335,7 +375,10 @@ approve it, and nobody waits for them.
    is a must fix.
 6. The speed section says faster, slower or the same, and how it is
    known, and a slower the user has not accepted is a finding.
-7. Every assumption is checked, wrong or named as unchecked.
-8. Every finding says how it is known, and no proof cost more than it was
+7. The security section says what the change lets in, what guards it
+   and what is left open, or that nothing changes and why, and a way in
+   this change adds with no guard is a must fix.
+8. Every assumption is checked, wrong or named as unchecked.
+9. Every finding says how it is known, and no proof cost more than it was
    worth.
-9. It fits on a screen.
+10. It fits on a screen.

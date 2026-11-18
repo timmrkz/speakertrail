@@ -247,7 +247,7 @@ func inputsOf(name string, data []byte) []string {
 		return tidy(found)
 	}
 	for _, a := range files {
-		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
+		found = append(found, machoInputs(name, a.f, a.data)...)
 	}
 	return tidy(found)
 }
@@ -275,9 +275,11 @@ func looksMachO(data []byte) bool {
 }
 
 // machoInputs says what one program, or one architecture of it, imports,
-// links or is entitled to that could read input or ask for administrator
-// rights.
-func machoInputs(base string, f *macho.File, data []byte) []string {
+// links, loads from outside the build or is entitled to that could read
+// input or ask for administrator rights. name is where the program is in
+// the build.
+func machoInputs(name string, f *macho.File, data []byte) []string {
+	base := path.Base(name)
 	var found []string
 	syms, err := f.ImportedSymbols()
 	if err != nil {
@@ -301,6 +303,11 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 			found = append(found, "links "+l)
 		}
 	}
+	for _, l := range f.Loads {
+		if r, ok := l.(*macho.Rpath); ok && !insideBuild(name, r.Path) {
+			found = append(found, "looks for libraries outside the build, in "+r.Path)
+		}
+	}
 	keys, err := entitlements(f, data)
 	if err != nil {
 		found = append(found, fmt.Sprintf("its signature cannot be read: %v", err))
@@ -311,6 +318,44 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 		}
 	}
 	return found
+}
+
+// insideBuild says whether a place a program looks for the libraries it
+// links as @rpath, an LC_RPATH, is inside the build. The list of linked
+// libraries allows @rpath for the speech library, so whatever is found
+// first under these places is what loads, and a place outside the build,
+// like the Go module cache of the Mac that built it or a folder anyone
+// can write to, would load a library nobody checked. Inside is where the
+// program is, @loader_path, or where the app's own program is,
+// @executable_path, and below them, never climbing out of the .app.
+//
+// The app's builds look in @executable_path, @executable_path/lib and
+// @executable_path/../Frameworks, and the speech library in @loader_path,
+// read from main's build of 18 November 2026.
+func insideBuild(name, rpath string) bool {
+	// The .app the program is in, or the top of the zip when it is in
+	// none, which no rpath may climb out of either.
+	bundle, at := "", ""
+	if i := strings.Index(name, ".app/"); i >= 0 {
+		bundle = name[:i+len(".app")]
+		at = bundle + "/Contents/MacOS"
+	} else {
+		at = path.Dir(name)
+	}
+	var rest string
+	switch {
+	case rpath == "@loader_path" || strings.HasPrefix(rpath, "@loader_path/"):
+		at, rest = path.Dir(name), strings.TrimPrefix(rpath, "@loader_path")
+	case rpath == "@executable_path" || strings.HasPrefix(rpath, "@executable_path/"):
+		rest = strings.TrimPrefix(rpath, "@executable_path")
+	default:
+		return false
+	}
+	where := path.Clean(path.Join(at, rest))
+	if bundle == "" {
+		return where != ".." && !strings.HasPrefix(where, "../")
+	}
+	return where == bundle || strings.HasPrefix(where, bundle+"/")
 }
 
 // entitlements are the keys of what the program was signed as entitled

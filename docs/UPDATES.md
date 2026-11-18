@@ -124,7 +124,9 @@ first.
 `speakertrail-release check` reads every file in the zip, and `sign`
 reads it all again before it signs, see
 `cmd/speakertrail-release/inputs.go`. They refuse a build that links a
-library not on its list, has a file that names what taps keys, records
+library not on its list, has a program that looks for the libraries it
+links as `@rpath` anywhere but inside the .app, has a file that names
+what taps keys, records
 the screen, opens the camera or asks for administrator rights, has a
 file that looks like a program and cannot be read as one, or unpacks to
 more than 1 GB. It may ask for the microphone, for Dictate on Report a

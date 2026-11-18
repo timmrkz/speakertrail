@@ -19,12 +19,14 @@ import (
 // would read them, with what each test needs in them.
 
 // program is a 64-bit arm64 Mach-O program: the libraries it links, the
-// functions and classes it imports, text anywhere in it, and the
-// entitlements it is signed with, as the XML codesign writes, or none.
+// places it looks for those it links as @rpath, the functions and classes
+// it imports, text anywhere in it, and the entitlements it is signed
+// with, as the XML codesign writes, or none.
 type program struct {
 	// cpu is arm64 when it is 0.
 	cpu      uint32
 	links    []string
+	rpaths   []string
 	imports  []string
 	text     string
 	entitled string
@@ -50,6 +52,15 @@ func (p program) bytes() []byte {
 		// LC_LOAD_DYLIB, its size, where its name starts, a time and two
 		// versions, then the name.
 		add(0xc, uint32(24+len(name)), 24, 2, 0x10000, 0x10000)
+		cmds.Write(name)
+	}
+	for _, r := range p.rpaths {
+		name := append([]byte(r), 0)
+		for (12+len(name))%8 != 0 {
+			name = append(name, 0)
+		}
+		// LC_RPATH, its size, where its path starts, then the path.
+		add(0x8000001c, uint32(12+len(name)), 12)
 		cmds.Write(name)
 	}
 	// After the header and the commands: the symbols, the names, the
@@ -145,9 +156,18 @@ var app = program{
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
 		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
 		"/usr/lib/libSystem.B.dylib",
+		"@rpath/libsherpa-onnx-c-api.dylib", "@rpath/libonnxruntime.dylib",
 	},
 	imports: []string{"_NSClassFromString", "_OBJC_CLASS_$_NSEvent", "_RegisterEventHotKey", "_dlsym", "_SecItemCopyMatching"},
 }
+
+// bundled is the app's program in its bundle, Contents/MacOS, looking for
+// the speech library where main's build of 18 November 2026 does.
+var bundled = func() program {
+	p := app
+	p.rpaths = []string{"@executable_path", "@executable_path/../Frameworks", "@executable_path/lib"}
+	return p
+}()
 
 // adhoc is the app signed ad hoc, with no entitlement, which is how the
 // build signs it.
@@ -319,6 +339,78 @@ func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 	}
 }
 
+// A program finds the libraries it links as @rpath, the speech library,
+// in the places its LC_RPATH entries name, the first that has one, and
+// loads it whatever it is. So a build that looks anywhere outside itself
+// could load a library the check never read, and is refused. FrameFairy
+// has the same gap, issue #26.
+func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
+	const (
+		exe  = "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+		lib  = "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
+		gomc = "/Users/runner/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-macos/v2@v2.0.1/lib/aarch64-apple-darwin"
+	)
+	looking := func(p program, rpaths ...string) []byte {
+		p.rpaths = rpaths
+		return p.bytes()
+	}
+	speech := program{links: []string{"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib"}}
+	cases := []struct {
+		name, file string
+		data       []byte
+		want       []string
+	}{
+		// What main's build of 18 November 2026 carries.
+		{"the app as it is", exe, bundled.bytes(), nil},
+		{"the speech library as it is", lib, looking(speech, "@loader_path"), nil},
+		{"elsewhere inside the app", exe, looking(app, "@executable_path/../Resources", "@executable_path/../.."), nil},
+		// carry-libs.sh takes it out, and says nothing when it cannot.
+		{"the module cache of the Mac that built it", exe, looking(app, "@executable_path/../Frameworks", gomc),
+			[]string{"looks for libraries outside the build, in " + gomc}},
+		{"a folder anyone can write to", lib, looking(speech, "@loader_path", "/Users/Shared"),
+			[]string{"looks for libraries outside the build, in /Users/Shared"}},
+		{"beside the app", exe, looking(app, "@executable_path/../../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../../.."}},
+		{"the speech library, beside the app", lib, looking(speech, "@loader_path/../../../lib"),
+			[]string{"looks for libraries outside the build, in @loader_path/../../../lib"}},
+		{"a name that only starts the same", exe, looking(app, "@executable_paths"),
+			[]string{"looks for libraries outside the build, in @executable_paths"}},
+		{"a program in no app, climbing out", "speakertrail-app", looking(app, "@executable_path/.."),
+			[]string{"looks for libraries outside the build, in @executable_path/.."}},
+		// A universal program is read for every architecture.
+		{"a universal program, one architecture looking outside", exe,
+			fat(bundled, program{cpu: 0x01000007, links: app.links, rpaths: []string{"/usr/local/lib"}}),
+			[]string{"looks for libraries outside the build, in /usr/local/lib"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(c.file, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A build whose program still looks in the module cache is refused by
+// the check publish.yml runs before it signs.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildThatLooksInTheModuleCacheIsNotSigned(t *testing.T) {
+	files := theApp("main")
+	p := bundled
+	p.rpaths = append(slices.Clone(bundled.rpaths), "/Users/runner/go/pkg/mod/lib")
+	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = p.bytes()
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := check([]string{"-zip", zipPath})
+	if err == nil || !strings.Contains(err.Error(), "speakertrail-app: looks for libraries outside the build, in /Users/runner/go/pkg/mod/lib") {
+		t.Errorf("checking a build that looks in the module cache said %v", err)
+	}
+}
+
 // A program marked set-user-ID or set-group-ID runs with its owner's
 // rights, root's once it is installed by root, so a build that carries
 // one is refused, whatever the program is.
@@ -413,7 +505,7 @@ func zipped(t *testing.T, files map[string][]byte) []byte {
 // theApp is a build of the app for a channel that watches nothing.
 func theApp(channel string) map[string][]byte {
 	return map[string][]byte{
-		"Speaker Trail.app/Contents/MacOS/speakertrail-app": app.bytes(),
+		"Speaker Trail.app/Contents/MacOS/speakertrail-app": bundled.bytes(),
 		"Speaker Trail.app/Contents/Info.plist": []byte(plistHead +
 			"<key>CFBundleName</key><string>Speaker Trail " + channel + "</string>\n</dict>\n</plist>\n"),
 	}
@@ -426,7 +518,7 @@ func theApp(channel string) map[string][]byte {
 func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
 	release(t)
 	files := theApp("main")
-	watcher := app
+	watcher := bundled
 	watcher.imports = append(slices.Clone(app.imports), "_CGWindowListCreateImage")
 	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = watcher.bytes()
 	zipPath := filepath.Join(t.TempDir(), "app.zip")

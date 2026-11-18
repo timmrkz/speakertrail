@@ -20,9 +20,11 @@ permissions:
 jobs:
   # What the pull request changed, by the files GitHub lists for it. Go is
   # every file outside web/, the docs and .claude/, so a script, the
-  # Makefile or a workflow is Go, and the Go files of web/, goread, the
-  # package that embeds the built interface. The interface is web/, the
-  # Makefile and the workflows. See CI in docs/BUILD.md.
+  # Makefile or a workflow is Go, and the files of web/ Go reads, goread:
+  # the package that embeds the built interface, and dist/.keep, which
+  # keeps the folder it embeds there before the interface is built. The
+  # interface is web/, the Makefile and the workflows. See CI in
+  # docs/BUILD.md.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -47,7 +49,7 @@ jobs:
               - '!**/*.md'
               - '!.claude/**'
             goread:
-              - 'web/*.go'
+              - 'web/{*.go,dist/.keep}'
             interface:
               - '{web/**,.github/workflows/**,Makefile}'
 

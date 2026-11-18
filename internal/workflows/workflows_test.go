@@ -20,8 +20,8 @@ var read = regexp.MustCompile(`"(?:\.\./)*((?:web|docs)/[^"]+)"`)
 // filters of the job changes in ci.yml, and Go is no file of web/ and
 // none of the docs. So a Go test that reads one would not run on the pull
 // request that changes it, and main would find out after the merge.
-// Every file of web/ a Go test reads is in the filter goread, beside go,
-// and no Go test reads the docs.
+// Every file of web/ a Go test reads or web/embed.go embeds is in the
+// filter goread, beside go, and no Go test reads the docs.
 //
 // On the real disk: what is read is the repository's own tests and CI.
 func TestWhatAGoTestReadsStartsIt(t *testing.T) {
@@ -63,8 +63,26 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 		}
 		return false
 	}
-	// No Go test reads a file of web/ or the docs yet, so this test would
-	// find nothing to check if it read them wrong. It reads one it knows.
+	// The Go of web/ embeds a folder that only make fills, and the go job
+	// does not run make: the file committed there, .keep, is what Go reads.
+	// Each folder embedded is also what this test checks itself on, since
+	// no Go test reads a file of web/ yet.
+	src, err := os.ReadFile(filepath.Join(root, "web", "embed.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	embeds := regexp.MustCompile(`(?m)^//go:embed (.+)$`).FindAllStringSubmatch(string(src), -1)
+	if len(embeds) == 0 {
+		t.Fatal("web/embed.go embeds nothing, so this test reads it wrong")
+	}
+	for _, e := range embeds {
+		for _, p := range strings.Fields(e[1]) {
+			file := "web/" + strings.TrimPrefix(p, "all:") + "/.keep"
+			if !starts(file) {
+				t.Errorf("web/embed.go embeds %s, and ci.yml's filter goread leaves out %s: a pull request that removes it starts no Go test. Add it there", p, file)
+			}
+		}
+	}
 	if m := read.FindStringSubmatch(`os.ReadFile("../../web/embed.go")`); m == nil || !starts(m[1]) {
 		t.Fatalf("this test does not see that a Go test reading web/embed.go is started by goread, %q", m)
 	}

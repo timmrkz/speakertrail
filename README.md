@@ -52,6 +52,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/browser` | Opening LinkedIn in the Chrome profile chosen in Settings, see [docs/open-in-profile.md](docs/open-in-profile.md) |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/speech` | The speech models in Settings and hearing with them on this Mac, for Dictate |
+| `internal/workflows` | No code, only the test that holds the Go tests to what CI's filters start, see CI in [docs/BUILD.md](docs/BUILD.md#ci) |
 | `web` | The interface, Svelte 5 with TypeScript |
 | `scripts` | Installing what is missing, bundling the app, the carry-over, the cloud session setup |
 | `docs` | Building, the API, the search strategy, working with Claude |

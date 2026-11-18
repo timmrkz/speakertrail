@@ -227,32 +227,47 @@ func inputsOf(name string, data []byte) []string {
 		}
 		return tidy(found)
 	}
-	// Each architecture with its own bytes: the offsets inside one, like
-	// where its signature is, count from the start of its slice.
-	type arch struct {
-		f    *macho.File
-		data []byte
-	}
-	var files []arch
-	if fat, err := macho.NewFatFile(bytes.NewReader(data)); err == nil {
-		for _, a := range fat.Arches {
-			end := uint64(a.Offset) + uint64(a.Size)
-			if end > uint64(len(data)) {
-				return []string{fmt.Sprintf("its %v part reaches past the end of the file", a.Cpu)}
-			}
-			files = append(files, arch{a.File, data[a.Offset:end]})
-		}
-	} else if f, err := macho.NewFile(bytes.NewReader(data)); err == nil {
-		files = append(files, arch{f, data})
-	} else if looksMachO(data) {
-		return append(found, "starts like a program but cannot be read as one")
-	} else {
-		return tidy(found)
+	files, err := archesOf(data)
+	if err != nil {
+		return append(found, err.Error())
 	}
 	for _, a := range files {
 		found = append(found, machoInputs(path.Base(name), a.f, a.data)...)
 	}
 	return tidy(found)
+}
+
+// arch is one architecture of a program with its own bytes: the offsets
+// inside one, like where its signature is, count from the start of its
+// slice.
+type arch struct {
+	f    *macho.File
+	data []byte
+}
+
+// archesOf are the architectures of a Mach-O program, thin or fat, or
+// none when the file is no program. A file that starts like one and
+// cannot be read as one is an error, because what cannot be read cannot
+// be checked.
+func archesOf(data []byte) ([]arch, error) {
+	if fat, err := macho.NewFatFile(bytes.NewReader(data)); err == nil {
+		var files []arch
+		for _, a := range fat.Arches {
+			end := uint64(a.Offset) + uint64(a.Size)
+			if end > uint64(len(data)) {
+				return nil, fmt.Errorf("its %v part reaches past the end of the file", a.Cpu)
+			}
+			files = append(files, arch{a.File, data[a.Offset:end]})
+		}
+		return files, nil
+	}
+	if f, err := macho.NewFile(bytes.NewReader(data)); err == nil {
+		return []arch{{f, data}}, nil
+	}
+	if looksMachO(data) {
+		return nil, errors.New("starts like a program but cannot be read as one")
+	}
+	return nil, nil
 }
 
 // tidy sorts what was found and says each thing once, or is nil.
@@ -318,10 +333,21 @@ func machoInputs(base string, f *macho.File, data []byte) []string {
 
 // entitlements are the keys of what the program was signed as entitled
 // to, from the code signature codesign writes into it, or none when it
-// was signed without any or not at all. The signature is a blob of blobs,
-// big-endian whatever the program is, and the entitlements are the XML
-// one, slot 5.
+// was signed without any or not at all. The entitlements are the XML
+// blob, slot 5.
 func entitlements(f *macho.File, data []byte) ([]string, error) {
+	blob, err := signatureBlob(f, data, 5, 0xfade7171)
+	if err != nil || blob == nil {
+		return nil, err
+	}
+	return plistKeys(blob[8:])
+}
+
+// signatureBlob is the blob in one slot of the code signature codesign
+// writes into a program, header and all, or nil when the program has no
+// signature or nothing in that slot. The signature is a blob of blobs,
+// big-endian whatever the program is.
+func signatureBlob(f *macho.File, data []byte, slot, magic uint32) ([]byte, error) {
 	const codeSignature = 0x1d
 	be := binary.BigEndian
 	for _, l := range f.Loads {
@@ -343,17 +369,17 @@ func entitlements(f *macho.File, data []byte) ([]string, error) {
 		}
 		for i := range count {
 			kind, at := be.Uint32(sig[12+8*i:]), uint64(be.Uint32(sig[16+8*i:]))
-			if kind != 5 {
+			if kind != slot {
 				continue
 			}
-			if at+8 > size || be.Uint32(sig[at:]) != 0xfade7171 {
-				return nil, errors.New("its entitlements are not where its index says")
+			if at+8 > size || be.Uint32(sig[at:]) != magic {
+				return nil, fmt.Errorf("its slot %d is not where its index says", slot)
 			}
 			end := at + uint64(be.Uint32(sig[at+4:]))
 			if end > size || end < at+8 {
-				return nil, errors.New("its entitlements reach past its end")
+				return nil, fmt.Errorf("its slot %d reaches past its end", slot)
 			}
-			return plistKeys(sig[at+8 : end])
+			return sig[at:end], nil
 		}
 	}
 	return nil, nil

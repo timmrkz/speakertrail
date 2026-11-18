@@ -333,8 +333,14 @@ jobs:
           CHANNEL: ${{ steps.which.outputs.channel }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
+          HARDENED: ${{ steps.devid.outputs.ready }}
+        # With the Developer ID, sign refuses a build that is not signed
+        # with it and the hardened runtime throughout, so it is never lost
+        # on the way without anyone seeing.
         run: |
-          if ! go run ./cmd/speakertrail-release sign \
+          hardened=""
+          [ "$HARDENED" = true ] && hardened=-hardened
+          if ! go run ./cmd/speakertrail-release sign $hardened \
             -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
             -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \

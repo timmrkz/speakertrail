@@ -150,7 +150,10 @@ signed ad hoc, as they are made, and the run says so. To set it up once:
    `SPEAKERTRAIL_DEVELOPER_ID_PASSWORD` with the password. Then delete
    `developer-id.p12` from the Desktop.
 
-The next build after that is signed with it. The certificate stays good
+The next build after that is signed with it. From then on
+`speakertrail-release sign -hardened` refuses a build in which any program
+is signed ad hoc, without the hardened runtime, or by another team, so it
+is never lost on the way without anyone seeing. The certificate stays good
 for five years, and every signature carries Apple's time stamp, so a
 build signed before it runs out stays good after.
 

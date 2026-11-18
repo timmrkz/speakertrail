@@ -165,6 +165,14 @@ func checkInputs(zipPath string) error {
 		if f.Mode()&setID != 0 {
 			reads[i].found = append(reads[i].found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
 		}
+		// A link can point a folder of the build, Contents/Frameworks
+		// say, at one outside it, and the updater keeps a link that does,
+		// so every path the check reads as inside could lead out. No
+		// build of the app has one.
+		if f.Mode()&fs.ModeSymlink != 0 {
+			reads[i].found = append(reads[i].found, f.Name+": is a link, which could lead outside the build")
+			continue
+		}
 		if f.FileInfo().IsDir() {
 			continue
 		}
@@ -313,7 +321,7 @@ func machoInputs(name string, f *macho.File, data []byte) []string {
 		}
 	}
 	for _, l := range f.Loads {
-		if r, ok := l.(*macho.Rpath); ok && !insideBuild(name, r.Path) {
+		if r, ok := l.(*macho.Rpath); ok && !insideBuild(name, r.Path, f.Type == macho.TypeExec) {
 			found = append(found, "looks for libraries outside the build, in "+r.Path)
 		}
 	}
@@ -349,13 +357,14 @@ const (
 func otherLinks(f *macho.File) (libs, found []string) {
 	for _, l := range f.Loads {
 		raw := l.Raw()
-		if len(raw) < 12 {
-			continue
-		}
 		cmd := f.ByteOrder.Uint32(raw)
 		switch cmd {
 		case loadWeakDylib, reexportDylib, lazyLoadDylib, loadUpwardDylib, loadDylinker, dyldEnvironment:
 		default:
+			continue
+		}
+		if len(raw) < 12 {
+			found = append(found, fmt.Sprintf("its load command %#x cannot be read", cmd))
 			continue
 		}
 		at := f.ByteOrder.Uint32(raw[8:])
@@ -384,21 +393,24 @@ func otherLinks(f *macho.File) (libs, found []string) {
 // first under these places is what loads, and a place outside the build,
 // like the Go module cache of the Mac that built it or a folder anyone
 // can write to, would load a library nobody checked. Inside is where the
-// program is, @loader_path, or where the app's own program is,
+// file is, @loader_path, or where the program that runs is,
 // @executable_path, and below them, never climbing out of the .app.
+// exe says the file is a program of its own, whose @executable_path is
+// its own folder. For a library it is the app's program, in
+// Contents/MacOS.
 //
 // The app's builds look in @executable_path, @executable_path/lib and
 // @executable_path/../Frameworks, and the speech library in @loader_path,
 // read from main's build of 18 November 2026.
-func insideBuild(name, rpath string) bool {
-	// The .app the program is in, or the top of the zip when it is in
-	// none, which no rpath may climb out of either.
-	bundle, at := "", ""
+func insideBuild(name, rpath string, exe bool) bool {
+	// The .app the file is in, or the top of the zip when it is in none,
+	// which no rpath may climb out of either.
+	bundle, at := "", path.Dir(name)
 	if i := strings.Index(name, ".app/"); i >= 0 {
 		bundle = name[:i+len(".app")]
-		at = bundle + "/Contents/MacOS"
-	} else {
-		at = path.Dir(name)
+		if !exe {
+			at = bundle + "/Contents/MacOS"
+		}
 	}
 	var rest string
 	switch {

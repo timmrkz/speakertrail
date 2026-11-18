@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -24,9 +25,11 @@ import (
 // with, as the XML codesign writes, or none.
 type program struct {
 	// cpu is arm64 when it is 0.
-	cpu    uint32
-	links  []string
-	rpaths []string
+	cpu uint32
+	// library makes it a library, MH_DYLIB, rather than a program.
+	library bool
+	links   []string
+	rpaths  []string
 	// other are load commands that name something, by their number:
 	// a weak link, the loader, the loader's environment.
 	other    []load
@@ -58,6 +61,11 @@ func (p program) bytes() []byte {
 		cmds.Write(name)
 	}
 	for _, o := range p.other {
+		if o.short {
+			// Only what it is and its size, as small as Go reads one.
+			add(o.cmd, 8)
+			continue
+		}
 		name := append([]byte(o.name), 0)
 		for (12+len(name))%8 != 0 {
 			name = append(name, 0)
@@ -121,7 +129,11 @@ func (p program) bytes() []byte {
 		cpu = 0x0100000c
 	}
 	var out bytes.Buffer
-	for _, w := range []uint32{0xfeedfacf, cpu, 0, 2, uint32(ncmds), uint32(cmds.Len()), 0, 0} {
+	kind := uint32(2)
+	if p.library {
+		kind = 6
+	}
+	for _, w := range []uint32{0xfeedfacf, cpu, 0, kind, uint32(ncmds), uint32(cmds.Len()), 0, 0} {
 		_ = binary.Write(&out, le, w)
 	}
 	out.Write(cmds.Bytes())
@@ -132,10 +144,18 @@ func (p program) bytes() []byte {
 	return out.Bytes()
 }
 
-// load is a load command that names something.
+// load is a load command that names something, or with short one too
+// small to.
 type load struct {
-	cmd  uint32
-	name string
+	cmd   uint32
+	name  string
+	short bool
+}
+
+// dylib makes a program a library.
+func dylib(p program) program {
+	p.library = true
+	return p
 }
 
 // fat wraps programs in a universal file, one architecture each, each
@@ -362,8 +382,7 @@ func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 // A program finds the libraries it links as @rpath, the speech library,
 // in the places its LC_RPATH entries name, the first that has one, and
 // loads it whatever it is. So a build that looks anywhere outside itself
-// could load a library the check never read, and is refused. FrameFairy
-// has the same gap, issue #26.
+// could load a library the check never read, and is refused, issue #26.
 func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
 	const (
 		exe  = "Speaker Trail.app/Contents/MacOS/speakertrail-app"
@@ -384,7 +403,9 @@ func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
 		{"the app as it is", exe, bundled.bytes(), nil},
 		{"the speech library as it is", lib, looking(speech, "@loader_path"), nil},
 		{"elsewhere inside the app", exe, looking(app, "@executable_path/../Resources", "@executable_path/../.."), nil},
-		// carry-libs.sh takes it out, and says nothing when it cannot.
+		// carry-libs.sh takes it out, and its --verify refuses a program
+		// still looking there, on the Mac that builds it. This is the
+		// wall after that one.
 		{"the module cache of the Mac that built it", exe, looking(app, "@executable_path/../Frameworks", gomc),
 			[]string{"looks for libraries outside the build, in " + gomc}},
 		{"a folder anyone can write to", lib, looking(speech, "@loader_path", "/Users/Shared"),
@@ -397,6 +418,15 @@ func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
 			[]string{"looks for libraries outside the build, in @executable_paths"}},
 		{"a program in no app, climbing out", "speakertrail-app", looking(app, "@executable_path/.."),
 			[]string{"looks for libraries outside the build, in @executable_path/.."}},
+		// A program's @executable_path is its own folder, wherever in
+		// the app it is, and a library's is the app's program's.
+		{"a program in Contents, climbing out", "Speaker Trail.app/Contents/speakertrail-app", looking(app, "@executable_path/../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../.."}},
+		{"a program at the top of the app, climbing out", "Speaker Trail.app/speakertrail-app", looking(app, "@executable_path/.."),
+			[]string{"looks for libraries outside the build, in @executable_path/.."}},
+		{"the speech library, by the app's program", lib, looking(dylib(speech), "@executable_path/../Frameworks"), nil},
+		{"the speech library, beside the app by the app's program", lib, looking(dylib(speech), "@executable_path/../../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../../.."}},
 		// A universal program is read for every architecture.
 		{"a universal program, one architecture looking outside", exe,
 			fat(bundled, program{cpu: 0x01000007, links: app.links, rpaths: []string{"/usr/local/lib"}}),
@@ -450,17 +480,20 @@ func TestEveryWayOfLinkingIsRead(t *testing.T) {
 	}{
 		// What main's build of 18 November 2026 carries.
 		{"the app as it is", with(
-			load{0xe, "/usr/lib/dyld"},
-			load{0x80000018, "/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement"},
-			load{0x80000018, "/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers"},
+			load{cmd: 0xe, name: "/usr/lib/dyld"},
+			load{cmd: 0x80000018, name: "/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement"},
+			load{cmd: 0x80000018, name: "/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers"},
 		), nil},
-		{"the screen, weakly", with(load{0x80000018, sck}), []string{"links " + sck}},
-		{"the screen, re-exported", with(load{0x8000001f, sck}), []string{"links " + sck}},
-		{"the screen, lazily", with(load{0x20, sck}), []string{"links " + sck}},
-		{"the screen, upward", with(load{0x80000023, sck}), []string{"links " + sck}},
-		{"a loader of its own", with(load{0xe, "/tmp/dyld"}), []string{"is loaded by /tmp/dyld"}},
-		{"the loader told where to look", with(load{0x27, "DYLD_LIBRARY_PATH=/tmp"}),
+		{"the screen, weakly", with(load{cmd: 0x80000018, name: sck}), []string{"links " + sck}},
+		{"the screen, re-exported", with(load{cmd: 0x8000001f, name: sck}), []string{"links " + sck}},
+		{"the screen, lazily", with(load{cmd: 0x20, name: sck}), []string{"links " + sck}},
+		{"the screen, upward", with(load{cmd: 0x80000023, name: sck}), []string{"links " + sck}},
+		{"a loader of its own", with(load{cmd: 0xe, name: "/tmp/dyld"}), []string{"is loaded by /tmp/dyld"}},
+		{"the loader told where to look", with(load{cmd: 0x27, name: "DYLD_LIBRARY_PATH=/tmp"}),
 			[]string{"sets the loader's environment, DYLD_LIBRARY_PATH=/tmp"}},
+		// What cannot be read cannot be checked.
+		{"a weak link too short to name anything", with(load{cmd: 0x80000018, short: true}),
+			[]string{"its load command 0x80000018 cannot be read"}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -508,6 +541,46 @@ func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
 				t.Errorf("a build whose app is %v said %v", mode, err)
 			}
 		})
+	}
+}
+
+// A link in the build could point a folder the check reads as inside it,
+// Contents/Frameworks say, at one outside it, and the updater keeps a
+// link that does. So a build with any link is refused.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildWithALinkIsNotSigned(t *testing.T) {
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	files := theApp("main")
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(files[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &zip.FileHeader{Name: "Speaker Trail.app/Contents/Frameworks"}
+	h.SetMode(0o755 | fs.ModeSymlink)
+	f, err := w.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("../../../elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = checkInputs(zipPath)
+	if err == nil || !strings.Contains(err.Error(), "Speaker Trail.app/Contents/Frameworks: is a link, which could lead outside the build") {
+		t.Errorf("a build with a link said %v", err)
 	}
 }
 

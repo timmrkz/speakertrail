@@ -125,12 +125,11 @@ first.
 reads it all again before it signs, see
 `cmd/speakertrail-release/inputs.go`. They refuse a build that links a
 library not on its list, in any of the ways a program can link one, has
-a program that sets where macOS's loader looks, has a program that looks for the libraries it
-links as `@rpath` anywhere but inside the .app, has a file that names
-what taps keys, records
-the screen, opens the camera or asks for administrator rights, has a
-file that looks like a program and cannot be read as one, or unpacks to
-more than 1 GB. It may ask for the microphone, for Dictate on Report a
+a program that sets where macOS's loader looks, or that looks for the
+libraries it links as `@rpath` anywhere but inside the .app, holds a
+link, has a file that names what taps keys, records the screen, opens
+the camera or asks for administrator rights, has a file that looks like
+a program and cannot be read as one, or unpacks to more than 1 GB. It may ask for the microphone, for Dictate on Report a
 Problem, and for nothing else, and it may carry sherpa-onnx's speech
 library in `Contents/Frameworks`, linking only what the list names. A
 refused build says why on the commit, as a failed **Ready to update to**.

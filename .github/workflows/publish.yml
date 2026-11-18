@@ -125,7 +125,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ubuntu-24.04
+    # On a Mac, for codesign and the keychain, see "Sign it with the
+    # Developer ID" below.
+    runs-on: macos-15
     timeout-minutes: 20
     environment: updates
     concurrency:
@@ -260,6 +262,56 @@ jobs:
             exit 1
           fi
 
+      # Every build Tim gets is signed again with his Developer ID and the
+      # hardened runtime, so no other program can put its code into the
+      # app, and macOS knows the app again after an update and does not ask
+      # for the microphone or the keychain anew. See scripts/sign-macos.sh
+      # and docs/UPDATES.md, The Developer ID. Until it is in the
+      # environment, a build stays signed ad hoc, the way it is made.
+      - id: devid
+        if: steps.check.outcome == 'success'
+        name: Is there a Developer ID
+        env:
+          CERT: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "::notice::No Developer ID yet, so the build stays signed ad hoc, without the hardened runtime. See docs/UPDATES.md, The Developer ID."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The certificate goes into a keychain of its own, made for this step
+      # and gone at its end, whatever happens, the way GitHub's own guide to
+      # signing on its Macs does it. The build is unpacked, signed and
+      # packed again the way builds.yml packs it.
+      - id: harden
+        if: steps.devid.outputs.ready == 'true'
+        name: Sign it with the Developer ID
+        env:
+          CERT: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID }}
+          CERT_PASSWORD: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID_PASSWORD }}
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          dir="$RUNNER_TEMP/developer-id"
+          kc="$dir/signing.keychain-db"
+          mkdir -p "$dir"
+          trap 'security delete-keychain "$kc" 2>/dev/null || true; rm -rf "$dir"' EXIT
+          pass=$(openssl rand -hex 24)
+          printf '%s' "$CERT" | base64 --decode -o "$dir/developer-id.p12"
+          security create-keychain -p "$pass" "$kc"
+          security set-keychain-settings -lut 1800 "$kc"
+          security unlock-keychain -p "$pass" "$kc"
+          security import "$dir/developer-id.p12" -P "$CERT_PASSWORD" -f pkcs12 -k "$kc" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$kc" >/dev/null
+          rm "$dir/developer-id.p12"
+          ditto -x -k "dist/$ZIP" "$dir/app"
+          if ! sh scripts/sign-macos.sh "$dir/app/Speaker Trail.app" "Developer ID Application" "$kc"; then
+            echo "the signing with the Developer ID failed, see the run" > "$RUNNER_TEMP/refused.txt"
+            exit 1
+          fi
+          rm "dist/$ZIP"
+          ditto -c -k --norsrc --keepParent "$dir/app/Speaker Trail.app" "dist/$ZIP"
+
       - id: key
         if: steps.check.outcome == 'success'
         name: Is there an update key
@@ -297,7 +349,7 @@ jobs:
       # update to with no reason given. The refusal goes on the commit
       # that was built, where the pull request shows it.
       - name: Say on the commit why it is not signed
-        if: failure() && (steps.check.outcome == 'failure' || steps.sign.outcome == 'failure')
+        if: failure() && (steps.check.outcome == 'failure' || steps.harden.outcome == 'failure' || steps.sign.outcome == 'failure')
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |

@@ -116,13 +116,16 @@ var linked = map[string][]string{
 // nothing else. No folder, no camera, no screen. A reason added fails.
 var asks = []string{"NSMicrophoneUsageDescription"}
 
-// entitled are the entitlements a program may be signed with: none. Above
-// all not the camera, the microphone, Apple events, or what lets other code
-// into the app, library validation turned off, the dyld environment or
-// get-task-allow. Dictate needs no entitlement for the microphone, since
-// the app is signed ad hoc without the hardened runtime, and macOS asks
-// the person all the same, in the words of NSMicrophoneUsageDescription.
-var entitled = []string{}
+// entitled are the entitlements a program may be signed with: the
+// microphone, for Dictate, and nothing else. Above all not the camera,
+// Apple events, or what lets other code into the app, library validation
+// turned off, the dyld environment or get-task-allow. The microphone is
+// one because publish.yml signs every build with the hardened runtime,
+// see scripts/sign-macos.sh, and under it macOS hands an app that opens
+// the microphone without it nothing but silence. It grants nothing:
+// macOS still asks the person, in the words of
+// NSMicrophoneUsageDescription. The list is FrameFairy's.
+var entitled = []string{"com.apple.security.device.audio-input"}
 
 // maxUnpacked is the most the files of a build may hold once unpacked,
 // all together. The app is some tens of MB. A zip that unpacks to more is

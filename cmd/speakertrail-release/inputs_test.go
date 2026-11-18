@@ -197,7 +197,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
 			}),
-			[]string{"is entitled to com.apple.security.device.audio-input"}},
+			nil},
 		{"the camera, entitled", "speakertrail-app",
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"
@@ -382,6 +382,30 @@ func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	}
 	if got := inputsOf("Speaker Trail.app/Contents/Info.plist", []byte(plist)); got != nil {
 		t.Errorf("the app's Info.plist %s", strings.Join(got, ", "))
+	}
+}
+
+// What sign-macos.sh signs the app as entitled to is only what the lists
+// allow, so a pull request that adds an entitlement fails here, before its
+// build is refused.
+//
+// On the real disk: what this reads is the file the script signs with.
+func TestTheShippedEntitlementsAreAllowed(t *testing.T) {
+	data, err := os.ReadFile("../../build/entitlements.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := plistKeys(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(keys, "com.apple.security.device.audio-input") {
+		t.Errorf("read %q, without the microphone Dictate hears only silence", keys)
+	}
+	for _, k := range keys {
+		if !slices.Contains(entitled, k) {
+			t.Errorf("the app is signed as entitled to %s, which the list refuses", k)
+		}
 	}
 }
 

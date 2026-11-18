@@ -104,8 +104,11 @@ there. The library is sherpa-onnx's release without speech synthesis,
 is GPL 3, and the bundle refuses it. As in FrameFairy.
 
 The bundle's `Info.plist` says why the app wants the microphone, which
-macOS asks Tim the first time Dictate is pressed. The app needs no
-entitlement for it, since it is signed without the hardened runtime.
+macOS asks Tim the first time Dictate is pressed. A build made here is
+signed ad hoc, without the hardened runtime, and needs no entitlement for
+it. A build Tim updates to is signed again with his Developer ID, the
+hardened runtime and the microphone entitlement, see
+[UPDATES.md](UPDATES.md#the-developer-id).
 
 ## Elsewhere than on a Mac
 

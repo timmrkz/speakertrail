@@ -65,6 +65,36 @@ jobs:
       # and read back by codesign.
       - name: Build the app
         run: make app
+      # What publish.yml does to every build before Tim gets it: signed
+      # again with the hardened runtime and the microphone, see
+      # scripts/sign-macos.sh. Here with a certificate made for the test,
+      # since the Developer ID is a secret only main's publish.yml reads. It
+      # proves the signing and its read back, not that the app opens: under
+      # the hardened runtime a certificate that is not Apple's has no team,
+      # and macOS would load no library of its own.
+      - name: Sign it the way publish.yml does
+        env:
+          TIMESTAMP: none
+        run: |
+          dir="$RUNNER_TEMP/signing"
+          kc="$dir/test.keychain-db"
+          pass=$(/usr/bin/openssl rand -hex 16)
+          mkdir -p "$dir"
+          cp -R "bin/Speaker Trail.app" "$dir/"
+          printf '%s\n' '[req]' 'distinguished_name=dn' 'x509_extensions=ext' 'prompt=no' \
+            '[dn]' 'CN=Speaker Trail Test Signing' \
+            '[ext]' 'keyUsage=critical,digitalSignature' 'extendedKeyUsage=critical,codeSigning' \
+            > "$dir/test.cnf"
+          /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$dir/test.cnf" \
+            -keyout "$dir/test.key" -out "$dir/test.crt"
+          /usr/bin/openssl pkcs12 -export -inkey "$dir/test.key" -in "$dir/test.crt" \
+            -out "$dir/test.p12" -passout "pass:$pass"
+          security create-keychain -p "$pass" "$kc"
+          security unlock-keychain -p "$pass" "$kc"
+          security import "$dir/test.p12" -P "$pass" -f pkcs12 -k "$kc" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$pass" "$kc" >/dev/null
+          sh scripts/sign-macos.sh "$dir/Speaker Trail.app" "Speaker Trail Test Signing" "$kc"
+          security delete-keychain "$kc"
       - name: Tests
         run: go test -count=1 ./...
 

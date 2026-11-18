@@ -126,8 +126,10 @@ hardened runtime, like Xcode's Sign to Run Locally. Under it an app signed
 ad hoc may load no library but Apple's, and Dictate's speech library is
 not Apple's.
 
-Until the certificate is in the environment `updates`, builds go out
-signed ad hoc, as they are made, and the run says so. To set it up once:
+Until `build/team-id.txt` names Tim's team, builds go out signed ad hoc,
+as they are made, and the run says so. Once it does, a build is published
+only when it is signed with that team's Developer ID, and a missing secret
+fails the run on main and on the commit, never quietly. To set it up once:
 
 1. Join the [Apple Developer Program](https://developer.apple.com/programs/enroll/)
    as an individual. It costs 99 € a year, and Apple may take a day or
@@ -139,7 +141,9 @@ signed ad hoc, as they are made, and the run says so. To set it up once:
 3. In [Certificates](https://developer.apple.com/account/resources/certificates/add),
    choose **Developer ID Application**, upload that file, download the
    certificate and double-click it. It shows in Keychain Access under
-   **My Certificates**.
+   **My Certificates**. Make it for Speaker Trail alone, and FrameFairy
+   its own later, so either can be revoked without the other. Apple
+   allows five.
 4. In Keychain Access, right-click the certificate, **Export**, and save
    it as `developer-id.p12` on the Desktop with a new password. Put the
    password in the password manager.
@@ -149,11 +153,19 @@ signed ad hoc, as they are made, and the run says so. To set it up once:
    secrets**: `SPEAKERTRAIL_DEVELOPER_ID` with the clipboard, and
    `SPEAKERTRAIL_DEVELOPER_ID_PASSWORD` with the password. Then delete
    `developer-id.p12` from the Desktop.
+7. Give Claude the team ID, ten letters and digits under **Membership
+   details** in the [account](https://developer.apple.com/account). Claude
+   commits it in `build/team-id.txt`. It is not a secret: every app the
+   team signs carries it.
 
 The next build after that is signed with it. From then on
-`speakertrail-release sign -hardened` refuses a build in which any program
-is signed ad hoc, without the hardened runtime, or by another team, so it
-is never lost on the way without anyone seeing. The certificate stays good
+`speakertrail-release sign -team` refuses a build in which any program is
+signed ad hoc, without the hardened runtime, or by another team.
+
+If a build signed this way does not open, the app cannot update away
+from it. `make install` in a checkout puts a build made on the Mac back
+in `/Applications`, and Updates works again from there. Removing
+`build/team-id.txt` on main sends builds out signed ad hoc again. The certificate stays good
 for five years, and every signature carries Apple's time stamp, so a
 build signed before it runs out stays good after.
 

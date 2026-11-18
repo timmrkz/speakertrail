@@ -28,11 +28,11 @@ const (
 	lib = "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
 )
 
-// Once publish.yml has the Developer ID, a build is signed for updates
+// Once build/team-id.txt names Tim's team, a build is signed for updates
 // only when every program in it is signed with the hardened runtime by
-// one team. A build that lost it on the way is refused, and no entry is
-// written for it, so no app is offered it. Without -hardened, a build
-// signed ad hoc is signed as before.
+// that team. A build that lost it on the way is refused, and no entry is
+// written for it, so no app is offered it. Without -team, a build signed
+// ad hoc is signed as before.
 //
 // On the real disk: the release tool reads the zip and writes the entry as files.
 func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
@@ -41,19 +41,20 @@ func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
 	cases := []struct {
 		name     string
 		exe, lib program
-		hardened bool
+		team     string
 		want     string
 	}{
-		{"one team, the hardened runtime", devid(app, "TEAM123456"), devid(speech, "TEAM123456"), true, ""},
-		{"signed ad hoc, as made, without -hardened", asMade(adhoc), asMade(speech), false, ""},
-		{"signed ad hoc, as made", asMade(adhoc), asMade(speech), true, exe + ": is signed ad hoc"},
-		{"ad hoc with the hardened runtime", adhocRuntime, devid(speech, "TEAM123456"), true, exe + ": is signed ad hoc"},
+		{"one team, the hardened runtime", devid(app, "TEAM123456"), devid(speech, "TEAM123456"), "TEAM123456", ""},
+		{"signed ad hoc, as made, without -team", asMade(adhoc), asMade(speech), "", ""},
+		{"signed ad hoc, as made", asMade(adhoc), asMade(speech), "TEAM123456", exe + ": is signed ad hoc"},
+		{"ad hoc with the hardened runtime", adhocRuntime, devid(speech, "TEAM123456"), "TEAM123456", exe + ": is signed ad hoc"},
 		{"the app without the hardened runtime",
 			func() program { p := devid(app, "TEAM123456"); p.flags = 0; return p }(),
-			devid(speech, "TEAM123456"), true, exe + ": is signed without the hardened runtime"},
-		{"a library left unsigned", devid(app, "TEAM123456"), speech, true, lib + ": is not signed"},
-		{"a library of another team", devid(app, "TEAM123456"), devid(speech, "OTHER98765"), true, lib + ": is signed by team OTHER98765"},
-		{"signed by no team", devid(app, ""), devid(speech, ""), true, exe + ": is signed by no team"},
+			devid(speech, "TEAM123456"), "TEAM123456", exe + ": is signed without the hardened runtime"},
+		{"a library left unsigned", devid(app, "TEAM123456"), speech, "TEAM123456", lib + ": is not signed"},
+		{"a library of another team", devid(app, "TEAM123456"), devid(speech, "OTHER98765"), "TEAM123456", lib + ": is signed by team OTHER98765"},
+		{"all of another team", devid(app, "OTHER98765"), devid(speech, "OTHER98765"), "TEAM123456", exe + ": is signed by team OTHER98765"},
+		{"signed by no team", devid(app, ""), devid(speech, ""), "TEAM123456", exe + ": is signed by no team"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -68,8 +69,8 @@ func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
 			out := filepath.Join(t.TempDir(), "main.json")
 			args := []string{"-zip", zipPath, "-channel", "main", "-name", "main", "-version", "0.1.0-main.abc1234",
 				"-commit", "abc1234def56", "-url", "https://example.com/main.zip", "-out", out}
-			if c.hardened {
-				args = append(args, "-hardened")
+			if c.team != "" {
+				args = append(args, "-team", c.team)
 			}
 			err := sign(args)
 			_, written := os.Stat(out)

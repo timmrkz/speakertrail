@@ -1,10 +1,10 @@
 package main
 
 // A build Tim updates to is signed with his Developer ID and the hardened
-// runtime, see scripts/sign-macos.sh and docs/UPDATES.md. Once publish.yml
-// has the Developer ID, sign is told -hardened and refuses a build that
-// lost it on the way: a program signed ad hoc, without the hardened
-// runtime, or by another team than the rest of the app. Under the hardened
+// runtime, see scripts/sign-macos.sh and docs/UPDATES.md. Once
+// build/team-id.txt names his team, publish.yml tells sign -team, and sign
+// refuses a build that lost it on the way: a program signed ad hoc,
+// without the hardened runtime, or by another team. Under the hardened
 // runtime macOS loads only libraries of the app's own team, so a library
 // of another would not even open.
 
@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 )
 
@@ -60,15 +59,15 @@ func signingOf(a arch) (signing, error) {
 }
 
 // checkHardened reads every program of the zip and says each that is not
-// signed with the hardened runtime by one team, the same for all.
-func checkHardened(zipPath string) error {
+// signed with the hardened runtime by the team given.
+func checkHardened(zipPath, team string) error {
 	z, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return fmt.Errorf("the build is not a zip: %w", err)
 	}
 	defer z.Close()
 	var found []string
-	teams := map[string][]string{}
+	programs := 0
 	for _, f := range z.File {
 		if f.FileInfo().IsDir() || f.UncompressedSize64 > maxUnpacked {
 			continue
@@ -100,25 +99,18 @@ func checkHardened(zipPath string) error {
 				found = append(found, f.Name+": is signed without the hardened runtime")
 			case s.team == "":
 				found = append(found, f.Name+": is signed by no team")
+			case s.team != team:
+				found = append(found, f.Name+": is signed by team "+s.team)
 			default:
-				if !slices.Contains(teams[s.team], f.Name) {
-					teams[s.team] = append(teams[s.team], f.Name)
-				}
+				programs++
 			}
 		}
 	}
-	if len(teams) > 1 {
-		for team, names := range teams {
-			for _, n := range names {
-				found = append(found, n+": is signed by team "+team)
-			}
-		}
-	}
-	if len(teams) == 0 && len(found) == 0 {
+	if programs == 0 && len(found) == 0 {
 		found = append(found, "it holds no program")
 	}
 	if found = tidy(found); len(found) > 0 {
-		return fmt.Errorf("the build is not signed with one Developer ID and the hardened runtime, so it is not signed for updates. See scripts/sign-macos.sh:\n  %s", strings.Join(found, "\n  "))
+		return fmt.Errorf("the build is not signed with the Developer ID of team %s and the hardened runtime, so it is not signed for updates. See scripts/sign-macos.sh:\n  %s", team, strings.Join(found, "\n  "))
 	}
 	return nil
 }

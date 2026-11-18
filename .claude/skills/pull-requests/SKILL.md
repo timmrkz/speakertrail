@@ -76,10 +76,11 @@ in the proof.
 
 - **The opening names the issue** it works on, and says `Fixes #N` for
   each issue it finishes.
-- **The bottom line says Architecture and Speed,** always, one word
-  each: better, the same or worse, and faster, slower or the same, with
-  the change in percent when it is faster or slower. See the
-  engineering skill on speed.
+- **The bottom line says Architecture, Speed and Security,** always:
+  better, the same or worse, faster, slower or the same, with the change
+  in percent when it is faster or slower, and what the change lets in
+  and what guards it, or nothing changes. See the engineering skill on
+  speed and the review skill on what a change lets in.
 - **Root cause and The fix** name the files and the names in the code.
 - **Proof** says which tests fail on main and pass here, the numbers
   before and after, and whether CI passed on the last commit.

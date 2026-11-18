@@ -24,9 +24,12 @@ import (
 // with, as the XML codesign writes, or none.
 type program struct {
 	// cpu is arm64 when it is 0.
-	cpu      uint32
-	links    []string
-	rpaths   []string
+	cpu    uint32
+	links  []string
+	rpaths []string
+	// other are load commands that name something, by their number:
+	// a weak link, the loader, the loader's environment.
+	other    []load
 	imports  []string
 	text     string
 	entitled string
@@ -52,6 +55,17 @@ func (p program) bytes() []byte {
 		// LC_LOAD_DYLIB, its size, where its name starts, a time and two
 		// versions, then the name.
 		add(0xc, uint32(24+len(name)), 24, 2, 0x10000, 0x10000)
+		cmds.Write(name)
+	}
+	for _, o := range p.other {
+		name := append([]byte(o.name), 0)
+		for (12+len(name))%8 != 0 {
+			name = append(name, 0)
+		}
+		// Any command with a name: what it is, its size, where its name
+		// starts, then the name. A link would carry a time and versions
+		// too, which the check never reads.
+		add(o.cmd, uint32(12+len(name)), 12)
 		cmds.Write(name)
 	}
 	for _, r := range p.rpaths {
@@ -116,6 +130,12 @@ func (p program) bytes() []byte {
 	out.WriteString(p.text)
 	out.Write(sig)
 	return out.Bytes()
+}
+
+// load is a load command that names something.
+type load struct {
+	cmd  uint32
+	name string
 }
 
 // fat wraps programs in a universal file, one architecture each, each
@@ -408,6 +428,47 @@ func TestABuildThatLooksInTheModuleCacheIsNotSigned(t *testing.T) {
 	err := check([]string{"-zip", zipPath})
 	if err == nil || !strings.Contains(err.Error(), "speakertrail-app: looks for libraries outside the build, in /Users/runner/go/pkg/mod/lib") {
 		t.Errorf("checking a build that looks in the module cache said %v", err)
+	}
+}
+
+// A library linked weakly, re-exported, lazily or upward loads as surely
+// as one linked plainly, and Go's debug/macho reads only the plain ones.
+// So every kind is held to the list, and so is the loader and anything
+// that sets where it looks.
+func TestEveryWayOfLinkingIsRead(t *testing.T) {
+	const exe = "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+	const sck = "/System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"
+	with := func(other ...load) []byte {
+		p := bundled
+		p.other = other
+		return p.bytes()
+	}
+	cases := []struct {
+		name string
+		data []byte
+		want []string
+	}{
+		// What main's build of 18 November 2026 carries.
+		{"the app as it is", with(
+			load{0xe, "/usr/lib/dyld"},
+			load{0x80000018, "/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement"},
+			load{0x80000018, "/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers"},
+		), nil},
+		{"the screen, weakly", with(load{0x80000018, sck}), []string{"links " + sck}},
+		{"the screen, re-exported", with(load{0x8000001f, sck}), []string{"links " + sck}},
+		{"the screen, lazily", with(load{0x20, sck}), []string{"links " + sck}},
+		{"the screen, upward", with(load{0x80000023, sck}), []string{"links " + sck}},
+		{"a loader of its own", with(load{0xe, "/tmp/dyld"}), []string{"is loaded by /tmp/dyld"}},
+		{"the loader told where to look", with(load{0x27, "DYLD_LIBRARY_PATH=/tmp"}),
+			[]string{"sets the loader's environment, DYLD_LIBRARY_PATH=/tmp"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(exe, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 

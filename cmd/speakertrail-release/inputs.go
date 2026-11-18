@@ -90,6 +90,12 @@ var linked = map[string][]string{
 		"/System/Library/Frameworks/QuartzCore.framework/Versions/A/QuartzCore",
 		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
+		// Linked weakly by Wails: ServiceManagement to open the app at
+		// login with SMAppService's mainAppService, see raising, and
+		// UniformTypeIdentifiers for the file types of its dialogs. Both
+		// were in main's builds before the check read weak links.
+		"/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement",
+		"/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers",
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libobjc.A.dylib", "/usr/lib/libresolv.9.dylib",
 		// The speech library Dictate hears with, carried in
 		// Contents/Frameworks by the build, see docs/BUILD.md.
@@ -295,6 +301,9 @@ func machoInputs(name string, f *macho.File, data []byte) []string {
 	if err != nil {
 		found = append(found, fmt.Sprintf("its libraries cannot be read: %v", err))
 	}
+	more, odd := otherLinks(f)
+	libs = append(libs, more...)
+	found = append(found, odd...)
 	known, ok := linked[base]
 	for _, l := range libs {
 		if !ok {
@@ -318,6 +327,55 @@ func machoInputs(name string, f *macho.File, data []byte) []string {
 		}
 	}
 	return found
+}
+
+// Load commands Go's debug/macho does not read for itself. Each of the
+// first four links a library as LC_LOAD_DYLIB does, and loads it as
+// surely: weakly, which Wails does for ServiceManagement and
+// UniformTypeIdentifiers, re-exported, lazily or upward.
+const (
+	loadWeakDylib   = 0x80000018
+	reexportDylib   = 0x8000001f
+	lazyLoadDylib   = 0x20
+	loadUpwardDylib = 0x80000023
+	loadDylinker    = 0xe
+	dyldEnvironment = 0x27
+)
+
+// otherLinks are the libraries a program links with the load commands Go
+// does not read, and what else in its load commands could load code the
+// check never read: a loader other than macOS's own, or an environment
+// for it, which can set where it looks, like DYLD_LIBRARY_PATH.
+func otherLinks(f *macho.File) (libs, found []string) {
+	for _, l := range f.Loads {
+		raw := l.Raw()
+		if len(raw) < 12 {
+			continue
+		}
+		cmd := f.ByteOrder.Uint32(raw)
+		switch cmd {
+		case loadWeakDylib, reexportDylib, lazyLoadDylib, loadUpwardDylib, loadDylinker, dyldEnvironment:
+		default:
+			continue
+		}
+		at := f.ByteOrder.Uint32(raw[8:])
+		if at >= uint32(len(raw)) {
+			found = append(found, fmt.Sprintf("its load command %#x cannot be read", cmd))
+			continue
+		}
+		name, _, _ := bytes.Cut(raw[at:], []byte{0})
+		switch cmd {
+		case loadDylinker:
+			if string(name) != "/usr/lib/dyld" {
+				found = append(found, "is loaded by "+string(name))
+			}
+		case dyldEnvironment:
+			found = append(found, "sets the loader's environment, "+string(name))
+		default:
+			libs = append(libs, string(name))
+		}
+	}
+	return libs, found
 }
 
 // insideBuild says whether a place a program looks for the libraries it

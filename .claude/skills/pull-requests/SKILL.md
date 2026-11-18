@@ -76,11 +76,11 @@ in the proof.
 
 - **The opening names the issue** it works on, and says `Fixes #N` for
   each issue it finishes.
-- **The bottom line says Architecture, Speed and Security,** always:
-  better, the same or worse, faster, slower or the same, with the change
-  in percent when it is faster or slower, and what the change lets in
-  and what guards it, or nothing changes. See the engineering skill on
-  speed and the review skill on what a change lets in.
+- **The bottom line says Architecture, Speed and Security,** always.
+  Architecture is better, the same or worse. Speed is faster, slower or
+  the same, with the change in percent when it is faster or slower, see
+  the engineering skill. Security is what the change lets in and what
+  guards it, or nothing changes, see the review skill.
 - **Root cause and The fix** name the files and the names in the code.
 - **Proof** says which tests fail on main and pass here, the numbers
   before and after, and whether CI passed on the last commit.
@@ -133,8 +133,9 @@ in the proof.
   messages, the issue, the product's goals, and the path of
   `docs/ARCHITECTURE.md`, never the session's summary of them. The
   review says whether the change leaves the architecture better, the
-  same or worse, and whether it makes things faster, slower or the
-  same, checking the pull request's own speed line as a claim. For a
+  same or worse, whether it makes things faster, slower or the same,
+  and what it lets in, checking the pull request's own speed and
+  security lines as claims. For a
   change to the architecture it carries the decision record too, with its
   candidates.
 - **The review is a file outside the checkout,** never committed and

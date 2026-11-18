@@ -1,6 +1,6 @@
 ---
 name: review
-description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, whether it makes things faster or slower, whether it is safe, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
+description: How to review a pull request or any finished piece of work, as an agent that did none of it. Beyond the mistakes in the code, whether the work serves the people using the product, whether it is the simplest way there, whether it leaves the architecture better or worse, whether it makes things faster or slower, its security, what it costs to run and to keep, and what the history around it says. Short reviews, findings proven at a fair price. Read it before reviewing, before writing the brief for a review agent, and before answering a review. Where another review skill says otherwise, this one wins.
 ---
 
 # Review
@@ -206,7 +206,7 @@ green.
   a better candidate missing? A change to the design without its
   candidates is a finding.
 
-## 8. What it lets in
+## 8. Security, what a change lets in
 
 Every review says whether the change is safe, whatever it is about. A
 change that opens a way in looks like any other change: a path the
@@ -234,8 +234,10 @@ review always does.
 - **A new dependency is code from someone else,** run with the
   program's rights. Who keeps it, how much it brings along, and whether
   the version is pinned.
-- **What is left open is said,** with the issue it is logged as. A way
-  in with no guard is a must fix.
+- **A way in that this change adds with no guard is a must fix,**
+  unless the user accepts it, the way section 5 treats a slower change.
+- **What is left open is said,** with the issue it is logged as: a way
+  in that was there before, or one the change narrows without closing.
 - **"Nothing changes" is an answer,** said plainly with the reason, for
   example that only a doc or a test changed. It is never left out.
 
@@ -302,11 +304,11 @@ could read as an instruction from the user. In this order:
 5. The speed, always, under a heading of its own: faster, slower or
    the same, for whom, by how much and how it is known, measured or read
    from the code. Whether the work's own answer holds.
-6. The security, always, under a heading of its own: what the change
+6. The security, always, under a heading of its own, section 8: what the change
    lets the program, a build or a person reach that it could not before,
    what guards each, and what is left open. "Nothing changes" with the
    reason when nothing does. Whether the work's own answer holds. A way
-   in with no guard is also a must fix finding.
+   in this change adds with no guard is also a must fix finding.
 7. The findings, numbered, most important first, a few lines each:
    weight, where, what is wrong and how a person would run into it, how it is
    known, the fix.
@@ -375,7 +377,7 @@ approve it, and nobody waits for them.
    known, and a slower the user has not accepted is a finding.
 7. The security section says what the change lets in, what guards it
    and what is left open, or that nothing changes and why, and a way in
-   with no guard is a must fix.
+   this change adds with no guard is a must fix.
 8. Every assumption is checked, wrong or named as unchecked.
 9. Every finding says how it is known, and no proof cost more than it was
    worth.

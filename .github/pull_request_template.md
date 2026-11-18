@@ -38,10 +38,10 @@ too, what was read from the code, where each new thing went, and what a
 slower part buys. See the engineering skill on speed.
 Security: in a few words, what the change lets the program, a build or a
 person reach that it could not before, and what guards it, for example
-`the build may use the microphone, the release check allows only that
-entitlement`. When nothing opens, `nothing changes`. What is left open,
+`the build may ask for the microphone, the release check allows only
+that usage key`. When nothing opens, `nothing changes`. What is left open,
 and the test that proves the guard refuses, go in Proof. See the review
-skill on what a change lets in.
+skill on security.
 -->
 
 ## Root cause

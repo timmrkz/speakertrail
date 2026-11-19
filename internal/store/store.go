@@ -54,6 +54,29 @@ type Data struct {
 	// Started says the starting searches were added once, so a search
 	// removed later does not come back.
 	Started bool `json:"started"`
+	// DraftTimes are how long the last drafts took, newest last, so the
+	// next one says about how long is left from earlier work rather than
+	// from a guess. See internal/draft.
+	DraftTimes []DraftTime `json:"draft_times,omitempty"`
+}
+
+// DraftTime is how long one draft of a first message took: loading the
+// model, when it was not loaded, and writing the message.
+type DraftTime struct {
+	LoadMS  int64 `json:"load_ms,omitempty"`
+	WriteMS int64 `json:"write_ms"`
+}
+
+// KeptDraftTimes is how many of the last drafts are kept to tell the time
+// of the next.
+const KeptDraftTimes = 10
+
+// Drafted keeps how long a draft took, and lets the oldest go.
+func (d *Data) Drafted(t DraftTime) {
+	d.DraftTimes = append(d.DraftTimes, t)
+	if n := len(d.DraftTimes); n > KeptDraftTimes {
+		d.DraftTimes = append([]DraftTime(nil), d.DraftTimes[n-KeptDraftTimes:]...)
+	}
 }
 
 // Where is a browser and the folder of one of its profiles, like
@@ -94,6 +117,11 @@ type Person struct {
 	// LinkedIn is the profile that found them. The engine never opens it,
 	// it is what the search provider's own index says.
 	LinkedIn LinkedIn `json:"linkedin"`
+	// Draft is the first message to them, as the language model wrote it
+	// at DraftedAt and as Tim changed it since. Tim copies it into
+	// LinkedIn and sends it himself. See internal/draft.
+	Draft     string    `json:"draft,omitempty"`
+	DraftedAt time.Time `json:"drafted_at,omitzero"`
 	// Signals are the fit rubric's reasons for and against, and Score
 	// what they add up to.
 	Signals []Signal `json:"signals"`

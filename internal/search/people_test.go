@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -143,5 +144,24 @@ func TestExaPeopleAsksAgainOnce(t *testing.T) {
 		if failed.Load() != 2 {
 			t.Errorf("%d failures: %d calls, want 2", fails, failed.Load())
 		}
+	}
+}
+
+// A person whose text the app lacks has it read from Exa's index by the
+// link, never from LinkedIn live.
+func TestExaProfile(t *testing.T) {
+	var s, c atomic.Int32
+	srv := exaPostServer(t, &s, &c)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	p, err := exa.Profile(t.Context(), "https://www.linkedin.com/in/erika-beispiel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "Erika Beispiel" || p.Headline != "Yogalehrerin und Inhaberin | Beispiel Yoga" ||
+		!strings.HasPrefix(p.Text, "# Erika Beispiel") || !strings.HasSuffix(p.Text, "## About") {
+		t.Errorf("profile %+v", p)
+	}
+	if s.Load() != 0 || c.Load() != 1 {
+		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
 	}
 }

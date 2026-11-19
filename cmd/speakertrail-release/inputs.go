@@ -101,6 +101,17 @@ var linked = map[string][]string{
 		// Contents/Frameworks by the build, see docs/BUILD.md.
 		"@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
 	},
+	// llama-server, which runs the language model that drafts a first
+	// message, built from llama.cpp by scripts/build-llama.sh: Metal for
+	// the model, Accelerate for the cores, as FrameFairy lists it.
+	"llama-server": {
+		"/System/Library/Frameworks/Accelerate.framework/Versions/A/Accelerate",
+		"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+		"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+		"/System/Library/Frameworks/Metal.framework/Versions/A/Metal",
+		"/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit",
+		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "/usr/lib/libobjc.A.dylib",
+	},
 	// The speech library itself, sherpa-onnx's release without speech
 	// synthesis, and the ONNX runtime under it, as FrameFairy lists them.
 	"libonnxruntime.dylib": {

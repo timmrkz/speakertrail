@@ -3,6 +3,7 @@ package draft
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -282,5 +283,29 @@ func TestFill(t *testing.T) {
 	got := Fill("Hi {{first_name}} ({{name}}). {{notes}}\n{{profile}}", "Mara Beispiel", "", "Profil mit {{name}} darin")
 	if got != "Hi Mara (Mara Beispiel). None.\nProfil mit {{name}} darin" {
 		t.Errorf("%q", got)
+	}
+}
+
+// A model that stopped answering is let go of at once, so the next draft
+// loads one that works. One that answered stays loaded for the next.
+func TestAStalledModelIsLetGo(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "# Mara\n\n## About\n\nA")
+	model := "/models/" + language.Models()[0].Name
+	r.d.Ask = func(context.Context, *language.Server, []language.Message, func(string)) (language.Answer, error) {
+		return language.Answer{}, fmt.Errorf("%w: nothing came from it for 2m0s", language.ErrStalled)
+	}
+	r.d.Start(id)
+	r.d.Wait()
+	if j := r.d.Jobs()[0]; j.State != "failed" || r.d.Host.Loaded(model) {
+		t.Errorf("after a stall: %s, loaded %v", j.State, r.d.Host.Loaded(model))
+	}
+	r.d.Ask = func(context.Context, *language.Server, []language.Message, func(string)) (language.Answer, error) {
+		return language.Answer{Text: "Hallo Mara", Finish: "stop"}, nil
+	}
+	r.d.Start(id)
+	r.d.Wait()
+	if !r.d.Host.Loaded(model) || r.launched.Load() != 2 {
+		t.Errorf("after an answer: loaded %v, %d loads", r.d.Host.Loaded(model), r.launched.Load())
 	}
 }

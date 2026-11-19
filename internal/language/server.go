@@ -55,9 +55,9 @@ type Server struct {
 	URL string
 	// Key is what it answers to, see newKey.
 	Key string
-	// PID is its process.
-	PID  int
-	stop func()
+	// PID is its process, Port where it listens.
+	PID, Port int
+	stop      func()
 }
 
 // Stop stops the server and returns once it has gone.
@@ -166,7 +166,7 @@ func Start(ctx context.Context, server, model string, client *http.Client, log *
 			}
 		})
 	}
-	s := &Server{URL: url, Key: key, PID: cmd.Process.Pid, stop: stop}
+	s := &Server{URL: url, Key: key, PID: cmd.Process.Pid, Port: port, stop: stop}
 	started := time.Now()
 	look := time.NewTicker(500 * time.Millisecond)
 	defer look.Stop()

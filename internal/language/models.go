@@ -282,13 +282,14 @@ func MachineMemory() int64 {
 	case "darwin":
 		return systemMemory()
 	case "linux":
-		return memTotal("/proc/meminfo")
+		return meminfo("/proc/meminfo", "MemTotal:")
 	}
 	return 0
 }
 
-// memTotal reads MemTotal out of a meminfo file, which is in kibibytes.
-func memTotal(path string) int64 {
+// meminfo reads one field, like MemTotal:, out of a meminfo file, which
+// is in kibibytes.
+func meminfo(path, field string) int64 {
 	file, err := os.Open(path)
 	if err != nil {
 		return 0
@@ -297,7 +298,7 @@ func memTotal(path string) int64 {
 	lines := bufio.NewScanner(file)
 	for lines.Scan() {
 		fields := strings.Fields(lines.Text())
-		if len(fields) < 2 || fields[0] != "MemTotal:" {
+		if len(fields) < 2 || fields[0] != field {
 			continue
 		}
 		n, err := strconv.ParseInt(fields[1], 10, 64)

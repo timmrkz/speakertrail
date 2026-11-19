@@ -37,6 +37,10 @@ type Answer struct {
 // few sentences, a few hundred tokens.
 const MaxTokens = 1024
 
+// ErrStalled is a server that stopped answering in the middle of an ask.
+// The draft lets go of it at once, see Host.Hold.
+var ErrStalled = errors.New("the language model stopped answering")
+
 // stall is how long the server may send nothing before the ask is given
 // up on. It speaks all the time while it works, so this is a server that
 // hangs. As FrameFairy's localStall.
@@ -67,7 +71,7 @@ func Ask(ctx context.Context, client *http.Client, s *Server, messages []Message
 	defer watch.Stop()
 	gaveUp := func(err error) error {
 		if stalled.Load() {
-			return fmt.Errorf("the language model stopped answering: nothing came from it for %s", stall)
+			return fmt.Errorf("%w: nothing came from it for %s", ErrStalled, stall)
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()

@@ -51,7 +51,7 @@ func TestTheLanguageModelInSettings(t *testing.T) {
 	if err := s.remove("probe.gguf"); err == nil {
 		t.Error("a model a draft holds was removed")
 	}
-	release()
+	release(language.Keep)
 	if err := s.remove("probe.gguf"); err != nil || s.state().Models[0].Installed {
 		t.Errorf("remove: %v", err)
 	}

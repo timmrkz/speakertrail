@@ -43,6 +43,9 @@ type Host struct {
 	// what calls it off, time.AfterFunc when nil. A test takes the wait
 	// in hand itself.
 	Idle func(keep time.Duration, gone func()) (callOff func() bool)
+	// Notes is the folder a server the app starts is written down in
+	// while it runs, see leftover.go. Empty writes nothing.
+	Notes string
 
 	mu      sync.Mutex
 	server  *Server
@@ -63,7 +66,22 @@ func (h *Host) launch(ctx context.Context, model string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Start(ctx, server, model, h.Client, h.Log)
+	// None of this app's own servers runs now, so any running holds
+	// memory somebody else started it for.
+	if err := roomFor(modelNeeds(model), FreeMemory(), runningServers()); err != nil {
+		return nil, err
+	}
+	s, err := Start(ctx, server, model, h.Client, h.Log)
+	if err != nil {
+		return nil, err
+	}
+	noteServer(h.Notes, serverNote{PID: s.PID, Port: s.Port, Model: model})
+	stop := s.stop
+	s.stop = func() {
+		stop()
+		forgetServer(h.Notes, s.PID)
+	}
+	return s, nil
 }
 
 func (h *Host) idle(keep time.Duration, gone func()) func() bool {
@@ -83,8 +101,10 @@ func (h *Host) Loaded(model string) bool {
 
 // Hold gives the server with the model at path loaded, starting it if it
 // is not, and the release that lets go of it. The last to let go starts
-// the wait of Keep, after which the server stops.
-func (h *Host) Hold(ctx context.Context, model string) (*Server, func(), error) {
+// the wait it names, Keep after a draft, after which the server stops. A
+// wait of 0 stops it at once: a server that stopped answering is let go
+// of that way, so the next draft loads one that works, as in FrameFairy.
+func (h *Host) Hold(ctx context.Context, model string) (*Server, func(keep time.Duration), error) {
 	for {
 		h.mu.Lock()
 		switch {
@@ -142,9 +162,9 @@ func (h *Host) Hold(ctx context.Context, model string) (*Server, func(), error) 
 }
 
 // releaser lets go of s once.
-func (h *Host) releaser(s *Server) func() {
+func (h *Host) releaser(s *Server) func(keep time.Duration) {
 	var once sync.Once
-	return func() {
+	return func(keep time.Duration) {
 		once.Do(func() {
 			h.mu.Lock()
 			defer h.mu.Unlock()
@@ -155,7 +175,11 @@ func (h *Host) releaser(s *Server) func() {
 			if h.users > 0 {
 				return
 			}
-			h.callOff = h.idle(Keep, func() {
+			if keep <= 0 {
+				h.shutLocked()
+				return
+			}
+			h.callOff = h.idle(keep, func() {
 				h.mu.Lock()
 				defer h.mu.Unlock()
 				if h.server == s && h.users == 0 {

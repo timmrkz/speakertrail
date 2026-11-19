@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -242,8 +243,8 @@ func TestHostFromSeveralGoroutines(t *testing.T) {
 				return
 			}
 			h.Loaded("/models/a.gguf")
-			release()
-			release()
+			release(Keep)
+			release(Keep)
 		})
 	}
 	wg.Wait()
@@ -263,11 +264,11 @@ func TestHostFromSeveralGoroutines(t *testing.T) {
 	if _, _, err := h.Hold(t.Context(), "/models/b.gguf"); !errors.Is(err, errBusy) {
 		t.Errorf("a second model beside one in use: %v", err)
 	}
-	r1()
+	r1(Keep)
 	if _, r2, err := h.Hold(t.Context(), "/models/b.gguf"); err != nil {
 		t.Fatal(err)
 	} else {
-		r2()
+		r2(Keep)
 	}
 	if !h.Drop("/models/b.gguf") || h.Loaded("/models/b.gguf") {
 		t.Error("a model nobody holds was not dropped")
@@ -295,5 +296,116 @@ func TestCloseWhileLoading(t *testing.T) {
 	h.Close()
 	if err := <-errs; err == nil {
 		t.Error("the load went on after Close")
+	}
+}
+
+// A server that stopped answering is let go of at once, not kept.
+func TestAStalledServerGoesAtOnce(t *testing.T) {
+	var stopped atomic.Int32
+	h := &Host{
+		Launch: func(ctx context.Context, model string) (*Server, error) {
+			return &Server{URL: model, stop: func() { stopped.Add(1) }}, nil
+		},
+		Idle: func(time.Duration, func()) func() bool { return func() bool { return true } },
+	}
+	defer h.Close()
+	_, release, err := h.Hold(t.Context(), "/models/a.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release(0)
+	if stopped.Load() != 1 || h.Loaded("/models/a.gguf") {
+		t.Errorf("%d stopped, loaded %v", stopped.Load(), h.Loaded("/models/a.gguf"))
+	}
+}
+
+func TestRoomForAModel(t *testing.T) {
+	const gb = 1_000_000_000
+	if err := roomFor(17*gb, 20*gb, nil); err != nil {
+		t.Errorf("fits: %v", err)
+	}
+	if err := roomFor(17*gb, 0, nil); err != nil {
+		t.Errorf("the system did not say: %v", err)
+	}
+	err := roomFor(17*gb, 12*gb, nil)
+	if !errors.Is(err, ErrNoRoom) || !strings.Contains(err.Error(), "needs about 17.0 GB and 12.0 GB are free") {
+		t.Errorf("too little: %v", err)
+	}
+	if err := roomFor(17*gb, 12*gb, []string{"4242"}); err == nil || !strings.Contains(err.Error(), "process 4242") {
+		t.Errorf("another server: %v", err)
+	}
+}
+
+func TestVMStatFree(t *testing.T) {
+	const text = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               12000.
+Pages active:                            500000.
+Pages wired down:                        300000.
+Pages occupied by compressor:            100000.
+`
+	if got, want := vmStatFree(text, 32<<30), int64(32<<30)-400000*16384; got != want {
+		t.Errorf("%d, want %d", got, want)
+	}
+	if vmStatFree("nonsense", 32<<30) != 0 || vmStatFree(text, 0) != 0 {
+		t.Error("what is not vm_stat's was read")
+	}
+}
+
+func TestLlamaServers(t *testing.T) {
+	got := llamaServers("  1 /sbin/launchd\n 4242 /Users/x/FrameFairy.app/Contents/MacOS/llama-server\n 77 llama-server-other\n")
+	if strings.Join(got, ",") != "4242" {
+		t.Errorf("%q", got)
+	}
+}
+
+// A server whose app has gone is stopped when the app starts again. One
+// whose app still runs, and a number that is no longer that server, are
+// left alone.
+func TestLeftoverServers(t *testing.T) {
+	t.Setenv("FAKE_LLAMA_SERVER", "1")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	model := filepath.Join(dir, "probe.gguf")
+	os.WriteFile(model, []byte("GGUF"), 0o644)
+	left, err := Start(t.Context(), self, model, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer left.Stop()
+	kept, err := Start(t.Context(), self, model, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer kept.Stop()
+	// A process that has ended, the app that crashed.
+	gone := exec.Command(self, "-test.run=^$")
+	gone.Env = append(os.Environ(), "FAKE_LLAMA_SERVER=")
+	if err := gone.Run(); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(dir, "notes")
+	noteServer(notes, serverNote{PID: left.PID, Port: left.Port, Model: model, Owner: gone.Process.Pid})
+	noteServer(notes, serverNote{PID: kept.PID, Port: kept.Port, Model: model})
+	// The number is a live process, but not that server.
+	noteServer(notes, serverNote{PID: os.Getpid(), Port: 1, Model: model, Owner: gone.Process.Pid})
+	var asked []int
+	stopped := stopLeftovers(notes, func(p *os.Process) error {
+		asked = append(asked, p.Pid)
+		return p.Signal(os.Interrupt)
+	})
+	if len(stopped) != 1 || stopped[0] != left.PID || len(asked) != 1 {
+		t.Errorf("stopped %v, asked %v, want %d", stopped, asked, left.PID)
+	}
+	if _, err := http.Get(left.URL + "/health"); err == nil {
+		t.Error("the leftover still answers")
+	}
+	if _, err := os.Stat(noteFile(notes, kept.PID)); err != nil {
+		t.Error("the note of a server in use went")
+	}
+	if _, err := os.Stat(noteFile(notes, left.PID)); !errors.Is(err, os.ErrNotExist) {
+		t.Error("the note of the leftover stayed")
 	}
 }

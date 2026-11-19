@@ -338,7 +338,16 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	defer release()
+	// A server that stopped answering goes at once, the rest stays for
+	// the next draft.
+	var stalled bool
+	defer func() {
+		if stalled {
+			release(0)
+			return
+		}
+		release(language.Keep)
+	}()
 	var took store.DraftTime
 	if !loaded {
 		took.LoadMS = d.now().Sub(loadStart).Milliseconds()
@@ -355,6 +364,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		d.update(id, func(j *Job) { j.Text = so; progress(j) })
 	})
 	if err != nil {
+		stalled = errors.Is(err, language.ErrStalled)
 		return err
 	}
 	took.WriteMS = d.now().Sub(writeStart).Milliseconds()

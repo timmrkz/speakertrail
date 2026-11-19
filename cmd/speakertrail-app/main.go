@@ -92,7 +92,14 @@ func main() {
 	// in Settings, see languagemodels.go, and kept loaded between drafts.
 	// Where a download stands is the event language, where a draft
 	// stands the event draft.
-	writer := &language.Host{Log: theLog.slog("language", zerolog.TraceLevel)}
+	writer := &language.Host{Log: theLog.slog("language", zerolog.TraceLevel), Notes: language.NotesDir(dir)}
+	// A llama-server this app left running when it crashed holds the
+	// model's memory until it is stopped, see leftover.go.
+	go func() {
+		for _, pid := range language.StopLeftoverServers(writer.Notes) {
+			theLog.line(zerolog.WarnLevel, "language").Int("pid", pid).Msg("a llama-server left running was stopped")
+		}
+	}()
 	writers := newLanguageModels(language.Dir(dir), writer, func(st LanguageState) {
 		if app != nil {
 			app.Event.Emit("language", st)

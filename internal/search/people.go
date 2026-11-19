@@ -170,7 +170,7 @@ var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
 func profilesOf(results []exaProfile) []Profile {
 	res := make([]Profile, 0, len(results))
 	for _, r := range results {
-		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: strings.TrimSpace(r.Text)}
+		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: WithoutContact(strings.TrimSpace(r.Text))}
 		for _, en := range r.Entities {
 			if en.Type == "person" {
 				if en.Properties.Name != "" {

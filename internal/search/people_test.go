@@ -77,7 +77,7 @@ func exaPostServer(t *testing.T, searches, contents *atomic.Int32) *httptest.Ser
 				t.Errorf("exa contents %+v", body)
 			}
 			fmt.Fprint(w, `{"results":[
-				{"title":"Erika Beispiel","url":"https://www.linkedin.com/in/erika-beispiel","text":"# Erika Beispiel\n\nYogalehrerin und Inhaberin | Beispiel Yoga\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n120 connections • 130 followers\n\n## About",
+				{"title":"Erika Beispiel","url":"https://www.linkedin.com/in/erika-beispiel","text":"# Erika Beispiel\n\nYogalehrerin und Inhaberin | Beispiel Yoga\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n120 connections • 130 followers\n\n## About\n\nKurse in Köln. Anmeldung: erika@beispiel-yoga.de, Tel. 0221 1234567",
 				 "entities":[{"type":"person","properties":{"name":"Erika Beispiel","location":"Cologne, North Rhine-Westphalia, Germany",
 				  "workHistory":[{"title":"Inhaberin","location":null,"dates":{"from":"2023-04-01","to":null},"company":{"id":null,"name":"Beispiel Yoga"}},
 				    {"title":"Werkstudentin","dates":{"from":"2019-10-01","to":"2022-03-01"},"company":{"name":"Muster GmbH"}},
@@ -158,7 +158,7 @@ func TestExaProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if p.Name != "Erika Beispiel" || p.Headline != "Yogalehrerin und Inhaberin | Beispiel Yoga" ||
-		!strings.HasPrefix(p.Text, "# Erika Beispiel") || !strings.HasSuffix(p.Text, "## About") {
+		!strings.HasPrefix(p.Text, "# Erika Beispiel") || !strings.HasSuffix(p.Text, "Kurse in Köln. Anmeldung: , Tel.") {
 		t.Errorf("profile %+v", p)
 	}
 	if s.Load() != 0 || c.Load() != 1 {

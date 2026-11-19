@@ -88,8 +88,8 @@ that, the skills listed last show their name without what they are for.
   it. The first commit does not have to be worth looking at. It exists so
   the pull request exists, because that is where Tim follows the work.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS. What
-  the build needs, Go and Node.js, make installs with Homebrew, as it does
-  for FrameFairy. Nothing beyond that, and never as a step he has to do.
+  the build needs, Go, Node.js and CMake for llama-server, make installs
+  with Homebrew, as it does for FrameFairy. Nothing beyond that, and never as a step he has to do.
 - He tests the app himself on his Mac. After each change say exactly what
   to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.

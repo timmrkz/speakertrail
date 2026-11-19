@@ -77,8 +77,9 @@ const setID = fs.ModeSetuid | fs.ModeSetgid
 // its file. A library not on its list, ScreenCaptureKit, AVFoundation or
 // IOKit for the keyboard's own reports, fails until the list is changed on
 // main, in a pull request that says why. A program not on the list fails
-// the same way. The app is one program: Wails' window, WebKit, and the
-// keychain through Security.
+// the same way. The app is two programs: speakertrail-app, Wails' window,
+// WebKit and the keychain through Security, and llama-server, which runs
+// the language model that drafts a first message.
 var linked = map[string][]string{
 	"speakertrail-app": {
 		"/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit",
@@ -100,6 +101,17 @@ var linked = map[string][]string{
 		// The speech library Dictate hears with, carried in
 		// Contents/Frameworks by the build, see docs/BUILD.md.
 		"@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
+	},
+	// llama-server, which runs the language model that drafts a first
+	// message, built from llama.cpp by scripts/build-llama.sh: Metal for
+	// the model, Accelerate for the cores, as FrameFairy lists it.
+	"llama-server": {
+		"/System/Library/Frameworks/Accelerate.framework/Versions/A/Accelerate",
+		"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+		"/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation",
+		"/System/Library/Frameworks/Metal.framework/Versions/A/Metal",
+		"/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit",
+		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "/usr/lib/libobjc.A.dylib",
 	},
 	// The speech library itself, sherpa-onnx's release without speech
 	// synthesis, and the ONNX runtime under it, as FrameFairy lists them.

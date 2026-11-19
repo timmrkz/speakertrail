@@ -37,7 +37,7 @@ type API struct {
 	// model can run.
 	Drafts *draft.Drafter
 	Log    *slog.Logger
-	mux      *http.ServeMux
+	mux    *http.ServeMux
 }
 
 // New builds the handler.

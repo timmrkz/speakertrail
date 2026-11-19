@@ -25,6 +25,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Info from '@lucide/svelte/icons/info'
   import Copy from '@lucide/svelte/icons/copy'
+  import PenLine from '@lucide/svelte/icons/pen-line'
   import FileText from '@lucide/svelte/icons/file-text'
   import Code from '@lucide/svelte/icons/code'
   import Image from '@lucide/svelte/icons/image'
@@ -66,6 +67,8 @@
     alert: TriangleAlert,
     info: Info,
     copy: Copy,
+    // Draft, which writes a first message to a person.
+    draft: PenLine,
     doc: FileText,
     code: Code,
     image: Image,

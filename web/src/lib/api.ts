@@ -199,6 +199,13 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   // by law. The app stores the link, never the address.
   affiliations: { organisation: string; role: string; current: boolean; website: string; imprint_url: string }[]
   sightings: { source_id: number; source: string; checked_at: string }[]
+  // The first message to them, as the language model wrote it at
+  // drafted_at and as it was changed since, empty before the first.
+  draft: string
+  drafted_at: string | null
+  // When Exa's index gave the profile text a draft is written from, null
+  // while the app has none and a draft reads it first.
+  profile_read_at: string | null
 }
 
 export interface PeopleQuery {
@@ -413,6 +420,54 @@ export interface SpeechState {
   job?: SpeechJob
 }
 
+// The language models in Settings, the way the speech models are, see
+// docs/api.md, Language models.
+export interface LanguageModel {
+  name: string
+  title: string
+  maker: string
+  about: string
+  // The file's size, and the memory it takes once loaded, in bytes.
+  download: number
+  needs: number
+  url: string
+  recommended: boolean
+  installed: boolean
+  // The one that drafts, as the app says.
+  inUse: boolean
+  // What this Mac can do with it.
+  fit: 'fits' | 'tight' | 'too big' | 'unknown'
+}
+
+export interface LanguageState {
+  models: LanguageModel[]
+  folder: string
+  // Whether llama-server is in the app, to run a model with.
+  server: boolean
+  job?: SpeechJob
+}
+
+// A first message being drafted for a person, see docs/api.md, Drafts.
+// It comes as the event draft each time it moves on.
+export interface DraftJob {
+  id: string
+  person_id: number
+  state: 'queued' | 'reading' | 'loading' | 'writing' | 'done' | 'failed' | 'cancelled'
+  model?: string
+  // What the model wrote so far. Untrusted, and shown as text.
+  text?: string
+  started_at: string
+  // How far it is from 0 to 1, and about how long is left, from how long
+  // earlier drafts took. -1 and null before there was one.
+  fraction: number
+  seconds_left: number | null
+  error?: string
+}
+
+export function onDraft(fn: (j: DraftJob) => void): () => void {
+  return Events.On('draft', (ev) => fn(ev.data as DraftJob))
+}
+
 // What is being written down while somebody dictates: every piece settled
 // so far, in order, and what follows them, still being heard. See
 // listen.go and docs/api.md, Dictate.
@@ -610,7 +665,7 @@ export const api = {
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
-  patchPerson: (id: number, patch: { notes?: string; connected?: boolean }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
+  patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
   addProfileSearch: (query: string) => request<Source>('POST', '/api/sources', { query, kind: 'profile_search' }),
@@ -673,6 +728,17 @@ export const api = {
   installSpeechModel: (name: string) => request<SpeechJob>('POST', '/api/speech/install', { name }),
   cancelSpeechDownload: (id: string) => request<void>('POST', '/api/speech/cancel', { id }),
   removeSpeechModel: (name: string) => request<void>('DELETE', `/api/speech/models/${encodeURIComponent(name)}`, {}),
+  // The language models, the same as the speech models. Where a download
+  // stands comes as the event language.
+  language: () => request<LanguageState>('GET', '/api/language'),
+  installLanguageModel: (name: string) => request<SpeechJob>('POST', '/api/language/install', { name }),
+  cancelLanguageDownload: (id: string) => request<void>('POST', '/api/language/cancel', { id }),
+  removeLanguageModel: (name: string) => request<void>('DELETE', `/api/language/models/${encodeURIComponent(name)}`, {}),
+  // First messages: the drafts under way and the latest of each person,
+  // one started for a person, and stopped again.
+  drafts: () => request<DraftJob[]>('GET', '/api/drafts'),
+  startDraft: (id: number) => request<DraftJob>('POST', `/api/people/${id}/draft`, {}),
+  cancelDraft: (id: number) => request<void>('POST', `/api/people/${id}/draft/cancel`, {}),
   updates: () => request<UpdateState>('GET', '/api/updates'),
   checkForUpdates: () => request<void>('POST', '/api/updates/check', {}),
   followChannel: (channel: string) => request<UpdateState>('POST', '/api/updates/follow', { channel }),

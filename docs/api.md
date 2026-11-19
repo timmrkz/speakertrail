@@ -267,6 +267,10 @@ Language model. The models live in the same folder.
 | `POST /api/language/cancel` | `{"id": "language-1"}` stops that download. What arrived stays and the next Download goes on from there |
 | `DELETE /api/language/models/{name}` | takes that model off the Mac, after Settings asked. Not while a draft writes with it |
 
+A model FrameFairy has whole in `~/.framefairy/models`, by its size and
+checksum, is linked from there rather than downloaded, so the two apps
+share it on disk. While it is checked, `progress.text` is `copying`.
+
 `needs` is the memory the model takes while it writes, in bytes, and
 `fit` what this Mac can do with it: `fits`, `tight`, `too big` or
 `unknown`. `recommended` marks the largest model this Mac holds

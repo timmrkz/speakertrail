@@ -36,10 +36,7 @@ func TestTheLanguageModelInSettings(t *testing.T) {
 	if j.State != "running" {
 		t.Errorf("the download did not start at once: %+v", j)
 	}
-	s.mu.Lock()
-	done := s.done
-	s.mu.Unlock()
-	<-done
+	s.get.wait()
 	st := s.state()
 	if st.Job.State != "done" || !st.Models[0].Installed || !st.Models[0].InUse {
 		t.Errorf("after the download: %+v", st)

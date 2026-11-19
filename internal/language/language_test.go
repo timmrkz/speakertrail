@@ -409,3 +409,33 @@ func TestLeftoverServers(t *testing.T) {
 		t.Error("the note of the leftover stayed")
 	}
 }
+
+// A model FrameFairy has whole is taken from its folder, not downloaded,
+// and its folder is left as it was. One that is not the model is not.
+func TestInstallTakesFrameFairysCopy(t *testing.T) {
+	m, data := fakeModel(strings.Repeat("weights", 1000))
+	asked := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { asked++; w.Write(data) }))
+	defer srv.Close()
+	m.URL = srv.URL + "/probe.gguf"
+	theirs := t.TempDir()
+	os.WriteFile(filepath.Join(theirs, m.Name), data, 0o644)
+	dir := t.TempDir()
+	if err := (Installer{Elsewhere: []string{theirs}}).Install(t.Context(), m, dir); err != nil {
+		t.Fatal(err)
+	}
+	if asked != 0 || !m.Installed(dir) || Check(m, dir) != nil {
+		t.Errorf("%d downloads, installed %v", asked, m.Installed(dir))
+	}
+	if err := Remove(m, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(theirs, m.Name)); string(got) != string(data) {
+		t.Error("FrameFairy's copy went with ours")
+	}
+	// Changed there, so it is not the model: downloaded instead.
+	os.WriteFile(filepath.Join(theirs, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644)
+	if err := (Installer{Elsewhere: []string{theirs}}).Install(t.Context(), m, dir); err != nil || asked != 1 || Check(m, dir) != nil {
+		t.Errorf("a wrong copy: %v, %d downloads", err, asked)
+	}
+}

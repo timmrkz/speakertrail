@@ -397,19 +397,20 @@ export interface SpeechModel {
 
 // How far a download has come: what it does now, the share done from 0
 // to 1 and the seconds left, -1 where it cannot say.
-export interface SpeechProgress {
+export interface ModelProgress {
   text: string
   fraction: number
   remaining: number
 }
 
-// A download of a speech model, in the shape of FrameFairy's job.
-export interface SpeechJob {
+// A download of a model, a speech model or a language model, in the
+// shape of FrameFairy's job.
+export interface ModelJob {
   id: string
   kind: 'model'
   title: string
   state: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
-  progress?: SpeechProgress
+  progress?: ModelProgress
   error?: string
 }
 
@@ -417,7 +418,7 @@ export interface SpeechState {
   models: SpeechModel[]
   // The models folder, with the home folder as ~.
   folder: string
-  job?: SpeechJob
+  job?: ModelJob
 }
 
 // The language models in Settings, the way the speech models are, see
@@ -444,7 +445,7 @@ export interface LanguageState {
   folder: string
   // Whether llama-server is in the app, to run a model with.
   server: boolean
-  job?: SpeechJob
+  job?: ModelJob
 }
 
 // A first message being drafted for a person, see docs/api.md, Drafts.
@@ -725,13 +726,13 @@ export const api = {
   // The speech models, fetched and removed in Settings. Where a download
   // stands comes as the event speech.
   speech: () => request<SpeechState>('GET', '/api/speech'),
-  installSpeechModel: (name: string) => request<SpeechJob>('POST', '/api/speech/install', { name }),
+  installSpeechModel: (name: string) => request<ModelJob>('POST', '/api/speech/install', { name }),
   cancelSpeechDownload: (id: string) => request<void>('POST', '/api/speech/cancel', { id }),
   removeSpeechModel: (name: string) => request<void>('DELETE', `/api/speech/models/${encodeURIComponent(name)}`, {}),
   // The language models, the same as the speech models. Where a download
   // stands comes as the event language.
   language: () => request<LanguageState>('GET', '/api/language'),
-  installLanguageModel: (name: string) => request<SpeechJob>('POST', '/api/language/install', { name }),
+  installLanguageModel: (name: string) => request<ModelJob>('POST', '/api/language/install', { name }),
   cancelLanguageDownload: (id: string) => request<void>('POST', '/api/language/cancel', { id }),
   removeLanguageModel: (name: string) => request<void>('DELETE', `/api/language/models/${encodeURIComponent(name)}`, {}),
   // First messages: the drafts under way and the latest of each person,

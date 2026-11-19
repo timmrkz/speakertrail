@@ -105,6 +105,9 @@ func main() {
 			app.Event.Emit("language", st)
 		}
 	})
+	// Gemma is the file FrameFairy uses too, so a Mac that has it in
+	// FrameFairy's folder takes it from there rather than downloading it.
+	writers.in.Elsewhere = []string{language.FrameFairyModels()}
 	api.Handle("/api/language", languageAPI{s: writers})
 	api.Handle("/api/language/", languageAPI{s: writers})
 	answers.Drafts = &draft.Drafter{Store: e.Store, Host: writer, Model: writers.inUse,

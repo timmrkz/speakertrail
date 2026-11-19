@@ -28,6 +28,20 @@ type Installer struct {
 	Report func(*fetch.Progress)
 	// Now is the clock the reports are timed by, time.Now when nil.
 	Now func() time.Time
+	// Elsewhere are folders another app keeps the same models in,
+	// FrameFairy's ~/.framefairy/models. A model found there whole, by its
+	// checksum, is taken from there rather than downloaded, see take.
+	Elsewhere []string
+}
+
+// FrameFairyModels is where FrameFairy keeps its models, the same files
+// with the same checksums. Empty when there is no home folder.
+func FrameFairyModels() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".framefairy", "models")
 }
 
 // Install fetches a model into dir, reporting as it goes.
@@ -57,6 +71,13 @@ func (in Installer) Install(ctx context.Context, m Model, dir string) error {
 	wrong := func(err error) error {
 		os.Remove(part)
 		return err
+	}
+	if in.take(m, part) {
+		if err := os.Rename(part, final); err != nil {
+			return err
+		}
+		noteChecked(dir, m, final)
+		return nil
 	}
 	sum, ok := fetch.Arrived(part, m.Download, m.SHA256)
 	if !ok {
@@ -198,4 +219,34 @@ func writeChecked(dir string, record map[string]checked) {
 	if os.WriteFile(tmp, body, 0o644) == nil {
 		_ = os.Rename(tmp, filepath.Join(dir, checkedFile))
 	}
+}
+
+// take puts the model at part from another app's folder, when it is there
+// whole: the same size, the same checksum and a model file. It is a hard
+// link, so the two apps share the bytes on disk, 14.4 GB for Gemma 4 26B,
+// and either can remove its own name without taking the other's. A folder
+// on another volume cannot be linked from, and the model is downloaded.
+// Nothing is ever written in the other app's folder.
+func (in Installer) take(m Model, part string) bool {
+	for _, dir := range in.Elsewhere {
+		if dir == "" || m.SHA256 == "" {
+			continue
+		}
+		there := filepath.Join(dir, m.Name)
+		info, err := os.Stat(there)
+		if err != nil || !info.Mode().IsRegular() || info.Size() != m.Download || !isGGUF(there) {
+			continue
+		}
+		if in.Report != nil {
+			in.Report(&fetch.Progress{Text: "copying", Fraction: fetch.Unknown, Remaining: fetch.Unknown})
+		}
+		if _, ok := fetch.Arrived(there, m.Download, m.SHA256); !ok {
+			continue
+		}
+		os.Remove(part)
+		if os.Link(there, part) == nil {
+			return true
+		}
+	}
+	return false
 }

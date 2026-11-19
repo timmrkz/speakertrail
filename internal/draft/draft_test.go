@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -307,5 +309,28 @@ func TestAStalledModelIsLetGo(t *testing.T) {
 	r.d.Wait()
 	if !r.d.Host.Loaded(model) || r.launched.Load() != 2 {
 		t.Errorf("after an answer: loaded %v, %d loads", r.d.Host.Loaded(model), r.launched.Load())
+	}
+}
+
+// The window is told a person's changes in the order they happened, so
+// it never ends on an older state than the draft is in. Here the window
+// is slow to hear the first change, Start's queued, while the draft
+// runs to its end.
+func TestTheWindowHearsChangesInOrder(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	told := r.d.Told
+	r.d.Told = func(j Job) {
+		if j.State == "queued" {
+			for !slices.ContainsFunc(r.d.Jobs(), func(j Job) bool { return j.State == "done" }) {
+				runtime.Gosched()
+			}
+		}
+		told(j)
+	}
+	r.d.Start(id)
+	r.d.Wait()
+	if got := strings.Join(r.states(id), " "); got != "queued loading writing done" {
+		t.Errorf("told %s", got)
 	}
 }

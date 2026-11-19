@@ -96,6 +96,12 @@ type Drafter struct {
 	measure func(*Job)
 	// idle is closed when the queue runs dry. Tests wait on it.
 	idle chan struct{}
+	// The changes not told yet, in the order they happened, and whether
+	// a goroutine is telling them now. One tells at a time, so the
+	// window never hears an older state after a newer one.
+	untold  []Job
+	telling bool
+	told    *sync.Cond
 }
 
 func (d *Drafter) now() time.Time { return d.Store.Now() }
@@ -154,8 +160,9 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 		go d.work()
 	}
 	out := *j
+	d.untold = append(d.untold, out)
 	d.mu.Unlock()
-	d.tell(out)
+	d.tell()
 	return out, nil
 }
 
@@ -176,9 +183,9 @@ func (d *Drafter) Cancel(personID int64) error {
 	// Still queued.
 	d.queue = slices.DeleteFunc(d.queue, func(id int64) bool { return id == personID })
 	j.State, j.Fraction, j.SecondsLeft = "cancelled", -1, nil
-	out := *j
+	d.untold = append(d.untold, *j)
 	d.mu.Unlock()
-	d.tell(out)
+	d.tell()
 	return nil
 }
 
@@ -191,12 +198,45 @@ func (d *Drafter) Wait() {
 	if idle != nil {
 		<-idle
 	}
+	d.mu.Lock()
+	for d.telling {
+		d.cond().Wait()
+	}
+	d.mu.Unlock()
 }
 
-func (d *Drafter) tell(j Job) {
-	if d.Told != nil {
-		d.Told(j)
+// cond is the signal that the telling ended. d.mu is held.
+func (d *Drafter) cond() *sync.Cond {
+	if d.told == nil {
+		d.told = sync.NewCond(&d.mu)
 	}
+	return d.told
+}
+
+// tell tells the changes not told yet, in order. While another goroutine
+// tells, it leaves them to that one, so a change never waits on the
+// window to hear an earlier one.
+func (d *Drafter) tell() {
+	d.mu.Lock()
+	if d.telling {
+		d.mu.Unlock()
+		return
+	}
+	d.telling = true
+	for len(d.untold) > 0 {
+		jobs := d.untold
+		d.untold = nil
+		d.mu.Unlock()
+		if d.Told != nil {
+			for _, j := range jobs {
+				d.Told(j)
+			}
+		}
+		d.mu.Lock()
+	}
+	d.telling = false
+	d.cond().Broadcast()
+	d.mu.Unlock()
 }
 
 // work drafts what is queued, one after the other, until nothing is.
@@ -270,9 +310,9 @@ func (d *Drafter) update(id int64, change func(*Job)) {
 		return
 	}
 	change(j)
-	out := *j
+	d.untold = append(d.untold, *j)
 	d.mu.Unlock()
-	d.tell(out)
+	d.tell()
 }
 
 // draft is the work of one draft: the profile, the prompt, the model and

@@ -29,6 +29,7 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | Report a Problem, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
+| Draft, the first message to a person, the language model and llama-server | `internal/draft/`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/BUILD.md](docs/BUILD.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
@@ -126,8 +127,10 @@ messages, pull request text, code comments and chat replies.
   asks Exa for LinkedIn profiles, like "Yogalehrerin Köln", and keeps the
   people in NRW who were active lately and run their own business. An
   **exclusion** is a word or phrase, like "Online Marketing", that leaves a
-  person out of profile searches and People. A **run** is one pass over the
-  due searches, started by hand. A **check** is one search asked once in a
+  person out of profile searches and People. A **first message** is what
+  Tim sends a person on LinkedIn once connected, and a **draft** is one
+  the **language model** wrote on the Mac for him to change. A **run** is
+  one pass over the due searches, started by hand. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. A **channel** is what the app

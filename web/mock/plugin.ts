@@ -886,12 +886,11 @@ function speechState() {
 
 // The language models the mock offers, the app's four, and which are
 // here. The Mac it pretends to be has 32 GB.
-const GB = 1024 ** 3
 const LANGUAGE_MODELS = [
-  { name: 'gemma-4-26B_q4_0-it.gguf', title: 'Gemma 4 26B A4B', maker: 'Google', about: 'Twenty six billion parameters with four of them used per token, so it runs like a far smaller model. The largest of these.', download: 14_439_363_584, needs: 16.1 * GB, url: 'https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf', recommended: true, fit: 'fits' },
-  { name: 'Qwen3-14B-Q4_K_M.gguf', title: 'Qwen3 14B', maker: 'Alibaba', about: 'Fourteen billion parameters, quantised to four bits.', download: 9_001_752_960, needs: 11.2 * GB, url: 'https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf', recommended: false, fit: 'fits' },
-  { name: 'gemma-4-12b-it-qat-q4_0.gguf', title: 'Gemma 4 12B', maker: 'Google', about: 'Twelve billion parameters, trained to be quantised to four bits rather than cut down to them afterwards.', download: 6_975_879_296, needs: 8.4 * GB, url: 'https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf', recommended: false, fit: 'fits' },
-  { name: 'Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', title: 'Ministral 3 8B', maker: 'Mistral', about: 'Eight billion parameters, quantised to four bits. The smallest of these, for a machine with less to spare.', download: 5_198_911_904, needs: 6.6 * GB, url: 'https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', recommended: false, fit: 'fits' },
+  { name: 'gemma-4-26B_q4_0-it.gguf', title: 'Gemma 4 26B A4B', maker: 'Google', about: 'Twenty six billion parameters with four of them used per token, so it runs like a far smaller model. The largest of these.', download: 14_439_363_584, needs: 16_624_595_968, url: 'https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf', recommended: true, fit: 'fits' },
+  { name: 'Qwen3-14B-Q4_K_M.gguf', title: 'Qwen3 14B', maker: 'Alibaba', about: 'Fourteen billion parameters, quantised to four bits.', download: 9_001_752_960, needs: 11_417_672_064, url: 'https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf', recommended: false, fit: 'fits' },
+  { name: 'gemma-4-12b-it-qat-q4_0.gguf', title: 'Gemma 4 12B', maker: 'Google', about: 'Twelve billion parameters, trained to be quantised to four bits rather than cut down to them afterwards.', download: 6_975_879_296, needs: 9_693_788_288, url: 'https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf', recommended: false, fit: 'fits' },
+  { name: 'Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', title: 'Ministral 3 8B', maker: 'Mistral', about: 'Eight billion parameters, quantised to four bits. The smallest of these, for a machine with less to spare.', download: 5_198_911_904, needs: 7_413_504_416, url: 'https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', recommended: false, fit: 'fits' },
 ] as const
 const LANGUAGE_MS = 8000
 const languageHere = new Set<string>([LANGUAGE_MODELS[0].name])

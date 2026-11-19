@@ -48,10 +48,15 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 `linkedin` is null once the profile is rejected.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
-`sightings`: each search that found the person, newest first.
+`sightings`: each search that found the person, newest first. `draft` is
+the first message to them, empty before the first draft, and
+`drafted_at` when the language model wrote it. `profile_read_at` is when
+Exa's index gave the profile text a draft is written from, null while the
+app has none and a draft reads it first. See [Drafts](#drafts).
 
-`PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`
-or `{"notes": "..."}` answers the person as `GET` does.
+`PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
+`{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`
+does.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
@@ -247,6 +252,62 @@ at the pace it has kept so far.
 
 Where a download stands is sent as the Wails event `speech`, in the same
 shape as `GET /api/speech`.
+
+## Language models
+
+`/api/language` is answered by the app itself, the same as
+[Speech models](#speech-models), see
+`cmd/speakertrail-app/languagemodels.go`. It is what Settings shows under
+Language model. The models live in the same folder.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/language` | every model, largest first, whether it is on this Mac, the folder written with `~`, whether the app carries llama-server to run one, and the download under way, `{"models": [{"name": "…", "title": "Gemma 4 26B A4B", "download": 14439363584, "needs": 16624595968, "fit": "fits", "recommended": true, "installed": false, "inUse": false, …}], "folder": "~/Library/…/models", "server": true, "job": {…}}` |
+| `POST /api/language/install` | `{"name": "…"}` fetches that model and answers the download at once |
+| `POST /api/language/cancel` | `{"id": "language-1"}` stops that download. What arrived stays and the next Download goes on from there |
+| `DELETE /api/language/models/{name}` | takes that model off the Mac, after Settings asked. Not while a draft writes with it |
+
+`needs` is the memory the model takes while it writes, in bytes, and
+`fit` what this Mac can do with it: `fits`, `tight`, `too big` or
+`unknown`. `recommended` marks the largest model this Mac holds
+comfortably, the one Settings offers. `inUse` marks the one that drafts,
+the largest on this Mac. `job` is in the shape of a speech model's
+download.
+
+Where a download stands is sent as the Wails event `language`, in the
+same shape as `GET /api/language`.
+
+## Drafts
+
+A draft is a first message to a person, written on the Mac by the
+language model from their profile and the prompt in Settings,
+`first_message_prompt`. See `internal/draft`. Drafts are written one at a
+time, in the order they were asked for.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/drafts` | the latest draft of each person since the app started, oldest first |
+| `POST /api/people/{id}/draft` | `{}` starts a draft for them and answers it at once. Asked again while theirs is under way, it answers that one |
+| `POST /api/people/{id}/draft/cancel` | `{}` stops theirs, 204. 409 when none is under way |
+
+A draft is
+
+```json
+{ "id": "draft-3", "person_id": 7, "state": "writing", "model": "Gemma 4 26B A4B", "text": "Hallo Lea, danke", "started_at": "2026-11-19T14:00:00Z", "fraction": 0.6, "seconds_left": 4 }
+```
+
+`state` is `queued`, `reading` (their profile from Exa, when the app has
+no text of it yet), `loading` (the model, when it is not loaded), `writing`,
+`done`, `failed` or `cancelled`. `text` is what the model wrote so far, and
+the whole message once it is done. It is untrusted and shown as text.
+`fraction` and `seconds_left` come from how long earlier drafts took, -1
+and null before there was one. `error` says why a draft failed, in a
+sentence that can go on screen.
+
+A draft that is done is kept on the person as `draft`. Reading a profile
+counts against Exa's monthly budget like a search. Each change is sent as
+the Wails event `draft`, one draft at a time, and once a second while one
+runs. Where the app runs no language model, starting one answers 409.
 
 ## Report a Problem
 

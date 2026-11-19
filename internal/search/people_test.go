@@ -107,6 +107,8 @@ func TestExaPeople(t *testing.T) {
 		URL: "https://de.linkedin.com/in/lea-probe", Name: "Lea Probe", Headline: "Personal Trainerin | Selbstständig",
 		Location: "Cologne, North Rhine-Westphalia, Germany", Career: []search.Step{{Title: "Personal Trainerin", Org: "Selbstständig", From: 2023}},
 		LastActive: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC),
+		// The whole text is kept, since a first message is written from it.
+		Text: "# Lea Probe\n\nPersonal Trainerin | Selbstständig\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n300 connections\n\n## Activity\n\n- [2026-06-02 · Gefällt mir: Ein Beitrag](https://www.linkedin.com/posts/x)\n- [2026-10-30 · Kommentar: Starker Kurs!](https://www.linkedin.com/posts/y)",
 	}}
 	if !reflect.DeepEqual(people, want) {
 		t.Errorf("people\n%+v\nwant\n%+v", people, want)

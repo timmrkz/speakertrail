@@ -120,6 +120,12 @@ type LinkedIn struct {
 	Roles string `json:"roles,omitempty"`
 	// LastActive is the newest post, comment or reaction.
 	LastActive time.Time `json:"last_active,omitzero"`
+	// Text is the whole profile as Exa's index had it at TextAt: the
+	// headline, the About, the jobs, the education and the latest
+	// activity, at most 8000 characters. A first message is written from
+	// it. Exa's index is not LinkedIn now, so it can be weeks old.
+	Text   string    `json:"text,omitempty"`
+	TextAt time.Time `json:"text_at,omitzero"`
 }
 
 // Signal is one reason for or against a fit, with the passage that shows

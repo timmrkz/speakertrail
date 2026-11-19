@@ -411,6 +411,24 @@ func TestAddFoundMergesTheSameProfile(t *testing.T) {
 	}
 }
 
+// The whole profile text is kept, the newest Exa gave, and a search whose
+// answer had none leaves the one there.
+func TestAddFoundKeepsTheProfileText(t *testing.T) {
+	d := &Data{}
+	d.fill()
+	s, _ := d.AddSearch("Gründer Köln", 0, t0)
+	url := "https://www.linkedin.com/in/eva-beispiel"
+	d.AddFound(Found{URL: url, Name: "Eva Beispiel", Text: "# Eva Beispiel\n\n## About\n\nAlt"}, s, 1, t0)
+	p, _ := d.AddFound(Found{URL: url, Name: "Eva Beispiel", Text: "# Eva Beispiel\n\n## About\n\nNeu"}, s, 2, t0.Add(time.Hour))
+	if p.LinkedIn.Text != "# Eva Beispiel\n\n## About\n\nNeu" || !p.LinkedIn.TextAt.Equal(t0.Add(time.Hour)) {
+		t.Errorf("text %q from %v", p.LinkedIn.Text, p.LinkedIn.TextAt)
+	}
+	p, _ = d.AddFound(Found{URL: url, Name: "Eva Beispiel"}, s, 3, t0.Add(2*time.Hour))
+	if p.LinkedIn.Text == "" || !p.LinkedIn.TextAt.Equal(t0.Add(time.Hour)) {
+		t.Errorf("an answer without text took the text away: %q from %v", p.LinkedIn.Text, p.LinkedIn.TextAt)
+	}
+}
+
 // Builds before where LinkedIn opens had a field of its own kept it as two
 // settings. Opening such a file keeps the choice and drops the settings.
 func TestWhereLinkedInOpensMovesOutOfTheSettings(t *testing.T) {

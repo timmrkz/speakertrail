@@ -45,9 +45,9 @@ type rig struct {
 	// asks counts the questions to the model, and most how many were
 	// asked at once.
 	asks, now, most atomic.Int32
-	launched       atomic.Int32
-	mu             sync.Mutex
-	told           []Job
+	launched        atomic.Int32
+	mu              sync.Mutex
+	told            []Job
 }
 
 func newRig(t *testing.T) *rig {

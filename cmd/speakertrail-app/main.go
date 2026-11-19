@@ -31,8 +31,10 @@ import (
 
 	apipkg "github.com/timmrkz/speakertrail/internal/api"
 	"github.com/timmrkz/speakertrail/internal/browser"
+	"github.com/timmrkz/speakertrail/internal/draft"
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/keys"
+	"github.com/timmrkz/speakertrail/internal/language"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/speech"
 	"github.com/timmrkz/speakertrail/internal/speech/asr"
@@ -86,6 +88,33 @@ func main() {
 	})
 	api.Handle("/api/speech", speechAPI{s: voices})
 	api.Handle("/api/speech/", speechAPI{s: voices})
+	// The language model that drafts first messages, fetched and removed
+	// in Settings, see languagemodels.go, and kept loaded between drafts.
+	// Where a download stands is the event language, where a draft
+	// stands the event draft.
+	writer := &language.Host{Log: theLog.slog("language", zerolog.TraceLevel)}
+	writers := newLanguageModels(language.Dir(dir), writer, func(st LanguageState) {
+		if app != nil {
+			app.Event.Emit("language", st)
+		}
+	})
+	api.Handle("/api/language", languageAPI{s: writers})
+	api.Handle("/api/language/", languageAPI{s: writers})
+	answers.Drafts = &draft.Drafter{Store: e.Store, Host: writer, Model: writers.inUse,
+		Check: func(m language.Model) error { return language.Check(m, writers.dir) },
+		Finder: func() draft.Finder {
+			if f, ok := e.Finder().(draft.Finder); ok {
+				return f
+			}
+			return nil
+		},
+		Told: func(j draft.Job) {
+			if app != nil {
+				app.Event.Emit("draft", j)
+			}
+		},
+		Log: theLog.slog("draft", zerolog.TraceLevel),
+	}
 	// Report a Problem in a window of its own, with Dictate, see bugs.go,
 	// report.go and listen.go. The speech model is loaded on the first
 	// press of Dictate and kept until it is removed or the app quits.
@@ -121,7 +150,7 @@ func main() {
 	// is ready goes in place, once, see closeDown. On macOS app.Run never
 	// returns, Cmd+Q ends the process from inside Cocoa once the shutdown
 	// hooks have run, so this has to be one of them.
-	quit := sync.OnceFunc(func() { closeDown(e, ups.Load(), dictate, host) })
+	quit := sync.OnceFunc(func() { closeDown(e, ups.Load(), dictate, host, writer) })
 	// What Cmd+Q does, see quit.go. The hook above stays for whatever ends
 	// the app without asking, a signal from the terminal among them.
 	leave := &leaving{
@@ -278,7 +307,7 @@ func Folder() (string, error) {
 // open reads the app's file, adds the starting searches the first time,
 // ends a run the app closed under, and builds what answers the window. It
 // also gives the engine and the app's folder.
-func open() (http.Handler, *engine.Engine, string, error) {
+func open() (*apipkg.API, *engine.Engine, string, error) {
 	dir, err := Folder()
 	if err != nil {
 		return nil, nil, "", err

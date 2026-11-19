@@ -77,8 +77,9 @@ const setID = fs.ModeSetuid | fs.ModeSetgid
 // its file. A library not on its list, ScreenCaptureKit, AVFoundation or
 // IOKit for the keyboard's own reports, fails until the list is changed on
 // main, in a pull request that says why. A program not on the list fails
-// the same way. The app is one program: Wails' window, WebKit, and the
-// keychain through Security.
+// the same way. The app is two programs: speakertrail-app, Wails' window,
+// WebKit and the keychain through Security, and llama-server, which runs
+// the language model that drafts a first message.
 var linked = map[string][]string{
 	"speakertrail-app": {
 		"/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit",

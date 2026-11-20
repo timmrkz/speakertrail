@@ -155,7 +155,7 @@ func (s *Source) assemble(ctx context.Context, where, sum string, size, cheaper 
 // ownFile is what the running app holds where a part names a file, when
 // it holds a file of a size a build can have there, or nil.
 func (s *Source) ownFile(part Part) []byte {
-	rest, ok := inApp(part.Name)
+	rest, ok := InApp(part.Name)
 	if s.App == nil || !ok {
 		return nil
 	}
@@ -199,7 +199,7 @@ func (s *Source) patched(ctx context.Context, parts string, part Part, pt Patch,
 // own is the running app's file a part names, when it holds the same
 // bytes, or nil.
 func (s *Source) own(part Part) []byte {
-	rest, ok := inApp(part.Name)
+	rest, ok := InApp(part.Name)
 	if s.App == nil || !ok {
 		return nil
 	}

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
-	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -80,11 +79,6 @@ func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 	files[app] = programOf(code)
 	first := packed(t, files)
 	srv := releaseServing(t, first, "app-main-1.zip")
-	entry := filepath.Join(t.TempDir(), "channel-main.json")
-	if err := signBuild(built(first), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
-		srv.URL+"/dev/app-main-1.zip", filepath.Join(first, partsFile), entry); err != nil {
-		t.Fatal(err)
-	}
 
 	files[app] = programOf(changed)
 	dir := t.TempDir()
@@ -94,7 +88,7 @@ func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 	}
 	second := filepath.Join(dir, "packed")
 	var log bytes.Buffer
-	b := bases{entries: readBases([]string{entry}, &log), from: srv.URL + "/dev/", client: srv.Client()}
+	b := bases{parts: readBases([]string{filepath.Join(first, partsFile)}, &log), from: srv.URL + "/dev/", client: srv.Client()}
 	if err := pack(in, second, packer, b, &log); err != nil {
 		t.Fatal(err)
 	}
@@ -131,11 +125,11 @@ func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 	}
 }
 
-// What cannot be had of a build patched against, its parts, a piece, or
-// the build itself published without parts, costs only its patches, never
-// the publish.
+// What cannot be had of a build patched against, its pieces, or its parts
+// when they are no parts or say another build, costs only its patches,
+// never the publish.
 //
-// On the real disk: the release tool reads the zip and the entries, and writes the packed build, as files.
+// On the real disk: the release tool reads the zip and the parts, and writes the packed build, as files.
 func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	release(t)
 	app := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
@@ -144,18 +138,14 @@ func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	first := packed(t, files)
 	gone := httptest.NewTLSServer(http.NotFoundHandler())
 	t.Cleanup(gone.Close)
-	withParts := filepath.Join(t.TempDir(), "with-parts.json")
-	if err := signBuild(built(first), "main", "main", "0.1.0-main.abc1234", "abc1234def56",
-		gone.URL+"/dev/app-main-1.zip", filepath.Join(first, partsFile), withParts); err != nil {
+	notParts := filepath.Join(t.TempDir(), "not-parts.json")
+	if err := os.WriteFile(notParts, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	withoutParts := filepath.Join(t.TempDir(), "without-parts.json")
-	if err := signBuild(built(first), "pr-3", "#3", "0.1.0-pr3.abc1234", "abc1234def56",
-		gone.URL+"/dev/app-pr-3-1.zip", "", withoutParts); err != nil {
-		t.Fatal(err)
-	}
-	notAnEntry := filepath.Join(t.TempDir(), "not-an-entry.json")
-	if err := os.WriteFile(notAnEntry, []byte("{"), 0o644); err != nil {
+	p := partsIn(t, first)
+	p.Size++
+	otherSize := filepath.Join(t.TempDir(), "other-size.json")
+	if err := os.WriteFile(otherSize, mustMarshal(t, p), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -166,14 +156,22 @@ func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "packed")
-	b := bases{entries: readBases([]string{withParts, withoutParts, notAnEntry}, io.Discard), from: gone.URL + "/dev/", client: gone.Client()}
-	if err := pack(in, out, packer, b, io.Discard); err != nil {
+	var log bytes.Buffer
+	read := readBases([]string{filepath.Join(first, partsFile), notParts, otherSize}, &log)
+	if len(read) != 1 {
+		t.Fatalf("%d parts were read, want the one that is parts\n%s", len(read), log.String())
+	}
+	b := bases{parts: read, from: gone.URL + "/dev/", client: gone.Client()}
+	if err := pack(in, out, packer, b, &log); err != nil {
 		t.Fatal(err)
 	}
 	for _, part := range partsIn(t, out).Parts {
 		if part.Patches != nil {
 			t.Errorf("%s has the patches %+v from builds that cannot be had", part.Name, part.Patches)
 		}
+	}
+	if !strings.Contains(log.String(), "no patch of "+app) {
+		t.Errorf("the log does not say why the program has no patch:\n%s", log.String())
 	}
 }
 

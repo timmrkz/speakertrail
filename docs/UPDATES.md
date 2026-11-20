@@ -57,8 +57,10 @@ then on every build comes from GitHub.
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. A newer commit whose build failed
    is not said to be on its way. `scripts/unreachable.sh` then removes,
-   an hour after they went up, the zips, packed zips and parts no entry
-   points at, and the pieces and patches no remaining parts name.
+   an hour after they went up, the zips and packed zips no entry points
+   at, the parts of every build that is neither listed nor one of the
+   newest eight that left the list, and the pieces and patches no
+   remaining parts name.
 
 A build takes a few minutes after the push. A version reads like
 `0.1.0-pr9.e808a87`: the app's version, the channel and the commit.
@@ -81,10 +83,13 @@ Only what changed, and of a file that changed, only the difference.
   Each file is published once, packed with zstd, as a piece named by its
   SHA-256, whichever build holds it.
 - **A changed file is a patch.** For each file that changed, `pack` also
-  makes a patch, with bsdiff, against the same file of every build the
-  release holds when it publishes: main's and each open pull request's.
-  The parts name each patch by the SHA-256 of the file it starts from. A
-  patch is kept only where it weighs less than the piece.
+  makes a patch, with bsdiff, against the same file of the builds
+  `scripts/bases.sh` names: every build the channel list holds, and the
+  newest eight that left it, such as the last build of a pull request
+  just merged. The parts name each patch by the SHA-256 of the file it
+  starts from. A patch is kept only where it weighs less than the piece.
+  A build older than the one running was published before it, so
+  picking it takes the piece.
 - **The app puts the build together.** It writes the stored zip from the
   files it already has with the same bytes, a file made from its own and
   a patch where there is a patch from it, and a downloaded piece for the

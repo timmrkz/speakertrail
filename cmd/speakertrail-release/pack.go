@@ -42,13 +42,13 @@ func packCommand(args []string) error {
 	zipPath := fs.String("zip", "", "the zip the build left")
 	out := fs.String("out", "", "the folder the packed build goes in")
 	from := fs.String("from", updates.EntriesURL, "the folder of the release the builds patched against are read from")
-	var entries []string
-	fs.Func("base", "the entry of a build to patch against, as a file, once for each", func(v string) error {
-		entries = append(entries, v)
+	var parts []string
+	fs.Func("base", "the parts of a build to patch against, as a file, once for each", func(v string) error {
+		parts = append(parts, v)
 		return nil
 	})
 	_ = fs.Parse(args)
-	b := bases{entries: readBases(entries, os.Stdout), from: *from, client: &http.Client{}}
+	b := bases{parts: readBases(parts, os.Stdout), from: *from, client: &http.Client{}}
 	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)
 }
 

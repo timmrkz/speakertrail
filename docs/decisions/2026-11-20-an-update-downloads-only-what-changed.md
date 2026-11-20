@@ -113,11 +113,14 @@ Simulation 1, ported from FrameFairy as it is, with the patches of 2 on
 top, drawn as layers, each using only the ones under it:
 
 ```
-publish.yml                 pack, check, sign, upload what the release lacks
+publish.yml                 check, pack, sign, upload what the release lacks
+scripts/bases.sh            names the builds patched against: the listed ones, and the
+                            newest that left the list
 cmd/speakertrail-release    pack: the stored zip, its parts, its pieces, its patches
-                            against the files of the builds listed, the stored zip packed
+                            against the files of those builds, the stored zip packed
                             sign: the zip the build left, and the stored zip as Stored
-scripts/channel-list.sh     removes zips, packed zips, parts, pieces and patches no entry reaches
+scripts/unreachable.sh      removes zips, packed zips, parts, pieces and patches nothing
+                            reaches, keeping the parts of the builds patched against
 cmd/speakertrail-app        hands Source the running app's folder
 internal/updates            Parts, Part, Patch, Pack, Split, the assembling Download,
                             Patch applied, the packed zip it falls back to
@@ -135,6 +138,15 @@ never the update.
 
 A patch is published only when it weighs less than the piece.
 
+The builds patched against are not only the listed ones. A build leaves
+the list when a newer commit of its channel replaces it, or when its pull
+request is merged, and the app that runs it is the one most likely to
+update next: to main, right after a merge. So the parts of the newest
+eight builds that left the list stay on the release, with the pieces they
+name, and each new build is patched against them too. The other way
+round, an app that picks a build older than its own, takes the piece:
+that build was published before the app's build existed.
+
 ## What follows
 
 - An update whose code did not change downloads a few kilobytes. A usual
@@ -145,8 +157,9 @@ A patch is published only when it weighs less than the piece.
   So does an update whose parts fail.
 - An app from before this change downloads the deflated zip, as before,
   so the first update after the merge is still the whole app.
-- The first build published after the merge has no listed build with
-  parts to patch against, so it is pieces. Every build after has patches.
+- The first build published after the merge has no build with parts to
+  patch against, so it is pieces. Every build after has patches.
+- Picking a build older than the one running takes the piece, about 5 MB.
 - Every publish downloads the pieces it patches against and runs bsdiff
   for each, which makes the publish slower, see the pull request.
 - It was wrong if updates still download whole pieces of the app

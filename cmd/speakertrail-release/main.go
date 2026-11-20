@@ -10,12 +10,12 @@
 //	    say whether a build could read input meant for other apps, watch
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. It needs no key, so it runs before the key is near.
-//	speakertrail-release pack -zip F -out D [-base ENTRY]... [-from URL]
+//	speakertrail-release pack -zip F -out D [-base PARTS]... [-from URL]
 //	    write the build again as the zip it is published as, its files
 //	    stored, with its parts, a piece for every file, a patch of every
-//	    file that changed against the builds whose entries are given, read
-//	    from the release, and the zip packed with zstd, see pack.go and
-//	    patches.go
+//	    file that changed against the builds whose parts files are given,
+//	    their pieces read from the release, and the zip packed with zstd,
+//	    see pack.go and patches.go
 //	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F]
 //	    sign a build with the private half, read from SPEAKERTRAIL_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
@@ -82,7 +82,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-base ENTRY]... | check -zip FILE | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-base PARTS]... | check -zip FILE | sign ... | list -out FILE ENTRY...")
 	os.Exit(2)
 }
 

@@ -10,11 +10,9 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
@@ -30,41 +28,45 @@ import (
 // starts from. The app downloads the patch when it runs one of those
 // builds, see internal/updates/patch.go.
 //
-// The builds patched against are read from the release as an app reads
-// them: their entries, the parts beside their zips and the pieces those
-// name. Whatever of them cannot be had costs only its patches, never the
-// publish.
+// The builds patched against are the ones scripts/bases.sh names: every
+// build the channel list holds, and the newest that left it, which the app
+// of a pull request just merged still runs. pack reads their parts, handed
+// to it as files, and the pieces those name from the release, as an app
+// reads them. Whatever of them cannot be had costs only its patches, never
+// the publish.
 
-// bases is what pack patches against: the entries of the builds the
-// release holds, and the folder of the release they are read from.
+// bases is what pack patches against: the parts of builds the release
+// holds, and the folder of the release their pieces are read from.
 type bases struct {
-	entries []updates.Build
-	from    string
-	client  *http.Client
+	parts  []updates.Parts
+	from   string
+	client *http.Client
 }
 
 // patchTakes is the longest reading one file of the release may take.
 const patchTakes = 5 * time.Minute
 
-// readBases reads the entries pack patches against.
+// readBases reads the parts of the builds pack patches against. They are
+// read with the app's own rules, against the size and checksum they say
+// they are of, since nothing else here says it.
 //
-// On the real disk: the workflow hands the release tool the entries as files.
-func readBases(paths []string, log io.Writer) []updates.Build {
-	var out []updates.Build
-	for _, p := range paths {
-		data, err := os.ReadFile(p)
-		var b updates.Build
+// On the real disk: the workflow hands the release tool the parts as files.
+func readBases(paths []string, log io.Writer) []updates.Parts {
+	var out []updates.Parts
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		var p updates.Parts
 		if err == nil {
-			err = json.Unmarshal(data, &b)
+			err = json.Unmarshal(data, &p)
 		}
 		if err == nil {
-			err = b.Check()
+			p, err = updates.ParseParts(data, p.Size, p.SHA256)
 		}
 		if err != nil {
-			fmt.Fprintf(log, "no patches against %s: %v\n", p, err)
+			fmt.Fprintf(log, "no patches against %s: %v\n", path, err)
 			continue
 		}
-		out = append(out, b)
+		out = append(out, p)
 	}
 	return out
 }
@@ -73,27 +75,15 @@ func readBases(paths []string, log io.Writer) []updates.Build {
 // against the same files of the bases, to out, where they weigh less than
 // the file's piece, and names them in p.
 func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log io.Writer) {
-	if len(b.entries) == 0 {
-		return
-	}
 	// The files of every build patched against, by where they are in the
 	// app, each once.
 	olds := map[string]map[string]updates.Part{}
-	for _, e := range b.entries {
-		if e.Stored == nil {
-			fmt.Fprintf(log, "no patches against %s, published without parts\n", e.Version)
-			continue
-		}
-		bp, err := b.parts(e)
-		if err != nil {
-			fmt.Fprintf(log, "no patches against %s: %v\n", e.Version, err)
-			continue
-		}
+	for _, bp := range b.parts {
 		for _, part := range bp.Parts {
-			if part.Bytes != nil {
+			inside, ok := updates.InApp(part.Name)
+			if part.Bytes != nil || !ok {
 				continue
 			}
-			inside := inApp(part.Name)
 			if olds[inside] == nil {
 				olds[inside] = map[string]updates.Part{}
 			}
@@ -114,7 +104,8 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 			at += int64(len(part.Bytes))
 			continue
 		}
-		for sum, old := range olds[inApp(part.Name)] {
+		inside, _ := updates.InApp(part.Name)
+		for sum, old := range olds[inside] {
 			if sum != part.SHA256 {
 				jobs = append(jobs, &job{part: i, at: at, old: old})
 			}
@@ -161,22 +152,6 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 			p.Parts[i].Patches = p.Parts[i].Patches[:updates.MaxPatches]
 		}
 	}
-}
-
-// inApp is where a file of the zip is inside the app, the name without the
-// app's own folder.
-func inApp(name string) string {
-	_, rest, _ := strings.Cut(name, "/")
-	return rest
-}
-
-// parts reads the parts beside a build's zip.
-func (b bases) parts(e updates.Build) (updates.Parts, error) {
-	data, err := b.get(updates.PartsName(path.Base(e.URL)), updates.MaxList)
-	if err != nil {
-		return updates.Parts{}, err
-	}
-	return updates.ParseParts(data, e.Stored.Size, e.Stored.SHA256)
 }
 
 // patch is the patch from the file old names to the file part names,

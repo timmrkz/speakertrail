@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
@@ -31,7 +32,11 @@ func (a *API) startDraft(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j, err := a.Drafts.Start(id)
-	if err != nil {
+	switch {
+	case errors.Is(err, draft.ErrNoModel):
+		fail(w, http.StatusConflict, draft.Sentence(err.Error()))
+		return
+	case err != nil:
 		fail(w, http.StatusNotFound, "Not found")
 		return
 	}

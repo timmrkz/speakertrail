@@ -35,8 +35,11 @@ async function open(page, id) {
   await page.locator('.first-message').waitFor()
 }
 
+// Each change numbered higher than the one before, as Seq in
+// internal/draft is.
+let seq = 0
 function job(id, n, more) {
-  return { id: `draft-${n}`, person_id: id, started_at: new Date(Date.now() - 4000).toISOString(), model: 'Gemma 4 26B A4B', fraction: -1, seconds_left: null, ...more }
+  return { id: `draft-${n}`, person_id: id, started_at: new Date(Date.now() - 4000).toISOString(), model: 'Gemma 4 26B A4B', fraction: -1, seconds_left: null, seq: ++seq, ...more }
 }
 
 // What the Go side says, the way it says it, see Job in internal/draft.
@@ -84,8 +87,10 @@ const walks = [
       if (!(await box(page).evaluate((t) => t.readOnly))) return 'the box can be typed in while the model writes'
       const meta = (await page.locator('.first-message .meta').innerText()).trim()
       if (!/^\d+ s so far, about 5 s left$/.test(meta)) return `the time reads ${JSON.stringify(meta)}`
-      const fill = await page.locator('.first-message .progress').getAttribute('aria-valuenow')
-      if (fill !== '60') return `the fill is at ${fill}, want 60`
+      // One progress, the fill in Cancel, and no second bar beside it.
+      if (await page.locator('.first-message .progress').count()) return 'a bar of its own shows beside Cancel'
+      const fill = await act(page).locator('.fill i').evaluate((i) => i.style.transform)
+      if (fill !== 'translateX(-40%)') return `Cancel is filled ${JSON.stringify(fill)}, want 60 %`
       return ''
     },
   },
@@ -122,7 +127,49 @@ const walks = [
     },
   },
   {
-    name: 'A draft without a language model leads to Settings, to the model',
+    name: 'Draft’s answer arriving after the event that the draft failed leaves it failed',
+    async run(page) {
+      // The app tells that it failed before its answer to Draft reaches
+      // the window, as it did on Tim’s Mac on 20 November 2026.
+      await page.route('**/api/drafts', (route) => route.fulfill({ json: [] }))
+      await page.route(/\/api\/people\/\d+\/draft$/, async (route) => {
+        const queued = job(1008, 1, { state: 'queued' })
+        await say(page, job(1008, 1, { state: 'failed', error: 'The language model stopped answering.' }))
+        await route.fulfill({ json: queued })
+      })
+      await page.goto(`${url}/app/people/1008`)
+      await page.locator('.first-message').waitFor()
+      await act(page).click()
+      await page.locator('.first-message .failed').waitFor()
+      await page.locator('.first-message button.act', { hasText: /^Draft$/ }).waitFor()
+      if (await page.locator('.first-message .step').count()) return 'the draft still waits after it failed'
+      return ''
+    },
+  },
+  {
+    name: 'Draft without a language model goes to the model in Settings',
+    async run(page) {
+      await page.route('**/api/language', (route) => route.fulfill({ json: {
+        models: [{ name: 'gemma-4-26b-a4b', title: 'Gemma 4 26B A4B', maker: 'Google', about: '', download: 15_500_000_000,
+          recommended: true, installed: false, inUse: true, needs: 16_624_595_968, fit: 'comfortable' }],
+        folder: '~/Library/Application Support/Speaker Trail/models', server: true } }))
+      let asked = 0
+      await page.route(/\/api\/people\/\d+\/draft$/, (route) => { asked++; return route.fulfill({ status: 409, json: { error: 'no' } }) })
+      await page.goto(`${url}/app/people/1000`)
+      await page.locator('.first-message').waitFor()
+      await page.waitForFunction(() => /Download a language model/.test(document.querySelector('.first-message button.act')?.title ?? ''))
+      await act(page).click()
+      await page.locator('#language').waitFor()
+      await page.waitForFunction(() => {
+        const r = document.querySelector('#language').getBoundingClientRect()
+        return r.top >= 0 && r.bottom <= innerHeight
+      })
+      if (asked) return 'Draft was asked for with no model'
+      return ''
+    },
+  },
+  {
+    name: 'A draft that failed for want of something in Settings leads there',
     async run(page) {
       await open(page, 1006)
       await act(page).click()

@@ -225,13 +225,16 @@ func TestADraftWithoutAKeyOrAModelFails(t *testing.T) {
 	if j.State != "failed" || !strings.Contains(j.Error, "Exa key") {
 		t.Errorf("without a key: %+v", j)
 	}
+	// Without a model, Draft is refused at once and nothing is queued,
+	// so the window never shows a draft that waits for nothing.
 	r.d.Model = func() (language.Model, string, error) { return language.Model{}, "", ErrNoModel }
 	other := r.person(t, "Jonas Probe", "# Jonas\n\n## About\n\nB")
-	r.d.Start(other)
-	r.d.Wait()
+	if _, err := r.d.Start(other); !errors.Is(err, ErrNoModel) {
+		t.Errorf("without a model: %v", err)
+	}
 	for _, j := range r.d.Jobs() {
-		if j.PersonID == other && (j.State != "failed" || !strings.HasPrefix(j.Error, "Download a language model")) {
-			t.Errorf("without a model: %+v", j)
+		if j.PersonID == other {
+			t.Errorf("a job without a model: %+v", j)
 		}
 	}
 	if r.asks.Load() != 0 {
@@ -332,5 +335,26 @@ func TestTheWindowHearsChangesInOrder(t *testing.T) {
 	r.d.Wait()
 	if got := strings.Join(r.states(id), " "); got != "queued loading writing done" {
 		t.Errorf("told %s", got)
+	}
+}
+
+// Every change a person's draft goes through has a higher number than the
+// one before it, so the window can tell an older answer from a newer one.
+func TestEachChangeHasAHigherNumber(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	started, _ := r.d.Start(id)
+	r.d.Wait()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	last := int64(0)
+	for _, j := range r.told {
+		if j.Seq <= last {
+			t.Errorf("%s told with %d after %d", j.State, j.Seq, last)
+		}
+		last = j.Seq
+	}
+	if started.Seq != r.told[0].Seq || r.told[len(r.told)-1].State != "done" {
+		t.Errorf("Start answered %d, first told %d", started.Seq, r.told[0].Seq)
 	}
 }

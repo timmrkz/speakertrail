@@ -26,8 +26,13 @@ class DraftWatch {
     return this.jobs[id]
   }
 
-  // Takes a job the app answered with, so a click shows before the event.
+  // Takes a job the app answered with, so a click shows before the event,
+  // or one it told. What is older than what is here is left out: Draft's
+  // answer can arrive after the event that it failed, and then the draft
+  // would wait for nothing, as Tim saw on 20 November 2026.
   put(j: DraftJob) {
+    const here = this.jobs[j.person_id]
+    if (here && here.seq > j.seq) return
     this.jobs = { ...this.jobs, [j.person_id]: j }
   }
 

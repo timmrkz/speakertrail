@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
@@ -34,6 +35,14 @@ func TestDraftAFirstMessage(t *testing.T) {
 			return language.Answer{Text: "Hallo Mara, danke fürs Vernetzen!", Finish: "stop"}, nil
 		},
 	}
+	// Without a model, Draft is refused and says why.
+	a.Drafts.Model = func() (language.Model, string, error) { return language.Model{}, "", draft.ErrNoModel }
+	var refused map[string]string
+	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft", "{}", &refused); code != http.StatusConflict ||
+		!strings.HasPrefix(refused["error"], "Download a language model in Settings first") {
+		t.Errorf("without a model: %d %v", code, refused)
+	}
+	a.Drafts.Model = func() (language.Model, string, error) { return m, "/models/" + m.Name, nil }
 	var j draft.Job
 	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft", "{}", &j); code != http.StatusOK || j.PersonID != id {
 		t.Fatalf("start: %d %+v", code, j)

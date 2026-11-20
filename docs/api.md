@@ -292,13 +292,13 @@ time, in the order they were asked for.
 | Request | What it does |
 | --- | --- |
 | `GET /api/drafts` | the latest draft of each person since the app started, oldest first |
-| `POST /api/people/{id}/draft` | `{}` starts a draft for them and answers it at once. Asked again while theirs is under way, it answers that one |
+| `POST /api/people/{id}/draft` | `{}` starts a draft for them and answers it at once. Asked again while theirs is under way, it answers that one. 409 with why when no language model is downloaded, and nothing starts |
 | `POST /api/people/{id}/draft/cancel` | `{}` stops theirs, 204. 409 when none is under way |
 
 A draft is
 
 ```json
-{ "id": "draft-3", "person_id": 7, "state": "writing", "model": "Gemma 4 26B A4B", "text": "Hallo Lea, danke", "started_at": "2026-11-19T14:00:00Z", "fraction": 0.6, "seconds_left": 4 }
+{ "id": "draft-3", "person_id": 7, "state": "writing", "model": "Gemma 4 26B A4B", "text": "Hallo Lea, danke", "started_at": "2026-11-19T14:00:00Z", "fraction": 0.6, "seconds_left": 4, "seq": 12 }
 ```
 
 `state` is `queued`, `reading` (their profile from Exa, when the app has
@@ -307,7 +307,9 @@ no text of it yet), `loading` (the model, when it is not loaded), `writing`,
 the whole message once it is done. It is untrusted and shown as text.
 `fraction` and `seconds_left` come from how long earlier drafts took, -1
 and null before there was one. `error` says why a draft failed, in a
-sentence that can go on screen.
+sentence that can go on screen. `seq` is higher for every change than for
+the one before it, of any draft, so the window keeps the newer of the
+answer to `POST` and the event, whichever arrives last.
 
 A draft that is done is kept on the person as `draft`. Reading a profile
 counts against Exa's monthly budget like a search. Each change is sent as

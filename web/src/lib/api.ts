@@ -463,6 +463,9 @@ export interface DraftJob {
   fraction: number
   seconds_left: number | null
   error?: string
+  // Higher for every change than for the one before it, of any draft, so
+  // an answer that arrives after a newer event is told apart from it.
+  seq: number
 }
 
 export function onDraft(fn: (j: DraftJob) => void): () => void {

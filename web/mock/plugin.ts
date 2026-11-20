@@ -538,6 +538,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['POST', /^\/api\/people\/(\d+)\/draft$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'Not found')
+    // Without a model it is refused, as Start in internal/draft does.
+    if (!LANGUAGE_MODELS.some((x) => languageHere.has(x.name))) return err(409, 'Download a language model in Settings first. It writes the message on this Mac.')
     const was = drafts.get(p.id)
     if (was && !['done', 'failed', 'cancelled'].includes(draftJob(s, was).state)) return ok(draftJob(s, was))
     draftJobs++
@@ -936,7 +938,9 @@ function draftText(name: string): string {
 function draftJob(s: State, d: MockDraft): DraftJob {
   const p = s.people.find((x) => x.id === d.person_id)
   const using = LANGUAGE_MODELS.find((m) => languageHere.has(m.name))
-  const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title }
+  // The clock, so it grows with every answer, as Seq does in
+  // internal/draft.
+  const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: Date.now() }
   if (d.cancelled) return { ...base, state: 'cancelled', fraction: -1, seconds_left: null }
   if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
   const ran = Date.now() - d.from

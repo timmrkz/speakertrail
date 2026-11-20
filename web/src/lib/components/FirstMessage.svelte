@@ -8,6 +8,8 @@
   import { api, type DraftJob, type PersonDetail } from '../api'
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
+  import { languageWatch } from '../language.svelte'
+  import { navigate } from '../router.svelte'
   import { errorText, fault, toast } from '../toast.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
@@ -15,6 +17,11 @@
   let { person, onsaved }: { person: PersonDetail; onsaved?: (p: PersonDetail) => void } = $props()
 
   $effect(() => draftWatch.watch())
+  $effect(() => languageWatch.watch())
+  // Without a model here, or llama-server to run it, Draft leads to the
+  // model in Settings rather than starting work that cannot end, the way
+  // a control in FrameFairy that needs its model sends there.
+  const noModel = $derived(languageWatch.loaded && (!languageWatch.inUse?.installed || !languageWatch.state.server))
   const job = $derived(draftWatch.of(person.id))
   const running = $derived(underWay(job) ? job : undefined)
   const busy = $derived(!!running)
@@ -66,6 +73,10 @@
 
   async function draft() {
     if (busy || starting) return
+    if (noModel) {
+      navigate('/app/settings#language')
+      return
+    }
     // What is typed and not yet saved is saved first, so Undo can bring
     // it back.
     await save()
@@ -89,6 +100,8 @@
     } catch (e) {
       cancelling = false
       toast.show(errorText(e), 'bad')
+      // The app knows better how the draft stands.
+      draftWatch.read()
     }
   }
 
@@ -177,10 +190,6 @@
   {#if running}
     <div class="draft-progress" aria-live="polite">
       <p class="step ellipsis">{stepOf(running)}</p>
-      <div class="progress" class:unknown={fraction < 0} role="progressbar" aria-label="How far the draft is"
-        aria-valuemin={0} aria-valuemax={100} aria-valuenow={fraction >= 0 ? Math.round(fraction * 100) : undefined}>
-        <i style:width={`${Math.max(0, fraction) * 100}%`}></i>
-      </div>
       <p class="meta num">{fmtElapsed(now - new Date(running.started_at).getTime())} so far, {left}</p>
     </div>
   {/if}
@@ -191,13 +200,16 @@
   {/if}
   <div class="actions">
     {#if busy}
+      <!-- The draft carries the beam and the fill in the one control that
+           can do something about it, as a download does in Settings. -->
       <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
         title="Stop writing. The message before it stays as it was">
         <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
       </button>
     {:else}
       <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
-        title={text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
+        title={noModel ? 'Download a language model in Settings first. It writes the message on this Mac'
+          : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
         {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
       </button>
     {/if}

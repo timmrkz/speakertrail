@@ -48,6 +48,9 @@ type Job struct {
 	Fraction    float64  `json:"fraction"`
 	SecondsLeft *float64 `json:"seconds_left"`
 	Error       string   `json:"error,omitempty"`
+	// Seq is higher for every change than for the one before it, of any
+	// draft, so the window keeps the newer of an answer and an event.
+	Seq int64 `json:"seq"`
 }
 
 // Ended says whether the job is over.
@@ -59,6 +62,9 @@ func (j Job) Ended() bool {
 type Finder interface {
 	Profile(ctx context.Context, link string) (search.Profile, error)
 }
+
+// ErrNoPerson is a draft asked for someone who is not in the file.
+var ErrNoPerson = errors.New("there is no person")
 
 // ErrNoModel is a draft asked for before a language model is downloaded.
 var ErrNoModel = errors.New("download a language model in Settings first. It writes the message on this Mac")
@@ -92,6 +98,8 @@ type Drafter struct {
 	queue  []int64
 	going  bool
 	n      int
+	// seq numbers the changes, see Job.Seq.
+	seq int64
 	// measure works out how far the job under way is, see draft.
 	measure func(*Job)
 	// idle is closed when the queue runs dry. Tests wait on it.
@@ -139,7 +147,12 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 	found := false
 	d.Store.Read(func(data *store.Data) { found = data.Person(personID) != nil })
 	if !found {
-		return Job{}, fmt.Errorf("there is no person %d", personID)
+		return Job{}, fmt.Errorf("%w %d", ErrNoPerson, personID)
+	}
+	// Without a model there is nothing to wait for, so Draft is refused
+	// at once rather than queued to fail.
+	if _, _, err := d.Model(); errors.Is(err, ErrNoModel) {
+		return Job{}, err
 	}
 	d.mu.Lock()
 	if d.jobs == nil {
@@ -159,8 +172,7 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 		d.idle = make(chan struct{})
 		go d.work()
 	}
-	out := *j
-	d.untold = append(d.untold, out)
+	out := d.changed(j)
 	d.mu.Unlock()
 	d.tell()
 	return out, nil
@@ -183,7 +195,7 @@ func (d *Drafter) Cancel(personID int64) error {
 	// Still queued.
 	d.queue = slices.DeleteFunc(d.queue, func(id int64) bool { return id == personID })
 	j.State, j.Fraction, j.SecondsLeft = "cancelled", -1, nil
-	d.untold = append(d.untold, *j)
+	d.changed(j)
 	d.mu.Unlock()
 	d.tell()
 	return nil
@@ -216,6 +228,14 @@ func (d *Drafter) cond() *sync.Cond {
 // tell tells the changes not told yet, in order. While another goroutine
 // tells, it leaves them to that one, so a change never waits on the
 // window to hear an earlier one.
+// changed numbers a change of j and keeps it to be told. d.mu is held.
+func (d *Drafter) changed(j *Job) Job {
+	d.seq++
+	j.Seq = d.seq
+	d.untold = append(d.untold, *j)
+	return *j
+}
+
 func (d *Drafter) tell() {
 	d.mu.Lock()
 	if d.telling {
@@ -293,7 +313,7 @@ func (d *Drafter) run(ctx context.Context, id int64) {
 		case ctx.Err() != nil:
 			j.State, j.Text = "cancelled", ""
 		default:
-			j.State, j.Error = "failed", sentence(err.Error())
+			j.State, j.Error = "failed", Sentence(err.Error())
 		}
 	})
 	if err != nil && ctx.Err() == nil {
@@ -310,7 +330,7 @@ func (d *Drafter) update(id int64, change func(*Job)) {
 		return
 	}
 	change(j)
-	d.untold = append(d.untold, *j)
+	d.changed(j)
 	d.mu.Unlock()
 	d.tell()
 }
@@ -506,8 +526,8 @@ func Fill(prompt, name, notes, profile string) string {
 	return strings.ReplaceAll(out, store.ProfileField, profile)
 }
 
-// sentence starts an error with a capital and ends it with a full stop.
-func sentence(s string) string {
+// Sentence starts an error with a capital and ends it with a full stop.
+func Sentence(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return s

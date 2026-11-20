@@ -88,7 +88,8 @@ event `draft`, which a walk sends the way the app does.
   `ModelRow.svelte`, as FrameFairy's one ModelCard.
 - The profile text on the person, in the one file. Its cost to every
   save is measured in the pull request, and whether it moves to a file
-  of its own is Tim's to decide.
+  of its own is Tim's to decide. He chose a file of its own on 20
+  November 2026, see below.
 
 ## The decision
 
@@ -101,7 +102,8 @@ From the top, each layer using only the ones under it:
    `modeldownloads.go`.
 3. `internal/draft`: one draft at a time, its step and its time left.
 4. `internal/language`, `internal/search` and `internal/store`: the
-   model and llama-server, Exa's profile, the file.
+   model and llama-server, Exa's profile, the file, and the profile
+   texts in `profile-texts.json` beside it, by profile link.
 5. `internal/fetch`: a download that resumes and checks.
 
 The models live in the app's own folder. A model FrameFairy has whole in
@@ -110,8 +112,11 @@ The models live in the app's own folder. A model FrameFairy has whole in
 ## What follows
 
 It costs a program of 17 MB more in every build, a llama.cpp build of a
-few minutes when its script changes, cached after, and a larger file to
-write on every change. It buys first messages written on the Mac, with
+few minutes when its script changes, cached after, and a second file.
+Measured with 1,000 people of 8,000 characters each: a save takes about
+8 ms, as before the texts, where the texts in the one file took about
+82 ms. A save that brings a new text, a check that finds someone or a
+profile read for a draft, still writes all the texts, about 74 ms. It buys first messages written on the Mac, with
 no paid model and nothing of a profile sent anywhere but Exa.
 
 It was wrong if drafts are too slow to wait for on Tim's Mac, if the

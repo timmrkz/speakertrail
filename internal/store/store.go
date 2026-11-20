@@ -5,12 +5,17 @@
 // at once, to a new file that then takes the old one's place, so a crash
 // in the middle of a write leaves the last good file behind.
 //
+// Each person's profile text, which is most of the size, lives in a
+// second file, TextsName, written only when a text arrives, so the
+// changes made all day stay quick to write.
+//
 // It is safe to use from several goroutines. Read and Update hand out the
 // data under one lock, and nothing handed out may be kept after they
 // return.
 package store
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +32,22 @@ const Version = 1
 
 // FileName is the file in the app's folder.
 const FileName = "speakertrail.json"
+
+// TextsName is the file of the profile texts beside it, by profile link.
+// Tim chose it on 20 November 2026 over the texts in the one file, which
+// made every save about ten times slower.
+const TextsName = "profile-texts.json"
+
+// textsFile is what TextsName holds.
+type textsFile struct {
+	Version int                    `json:"version"`
+	Texts   map[string]profileText `json:"texts"`
+}
+
+type profileText struct {
+	Text string    `json:"text"`
+	At   time.Time `json:"at"`
+}
 
 // Data is everything the app keeps.
 type Data struct {
@@ -58,6 +79,10 @@ type Data struct {
 	// next one says about how long is left from earlier work rather than
 	// from a guess. See internal/draft.
 	DraftTimes []DraftTime `json:"draft_times,omitempty"`
+
+	// textsChanged says a profile text arrived since the texts were
+	// written, see SetProfileText.
+	textsChanged bool
 }
 
 // DraftTime is how long one draft of a first message took: loading the
@@ -151,9 +176,11 @@ type LinkedIn struct {
 	// Text is the whole profile as Exa's index had it at TextAt: the
 	// headline, the About, the jobs, the education and the latest
 	// activity, at most 8000 characters. A first message is written from
-	// it. Exa's index is not LinkedIn now, so it can be weeks old.
-	Text   string    `json:"text,omitempty"`
-	TextAt time.Time `json:"text_at,omitzero"`
+	// it. Exa's index is not LinkedIn now, so it can be weeks old. It is
+	// kept in the file TextsName, never in the one file, and changed only
+	// with Data.SetProfileText.
+	Text   string    `json:"-"`
+	TextAt time.Time `json:"-"`
 }
 
 // Signal is one reason for or against a fit, with the passage that shows
@@ -221,10 +248,10 @@ type Check struct {
 
 // Store is the open file.
 type Store struct {
-	path string
-	mu   sync.Mutex
-	data *Data
-	now  func() time.Time
+	path, texts string
+	mu          sync.Mutex
+	data        *Data
+	now         func() time.Time
 }
 
 // Open reads the file in dir, or starts a new one there. now is the clock,
@@ -236,7 +263,7 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Store{path: filepath.Join(dir, FileName), now: now}
+	s := &Store{path: filepath.Join(dir, FileName), texts: filepath.Join(dir, TextsName), now: now}
 	raw, err := os.ReadFile(s.path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -254,7 +281,91 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 		s.data = d
 	}
 	s.data.fill()
+	if err := s.readTexts(raw); err != nil {
+		return nil, err
+	}
 	return s, nil
+}
+
+// readTexts gives each person their profile text from TextsName. Builds
+// of pull request 38 before 20 November 2026 kept the texts in the one
+// file, raw. Those move over, and both files are written at once.
+func (s *Store) readTexts(raw []byte) error {
+	texts := textsFile{}
+	got, err := os.ReadFile(s.texts)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return err
+	default:
+		if err := json.Unmarshal(got, &texts); err != nil {
+			return fmt.Errorf("%s cannot be read: %w", s.texts, err)
+		}
+	}
+	var old struct {
+		People []struct {
+			LinkedIn struct {
+				URL    string    `json:"url"`
+				Text   string    `json:"text"`
+				TextAt time.Time `json:"text_at"`
+			} `json:"linkedin"`
+		} `json:"people"`
+	}
+	if raw != nil {
+		_ = json.Unmarshal(raw, &old)
+	}
+	moved := false
+	for _, p := range old.People {
+		l := p.LinkedIn
+		if l.Text == "" {
+			continue
+		}
+		if t, ok := texts.Texts[l.URL]; !ok || t.At.Before(l.TextAt) {
+			if texts.Texts == nil {
+				texts.Texts = map[string]profileText{}
+			}
+			texts.Texts[l.URL] = profileText{Text: l.Text, At: l.TextAt}
+		}
+		moved = true
+	}
+	s.data.attach(texts.Texts)
+	if !moved {
+		return nil
+	}
+	s.data.textsChanged = true
+	return s.save()
+}
+
+// attach puts the texts on the people they are of.
+func (d *Data) attach(texts map[string]profileText) {
+	for _, p := range d.People {
+		if t, ok := texts[p.LinkedIn.URL]; ok && p.LinkedIn.URL != "" {
+			p.LinkedIn.Text, p.LinkedIn.TextAt = t.Text, t.At
+		}
+	}
+}
+
+// profileTexts are the texts of the people here now, by profile link.
+func (d *Data) profileTexts() map[string]profileText {
+	out := map[string]profileText{}
+	for _, p := range d.People {
+		if l := p.LinkedIn; l.Text != "" && l.URL != "" {
+			out[l.URL] = profileText{Text: l.Text, At: l.TextAt}
+		}
+	}
+	return out
+}
+
+// SetProfileText keeps the text of a person's profile as Exa's index had
+// it at at, to be written to TextsName with the change it is part of. The
+// same text again changes nothing, so a check that finds people already
+// here does not write the texts.
+func (d *Data) SetProfileText(p *Person, text string, at time.Time) {
+	if p.LinkedIn.Text == text {
+		return
+	}
+	p.LinkedIn.Text, p.LinkedIn.TextAt = text, at
+	d.textsChanged = true
 }
 
 // fill makes the maps and lists that are missing, so the rest of the code
@@ -328,10 +439,14 @@ func (s *Store) Update(fn func(d *Data) error) error {
 	if err != nil {
 		return err
 	}
+	// The texts are not in before. Strings are never changed in place,
+	// so holding them is cheap.
+	texts := s.data.profileTexts()
 	undo := func() {
 		d := &Data{}
 		if json.Unmarshal(before, d) == nil {
 			d.fill()
+			d.attach(texts)
 			s.data = d
 		}
 	}
@@ -339,26 +454,49 @@ func (s *Store) Update(fn func(d *Data) error) error {
 		undo()
 		return err
 	}
-	if err := s.write(); err != nil {
+	if err := s.save(); err != nil {
 		undo()
 		return err
 	}
 	return nil
 }
 
-// write puts the data in a new file beside the old one, then moves it into
-// place, which on one disk is all or nothing.
-func (s *Store) write() error {
-	raw, err := json.MarshalIndent(s.data, "", "\t")
-	if err != nil {
+// save writes the texts when one arrived, then the one file. The texts
+// go by profile link, so texts written before a failed write of the one
+// file never land on the wrong person.
+func (s *Store) save() error {
+	if s.data.textsChanged {
+		// Not indented: nobody reads it by hand, and it is most of the
+		// bytes.
+		if err := write(s.texts, textsFile{Version: Version, Texts: s.data.profileTexts()}, ""); err != nil {
+			return err
+		}
+	}
+	if err := write(s.path, s.data, "\t"); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(s.path), ".speakertrail-*.json")
+	s.data.textsChanged = false
+	return nil
+}
+
+// write puts v in a new file beside the one at path, indented by indent,
+// then moves it into place, which on one disk is all or nothing.
+func write(path string, v any, indent string) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".speakertrail-*.json")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(raw); err != nil {
+	// Encoded straight into the file, so megabytes of profile texts are
+	// never held twice.
+	buf := bufio.NewWriterSize(tmp, 1<<16)
+	enc := json.NewEncoder(buf)
+	enc.SetIndent("", indent)
+	if err := enc.Encode(v); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := buf.Flush(); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -369,7 +507,7 @@ func (s *Store) write() error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), s.path)
+	return os.Rename(tmp.Name(), path)
 }
 
 // NewID gives the next id.

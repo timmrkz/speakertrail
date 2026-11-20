@@ -454,7 +454,7 @@ func (d *Drafter) read(ctx context.Context, id int64, link string) (string, erro
 	}
 	err = d.Store.Update(func(data *store.Data) error {
 		if p := data.Person(id); p != nil {
-			p.LinkedIn.Text, p.LinkedIn.TextAt = prof.Text, d.now()
+			data.SetProfileText(p, prof.Text, d.now())
 		}
 		return nil
 	})

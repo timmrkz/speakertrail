@@ -49,7 +49,7 @@ func (d *Data) AddFound(f Found, search *Search, runID int64, at time.Time) (*Pe
 		l.LastActive = f.LastActive
 	}
 	if f.Text != "" {
-		l.Text, l.TextAt = f.Text, at
+		d.SetProfileText(p, f.Text, at)
 	}
 	seen := false
 	for i := range p.FoundBy {

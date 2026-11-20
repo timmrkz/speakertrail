@@ -41,6 +41,7 @@ while no key is saved.
 | What | Where |
 | --- | --- |
 | People, searches, runs, settings | `~/Library/Application Support/Speaker Trail/speakertrail.json` |
+| The text of each person's profile, as Exa's index had it | `~/Library/Application Support/Speaker Trail/profile-texts.json` |
 | The Exa key | the keychain, as **Speaker Trail: Exa API key** |
 | The channel the app follows | `~/Library/Application Support/Speaker Trail/updates.json` |
 | Builds downloaded to update to | `~/Library/Caches/Speaker Trail/builds` |

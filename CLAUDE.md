@@ -9,7 +9,8 @@ Speaker Trail finds people in North Rhine-Westphalia who run their own
 business and could be guests on Tim's podcast, *My First Memory*. It is a
 Mac app, built like Tim's FrameFairy: Go with Wails v3 for the window, the
 Svelte interface built in, and everything it knows in one JSON file in
-`~/Library/Application Support/Speaker Trail`. Runs ask profile searches
+`~/Library/Application Support/Speaker Trail`, with the profile texts in
+a second beside it. Runs ask profile searches
 through Exa. No Docker, no database, no server.
 
 It once also crawled event pages for a public calendar. That engine, its
@@ -191,7 +192,10 @@ messages, pull request text, code comments and chat replies.
   releases.
 - **Built like FrameFairy.** A native Mac app with Wails v3, no Docker, no
   database process, no server. What the app knows lives in one JSON file,
-  written whole to a new file that then replaces the old one. Secrets live
+  written whole to a new file that then replaces the old one. Only the
+  profile texts live in a second, `profile-texts.json`, written only when
+  one arrives, because they made every save ten times slower (Tim, 20
+  November 2026). Secrets live
   in the macOS keychain, never in a file.
 - **One command.** `make run` goes from a fresh clone to a running app.
   Nobody should have to remember a second command. On a Mac make installs

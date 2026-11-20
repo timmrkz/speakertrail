@@ -22,6 +22,7 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-linux/v2 v2.0.1 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos/v2 v2.0.1 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 // indirect
+	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

@@ -20,6 +20,8 @@ github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 h1:eGSMUAEedupoBuAIOi75tJ3/25
 github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1/go.mod h1:4T8q8/N4uaTxf7acMYaJrafG69HJRdlDRDstAODHz2Q=
 github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1 h1:mnVi3YOMc49PfZ7nJ7I/1WGevmseMjAQdtD/7MsRwb4=
 github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1/go.mod h1:MDprYfx0mHgBp2rAdLIfafqdDD+ugPWbR1lYsOKxBfs=
+github.com/klauspost/compress v1.20.4 h1:dD0v/bvxtjCBqQu6sx1TNWkalEY5lNTIe+HY9w8TeNI=
+github.com/klauspost/compress v1.20.4/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/matryer/is v1.4.1 h1:55ehd8zaGABKLXQUe2awZ99BD/PTc2ls+KV/dXphgEQ=
 github.com/matryer/is v1.4.1/go.mod h1:8I/i5uYgLzgsgEloJE1U6xx5HkBQpAZvepWuujKwMRU=
 github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=

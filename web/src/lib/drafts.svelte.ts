@@ -12,9 +12,15 @@ class DraftWatch {
 
   async read() {
     try {
+      // Taken the way a told job is, see put: the list is asked as a person
+      // opens, and an end told while it was on its way is newer than what
+      // it says.
       const all = await api.drafts()
-      const next: Record<number, DraftJob> = {}
-      for (const j of all) next[j.person_id] = j
+      const next: Record<number, DraftJob> = { ...this.jobs }
+      for (const j of all) {
+        const here = next[j.person_id]
+        if (!here || here.seq <= j.seq) next[j.person_id] = j
+      }
       this.jobs = next
     } catch {
       // The person pane says what went wrong when a draft is asked for.

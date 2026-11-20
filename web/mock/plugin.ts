@@ -947,7 +947,7 @@ function draftText(name: string): string {
 }
 function draftJob(s: State, d: MockDraft): DraftJob {
   const p = s.people.find((x) => x.id === d.person_id)
-  const using = LANGUAGE_MODELS.find((m) => languageHere.has(m.name))
+  const using = languageState().models.find((m) => m.inUse && m.installed)
   // The clock, so it grows with every answer, as Seq does in
   // internal/draft.
   const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: Date.now() }

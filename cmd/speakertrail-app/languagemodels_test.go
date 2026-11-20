@@ -62,7 +62,7 @@ func TestTheLanguageModelInSettings(t *testing.T) {
 
 // Picking a model in Settings makes it the one that drafts, downloaded or
 // not, the way FrameFairy's list of models does: the list says what is
-// chosen, and a draft waits for it to be here rather than writing with
+// chosen, and a draft is refused until it is here rather than written with
 // another. Removing it lets the choice go.
 func TestPickingTheLanguageModel(t *testing.T) {
 	small := language.Model{Name: "small.gguf", Title: "Small"}

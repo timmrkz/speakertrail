@@ -147,11 +147,35 @@ const walks = [
     },
   },
   {
+    name: 'The drafts read as a person opens leave a newer end alone',
+    async run(page) {
+      // The window asks for the drafts as a person opens, and the app
+      // tells that the draft is done before that answer arrives, an
+      // answer that still says it writes. The newer end stays.
+      await page.route(/\/api\/people\/\d+\/draft\/cancel$/, (route) => route.fulfill({ status: 409, json: { error: 'No draft is under way for them' } }))
+      let release
+      const held = new Promise((r) => (release = r))
+      const writing = job(1007, 1, { state: 'writing', text: first.slice(0, 20) })
+      await page.route('**/api/drafts', async (route) => {
+        await held
+        await route.fulfill({ json: [writing] })
+      })
+      await page.goto(`${url}/app/people/1007`)
+      await page.locator('.first-message').waitFor()
+      await say(page, job(1007, 1, { state: 'done', text: first }))
+      release()
+      await page.waitForResponse('**/api/drafts')
+      await page.waitForTimeout(100)
+      if (await page.locator('.first-message .step').count()) return 'the draft went back to writing after it was done'
+      return ''
+    },
+  },
+  {
     name: 'Draft without a language model goes to the model in Settings',
     async run(page) {
       await page.route('**/api/language', (route) => route.fulfill({ json: {
         models: [{ name: 'gemma-4-26b-a4b', title: 'Gemma 4 26B A4B', maker: 'Google', about: '', download: 15_500_000_000,
-          recommended: true, installed: false, inUse: true, needs: 16_624_595_968, fit: 'comfortable' }],
+          recommended: true, installed: false, inUse: true, needs: 16_624_595_968, fit: 'fits' }],
         folder: '~/Library/Application Support/Speaker Trail/models', server: true } }))
       let asked = 0
       await page.route(/\/api\/people\/\d+\/draft$/, (route) => { asked++; return route.fulfill({ status: 409, json: { error: 'no' } }) })

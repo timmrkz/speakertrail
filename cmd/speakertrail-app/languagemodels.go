@@ -91,7 +91,8 @@ func (s *languageModels) tell() {
 // using is the model that drafts, here or not: the one picked in
 // Settings, and with none picked the largest here. Picking a model picks
 // it, as in FrameFairy: the list names it, Download fetches it, and a
-// draft waits for it rather than writing with the one before.
+// draft is refused until it is here rather than written with the one
+// before.
 func (s *languageModels) using(models []language.Model) language.Model {
 	if s.chosen != nil {
 		if m, ok := language.ByName(models, s.chosen()); ok {

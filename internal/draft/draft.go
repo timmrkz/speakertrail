@@ -225,9 +225,6 @@ func (d *Drafter) cond() *sync.Cond {
 	return d.told
 }
 
-// tell tells the changes not told yet, in order. While another goroutine
-// tells, it leaves them to that one, so a change never waits on the
-// window to hear an earlier one.
 // changed numbers a change of j and keeps it to be told. d.mu is held.
 func (d *Drafter) changed(j *Job) Job {
 	d.seq++
@@ -236,6 +233,9 @@ func (d *Drafter) changed(j *Job) Job {
 	return *j
 }
 
+// tell tells the changes not told yet, in order. While another goroutine
+// tells, it leaves them to that one, so a change never waits on the
+// window to hear an earlier one.
 func (d *Drafter) tell() {
 	d.mu.Lock()
 	if d.telling {

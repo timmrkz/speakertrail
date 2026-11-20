@@ -3,8 +3,11 @@ module github.com/timmrkz/speakertrail
 go 1.27
 
 require (
+	github.com/dsnet/compress v0.0.0-20171208185109-cc9eb1d7ad76
+	github.com/gabstv/go-bsdiff v1.0.5
 	github.com/gen2brain/malgo v0.11.27
 	github.com/k2-fsa/sherpa-onnx-go/v2 v2.0.1
+	github.com/klauspost/compress v1.20.4
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/afero v1.15.0
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
@@ -22,7 +25,6 @@ require (
 	github.com/k2-fsa/sherpa-onnx-go-linux/v2 v2.0.1 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-macos/v2 v2.0.1 // indirect
 	github.com/k2-fsa/sherpa-onnx-go-windows/v2 v2.0.1 // indirect
-	github.com/klauspost/compress v1.20.4 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

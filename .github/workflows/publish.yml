@@ -265,15 +265,24 @@ jobs:
       # The zip the build left deflates every file. Packed again, each file
       # is stored as it is, and its parts and pieces let an app that knows
       # them download only the files it does not have, and the stored zip
-      # packed with zstd is what it downloads when they fail. It runs after
-      # check, so it only reads a zip whose size check has held, and before
-      # the key, which it has no need of. See docs/UPDATES.md.
+      # packed with zstd is what it downloads when they fail. Each file
+      # that changed also gets a patch against the same file of every build
+      # the release holds now, which is what an app running one of them
+      # downloads. It runs after check, so it only reads a zip whose size
+      # check has held, and before the key, which it has no need of. See
+      # docs/UPDATES.md.
       - id: pack
         if: steps.check.outcome == 'success'
         name: Pack it in parts
         env:
           ZIP: ${{ steps.which.outputs.zip }}
-        run: go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed"
+        run: |
+          gh release download dev --pattern 'channel-*.json' --dir "$RUNNER_TEMP/bases" || true
+          set --
+          for entry in "$RUNNER_TEMP"/bases/channel-*.json; do
+            [ -e "$entry" ] && set -- "$@" -base "$entry"
+          done
+          go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" "$@"
 
       - id: key
         if: steps.pack.outcome == 'success'

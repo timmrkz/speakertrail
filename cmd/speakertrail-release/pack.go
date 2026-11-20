@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -40,14 +41,21 @@ func packCommand(args []string) error {
 	fs := flag.NewFlagSet("pack", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the zip the build left")
 	out := fs.String("out", "", "the folder the packed build goes in")
+	from := fs.String("from", updates.EntriesURL, "the folder of the release the builds patched against are read from")
+	var entries []string
+	fs.Func("base", "the entry of a build to patch against, as a file, once for each", func(v string) error {
+		entries = append(entries, v)
+		return nil
+	})
 	_ = fs.Parse(args)
-	return pack(*zipPath, *out, updates.NewPacker(), os.Stdout)
+	b := bases{entries: readBases(entries, os.Stdout), from: *from, client: &http.Client{}}
+	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)
 }
 
 // pack writes the build in zipPath to out as the stored zip, its parts,
-// its pieces and the stored zip packed, with packer, and says what an
-// update of it weighs.
-func pack(zipPath, out string, packer updates.Packer, log io.Writer) error {
+// its pieces, its patches against the builds in b and the stored zip
+// packed, with packer, and says what an update of it weighs.
+func pack(zipPath, out string, packer updates.Packer, b bases, log io.Writer) error {
 	src, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
@@ -141,6 +149,12 @@ func pack(zipPath, out string, packer updates.Packer, log io.Writer) error {
 		}
 	}
 	fmt.Fprintf(log, "the stored zip is %d bytes, %d packed, and an app with none of its files downloads %d in pieces\n", size, wholeSize, pieces)
+	addPatches(&p, stored, b, out, log)
+	for _, part := range p.Parts {
+		for _, pt := range part.Patches {
+			fmt.Fprintf(log, "%-64s patch from %.12s %12d\n", part.Name, pt.From, pt.Size)
+		}
+	}
 	return writeJSON(filepath.Join(out, partsFile), p)
 }
 

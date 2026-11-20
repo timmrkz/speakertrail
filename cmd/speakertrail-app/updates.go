@@ -443,9 +443,10 @@ func pieced(p updates.Pieced) {
 		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int64("bytes", p.Packed).
 			Msg("the build could not be put together from its parts, so it was downloaded packed")
 		return
-	case p.Err != nil && p.Kept+p.Fetched > 0:
-		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("fetched", p.Fetched).
-			Int64("bytes", p.Bytes).Msg("the packed build could not be downloaded, so it was put together from its pieces")
+	case p.Err != nil && p.Kept+p.Patched+p.Fetched > 0:
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Int("kept", p.Kept).Int("patched", p.Patched).
+			Int("fetched", p.Fetched).Int64("bytes", p.Bytes).
+			Msg("the packed build could not be downloaded, so it was put together from its pieces")
 		return
 	case p.Err != nil:
 		theLog.line(zerolog.WarnLevel, "updates").Err(p.Err).Msg("the build could not be downloaded")
@@ -455,8 +456,12 @@ func pieced(p updates.Pieced) {
 			Msg("the build was downloaded packed, which weighed less than the pieces the app lacked")
 		return
 	}
-	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("fetched", p.Fetched).
-		Int64("bytes", p.Bytes).Msg("the build was put together from the app's own files and the pieces fetched")
+	if p.PatchErr != nil {
+		theLog.line(zerolog.WarnLevel, "updates").Err(p.PatchErr).
+			Msg("a patch could not make its file, so the file was downloaded as its piece")
+	}
+	theLog.line(zerolog.InfoLevel, "updates").Int("kept", p.Kept).Int("patched", p.Patched).Int("fetched", p.Fetched).
+		Int64("bytes", p.Bytes).Msg("the build was put together from the app's own files, patches and pieces")
 }
 
 // progress is told about every quarter of a megabyte, and passes it on a

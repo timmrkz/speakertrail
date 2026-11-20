@@ -32,7 +32,7 @@ func packed(t *testing.T, files map[string][]byte) string {
 		t.Fatal(err)
 	}
 	out := filepath.Join(dir, "packed")
-	if err := pack(in, out, packer, io.Discard); err != nil {
+	if err := pack(in, out, packer, bases{}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	return out

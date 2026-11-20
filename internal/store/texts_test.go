@@ -101,3 +101,66 @@ func TestTextsInTheOneFileMoveOver(t *testing.T) {
 		}
 	})
 }
+
+// A newer text already in the texts file beats an older one still in the
+// one file, and once moved, opening again writes nothing.
+func TestANewerTextStaysAndTheMoveIsOnce(t *testing.T) {
+	dir := t.TempDir()
+	old := `{"version":1,"last_id":1,"people":[{"id":1,"name":"Eva Beispiel","linkedin":{"url":"https://www.linkedin.com/in/eva-beispiel","review":"confirmed","text":"Alt","text_at":"2026-11-19T12:00:00Z"}}]}`
+	texts := `{"version":1,"texts":{"https://www.linkedin.com/in/eva-beispiel":{"text":"Neu","at":"2026-11-20T12:00:00Z"}}}`
+	if err := os.WriteFile(filepath.Join(dir, FileName), []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, TextsName), []byte(texts), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open(t, dir).Read(func(d *Data) {
+		if got := d.Person(1).LinkedIn.Text; got != "Neu" {
+			t.Errorf("the older text won: %q", got)
+		}
+	})
+	// A texts file that says something else shows whether it was
+	// written again.
+	marker := `{"version":1,"texts":{"https://www.linkedin.com/in/eva-beispiel":{"text":"Markiert","at":"2026-11-21T12:00:00Z"}}}`
+	if err := os.WriteFile(filepath.Join(dir, TextsName), []byte(marker), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	open(t, dir)
+	if got, _ := os.ReadFile(filepath.Join(dir, TextsName)); string(got) != marker {
+		t.Errorf("opening again wrote the texts: %s", got)
+	}
+}
+
+// When the texts were written and the one file then was not, the change
+// is undone, and the next save writes the texts back as they are in
+// memory, so the two files agree again.
+func TestTheTextsAgreeAgainAfterAFailedSave(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	id := addEva(t, s)
+	// A folder where the one file goes makes moving it into place fail.
+	main := filepath.Join(dir, FileName)
+	if err := os.Remove(main); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(main, "in-the-way"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(d *Data) error {
+		d.SetProfileText(d.Person(id), "Neu", t0.Add(time.Hour))
+		return nil
+	}); err == nil {
+		t.Fatal("the save did not fail")
+	}
+	if err := os.RemoveAll(main); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(d *Data) error { d.Person(id).Notes = "Töpfert"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	open(t, dir).Read(func(d *Data) {
+		if got := d.Person(id).LinkedIn.Text; got != evaText {
+			t.Errorf("after a failed save the file has %q, memory had the text before", got)
+		}
+	})
+}

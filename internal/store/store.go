@@ -359,7 +359,8 @@ func (d *Data) profileTexts() map[string]profileText {
 // SetProfileText keeps the text of a person's profile as Exa's index had
 // it at at, to be written to TextsName with the change it is part of. The
 // same text again changes nothing, so a check that finds people already
-// here does not write the texts.
+// here does not write the texts, and at stays when the text was first
+// read as it is.
 func (d *Data) SetProfileText(p *Person, text string, at time.Time) {
 	if p.LinkedIn.Text == text {
 		return
@@ -431,7 +432,8 @@ func (s *Store) Read(fn func(d *Data)) {
 
 // Update hands the data to fn under the lock and writes it when fn
 // returns nil. When fn fails, or the write does, the data in memory is put
-// back as it was, so memory and the file never disagree.
+// back as it was, so memory and the files never disagree for long. The
+// texts, written first, are written again at the next save.
 func (s *Store) Update(fn func(d *Data) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -455,7 +457,12 @@ func (s *Store) Update(fn func(d *Data) error) error {
 		return err
 	}
 	if err := s.save(); err != nil {
+		wrote := s.data.textsChanged
 		undo()
+		// The texts may have been written before the one file failed.
+		// The next save writes them again as memory has them, so the two
+		// files agree again.
+		s.data.textsChanged = wrote
 		return err
 	}
 	return nil

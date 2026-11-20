@@ -51,7 +51,8 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 `sightings`: each search that found the person, newest first. `draft` is
 the first message to them, empty before the first draft, and
 `drafted_at` when the language model wrote it. `profile_read_at` is when
-Exa's index gave the profile text a draft is written from, null while the
+Exa's index first gave the profile text a draft is written from as it is
+now, null while the
 app has none and a draft reads it first. See [Drafts](#drafts).
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,

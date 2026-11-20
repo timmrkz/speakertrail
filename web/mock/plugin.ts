@@ -527,7 +527,14 @@ const ROUTES: [string, RegExp, Handler][] = [
     const name = decodeURIComponent(m[1])
     if (!LANGUAGE_MODELS.some((x) => x.name === name)) return err(409, `There is no language model called ${name}`)
     languageHere.delete(name)
+    if (languageChosen === name) languageChosen = ''
     return { status: 204 }
+  }],
+  ['POST', /^\/api\/language\/use$/, (_s, _m, _q, b) => {
+    const name = String(b.name)
+    if (!LANGUAGE_MODELS.some((x) => x.name === name)) return err(409, `There is no language model called ${name}.`)
+    languageChosen = name
+    return ok(languageState())
   }],
   // First messages, like the drafts in internal/api/drafts.go. A draft
   // loads the model for three seconds and writes for five. The app sends
@@ -539,7 +546,8 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'Not found')
     // Without a model it is refused, as Start in internal/draft does.
-    if (!LANGUAGE_MODELS.some((x) => languageHere.has(x.name))) return err(409, 'Download a language model in Settings first. It writes the message on this Mac.')
+    const using = languageState().models.find((x) => x.inUse)
+    if (!using?.installed) return err(409, 'Download a language model in Settings first. It writes the message on this Mac.')
     const was = drafts.get(p.id)
     if (was && !['done', 'failed', 'cancelled'].includes(draftJob(s, was).state)) return ok(draftJob(s, was))
     draftJobs++
@@ -896,6 +904,8 @@ const LANGUAGE_MODELS = [
 ] as const
 const LANGUAGE_MS = 8000
 const languageHere = new Set<string>([LANGUAGE_MODELS[0].name])
+// The model picked in Settings, like Data.LanguageModel. Empty is none.
+let languageChosen = ''
 let languageJobs = 0
 let languageJob: { id: string; kind: 'model'; title: string; state: string; error?: string; from?: number; name?: string } | undefined
 function languageState() {
@@ -915,7 +925,7 @@ function languageState() {
       }
     }
   }
-  const using = LANGUAGE_MODELS.find((m) => languageHere.has(m.name))?.name
+  const using = languageChosen || LANGUAGE_MODELS.find((m) => languageHere.has(m.name))?.name
   return {
     models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using })),
     folder: '~/Library/Application Support/Speaker Trail/models',

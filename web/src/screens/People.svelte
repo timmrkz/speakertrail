@@ -9,6 +9,7 @@
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Pick from '../lib/components/Pick.svelte'
   import RunOutcome from '../lib/components/RunOutcome.svelte'
   import RunProgress from '../lib/components/RunProgress.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
@@ -23,6 +24,13 @@
   // device.
   const SORTS: PeopleSort[] = ['young', 'new', 'fit', 'name']
   let sort = $state<PeopleSort>(savedSort())
+  // The orders the list can be in, in the app's own list, see Pick.
+  const sorts = [
+    { value: 'young', label: 'Youngest' },
+    { value: 'new', label: 'Newest' },
+    { value: 'fit', label: 'Best fit' },
+    { value: 'name', label: 'Name' },
+  ]
   let filter = $state<PeopleFilter>('all')
 
   function savedSort(): PeopleSort {
@@ -129,7 +137,7 @@
   function keydown(e: KeyboardEvent) {
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
     const t = e.target as HTMLElement | null
-    if (t && (t.closest('input, textarea, select, [contenteditable]') || t.closest('[role="dialog"]'))) return
+    if (t && (t.closest('input, textarea, select, button.pick, [contenteditable]') || t.closest('[role="dialog"]'))) return
     if (e.key === 'Escape' && wide && openId !== null) {
       e.preventDefault()
       navigate('/app/people')
@@ -245,15 +253,9 @@
     <div class="controls">
       <div class="toolbar tight">
         <SearchInput bind:value={q} placeholder="Search people" label="Search people" onsearch={(v) => (query = v)} />
-        <label class="sort" title="Order">
-          <span class="sr-only">Sort by</span>
-          <select class="select" bind:value={sort}>
-            <option value="young">Youngest</option>
-            <option value="new">Newest</option>
-            <option value="fit">Best fit</option>
-            <option value="name">Name</option>
-          </select>
-        </label>
+        <span class="sort">
+          <Pick label="Sort by" title="Order" value={sort} options={sorts} onpick={(v) => (sort = v as PeopleSort)} />
+        </span>
         <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
         disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
         title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
@@ -397,7 +399,6 @@
     .controls .toolbar { flex-wrap: wrap; }
     .controls .toolbar > :global(.search) { flex: 1 1 100%; }
     .controls .sort, .controls .start { flex: 1 1 0; }
-    .controls .sort .select { width: 100%; }
   }
   .run-now {
     display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;

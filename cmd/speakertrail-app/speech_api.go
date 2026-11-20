@@ -37,6 +37,9 @@ type modelsAPI struct {
 	install func(name string) any
 	stop    func(id string) error
 	remove  func(name string) error
+	// use picks the model in use, where a kind has more than one to pick
+	// from. Nil answers 404.
+	use func(name string) error
 }
 
 func (a modelsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -66,6 +69,19 @@ func (a modelsAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodPost && r.URL.Path == a.base+"/use" && a.use != nil:
+		var body struct {
+			Name string `json:"name"`
+		}
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body); err != nil {
+			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
+			return
+		}
+		if err := a.use(body.Name); err != nil {
+			answer(w, http.StatusConflict, map[string]string{"error": sentence(err.Error())})
+			return
+		}
+		answer(w, http.StatusOK, a.state())
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, a.base+"/models/"):
 		if err := a.remove(strings.TrimPrefix(r.URL.Path, a.base+"/models/")); err != nil {
 			answer(w, http.StatusConflict, map[string]string{"error": sentence(err.Error())})

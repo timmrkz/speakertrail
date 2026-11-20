@@ -139,6 +139,13 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   frosted rows, each a name over one line of what is known, with what is
   connected in green at its start. Tim asked for one look for all lists
   on 14 November 2026.
+- **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
+  built on bits-ui, so a list looks the same in the window on a Mac as it
+  does in the harness, and a row can say more than a name: a size, a
+  group, whether a model is downloaded. Never a native `<select>`, which
+  the Mac draws in its own box. The People order, the LinkedIn profile,
+  the Updates channel and the language model all use it, and
+  `walks/pick.mjs` walks it.
 - **Opening something never relays out what is beside it.** A row has the
   same lines at any width, so a person opening only narrows the list. A
   container query on a pane that another pane squeezes brings the shuffle

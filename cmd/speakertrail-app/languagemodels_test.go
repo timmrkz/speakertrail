@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/timmrkz/speakertrail/internal/draft"
 	"github.com/timmrkz/speakertrail/internal/language"
 )
 
@@ -54,5 +57,47 @@ func TestTheLanguageModelInSettings(t *testing.T) {
 	}
 	if len(told) == 0 {
 		t.Error("the window was told nothing")
+	}
+}
+
+// Picking a model in Settings makes it the one that drafts, downloaded or
+// not, the way FrameFairy's list of models does: the list says what is
+// chosen, and a draft waits for it to be here rather than writing with
+// another. Removing it lets the choice go.
+func TestPickingTheLanguageModel(t *testing.T) {
+	small := language.Model{Name: "small.gguf", Title: "Small"}
+	large := language.Model{Name: "large.gguf", Title: "Large"}
+	var chosen string
+	s := newLanguageModels(t.TempDir(), nil, nil)
+	s.models = func() []language.Model { return []language.Model{large, small} }
+	s.chosen = func() string { return chosen }
+	s.choose = func(name string) error { chosen = name; return nil }
+	if err := os.WriteFile(filepath.Join(s.dir, small.Name), []byte("GGUF"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if m, _, err := s.inUse(); err != nil || m.Name != small.Name {
+		t.Fatalf("with nothing picked the model here drafts: %v %v", m.Name, err)
+	}
+	if err := s.use("large.gguf"); err != nil {
+		t.Fatal(err)
+	}
+	st := s.state()
+	if !st.Models[0].InUse || st.Models[1].InUse {
+		t.Errorf("the list does not say the one picked: %+v", st.Models)
+	}
+	if _, _, err := s.inUse(); !errors.Is(err, draft.ErrNoModel) {
+		t.Errorf("a draft wrote with another model than the one picked: %v", err)
+	}
+	if err := s.use("nothing.gguf"); err == nil || chosen != "large.gguf" {
+		t.Errorf("a model that is not offered was picked: %v, %s", err, chosen)
+	}
+	if err := s.use("small.gguf"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.remove("small.gguf"); err != nil {
+		t.Fatal(err)
+	}
+	if chosen != "" {
+		t.Errorf("the choice outlived the model: %q", chosen)
 	}
 }

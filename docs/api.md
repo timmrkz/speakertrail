@@ -266,7 +266,8 @@ Language model. The models live in the same folder.
 | `GET /api/language` | every model, largest first, whether it is on this Mac, the folder written with `~`, whether the app carries llama-server to run one, and the download under way, `{"models": [{"name": "…", "title": "Gemma 4 26B A4B", "download": 14439363584, "needs": 16624595968, "fit": "fits", "recommended": true, "installed": false, "inUse": false, …}], "folder": "~/Library/…/models", "server": true, "job": {…}}` |
 | `POST /api/language/install` | `{"name": "…"}` fetches that model and answers the download at once |
 | `POST /api/language/cancel` | `{"id": "language-1"}` stops that download. What arrived stays and the next Download goes on from there |
-| `DELETE /api/language/models/{name}` | takes that model off the Mac, after Settings asked. Not while a draft writes with it |
+| `POST /api/language/use` | `{"name": "…"}` picks the model that drafts, downloaded or not, and answers in the shape of `GET /api/language`. 409 with why for a model that is not offered |
+| `DELETE /api/language/models/{name}` | takes that model off the Mac, after Settings asked. Not while a draft writes with it. Removing the model picked lets the choice go |
 
 A model FrameFairy has whole in `~/.framefairy/models`, by its size and
 checksum, is linked from there rather than downloaded, so the two apps
@@ -275,8 +276,11 @@ share it on disk. While it is checked, `progress.text` is `copying`.
 `needs` is the memory the model takes while it writes, in bytes, and
 `fit` what this Mac can do with it: `fits`, `tight`, `too big` or
 `unknown`. `recommended` marks the largest model this Mac holds
-comfortably, the one Settings offers. `inUse` marks the one that drafts,
-the largest on this Mac. `job` is in the shape of a speech model's
+comfortably, the one Settings offers. `inUse` marks the one that drafts:
+the one picked in Settings, kept in the app's file as `language_model`,
+here or not, and with none picked the largest on this Mac. While the one
+picked is not downloaded, a draft is refused with 409 rather than
+written with another. `job` is in the shape of a speech model's
 download.
 
 Where a download stands is sent as the Wails event `language`, in the

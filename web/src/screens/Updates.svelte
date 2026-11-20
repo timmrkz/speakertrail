@@ -11,6 +11,7 @@
   import { errorText } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Pick from '../lib/components/Pick.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import { channelName, conflicted as conflictedIn, following as followingIn, standing as standingOf, updates } from '../lib/updates.svelte'
 
@@ -131,14 +132,13 @@
           </span>
         </div>
         {#if !update.off}
-          <select class="select channel" class:warn={update.phase === 'gone' || conflicted} aria-label="Follow"
-            title="Where this app updates from: main, or one pull request. Every push to it makes a new build, which downloads by itself"
-            value={following} disabled={options.length === 0} onchange={(e) => follow(e.currentTarget.value)}>
-            {#if !following}<option value="" disabled>{options.length ? 'Choose what to follow' : 'No builds to follow yet'}</option>{/if}
-            {#each options as o (o.value)}
-              <option value={o.value}>{o.label}</option>
-            {/each}
-          </select>
+          <span class="channel">
+            <Pick label="Follow" value={following} {options} fit align="right"
+              placeholder={options.length ? 'Choose what to follow' : 'No builds to follow yet'}
+              tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
+              title="Where this app updates from: main, or one pull request. Every push to it makes a new build, which downloads by itself"
+              onpick={(v) => follow(v)} />
+          </span>
         {/if}
       </div>
 
@@ -194,8 +194,7 @@
   .link { border: 0; padding: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-variant-numeric: tabular-nums; }
   .link:hover { text-decoration: underline; }
   /* As wide as the longest name it needs, never wider than the row. */
-  .channel { width: auto; max-width: 100%; flex: 0 1 auto; min-width: 12em; }
-  .channel.warn { border-color: var(--warn); color: var(--warn); }
+  .channel { display: flex; max-width: 100%; flex: 0 1 auto; min-width: 12em; }
   .mark { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; align-self: start; margin-top: 1px; }
   .mark.ok { color: var(--good); }
   .mark.warn { color: var(--warn); }

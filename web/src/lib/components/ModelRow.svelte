@@ -33,8 +33,9 @@
   import { errorText, toast } from '../toast.svelte'
   import Busy from './Busy.svelte'
   import Confirm from './Confirm.svelte'
-  import Icon from './Icon.svelte'
+  import Icon, { type IconName } from './Icon.svelte'
   import Info from './Info.svelte'
+  import Pick from './Pick.svelte'
 
   // A model in an area of its own: the model, the one line under it that
   // says how it stands, Download beside it while it is not here, Cancel
@@ -58,6 +59,7 @@
     ready,
     cancelTitle,
     downloadTitle,
+    pick = undefined,
   }: {
     // The area's id and class, which Settings and the walks find it by.
     id: string
@@ -78,6 +80,16 @@
     ready: (m: M) => Line
     cancelTitle: (p: ModelProgress | undefined) => string
     downloadTitle: (m: M) => string
+    // A list to pick the model from, where a kind has more than one, as
+    // FrameFairy's Settings has for its clip model. The row then names
+    // what the model does, and the list names the model.
+    pick?: {
+      head: string
+      label: string
+      title: string
+      options: { value: string; label: string; detail?: string; warn?: boolean; group?: string; mark?: { icon: IconName; title: string; faint?: boolean } }[]
+      onpick: (name: string) => Promise<void>
+    }
   } = $props()
 
   $effect(() => watch.watch())
@@ -129,6 +141,18 @@
     // The app tells the rest as it comes. Asked once more, in case the
     // download ended before the answer came back.
     watch.read()
+  }
+
+  // A model picked from the list is the one in use at once, here or not.
+  // The line under it then says whether it still has to be downloaded.
+  async function choose(name: string) {
+    failed = ''
+    try {
+      await pick?.onpick(name)
+    } catch (err) {
+      toast.show(errorText(err), 'bad')
+      watch.read()
+    }
   }
 
   async function cancel() {
@@ -195,10 +219,10 @@
         {/if}
       </span>
       <div class="info">
-        <span class="desc">{model?.title ?? heading}</span>
+        <span class="desc">{pick ? pick.head : (model?.title ?? heading)}</span>
         <span class="line small" class:warn={line.tone === 'warn'} class:error={line.tone === 'err'} title={line.text}>{line.text}</span>
       </div>
-      <div class="actions">
+      <div class="actions" class:picks={!!pick}>
         {#if running}
           <!-- The download carries the beam and the fill in the one control
                that can do something about it. -->
@@ -209,6 +233,11 @@
           <button class="btn act" type="button" disabled={starting} onclick={download} title={downloadTitle(model)}>
             {#if starting}<Busy />{/if}{starting ? 'Starting' : 'Download'}
           </button>
+        {/if}
+        {#if pick}
+          <Pick value={model?.name ?? ''} options={pick.options} label={pick.label} title={pick.title} align="right"
+            tone={line.state === 'warn' || line.state === 'err' ? line.state : undefined}
+            disabled={!!running || starting} onpick={choose} />
         {/if}
       </div>
     </div>
@@ -267,7 +296,12 @@
   .line { color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .line.warn { color: var(--warn); }
   .line.error { color: var(--bad); }
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; gap: 8px; min-width: 0; }
+  /* On a narrow window the controls go under the words, as LinkedinRow's
+     list does, so the line under the name keeps its room. */
+  @media (max-width: 760px) {
+    .actions.picks { grid-column: 2 / -1; }
+  }
   .act { position: relative; }
   .count { font-variant-numeric: tabular-nums; }
   .mark { display: flex; width: 14px; justify-content: center; color: var(--ink-3); }

@@ -193,7 +193,8 @@ const walks = [
       await page.goto(`${url}/app/settings`)
       const line = page.locator('.language .line')
       await line.filter({ hasText: /^By Google\./ }).waitFor()
-      const title = (await page.locator('.language .desc').first().innerText()).trim()
+      // The model is named in the list to pick it from, see walks/pick.mjs.
+      const title = (await page.locator('.language button.pick .said > span:not(.room)').innerText()).trim()
       if (title !== 'Gemma 4 26B A4B') return `the model reads ${JSON.stringify(title)}`
       // The language model comes before the speech model.
       const order = await page.evaluate(() => {

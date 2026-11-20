@@ -736,6 +736,9 @@ export const api = {
   // stands comes as the event language.
   language: () => request<LanguageState>('GET', '/api/language'),
   installLanguageModel: (name: string) => request<ModelJob>('POST', '/api/language/install', { name }),
+  // Picks the model that drafts, downloaded or not, and answers how they
+  // all stand then.
+  useLanguageModel: (name: string) => request<LanguageState>('POST', '/api/language/use', { name }),
   cancelLanguageDownload: (id: string) => request<void>('POST', '/api/language/cancel', { id }),
   removeLanguageModel: (name: string) => request<void>('DELETE', `/api/language/models/${encodeURIComponent(name)}`, {}),
   // First messages: the drafts under way and the latest of each person,

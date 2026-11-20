@@ -79,6 +79,10 @@ type Data struct {
 	// next one says about how long is left from earlier work rather than
 	// from a guess. See internal/draft.
 	DraftTimes []DraftTime `json:"draft_times,omitempty"`
+	// LanguageModel is the file name of the language model picked in
+	// Settings to draft with, downloaded or not. Empty until Tim picks one,
+	// and then the largest on the Mac drafts.
+	LanguageModel string `json:"language_model,omitempty"`
 
 	// textsChanged says a profile text arrived since the texts were
 	// written, see SetProfileText.

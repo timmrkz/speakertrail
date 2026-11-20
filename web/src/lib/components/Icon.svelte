@@ -12,6 +12,8 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import X from '@lucide/svelte/icons/x'
   import Check from '@lucide/svelte/icons/check'
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down'
+  import Download from '@lucide/svelte/icons/download'
   import Plus from '@lucide/svelte/icons/plus'
   import UserPlus from '@lucide/svelte/icons/user-plus'
   import UserX from '@lucide/svelte/icons/user-x'
@@ -60,6 +62,10 @@
     undo: Undo2,
     external: ExternalLink,
     chevron: ChevronRight,
+    // The mark of a list to pick from, and of a model still to download
+    // in it, as FrameFairy draws them.
+    pick: ChevronsUpDown,
+    download: Download,
     back: ChevronLeft,
     sun: Sun,
     moon: Moon,

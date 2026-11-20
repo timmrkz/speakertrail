@@ -4,6 +4,7 @@
   import { toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Info from '../lib/components/Info.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import KeyRow from '../lib/components/KeyRow.svelte'
   import LinkedinRow from '../lib/components/LinkedinRow.svelte'
@@ -49,9 +50,11 @@
 
   <ThemeRow />
 
-  <SpeechRow />
-
+  <!-- The model that drafts first, the one Tim uses most, then the one
+       Dictate hears with, as Tim asked on 20 November 2026. -->
   <LanguageRow />
+
+  <SpeechRow />
 
   <LogsRow />
 
@@ -65,13 +68,18 @@
     <EmptyState icon="settings" title="No setting matches" text="Try another word." />
   {:else}
     {#if forDrafts.length}
-      <section class="group">
-        <h2>First message</h2>
-        <div class="list">
-          {#each forDrafts as s (s.key)}
-            <SettingRow setting={s} onsaved={saved} />
-          {/each}
-        </div>
+      <!-- The prompt is a box on its own under the heading, with no card
+           round it, because a box in a frame read as one thing wrapped in
+           another, Tim, 20 November 2026. What it is for waits behind the
+           info mark. -->
+      <section class="group prompt">
+        {#each forDrafts as s (s.key)}
+          <div class="headrow">
+            <h2 id="head-{s.key}">First message</h2>
+            <span class="ask"><Info label="About the prompt" side="left">{s.description}</Info></span>
+          </div>
+          <SettingRow setting={s} onsaved={saved} bare labelledby="head-{s.key}" />
+        {/each}
       </section>
     {/if}
     {#if forSearches.length}
@@ -91,4 +99,7 @@
 
 <style>
   .group h2 { font-size: 15px; margin: 0; }
+  /* The heading with its info mark at the far end, as on the model rows. */
+  .headrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .headrow .ask { align-self: flex-start; margin: 1px 1px 0 0; }
 </style>

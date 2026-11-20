@@ -195,8 +195,23 @@ const walks = [
       await line.filter({ hasText: /^By Google\./ }).waitFor()
       const title = (await page.locator('.language .desc').first().innerText()).trim()
       if (title !== 'Gemma 4 26B A4B') return `the model reads ${JSON.stringify(title)}`
+      // The language model comes before the speech model.
+      const order = await page.evaluate(() => {
+        const l = document.querySelector('#language'), s = document.querySelector('#speech')
+        return l && s ? l.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING : 0
+      })
+      if (!order) return 'the speech model comes before the language model'
       const prompt = page.locator('#set-first_message_prompt')
       if ((await prompt.evaluate((t) => t.tagName)) !== 'TEXTAREA') return 'the prompt is a field of one line'
+      // The box stands on its own: nothing round it draws a line of its own.
+      const framed = await prompt.evaluate((t) => {
+        for (let e = t.parentElement; e && !e.classList.contains('group'); e = e.parentElement) {
+          if (parseFloat(getComputedStyle(e).borderTopWidth) > 0) return e.className
+        }
+        return ''
+      })
+      if (framed) return `the prompt sits in a frame, ${framed}`
+      if ((await prompt.getAttribute('aria-labelledby')) !== 'head-first_message_prompt') return 'the prompt has no name'
       const text = await prompt.inputValue()
       if (!text.includes('{{profile}}')) return 'the prompt has no {{profile}}'
       await prompt.fill(text.replace('{{profile}}', ''))

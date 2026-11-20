@@ -3,8 +3,15 @@
   import { fmtAgo } from '../format'
   import { errorText } from '../toast.svelte'
 
-  // One setting with an editor that fits its JSON type.
-  let { setting, onsaved }: { setting: Setting; onsaved: (s: Setting) => void } = $props()
+  // One setting with an editor that fits its JSON type. Bare, it is the
+  // editor alone, named by the heading above it, labelledby, with no row
+  // round it: the prompt in Settings.
+  let { setting, onsaved, bare = false, labelledby }: {
+    setting: Setting
+    onsaved: (s: Setting) => void
+    bare?: boolean
+    labelledby?: string
+  } = $props()
 
   type Kind = 'boolean' | 'number' | 'string' | 'list' | 'json'
   function kindOf(v: Json): Kind {
@@ -97,11 +104,13 @@
   }
 </script>
 
-<form class="setting" class:long onsubmit={save} novalidate>
-  <div class="info">
-    <label for={id} class="desc">{setting.description || setting.key}</label>
-    <span class="key num" title="Changed {fmtAgo(setting.updated_at)}">{setting.key}</span>
-  </div>
+<form class="setting" class:long class:bare onsubmit={save} novalidate>
+  {#if !bare}
+    <div class="info">
+      <label for={id} class="desc">{setting.description || setting.key}</label>
+      <span class="key num" title="Changed {fmtAgo(setting.updated_at)}">{setting.key}</span>
+    </div>
+  {/if}
   <div class="editor" class:bool={kind === 'boolean'}>
     {#if kind === 'boolean'}
       <button {id} type="button" role="switch" class="switch" aria-checked={text === 'true'} onclick={toggle} disabled={status === 'saving'}>
@@ -113,7 +122,7 @@
         onblur={() => save()} onkeydown={keydown} aria-invalid={!parsed.ok ? 'true' : undefined} />
     {:else if long}
       <textarea {id} class="textarea" rows={lines} bind:value={text} oninput={() => (status = 'idle')}
-        onblur={() => save()} onkeydown={keydown}></textarea>
+        onblur={() => save()} onkeydown={keydown} aria-labelledby={labelledby}></textarea>
     {:else if kind === 'string'}
       <input {id} class="input" type="text" bind:value={text} oninput={() => (status = 'idle')} onblur={() => save()} onkeydown={keydown} />
     {:else}
@@ -149,6 +158,7 @@
   .long .editor { justify-content: stretch; }
   .long .editor .textarea { width: 100%; }
   .long .foot { justify-content: flex-start; }
+  .bare { padding: 0; }
   .editor .input { width: 220px; }
   .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
   .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }

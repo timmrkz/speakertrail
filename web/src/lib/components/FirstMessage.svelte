@@ -189,8 +189,9 @@
   )
 </script>
 
-<!-- Draft and Cancel take one place in the row, so nothing moves when
-     one turns into the other. While it writes, the draft carries the beam
+<!-- Draft and Cancel take one place in the row, each as wide as its words,
+     so LinkedIn after it moves a little as one turns into the other. While
+     it writes, the draft carries the beam
      and the fill in the one control that can do something about it, as a
      download does in Settings. Only one button in the row is filled:
      Connect, until Tim is connected, and then Draft while there is no

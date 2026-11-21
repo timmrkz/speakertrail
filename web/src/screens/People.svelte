@@ -238,7 +238,6 @@
 
   let others = $derived(counts ? counts.all : 0)
 
-  // Keep the list in step with changes made in the sheet.
   // The open person's name, from the person once loaded, and from the
   // list until then. A person can be open who is not in the list shown.
   let named = $state<{ id: number; name: string } | null>(null)
@@ -246,6 +245,7 @@
     openId === null ? '' : named?.id === openId ? named.name : (people.data?.find((x) => x.id === openId)?.name ?? ''),
   )
 
+  // Keep the list in step with changes made in the sheet.
   function updated(p: Detail) {
     if (!people.data) return
     people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))

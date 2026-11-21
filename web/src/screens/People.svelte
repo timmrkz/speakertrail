@@ -261,10 +261,12 @@
     }
     if (open) return { title: 'Nobody under 30 yet', text: `${plural(open, 'person', 'people')} ${found}, none of them likely under 30.` }
     const matches = (n: number) => (n === 1 ? 'matches' : 'match')
+    if (connected && rejected && query) return { title: 'Only under Connected and Rejected', text: `${plural(connected, 'person', 'people')} you connected with and ${rejected} whose profile you rejected match this search.`, show: 'connected' }
     if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${matches(connected)} this search.`, show: 'connected' }
     if (rejected && query) return { title: 'Only under Rejected', text: `${plural(rejected, 'person', 'people')} whose profile you rejected ${matches(rejected)} this search.`, show: 'rejected' }
     if (connected && !rejected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, show: 'connected' }
-    if (connected || rejected) return { title: 'Nobody left to go through', text: `${plural(connected + rejected, 'person', 'people')} found so far, ${connected} connected and ${rejected} rejected. Press Run to find more.`, show: connected ? 'connected' : 'rejected' }
+    if (rejected && !connected) return { title: 'Nobody left to go through', text: `${plural(rejected, 'person', 'people')} found so far, all of them rejected. Press Run to find more.`, show: 'rejected' }
+    if (connected) return { title: 'Nobody left to go through', text: `${plural(connected + rejected, 'person', 'people')} found so far, ${connected} connected and ${rejected} rejected. Press Run to find more.`, show: 'connected' }
     return { title: filter === 'young' ? 'Nobody under 30 yet' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
   })
 

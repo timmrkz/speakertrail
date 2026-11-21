@@ -414,7 +414,7 @@ func career(steps []search.Step) (born int, reason, roles string) {
 
 // score runs the fit rubric over a person as of now.
 func score(p *store.Person, now time.Time) {
-	if p.LinkedIn.Review == "rejected" {
+	if p.Rejected() {
 		p.Signals, p.Score, p.Rubric = []store.Signal{}, 0, rubric.Version
 		return
 	}

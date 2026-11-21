@@ -92,8 +92,8 @@ const walks = [
   },
   {
     // A search can find someone else's LinkedIn profile. Not this person
-    // sets it aside, and the toast's Undo brings it back as it was.
-    name: 'Not this person sets the LinkedIn profile aside, and Undo brings it back',
+    // rejects it, and the toast's Undo brings it back as it was.
+    name: 'Not this person rejects the LinkedIn profile, and Undo brings it back',
     async run(page) {
       await page.goto(`${url}/app/people/1001`)
       const linkedin = page.locator('.actions a.btn')
@@ -101,7 +101,7 @@ const walks = [
       const before = await review(page, 1001)
       await page.getByRole('button', { name: 'Not this person' }).click()
       await linkedin.waitFor({ state: 'detached' })
-      if ((await review(page, 1001)) !== 'rejected') return 'the profile was not set aside'
+      if ((await review(page, 1001)) !== 'rejected') return 'the profile was not rejected'
       await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
       await linkedin.waitFor()
       const after = await review(page, 1001)
@@ -109,9 +109,9 @@ const walks = [
       // Once the toast is gone, the line under the buttons undoes it.
       await page.getByRole('button', { name: 'Not this person' }).click()
       await linkedin.waitFor({ state: 'detached' })
-      await page.locator('.set-aside').getByRole('button', { name: 'Undo' }).click()
+      await page.locator('.who .rejected').getByRole('button', { name: 'Undo' }).click()
       await linkedin.waitFor()
-      if ((await review(page, 1001)) === 'rejected') return 'the line\'s Undo left the profile set aside'
+      if ((await review(page, 1001)) === 'rejected') return 'the line\'s Undo left the profile rejected'
       return ''
     },
   },
@@ -205,7 +205,6 @@ const walks = [
       const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
       await page.goto(`${url}/app/people`)
       await page.locator('.prow').first().waitFor()
-      await page.waitForLoadState('networkidle')
       const before = await rows()
       const all = await count('All')
       const rejected = await count('Rejected')
@@ -225,13 +224,12 @@ const walks = [
       await empty.waitFor()
       await empty.getByRole('button', { name: 'Show under Rejected' }).click()
       await page.locator(`#${id}`).click()
-      await page.locator('.set-aside').getByRole('button', { name: 'Undo' }).click()
+      await page.locator('.who .rejected').getByRole('button', { name: 'Undo' }).click()
       await page.locator(`#${id}`).waitFor({ state: 'detached' })
       await page.keyboard.press('Escape')
       await page.getByLabel('Search people').first().fill('')
       await page.locator('main .filters button', { hasText: 'All' }).click()
       await page.locator(`#${id}`).waitFor()
-      await page.waitForLoadState('networkidle')
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`undone, the list is ${await rows()}, was ${before}`)
       if ((await count('Rejected')) !== rejected) wrong.push(`undone, Rejected counts ${await count('Rejected')}, want ${rejected}`)
       return wrong.join('\n\t')

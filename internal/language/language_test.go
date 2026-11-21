@@ -474,15 +474,50 @@ func TestCheckingFrameFairysCopySaysHowFar(t *testing.T) {
 		t.Errorf("the check did not say how far it was: %+v", said)
 	}
 
-	// Cancelled while it checks: nothing is taken and nothing downloads.
+	// Cancelled from another goroutine while it checks, as Cancel in
+	// Settings is: nothing is taken and nothing downloads.
 	ctx, cancel := context.WithCancel(t.Context())
 	dir = t.TempDir()
+	checking := make(chan struct{})
+	cancelled := make(chan struct{})
+	var once sync.Once
 	in.Report = func(p *fetch.Progress) {
 		if p != nil && p.Fraction > 0 {
-			cancel()
+			once.Do(func() {
+				close(checking)
+				<-cancelled
+			})
 		}
 	}
+	go func() {
+		<-checking
+		cancel()
+		close(cancelled)
+	}()
 	if err := in.Install(ctx, m, dir); !errors.Is(err, fetch.ErrCancelled) || m.Installed(dir) {
 		t.Errorf("Cancel during the check: %v, installed %v", err, m.Installed(dir))
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("Cancel left %d files behind", len(entries))
+	}
+}
+
+// A download that arrived whole and was stopped before it was moved into
+// place is read through again to check it, saying how far it is, and is
+// not fetched again.
+func TestAWholeDownloadIsCheckedNotFetched(t *testing.T) {
+	m, data := fakeModel(strings.Repeat("weights", 300_000))
+	asked := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { asked++; w.Write(data) }))
+	defer srv.Close()
+	m.URL = srv.URL + "/probe.gguf"
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, m.Name+".part"), data, 0o644)
+	clock := time.Unix(0, 0)
+	checked := false
+	in := Installer{Now: func() time.Time { clock = clock.Add(time.Second); return clock },
+		Report: func(p *fetch.Progress) { checked = checked || (p != nil && p.Text == "checking" && p.Fraction > 0) }}
+	if err := in.Install(t.Context(), m, dir); err != nil || !m.Installed(dir) || asked != 0 || !checked {
+		t.Errorf("%v, installed %v, %d downloads, said it checked %v", err, m.Installed(dir), asked, checked)
 	}
 }

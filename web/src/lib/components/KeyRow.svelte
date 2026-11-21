@@ -1,18 +1,18 @@
 <script lang="ts">
   import { api } from '../api'
-  import { keyWatch } from '../keys.svelte'
+  import { exaWatch } from '../exa.svelte'
   import { errorText, toast } from '../toast.svelte'
 
   // The Exa key, which every run needs. It goes into the macOS keychain
   // and never comes back to the window: the row only learns whether it is
   // saved.
-  const use = $derived(keyWatch.exa)
+  const use = $derived(exaWatch.exa)
   let key = $state('')
   let status = $state<'idle' | 'saving' | 'removing'>('idle')
   let error = $state('')
 
   function load() {
-    keyWatch.read().catch((e) => (error = errorText(e)))
+    exaWatch.read().catch((e) => (error = errorText(e)))
   }
   load()
 

@@ -173,11 +173,25 @@ const walks = [
   {
     name: 'Settings in the sidebar wears no dot while nothing there stands in the way',
     async run(page) {
+      // Both answers in, then the rail is read, rather than a wait on
+      // the clock.
+      const answered = Promise.all([page.waitForResponse('**/api/keys'), page.waitForResponse('**/api/language')])
       await page.goto(`${url}/app/people/1000`)
+      await answered
       await page.locator('.first-message').waitFor()
-      await page.waitForFunction(() => document.querySelector('.first-message button.act')?.title !== undefined)
-      await page.waitForTimeout(200)
       if (await page.locator('a.nav[href="/app/settings"] .dot').count()) return 'Settings wears a dot with the key saved and the model here'
+      return ''
+    },
+  },
+  {
+    name: 'Settings in the sidebar wears a red dot without the Exa key',
+    async run(page) {
+      await page.route('**/api/keys', (route) => route.fulfill({ json: { keys: [{ provider: 'exa', used: 0, budget: 1000, set: false }] } }))
+      await page.goto(`${url}/app/people/1000`)
+      const settings = page.locator('a.nav[href="/app/settings"]')
+      await settings.locator('.dot.err').waitFor()
+      const title = await settings.getAttribute('title')
+      if (title !== 'Settings. Runs need the Exa key') return `Settings in the sidebar says ${JSON.stringify(title)}`
       return ''
     },
   },
@@ -187,12 +201,13 @@ const walks = [
       await page.route('**/api/language', (route) => route.fulfill({ json: {
         models: [{ name: 'gemma-4-26b-a4b', title: 'Gemma 4 26B A4B', maker: 'Google', about: '', download: 15_500_000_000,
           recommended: true, installed: false, inUse: true, needs: 16_624_595_968, fit: 'fits' }],
-        folder: '~/Library/Application Support/Speaker Trail/models', server: true } }))
+        folder: '~/Library/Application Support/Speaker Trail/models', server: true,
+        standing: { mark: 'warn', why: 'Drafts need Gemma 4 26B A4B. Download it in Settings' } } }))
       let asked = 0
       await page.route(/\/api\/people\/\d+\/draft$/, (route) => { asked++; return route.fulfill({ status: 409, json: { error: 'no' } }) })
       await page.goto(`${url}/app/people/1000`)
       await page.locator('.first-message').waitFor()
-      await page.waitForFunction(() => /Download a language model/.test(document.querySelector('.first-message button.act')?.title ?? ''))
+      await page.waitForFunction(() => /Download it in Settings/.test(document.querySelector('.first-message button.act')?.title ?? ''))
       await act(page).click()
       await page.locator('#language').waitFor()
       await page.waitForFunction(() => {
@@ -205,7 +220,7 @@ const walks = [
       const settings = page.locator('a.nav[href="/app/settings"]')
       if (!(await settings.locator('.dot.warn').count())) return 'Settings in the sidebar wears no dot without a model'
       const title = await settings.getAttribute('title')
-      if (!/language model/.test(title)) return `Settings in the sidebar says ${JSON.stringify(title)}`
+      if (title !== 'Settings. Drafts need Gemma 4 26B A4B. Download it in Settings') return `Settings in the sidebar says ${JSON.stringify(title)}`
       return ''
     },
   },

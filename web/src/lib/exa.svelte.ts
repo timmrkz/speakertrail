@@ -4,7 +4,7 @@
 // Settings say the same. The key itself never comes back to the window.
 import { api, type SearchUse } from './api'
 
-class KeyWatch {
+class ExaWatch {
   exa = $state<SearchUse | null>(null)
   loaded = $state(false)
 
@@ -16,4 +16,4 @@ class KeyWatch {
   }
 }
 
-export const keyWatch = new KeyWatch()
+export const exaWatch = new ExaWatch()

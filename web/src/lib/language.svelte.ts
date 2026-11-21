@@ -7,7 +7,7 @@ import { Events } from '@wailsio/runtime'
 import { api, type LanguageModel, type LanguageState } from './api'
 
 class LanguageWatch {
-  state = $state<LanguageState>({ models: [], folder: '', server: false })
+  state = $state<LanguageState>({ models: [], folder: '', server: false, standing: { mark: 'ok', why: '' } })
   // Whether the app has answered once, so nothing is said about the
   // models before it is known.
   loaded = $state(false)

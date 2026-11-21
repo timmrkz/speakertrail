@@ -83,10 +83,14 @@ func (in Installer) Install(ctx context.Context, m Model, dir string) error {
 		noteChecked(dir, m, final)
 		return nil
 	}
-	sum, ok := fetch.Arrived(part, m.Download, m.SHA256)
-	if !ok {
-		var err error
-		g := fetch.Getter{Client: in.Client, Report: in.Report, Now: in.Now}
+	// A download that arrived whole and was stopped before it was moved
+	// into place is checked rather than fetched again.
+	g := fetch.Getter{Client: in.Client, Report: in.Report, Now: in.Now}
+	sum, err := g.Check(ctx, part, m.Download, "checking")
+	if err != nil {
+		return err
+	}
+	if m.SHA256 == "" || !strings.EqualFold(sum, m.SHA256) {
 		if sum, err = g.Get(ctx, m.URL, m.Download, part, m.Title); err != nil {
 			return err
 		}
@@ -248,11 +252,11 @@ func (in Installer) take(ctx context.Context, m Model, part string) (bool, error
 			in.Report(&fetch.Progress{Text: "copying", Fraction: fetch.Unknown, Remaining: fetch.Unknown})
 		}
 		g := fetch.Getter{Report: in.Report, Now: in.Now}
-		ok, err := g.Check(ctx, there, m.Download, m.SHA256, "copying")
+		sum, err := g.Check(ctx, there, m.Download, "copying")
 		if err != nil {
 			return false, err
 		}
-		if !ok {
+		if !strings.EqualFold(sum, m.SHA256) {
 			continue
 		}
 		os.Remove(part)

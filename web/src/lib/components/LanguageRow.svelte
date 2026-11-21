@@ -24,7 +24,9 @@
     }
     const done = p && p.fraction > 0 ? `${size(p.fraction * m.download)} of ${size(m.download)}` : size(m.download)
     const left = p && p.remaining > 0 ? `, ${fmtLeft(p.remaining)}` : ''
-    return `Downloading, ${done}${left}`
+    // A download that arrived whole before it was stopped is read through
+    // again to check it.
+    return `${p?.text === 'checking' ? 'Checking what arrived' : 'Downloading'}, ${done}${left}`
   }
 
   // How this Mac stands with a model, said beside its size when it is short
@@ -58,8 +60,9 @@
   }
 
   function ready(m: LanguageModel): Line {
-    if (!languageWatch.state.server) return { text: 'This build of the app has no llama-server to run it.', tone: 'err', state: 'err' }
-    if (m.fit === 'too big') return { text: `It needs ${size(m.needs)} of memory, more than this Mac has.`, tone: 'err', state: 'err' }
+    // What stands in the way is the app's to say, see LanguageStanding.
+    const st = languageWatch.state.standing
+    if (st.mark !== 'ok') return { text: `${st.why}.`, tone: st.mark, state: st.mark }
     const from = m.shared ? `By ${m.maker}, shared with FrameFairy on disk.` : `By ${m.maker}.`
     return { text: `${from} Takes about ${size(m.needs)} of memory while it writes.`, tone: '', state: 'ok' }
   }

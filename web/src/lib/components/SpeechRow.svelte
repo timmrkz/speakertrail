@@ -10,12 +10,15 @@
 
   function downloading(m: SpeechModel, p: ModelProgress | undefined): string {
     // Unpacking is told like the download, against what the model takes
-    // once unpacked, so neither is work with no end in sight.
+    // once unpacked, so neither is work with no end in sight. A download
+    // that arrived whole before it was stopped is read through again to
+    // check it.
     const unpacking = p?.text === 'unpacking'
     const whole = unpacking ? m.unpacked : m.download
     const done = p && p.fraction > 0 ? `${size(p.fraction * whole)} of ${size(whole)}` : size(whole)
     const left = p && p.remaining > 0 ? `, ${fmtLeft(p.remaining)}` : ''
-    return `${unpacking ? 'Unpacking' : 'Downloading'}, ${done}${left}`
+    const doing = unpacking ? 'Unpacking' : p?.text === 'checking' ? 'Checking what arrived' : 'Downloading'
+    return `${doing}, ${done}${left}`
   }
 </script>
 

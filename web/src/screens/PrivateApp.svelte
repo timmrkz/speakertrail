@@ -9,7 +9,7 @@
   import { runWatch } from '../lib/run.svelte'
   import { sidebar } from '../lib/sidebar.svelte'
   import { titleBar } from '../lib/chrome.svelte'
-  import { keyWatch } from '../lib/keys.svelte'
+  import { exaWatch } from '../lib/exa.svelte'
   import { languageWatch } from '../lib/language.svelte'
   import { railDot, standing, updates } from '../lib/updates.svelte'
   import { reporting } from '../lib/reporting.svelte'
@@ -41,14 +41,16 @@
   // here, so the way there is marked too.
   $effect(() => languageWatch.watch())
   $effect(() => {
-    keyWatch.read().catch(() => {})
+    exaWatch.read().catch(() => {})
   })
+  // What stands in the way of a draft is the app's to judge, see
+  // LanguageStanding in languagemodels.go. Here it is only drawn.
   let settingsNeed = $derived.by((): { dot: string; why: string } => {
     const job = languageWatch.state.job
     if (job && (job.state === 'running' || job.state === 'queued')) return { dot: 'busy', why: 'The language model is downloading' }
-    if (keyWatch.loaded && !keyWatch.exa?.set) return { dot: 'err', why: 'Runs need the Exa key' }
-    if (languageWatch.loaded && !languageWatch.state.server) return { dot: 'err', why: 'This build has no llama-server to draft with' }
-    if (languageWatch.loaded && !languageWatch.inUse?.installed) return { dot: 'warn', why: 'Drafts need the language model downloaded' }
+    if (exaWatch.loaded && !exaWatch.exa?.set) return { dot: 'err', why: 'Runs need the Exa key' }
+    const st = languageWatch.loaded ? languageWatch.state.standing : undefined
+    if (st && st.mark !== 'ok') return { dot: st.mark, why: st.why }
     return { dot: '', why: '' }
   })
 

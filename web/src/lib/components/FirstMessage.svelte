@@ -21,7 +21,7 @@
   // Without a model here, or llama-server to run it, Draft leads to the
   // model in Settings rather than starting work that cannot end, the way
   // a control in FrameFairy that needs its model sends there.
-  const noModel = $derived(languageWatch.loaded && (!languageWatch.inUse?.installed || !languageWatch.state.server))
+  const noModel = $derived(languageWatch.loaded && languageWatch.state.standing.mark !== 'ok')
   const job = $derived(draftWatch.of(person.id))
   const running = $derived(underWay(job) ? job : undefined)
   const busy = $derived(!!running)
@@ -208,7 +208,7 @@
       </button>
     {:else}
       <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
-        title={noModel ? 'Download a language model in Settings first. It writes the message on this Mac'
+        title={noModel ? languageWatch.state.standing.why
           : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
         {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
       </button>

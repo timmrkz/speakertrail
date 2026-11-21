@@ -47,6 +47,18 @@ type LanguageState struct {
 	Folder string              `json:"folder"`
 	Server bool                `json:"server"`
 	Job    *ModelJob           `json:"job,omitempty"`
+	// Standing is whether a draft can be written now, and what stands in
+	// the way when it cannot, said here once for the line in Settings, the
+	// dot on Settings in the sidebar and where Draft sends.
+	Standing LanguageStanding `json:"standing"`
+}
+
+// LanguageStanding is whether drafts can be written: ok, warn when a
+// download would do, err when this Mac or this build cannot. Why says
+// what stands in the way, empty when nothing does.
+type LanguageStanding struct {
+	Mark string `json:"mark"`
+	Why  string `json:"why"`
 }
 
 type languageModels struct {
@@ -63,19 +75,26 @@ type languageModels struct {
 	// the app's file. Empty is none picked.
 	chosen func() string
 	choose func(name string) error
+	// server says whether this build carries llama-server, see
+	// language.FindServer.
+	server func() bool
 }
 
 func newLanguageModels(dir string, host *language.Host, told func(LanguageState)) *languageModels {
 	s := &languageModels{dir: dir, models: language.Models, memory: language.MachineMemory(), host: host, told: told}
 	s.get = &downloads{kind: "language", tell: s.tell}
+	s.server = func() bool {
+		_, err := language.FindServer()
+		return err == nil
+	}
 	return s
 }
 
 func (s *languageModels) state() LanguageState {
 	models := s.models()
-	_, serverErr := language.FindServer()
-	st := LanguageState{Models: []LanguageModelView{}, Folder: tildePath(s.dir), Server: serverErr == nil}
+	server := s.server()
 	using := s.using(models)
+	st := LanguageState{Models: []LanguageModelView{}, Folder: tildePath(s.dir), Server: server, Standing: s.standing(using, server)}
 	offered, _ := language.Recommended(models, s.memory)
 	for _, m := range models {
 		st.Models = append(st.Models, LanguageModelView{Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name,
@@ -104,6 +123,23 @@ func (s *languageModels) using(models []language.Model) language.Model {
 	}
 	m, _ := language.InUse(models, s.dir)
 	return m
+}
+
+// standing says whether the model that drafts, m, can, and what stands
+// in the way when it cannot. A model to download is a warning, a build
+// or a Mac that cannot run it an error.
+func (s *languageModels) standing(m language.Model, server bool) LanguageStanding {
+	switch {
+	case !server:
+		return LanguageStanding{Mark: "err", Why: "This build has no llama-server to draft with"}
+	case m.Name == "":
+		return LanguageStanding{Mark: "warn", Why: "Drafts need a language model. Download one in Settings"}
+	case !m.Installed(s.dir):
+		return LanguageStanding{Mark: "warn", Why: fmt.Sprintf("Drafts need %s. Download it in Settings", m.Title)}
+	case m.FitsIn(s.memory) == language.TooBig:
+		return LanguageStanding{Mark: "err", Why: fmt.Sprintf("%s needs %s of memory, more than this Mac has", m.Title, fetch.InMB(m.Needs))}
+	}
+	return LanguageStanding{Mark: "ok"}
 }
 
 // inUse is the model that drafts and its file, draft.ErrNoModel when it

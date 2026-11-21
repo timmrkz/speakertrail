@@ -194,23 +194,6 @@ func (in Getter) Get(ctx context.Context, url string, expect int64, path, what s
 	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
-// Arrived says whether the file at path is the whole of a download of
-// size bytes whose SHA-256 is sha, judged by its size and its checksum,
-// and gives the checksum. A download that finished and was stopped before
-// it was put in place is then not fetched again.
-func Arrived(path string, size int64, sha string) (string, bool) {
-	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || sha == "" || info.Size() != size {
-		return "", false
-	}
-	sum := sha256.New()
-	if err := hashInto(sum, path, info.Size()); err != nil {
-		return "", false
-	}
-	got := hex.EncodeToString(sum.Sum(nil))
-	return got, strings.EqualFold(got, sha)
-}
-
 // downloadRoom is how far past its known size a download may go: a
 // hundredth of it, and never less than a megabyte.
 func downloadRoom(expect int64) int64 {
@@ -235,29 +218,29 @@ func (r watchedReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// Check reads a file that is already on the disk through its checksum,
-// saying how far it is the way a download does, in the words text gives.
-// A model is gigabytes, and reading it takes seconds that would otherwise
-// show nothing. It answers whether the file is whole and the one sha
-// names, and ErrCancelled when ctx ends first.
-func (in Getter) Check(ctx context.Context, path string, size int64, sha, text string) (bool, error) {
+// Check reads a file that is already on the disk through its checksum
+// and answers the checksum, saying how far it is the way a download does,
+// in the words text gives. A model is gigabytes, and reading it takes
+// seconds that would otherwise show nothing. It answers "" for no file or
+// one of another size, and ErrCancelled when ctx ends first.
+func (in Getter) Check(ctx context.Context, path string, size int64, text string) (string, error) {
 	info, err := os.Stat(path)
-	if err != nil || !info.Mode().IsRegular() || sha == "" || info.Size() != size {
-		return false, nil
+	if err != nil || !info.Mode().IsRegular() || info.Size() != size {
+		return "", nil
 	}
 	file, err := os.Open(path)
 	if err != nil {
-		return false, nil
+		return "", nil
 	}
 	defer file.Close()
 	sum := sha256.New()
 	if _, err := in.copyWithProgress(ctx, sum, io.LimitReader(file, size), 0, size, func(int64, int64, string) string { return text }); err != nil {
 		if errors.Is(err, ErrCancelled) {
-			return false, err
+			return "", err
 		}
-		return false, nil
+		return "", nil
 	}
-	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), sha), nil
+	return hex.EncodeToString(sum.Sum(nil)), nil
 }
 
 // hashInto feeds the first n bytes of a file to a checksum.

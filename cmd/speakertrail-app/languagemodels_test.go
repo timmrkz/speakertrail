@@ -41,7 +41,8 @@ func TestTheLanguageModelInSettings(t *testing.T) {
 	}
 	s.get.wait()
 	st := s.state()
-	if st.Job.State != "done" || !st.Models[0].Installed || !st.Models[0].InUse {
+	// Downloaded, it is nobody else's file.
+	if st.Job.State != "done" || !st.Models[0].Installed || !st.Models[0].InUse || st.Models[0].Shared {
 		t.Errorf("after the download: %+v", st)
 	}
 	if got, path, err := s.inUse(); err != nil || got.Name != m.Name || path != filepath.Join(s.dir, m.Name) {
@@ -99,5 +100,43 @@ func TestPickingTheLanguageModel(t *testing.T) {
 	}
 	if chosen != "" {
 		t.Errorf("the choice outlived the model: %q", chosen)
+	}
+}
+
+// What stands in the way of a draft is said by the app, once, and the
+// window draws it: the line in Settings, the dot on Settings in the
+// sidebar and where Draft sends. A model too big for the Mac showed red
+// in Settings and no dot in the sidebar while each worked it out alone.
+func TestWhatStandsInTheWayOfADraft(t *testing.T) {
+	small := language.Model{Name: "small.gguf", Title: "Small", Needs: 1 << 30}
+	large := language.Model{Name: "large.gguf", Title: "Large", Needs: 64 << 30}
+	var chosen string
+	server := true
+	s := newLanguageModels(t.TempDir(), nil, nil)
+	s.memory = 32 << 30
+	s.server = func() bool { return server }
+	s.models = func() []language.Model { return []language.Model{large, small} }
+	s.chosen = func() string { return chosen }
+	s.choose = func(name string) error { chosen = name; return nil }
+	for _, c := range []struct {
+		name   string
+		before func()
+		mark   string
+		why    string
+	}{
+		{"nothing here", func() {}, "warn", "Drafts need a language model. Download one in Settings"},
+		{"the one picked is not here", func() {
+			os.WriteFile(filepath.Join(s.dir, small.Name), []byte("GGUF"), 0o644)
+			chosen = large.Name
+		}, "warn", "Drafts need Large. Download it in Settings"},
+		{"too big for this Mac", func() { os.WriteFile(filepath.Join(s.dir, large.Name), []byte("GGUF"), 0o644) }, "err", "Large needs 68.7 GB of memory, more than this Mac has"},
+		{"no llama-server", func() { chosen = small.Name; server = false }, "err", "This build has no llama-server to draft with"},
+		{"ready", func() { server = true }, "ok", ""},
+	} {
+		c.before()
+		got := s.state().Standing
+		if got.Mark != c.mark || got.Why != c.why {
+			t.Errorf("%s: %+v", c.name, got)
+		}
 	}
 }

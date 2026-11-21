@@ -146,6 +146,12 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   the Mac draws in its own box. The People order, the LinkedIn profile,
   the Updates channel and the language model all use it, and
   `walks/pick.mjs` walks it.
+- **The sidebar wears a dot where something needs a look.** Updates, from
+  where its updates stand, and Settings, from the Exa key and the
+  language model's `standing`: red when runs or drafts cannot work, amber
+  when a download would do, pulsing while the model comes. The app judges
+  it, the window only draws it. Tim asked for the one on Settings on 21
+  November 2026. `walks/draft.mjs` and `walks/pick.mjs` walk its states.
 - **Opening something never relays out what is beside it.** A row has the
   same lines at any width, so a person opening only narrows the list. A
   container query on a pane that another pane squeezes brings the shuffle

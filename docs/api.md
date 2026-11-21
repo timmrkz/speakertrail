@@ -273,7 +273,17 @@ A model FrameFairy has whole in `~/.framefairy/models`, by its size and
 checksum, is linked from there rather than downloaded, so the two apps
 share it on disk. While it is checked, `progress.text` is `copying`, with
 the share read so far and the seconds left as a download has them, and
-Cancel stops it. Such a model is `shared` from then on.
+Cancel stops it. Such a model is `shared` from then on. A download that
+arrived whole before it was stopped is read through again the same way,
+with `progress.text` `checking`, rather than fetched again. The speech
+models do the same.
+
+`standing` is whether a draft can be written now, `{"mark": "ok", "why": ""}`,
+and what stands in the way when it cannot: `warn` when the model that
+drafts is not downloaded, `err` when this build has no llama-server or
+the model needs more memory than this Mac has. `why` says it in a
+sentence. Settings, the dot on Settings in the sidebar and Draft all show
+this, and none of them works it out alone.
 
 `needs` is the memory the model takes while it writes, in bytes, and
 `fit` what this Mac can do with it: `fits`, `tight`, `too big` or

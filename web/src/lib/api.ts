@@ -442,7 +442,16 @@ export interface LanguageModel {
   shared: boolean
 }
 
+// Whether a draft can be written now, and what stands in the way when it
+// cannot, as the app judges it: ok, warn when a download would do, err
+// when this Mac or this build cannot.
+export interface LanguageStanding {
+  mark: 'ok' | 'warn' | 'err'
+  why: string
+}
+
 export interface LanguageState {
+  standing: LanguageStanding
   models: LanguageModel[]
   folder: string
   // Whether llama-server is in the app, to run a model with.

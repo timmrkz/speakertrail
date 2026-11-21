@@ -88,9 +88,11 @@ func (in Installer) Install(ctx context.Context, m Model, dir string) error {
 
 	// An archive that arrived whole and was stopped while it unpacked is
 	// not fetched again: what is on disk is checked and unpacked as it is.
-	sum, ok := fetch.Arrived(part, m.Download, m.SHA256)
-	if !ok {
-		var err error
+	sum, err := in.getter().Check(ctx, part, m.Download, "checking")
+	if err != nil {
+		return err
+	}
+	if m.SHA256 == "" || !strings.EqualFold(sum, m.SHA256) {
 		if sum, err = in.getter().Get(ctx, m.URL, m.Download, part, m.Title); err != nil {
 			return err
 		}

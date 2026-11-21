@@ -117,6 +117,8 @@ await walk('Checking FrameFairy’s copy says how far it is, on Cancel', async (
   expect(`the line said "${line}"`, /^Checking FrameFairy’s copy, 5\.8 GB of 14\.4 GB, .+/.test(line))
   const fill = await page.locator('#language button.act .fill i').evaluate((i) => getComputedStyle(i).transform)
   expect(`Cancel is not filled to 40 %: ${fill}`, fill !== 'none')
+  // And Settings in the sidebar pulses, as work in hand does.
+  expect('Settings in the sidebar does not pulse while the model comes', await page.locator('a.nav[href="/app/settings"] .dot.busy').count() === 1)
 })
 
 await walk('At 390 px the row fits, with the list under the words', async (browser) => {

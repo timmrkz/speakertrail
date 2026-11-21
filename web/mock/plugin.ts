@@ -930,6 +930,12 @@ function languageState() {
     models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using, shared: false })),
     folder: '~/Library/Application Support/Speaker Trail/models',
     server: true,
+    // As standing in cmd/speakertrail-app/languagemodels.go judges it.
+    standing: !using
+      ? { mark: 'warn', why: 'Drafts need a language model. Download one in Settings' }
+      : !languageHere.has(using)
+        ? { mark: 'warn', why: `Drafts need ${LANGUAGE_MODELS.find((m) => m.name === using)?.title}. Download it in Settings` }
+        : { mark: 'ok', why: '' },
     job,
   }
 }

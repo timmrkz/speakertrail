@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
@@ -30,11 +31,11 @@ var code = func() []byte {
 // them moved along.
 var changed = append(append(append([]byte{}, code[:5000]...), "a new line of code"...), code[5000:]...)
 
-// releaseServing serves the folder pack wrote as the release dev does,
-// under the names publish.yml uploads it as, for a zip of this name.
+// published is the folder pack wrote, under the names publish.yml uploads
+// it as, for a zip of this name.
 //
-// On the real disk: pack leaves the build as files, and the release serves them.
-func releaseServing(t *testing.T, dir, zipName string) *httptest.Server {
+// On the real disk: pack leaves the build as files, and the workflow uploads them.
+func published(t *testing.T, dir, zipName string) map[string][]byte {
 	t.Helper()
 	files := map[string][]byte{}
 	entries, err := os.ReadDir(dir)
@@ -49,10 +50,16 @@ func releaseServing(t *testing.T, dir, zipName string) *httptest.Server {
 		switch name := e.Name(); {
 		case name == partsFile:
 			files[updates.PartsName(zipName)] = data
-		case strings.HasPrefix(name, "piece-"):
+		case strings.HasPrefix(name, "piece-"), strings.HasPrefix(name, "patch-"):
 			files[name] = data
 		}
 	}
+	return files
+}
+
+// releaseServing serves files as the release dev does.
+func releaseServing(t *testing.T, files map[string][]byte) *httptest.Server {
+	t.Helper()
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		data, ok := files[strings.TrimPrefix(r.URL.Path, "/dev/")]
 		if !ok {
@@ -65,20 +72,31 @@ func releaseServing(t *testing.T, dir, zipName string) *httptest.Server {
 	return srv
 }
 
+// basesFrom is pack's bases, read from the release srv serves.
+func basesFrom(srv *httptest.Server, names []string, log io.Writer) bases {
+	b := bases{from: srv.URL + "/dev/", client: srv.Client()}
+	for _, name := range names {
+		if p, ok := b.readParts([]string{name}, log)[name]; ok {
+			b.parts = append(b.parts, p)
+		}
+	}
+	return b
+}
+
 // A build is packed with a patch of each file that changed against the
 // same file of the builds the release holds, which makes the file the
 // app's own code makes from it, weighs less than the piece, and is named
 // in the parts by the file it starts from. A file that did not change has
 // none, and the build signs with them.
 //
-// On the real disk: the release tool reads the zip and the entries, and writes the packed build, as files.
+// On the real disk: the release tool reads the zip, and writes the packed build, as files.
 func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 	release(t)
 	app := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
 	files := theApp("main")
 	files[app] = programOf(code)
 	first := packed(t, files)
-	srv := releaseServing(t, first, "app-main-1.zip")
+	srv := releaseServing(t, published(t, first, "app-main-1.zip"))
 
 	files[app] = programOf(changed)
 	dir := t.TempDir()
@@ -88,7 +106,7 @@ func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 	}
 	second := filepath.Join(dir, "packed")
 	var log bytes.Buffer
-	b := bases{parts: readBases([]string{filepath.Join(first, partsFile)}, &log), from: srv.URL + "/dev/", client: srv.Client()}
+	b := basesFrom(srv, []string{"app-main-1.parts.json"}, &log)
 	if err := pack(in, second, packer, b, &log); err != nil {
 		t.Fatal(err)
 	}
@@ -126,28 +144,28 @@ func TestABuildIsPackedWithPatchesAgainstTheBuildsListed(t *testing.T) {
 }
 
 // What cannot be had of a build patched against, its pieces, or its parts
-// when they are no parts or say another build, costs only its patches,
-// never the publish.
+// when they are gone, no parts or say another build, costs only its
+// patches, never the publish, and the run is warned.
 //
-// On the real disk: the release tool reads the zip and the parts, and writes the packed build, as files.
+// On the real disk: the release tool reads the zip, and writes the packed build, as files.
 func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	release(t)
 	app := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
 	files := theApp("main")
 	files[app] = programOf(code)
 	first := packed(t, files)
-	gone := httptest.NewTLSServer(http.NotFoundHandler())
-	t.Cleanup(gone.Close)
-	notParts := filepath.Join(t.TempDir(), "not-parts.json")
-	if err := os.WriteFile(notParts, []byte("{"), 0o644); err != nil {
-		t.Fatal(err)
+	// The parts are there, the pieces they name are gone.
+	served := map[string][]byte{}
+	for name, data := range published(t, first, "app-main-1.zip") {
+		if strings.HasSuffix(name, ".parts.json") {
+			served[name] = data
+		}
 	}
+	served["app-pr-2.parts.json"] = []byte("{")
 	p := partsIn(t, first)
 	p.Size++
-	otherSize := filepath.Join(t.TempDir(), "other-size.json")
-	if err := os.WriteFile(otherSize, mustMarshal(t, p), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	served["app-pr-3.parts.json"] = mustMarshal(t, p)
+	srv := releaseServing(t, served)
 
 	files[app] = programOf(changed)
 	dir := t.TempDir()
@@ -157,11 +175,15 @@ func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	}
 	out := filepath.Join(dir, "packed")
 	var log bytes.Buffer
-	read := readBases([]string{filepath.Join(first, partsFile), notParts, otherSize}, &log)
-	if len(read) != 1 {
-		t.Fatalf("%d parts were read, want the one that is parts\n%s", len(read), log.String())
+	b := basesFrom(srv, []string{"app-main-1.parts.json", "app-pr-2.parts.json", "app-pr-3.parts.json", "app-pr-4.parts.json"}, &log)
+	if len(b.parts) != 1 {
+		t.Fatalf("%d parts were read, want the one that is parts\n%s", len(b.parts), log.String())
 	}
-	b := bases{parts: read, from: gone.URL + "/dev/", client: gone.Client()}
+	for _, name := range []string{"app-pr-2", "app-pr-3", "app-pr-4"} {
+		if !strings.Contains(log.String(), "::warning::"+name+".parts.json could not be read") {
+			t.Errorf("the run is not warned that %s.parts.json could not be read:\n%s", name, log.String())
+		}
+	}
 	if err := pack(in, out, packer, b, &log); err != nil {
 		t.Fatal(err)
 	}

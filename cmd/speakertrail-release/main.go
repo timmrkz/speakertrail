@@ -10,12 +10,12 @@
 //	    say whether a build could read input meant for other apps, watch
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. It needs no key, so it runs before the key is near.
-//	speakertrail-release pack -zip F -out D [-base PARTS]... [-from URL]
+//	speakertrail-release pack -zip F -out D [-list F -assets F] [-from URL]
 //	    write the build again as the zip it is published as, its files
 //	    stored, with its parts, a piece for every file, a patch of every
-//	    file that changed against the builds whose parts files are given,
-//	    their pieces read from the release, and the zip packed with zstd,
-//	    see pack.go and patches.go
+//	    file that changed against the builds an app may run, read from the
+//	    release, and the zip packed with zstd, see pack.go, patches.go and
+//	    release.go
 //	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F]
 //	    sign a build with the private half, read from SPEAKERTRAIL_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
@@ -26,6 +26,10 @@
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and
 //	    the pull requests that no longer merge into main
+//	speakertrail-release unreachable -list F -assets F [-from URL]
+//	    name the files of the release that no build an app may run
+//	    reaches any more, one a line, for the workflow to remove, see
+//	    release.go
 package main
 
 import (
@@ -72,6 +76,8 @@ func main() {
 		err = sign(os.Args[2:])
 	case "list":
 		err = list(os.Args[2:])
+	case "unreachable":
+		err = unreachableCommand(os.Args[2:])
 	default:
 		usage()
 	}
@@ -82,7 +88,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-base PARTS]... | check -zip FILE | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE")
 	os.Exit(2)
 }
 

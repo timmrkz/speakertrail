@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,12 +27,11 @@ import (
 // starts from. The app downloads the patch when it runs one of those
 // builds, see internal/updates/patch.go.
 //
-// The builds patched against are the ones scripts/bases.sh names: every
+// The builds patched against are the ones release.bases names: every
 // build the channel list holds, and the newest that left it, which the app
-// of a pull request just merged still runs. pack reads their parts, handed
-// to it as files, and the pieces those name from the release, as an app
-// reads them. Whatever of them cannot be had costs only its patches, never
-// the publish.
+// of a pull request just merged still runs. pack reads their parts and the
+// pieces those name from the release, as an app reads them. Whatever of
+// them cannot be had costs only its patches, never the publish.
 
 // bases is what pack patches against: the parts of builds the release
 // holds, and the folder of the release their pieces are read from.
@@ -45,31 +43,6 @@ type bases struct {
 
 // patchTakes is the longest reading one file of the release may take.
 const patchTakes = 5 * time.Minute
-
-// readBases reads the parts of the builds pack patches against. They are
-// read with the app's own rules, against the size and checksum they say
-// they are of, since nothing else here says it.
-//
-// On the real disk: the workflow hands the release tool the parts as files.
-func readBases(paths []string, log io.Writer) []updates.Parts {
-	var out []updates.Parts
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		var p updates.Parts
-		if err == nil {
-			err = json.Unmarshal(data, &p)
-		}
-		if err == nil {
-			p, err = updates.ParseParts(data, p.Size, p.SHA256)
-		}
-		if err != nil {
-			fmt.Fprintf(log, "no patches against %s: %v\n", path, err)
-			continue
-		}
-		out = append(out, p)
-	}
-	return out
-}
 
 // addPatches writes the patches of the files of p, which lie in stored,
 // against the same files of the bases, to out, where they weigh less than

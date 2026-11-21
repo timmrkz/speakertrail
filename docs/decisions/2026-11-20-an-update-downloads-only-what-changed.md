@@ -113,14 +113,16 @@ Simulation 1, ported from FrameFairy as it is, with the patches of 2 on
 top, drawn as layers, each using only the ones under it:
 
 ```
-publish.yml                 check, pack, sign, upload what the release lacks
-scripts/bases.sh            names the builds patched against: the listed ones, and the
+publish.yml                 check, pack, sign, upload what the release lacks, and
+                            remove with gh what unreachable names
+cmd/speakertrail-release    bases: the builds patched against, the listed ones and the
                             newest that left the list
-cmd/speakertrail-release    pack: the stored zip, its parts, its pieces, its patches
+                            pack: the stored zip, its parts, its pieces, its patches
                             against the files of those builds, the stored zip packed
                             sign: the zip the build left, and the stored zip as Stored
-scripts/unreachable.sh      removes zips, packed zips, parts, pieces and patches nothing
-                            reaches, keeping the parts of the builds patched against
+                            unreachable: zips, packed zips, parts, pieces and patches
+                            nothing reaches, keeping the parts of the builds patched
+                            against
 cmd/speakertrail-app        hands Source the running app's folder
 internal/updates            Parts, Part, Patch, Pack, Split, the assembling Download,
                             Patch applied, the packed zip it falls back to

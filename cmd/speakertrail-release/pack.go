@@ -42,13 +42,17 @@ func packCommand(args []string) error {
 	zipPath := fs.String("zip", "", "the zip the build left")
 	out := fs.String("out", "", "the folder the packed build goes in")
 	from := fs.String("from", updates.EntriesURL, "the folder of the release the builds patched against are read from")
-	var parts []string
-	fs.Func("base", "the parts of a build to patch against, as a file, once for each", func(v string) error {
-		parts = append(parts, v)
-		return nil
-	})
+	listPath := fs.String("list", "", "the channel list, to patch against the builds it names")
+	assetsPath := fs.String("assets", "", "the release's files, as gh release view dev --json assets writes them")
 	_ = fs.Parse(args)
-	b := bases{parts: readBases(parts, os.Stdout), from: *from, client: &http.Client{}}
+	b := bases{from: *from, client: &http.Client{}}
+	if r, err := readRelease(*listPath, *assetsPath); err != nil {
+		fmt.Printf("::warning::The release could not be read, so this build has no patches: %v\n", err)
+	} else {
+		for _, p := range b.readParts(r.bases(), os.Stdout) {
+			b.parts = append(b.parts, p)
+		}
+	}
 	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)
 }
 

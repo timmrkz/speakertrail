@@ -56,8 +56,8 @@ then on every build comes from GitHub.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. A newer commit whose build failed
-   is not said to be on its way. `scripts/unreachable.sh` then removes,
-   an hour after they went up, the zips and packed zips no entry points
+   is not said to be on its way. `speakertrail-release unreachable` then
+   names, and gh removes, an hour after they went up, the zips and packed zips no entry points
    at, the parts of every build that is neither listed nor one of the
    newest eight that left the list, and the pieces and patches no
    remaining parts name.
@@ -83,8 +83,9 @@ Only what changed, and of a file that changed, only the difference.
   Each file is published once, packed with zstd, as a piece named by its
   SHA-256, whichever build holds it.
 - **A changed file is a patch.** For each file that changed, `pack` also
-  makes a patch, with bsdiff, against the same file of the builds
-  `scripts/bases.sh` names: every build the channel list holds, and the
+  makes a patch, with bsdiff, against the same file of the builds an app
+  may run, picked in `cmd/speakertrail-release/release.go`: every build
+  the channel list holds, and the
   newest eight that left it, such as the last build of a pull request
   just merged. The parts name each patch by the SHA-256 of the file it
   starts from. A patch is kept only where it weighs less than the piece.

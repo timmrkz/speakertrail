@@ -195,6 +195,10 @@ messages, pull request text, code comments and chat replies.
   what is missing with Homebrew, `scripts/tools.sh`, and nothing else ever
   installs anything. Never tell Tim to `brew install` or `npm install -g`
   anything himself. With `CI` set make installs nothing.
+- **No new shell scripts.** What a build or a workflow has to work out is
+  Go, in a program like `cmd/speakertrail-release`, with tests. A workflow
+  step only calls tools that are there, like `gh` and `go run`. Tim does
+  not want logic nobody can read in shell.
 - **It builds on Linux too.** Build runners and cloud sessions build the
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.

@@ -267,34 +267,22 @@ jobs:
       # them download only the files it does not have, and the stored zip
       # packed with zstd is what it downloads when they fail. Each file
       # that changed also gets a patch against the same file of the builds
-      # scripts/bases.sh names, the listed ones and the newest that left
-      # the list, which is what an app running one of them downloads. What
-      # of them cannot be read costs patches, never the publish, and says
-      # so. It runs after check, so it only reads a zip whose size check
-      # has held, and before the key, which it has no need of. See
-      # docs/UPDATES.md.
+      # an app may run, the listed ones and the newest that left the list,
+      # which the release tool picks from the channel list and the
+      # release's files. What of them cannot be read costs patches, never
+      # the publish, and is a warning on the run. It runs after check, so
+      # it only reads a zip whose size check has held, and before the key,
+      # which it has no need of. See docs/UPDATES.md.
       - id: pack
         if: steps.check.outcome == 'success'
         name: Pack it in parts
         env:
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          bases="$RUNNER_TEMP/bases"
-          mkdir -p "$bases"
-          set --
-          if gh release view dev --json assets --jq '.assets[] | "\(.name) \(.createdAt)"' > "$bases/assets.txt" &&
-            gh release download dev --pattern channels.json --dir "$bases"; then
-            for parts in $(sh scripts/bases.sh "$bases/channels.json" "$bases/assets.txt"); do
-              if gh release download dev --pattern "$parts" --dir "$bases"; then
-                set -- "$@" -base "$bases/$parts"
-              else
-                echo "::warning::$parts could not be read, so this build has no patches against it."
-              fi
-            done
-          else
-            echo "::warning::The release could not be read, so this build has no patches."
-          fi
-          if ! go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" "$@" 2> "$RUNNER_TEMP/refused.txt"; then
+          gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
+          gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
+          if ! go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
+            -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi
@@ -450,12 +438,17 @@ jobs:
         run: sh scripts/channel-list.sh
 
       # A zip no entry points at is gone an hour after it was made, with
-      # its packed zip and its parts, and so is every piece and patch no
-      # remaining parts name. Not at once: a publish that runs beside this
-      # job may have uploaded files whose entry this job has not seen yet.
-      # A piece that goes all the same, because a publish found it there
-      # and did not upload it again, costs the app the packed zip of that
-      # one build, never the update. See scripts/unreachable.sh.
+      # its packed zip, and so are the parts of every build no new build is
+      # patched against and every piece and patch no remaining parts name.
+      # Not at once: a publish that runs beside this job may have uploaded
+      # files whose entry this job has not seen yet. A piece that goes all
+      # the same, because a publish found it there and did not upload it
+      # again, costs the app the packed zip of that one build, never the
+      # update. The release tool names what goes, gh removes it. See
+      # unreachable in cmd/speakertrail-release.
       - if: steps.key.outputs.ready == 'true'
         name: Remove builds nobody can reach any more
-        run: sh scripts/unreachable.sh channels.json
+        run: |
+          gh release view dev --json assets > "$RUNNER_TEMP/assets.json"
+          go run ./cmd/speakertrail-release unreachable -list channels.json -assets "$RUNNER_TEMP/assets.json" > "$RUNNER_TEMP/gone.txt"
+          xargs -r -n 1 gh release delete-asset dev -y < "$RUNNER_TEMP/gone.txt"

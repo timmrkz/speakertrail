@@ -355,6 +355,14 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"the camera asked for, in info.plist", "Speaker Trail.app/Contents/info.plist",
 			[]byte(plistHead + identified + "<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
 			[]string{"asks for NSCameraUsageDescription"}},
+		// On a Mac, CFBundle reads Info-macos.plist in place of
+		// Info.plist, so no other Info.plist than the one checked is
+		// taken.
+		{"an Info.plist for macOS alone", "Speaker Trail.app/Contents/Info-macos.plist",
+			[]byte(plistHead + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
+		{"an Info.plist for macOS alone, in capitals", "Speaker Trail.app/Contents/INFO-MACOS.PLIST", []byte("bplist00"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
 		// macOS reads the last of two keys of one name, the check would
 		// read the first.
 		{"the identifier twice", "Speaker Trail.app/Contents/Info.plist",

@@ -249,6 +249,11 @@ func inputsOf(name string, data []byte) []string {
 			found = append(found, "names "+n)
 		}
 	}
+	// On a Mac, CFBundle reads Info-macos.plist in place of Info.plist,
+	// so a build has none of those, which nothing here would read.
+	if base := strings.ToLower(path.Base(name)); strings.HasPrefix(base, "info-") && strings.HasSuffix(base, ".plist") {
+		return tidy(append(found, "is an Info.plist macOS would read in place of Info.plist"))
+	}
 	// A Mac's disk does not tell capitals from small letters, so
 	// Contents/info.plist is the app's Info.plist there, and in the
 	// updater that unpacks the build.

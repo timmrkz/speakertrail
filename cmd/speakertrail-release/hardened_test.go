@@ -157,6 +157,26 @@ func TestNoProgramIsSignedAsAnotherAppOfTheTeam(t *testing.T) {
 	}
 }
 
+// The folders harden signs are found the way a Mac's disk finds them,
+// whatever capitals they are spelled with, and nothing else is.
+func TestWhereHardenSignsIsReadAsAMacReadsIt(t *testing.T) {
+	cases := map[string]bool{
+		"Speaker Trail.app/Contents/MacOS/llama-server":                  true,
+		"Speaker Trail.app/contents/macos/llama-server":                  true,
+		"Speaker Trail.app/Contents/Frameworks/libonnxruntime.dylib":     true,
+		"Speaker Trail.app/CONTENTS/FRAMEWORKS/libonnxruntime.dylib":     true,
+		"Speaker Trail.app/Contents/Frameworks/llama-server":             false,
+		"Speaker Trail.app/Contents/Frameworks/sub/libonnxruntime.dylib": false,
+		"Speaker Trail.app/Contents/Resources/llama-server":              false,
+		"Speaker Trail.app/Contents/MacOS/sub/llama-server":              false,
+	}
+	for name, want := range cases {
+		if got := signedHere(name); got != want {
+			t.Errorf("%s: harden signs it %v, want %v", name, got, want)
+		}
+	}
+}
+
 // harden signs the programs in Contents/MacOS and the libraries in
 // Contents/Frameworks. A program anywhere else would keep whatever
 // signature the branch gave it, and the team a code directory names is

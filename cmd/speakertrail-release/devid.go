@@ -121,6 +121,12 @@ type devID struct {
 //	harden -app A -p12 F -identity N -timestamp=false
 //	    in CI: sign a bundle with a certificate made for the test.
 func harden(args []string) error {
+	return hardenWith(macTools, args)
+}
+
+// hardenWith is harden with the Mac's tools handed in, which tests
+// stand in for.
+func hardenWith(tools macOS, args []string) error {
 	fs := flag.NewFlagSet("harden", flag.ExitOnError)
 	zipPath := fs.String("zip", "", "the build's zip, signed in place")
 	teamFile := fs.String("team-file", "build/team-id.txt", "the file that names Tim's team")
@@ -134,7 +140,7 @@ func harden(args []string) error {
 	// The secrets are read once and leave the environment at once, so no
 	// program harden starts inherits them.
 	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
-	d := devID{macOS: macTools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
+	d := devID{macOS: tools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
 		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement}
 	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
 		if err := os.Unsetenv(k); err != nil {
@@ -340,7 +346,8 @@ func (d devID) signApp(app string) (err error) {
 		return err
 	}
 	if d.requirement != "" {
-		for _, code := range append(inner, app) {
+		own := filepath.Join(app, "Contents", "MacOS", appProgram)
+		for _, code := range slices.Concat(inner, []string{own, app}) {
 			if _, err := d.run("codesign", "--verify", "--strict", "-R="+d.requirement, code); err != nil {
 				return err
 			}

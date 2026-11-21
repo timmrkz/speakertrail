@@ -33,8 +33,10 @@ type fakeMac struct {
 	// told, and inner what it signs llama-server as, the way an
 	// Info.plist built into it would have codesign do.
 	as, inner string
-	// failOn makes the command whose last argument ends with it fail.
+	// failOn makes the command whose last argument ends with it fail,
+	// and refuse makes codesign find code not of the requirement.
 	failOn string
+	refuse bool
 	// fetched is what apple.com sends, and roots what macOS ships as
 	// Apple Root CA, in PEM.
 	fetched, roots []byte
@@ -46,6 +48,13 @@ func (m *fakeMac) tools() macOS {
 			m.commands = append(m.commands, append([]string{name}, args...))
 			if m.failOn != "" && strings.HasSuffix(args[len(args)-1], m.failOn) {
 				return nil, errors.New(name + " failed")
+			}
+			if name == "codesign" && m.refuse && slices.ContainsFunc(args, func(a string) bool { return strings.HasPrefix(a, "-R=") }) {
+				return nil, errors.New("codesign: test-requirement: code failed to satisfy specified code requirement(s)")
+			}
+			// ditto packs the app again, here as an empty file.
+			if name == "ditto" && args[0] == "-c" {
+				return nil, os.WriteFile(args[len(args)-1], nil, 0o644)
 			}
 			if name == "security" && args[0] == "find-certificate" {
 				return m.roots, nil
@@ -376,10 +385,74 @@ func TestEverythingSignedIsCheckedAgainstTheTeam(t *testing.T) {
 		"/Contents/Frameworks/libsherpa-onnx-c-api.dylib",
 		"/Contents/Frameworks/libsherpa-onnx-cxx-api.dylib",
 		"/Contents/MacOS/llama-server",
+		"/Contents/MacOS/" + appProgram,
 		"",
 	}
 	if !slices.Equal(checked, want) {
 		t.Errorf("checked %q against the team, want %q", checked, want)
+	}
+	m.refuse = true
+	if err := d.signApp(bundle(t)); err == nil || !strings.Contains(err.Error(), "failed to satisfy") {
+		t.Errorf("code not of the team said %v", err)
+	}
+}
+
+// In publish.yml, harden reads the team from build/team-id.txt and has
+// codesign check everything against it. A file that names no team ID as
+// Apple gives them stops it before the certificate is touched.
+//
+// On the real disk: the build's zip, the team's file and the workflow's
+// output are files.
+func TestHardenChecksTheBuildAgainstTheTeamInTheFile(t *testing.T) {
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "app.zip")
+	files := map[string][]byte{}
+	walked := bundle(t)
+	_ = filepath.WalkDir(walked, func(file string, e os.DirEntry, err error) error {
+		if err == nil && e.Type().IsRegular() {
+			rel, _ := filepath.Rel(filepath.Dir(walked), file)
+			files[filepath.ToSlash(rel)], _ = os.ReadFile(file)
+		}
+		return err
+	})
+	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	team := filepath.Join(dir, "team-id.txt")
+	t.Setenv("GITHUB_OUTPUT", filepath.Join(dir, "output"))
+	for _, c := range []struct{ team, want string }{
+		{"TEAM123456\n", ""},
+		{"team123456\n", `"team123456" is no team ID`},
+		{`T" or true` + "\n", `is no team ID`},
+	} {
+		if err := os.WriteFile(team, []byte(c.team), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		m := &fakeMac{flags: flagRuntime, microphone: true}
+		t.Setenv("SPEAKERTRAIL_DEVELOPER_ID", "c2VjcmV0")
+		err := hardenWith(m.tools(), []string{"-zip", zipPath, "-team-file", team})
+		if c.want != "" {
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("team %q said %v, want %q", c.team, err, c.want)
+			}
+			if len(m.commands) > 0 {
+				t.Errorf("team %q still ran %q", c.team, m.commands[0])
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("team %q said %v", c.team, err)
+		}
+		want := "-R=" + `anchor apple generic and certificate leaf[subject.OU] = "TEAM123456"`
+		checked := 0
+		for _, cmd := range m.commands {
+			if cmd[0] == "codesign" && slices.Contains(cmd, want) {
+				checked++
+			}
+		}
+		if checked != 6 {
+			t.Errorf("checked %d programs and the app against Tim's team, want 6: %q", checked, m.commands)
+		}
 	}
 }
 

@@ -250,17 +250,18 @@ nothing in it:
 - It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
   never a program found through `PATH`.
 - It reads both secrets once and takes them out of its environment, so
-  no program it starts sees them. It is built in a step before, without
-  them, so `go` and its compiler never see them either, and without the
-  Go cache, which builds of third-party code write too. The key goes
+  no program it starts sees them. The release tool is built once, in a
+  step before, without them and without the Go cache, which builds of
+  third-party code write too. Every step that holds a key runs that one
+  program, so `go` and its compiler never see a secret. The key goes
   into a keychain made for the run, marked so it cannot be exported
   again, and the keychain is deleted at the end, also when signing
   fails.
 - It takes Apple's certificate between the Developer ID and Apple's root
   only when it is signed by the Apple Root CA that macOS itself ships.
 - It signs the app as `com.speakertrail.app`, whatever its `Info.plist`
-  says, and each program and library in it as a part of it, like
-  `com.speakertrail.app.llama-server`, whatever its name or an
+  says, and each program and library in it as a part of it, by its
+  file name, like `com.speakertrail.app.llama-server`, whatever an
   `Info.plist` built into it says. macOS gives code of the team the
   microphone and the keychain items of the app it is signed as, so no
   build, and nothing in one, can be signed as another of Tim's apps.
@@ -312,8 +313,9 @@ libraries it links as `@rpath` anywhere but inside the .app, holds a
 link, has a file that names what taps keys, records the screen, opens
 the camera or asks for administrator rights, has a file that looks like
 a program and cannot be read as one, unpacks to more than 1 GB, has a
-file outside `Speaker Trail.app`, or has an `Info.plist` that names
-another app than `com.speakertrail.app`. The
+file outside `Speaker Trail.app`, has an `Info.plist` that names
+another app than `com.speakertrail.app`, or has an `Info-macos.plist` or
+any other `Info-….plist`, which macOS would read in its place. The
 stored zip `pack` wrote is signed only when it holds the same files, byte
 for byte, as the zip `check` read. It may ask for the microphone, for
 Dictate on Report a Problem, and be entitled to it, and to nothing else,

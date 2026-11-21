@@ -253,17 +253,26 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # The release tool is built once, here, in a step without any
+      # secret, and every step after runs that program. So the secrets
+      # reach only the tool itself, never go, its compiler or what it
+      # downloads.
+      - id: tool
+        if: steps.zip.outputs.ready == 'true'
+        name: Build the release tool
+        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
+
       # What the zip holds is read here, in a step that has no key, and a
       # build that is refused never reaches the step that has one. sign
       # reads it again before it signs, so the tool never signs what it
       # has not read, whoever runs it.
       - id: check
-        if: steps.zip.outputs.ready == 'true'
+        if: steps.tool.outcome == 'success'
         name: Check what it could do
         env:
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! go run ./cmd/speakertrail-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+          if ! "$RUNNER_TEMP/speakertrail-release" check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi
@@ -276,16 +285,8 @@ jobs:
       # the way it is made. Once it does, a build without the Developer ID
       # is never published. See cmd/speakertrail-release/devid.go and
       # docs/UPDATES.md, The Developer ID.
-      #
-      # The release tool is built in a step of its own first, so the
-      # secrets reach only harden itself, never go, its compiler or what
-      # it downloads.
-      - id: tool
-        if: steps.check.outcome == 'success'
-        name: Build the tool that signs
-        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
       - id: harden
-        if: steps.tool.outcome == 'success'
+        if: steps.check.outcome == 'success'
         name: Sign it with the Developer ID
         env:
           SPEAKERTRAIL_DEVELOPER_ID: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID }}
@@ -317,7 +318,7 @@ jobs:
         run: |
           gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
           gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
-          if ! go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
+          if ! "$RUNNER_TEMP/speakertrail-release" pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
             -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
@@ -349,7 +350,7 @@ jobs:
         # with it and the hardened runtime throughout, so it is never lost
         # on the way without anyone seeing.
         run: |
-          if ! go run ./cmd/speakertrail-release sign -team "$TEAM" \
+          if ! "$RUNNER_TEMP/speakertrail-release" sign -team "$TEAM" \
             -zip "dist/$ZIP" -parts "$RUNNER_TEMP/packed/parts.json" \
             -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \

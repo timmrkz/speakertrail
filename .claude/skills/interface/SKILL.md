@@ -176,6 +176,14 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   `:focus-visible` in `app.css`.
   What is selected already, like the open person's row, shows nothing
   more.
+- **One inset round a page and between its sections.** The space over
+  the first control, at the sides, and between the controls and the list
+  or the next section is `--gap-page`, which is `--pad`, on every page.
+  The person beside the list mirrors it: the name and the cross on the
+  row of the search field, the person's buttons on the row of the filter,
+  and the first section on the line the list starts on. Tim marked each
+  place it was off on a screenshot testing #60 on 21 November 2026, and
+  `walks/look.mjs` measures them at 1280 and 390 px.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
   rows, each a name over one line of what is known, with what is

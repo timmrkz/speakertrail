@@ -427,7 +427,7 @@
      of what is known. The column is the same with a person open or not,
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x) var(--gap-group); }
+  .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x); }
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
@@ -463,9 +463,15 @@
   .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .connected { color: var(--good); font-weight: 600; }
   @media (max-width: 520px) { .prow { padding: 12px 14px; } }
-  /* The person stands in a column of its own width, and the cross in the
-     bar over it ends where the column ends. */
-  .detail-top { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
-  .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
-  .detail-body { padding: 0 var(--dx) 48px; }
+  /* The person mirrors the list beside it: the same inset at the sides
+     and over the top, the name and the cross on the row of the search
+     field, and the person's buttons on the row of the filter, a
+     --gap-control under it, see walks/look.mjs. Wider than its column,
+     the person stands in the middle, as the list does. */
+  .detail-top {
+    flex: none; display: flex; justify-content: space-between; align-items: center; gap: var(--gap-control);
+    box-sizing: content-box; height: var(--control-h); padding: var(--gap-page) var(--dx) 0;
+  }
+  .detail-pane { --dx: max(var(--pad), calc((100% - 640px) / 2)); }
+  .detail-body { padding: var(--gap-control) var(--dx) 64px; }
 </style>

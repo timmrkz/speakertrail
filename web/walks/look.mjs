@@ -590,6 +590,83 @@ walks.push({
   },
 })
 
+// The insets are the same in both themes, so this walk runs once.
+walks.push({
+  theme: 'light',
+  name: 'Every page stands --gap-page in from its edges and between its sections, and a person lines up with the list beside it',
+  async run(page) {
+    // Tim marked them on a screenshot testing #60, 21 November 2026: the
+    // space over the search field was not the space between the filter
+    // and the list, the person stood further in from its edge than the
+    // list did, and the person's buttons sat lower than the filter.
+    const token = (t) => page.evaluate((t) => {
+      const probe = document.createElement('i')
+      probe.style.cssText = `position: absolute; width: var(${t})`
+      document.body.append(probe)
+      const w = probe.getBoundingClientRect().width
+      probe.remove()
+      return w
+    }, t)
+    const wrong = []
+    const near = (what, got, want) => { if (Math.abs(got - want) > 0.5) wrong.push(`${what} is ${got.toFixed(1)} px, not ${want} px`) }
+    for (const size of [{ width: 1280, height: 860 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(size)
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      const gap = await token('--gap-page')
+      const pad = await token('--pad')
+      const control = await token('--gap-control')
+      const box = (sel) => page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); const b = parseFloat(getComputedStyle(e).borderLeftWidth); return { top: r.top, bottom: r.bottom, left: r.left + b, right: r.right, height: r.height } })
+      const at = `at ${size.width} px`
+      const pane = await box('.list-pane')
+      const search = await box('.controls > :first-child')
+      const filter = await box('.controls > :nth-child(2)')
+      const list = await box('.rows-wrap .list')
+      near(`${at}, the space over the search field`, search.top - pane.top, gap)
+      near(`${at}, the space between the filter and the list`, list.top - filter.bottom, gap)
+      if (size.width === 1280) {
+        await page.locator('.prow').first().click()
+        await page.locator('.person .connect').waitFor()
+        // With a person open the list is narrower than its column, so
+        // it stands --pad in, as the person does.
+        const narrowed = await box('.list-pane')
+        const listNow = await box('.rows-wrap .list')
+        near(`${at}, the list's inset on the right with a person open`, narrowed.right - listNow.right, pad)
+        const detail = await box('.detail-pane')
+        const name = await box('.detail-top .person-name')
+        const row = await box('.person .actions')
+        const next = await box('.person > :nth-child(2)')
+        near(`${at}, the person's inset on the left`, row.left - detail.left, pad)
+        near(`${at}, the name's middle against the search field's`, (name.top + name.bottom) / 2, (search.top + search.bottom) / 2)
+        near(`${at}, the top of the person's buttons against the filter's`, row.top, filter.top)
+        near(`${at}, the height of the person's buttons against the filter's`, row.height, filter.height)
+        near(`${at}, the top of what follows the buttons against the list's`, next.top, list.top)
+      } else {
+        await page.locator('.prow').first().click()
+        await page.locator('.sheet .person .connect').waitFor()
+        const sheet = await box('.sheet')
+        const bar = await box('.sheet-bar')
+        const row = await box('.sheet .person .actions')
+        near(`${at}, the space between the name and the person's buttons in the sheet`, row.top - bar.bottom, control)
+        near(`${at}, the person's inset in the sheet`, row.left - sheet.left, pad)
+      }
+      for (const [where, ready] of [['/app/searches', 'main button.btn.primary'], ['/app/settings', '#linkedin-profile:enabled'], ['/app/updates', 'main button.act']]) {
+        await page.goto(`${url}${where}`)
+        await page.locator(ready).first().waitFor()
+        const m = await page.evaluate(() => {
+          const main = document.querySelector('main').getBoundingClientRect()
+          const kids = [...document.querySelector('.page-body').children].filter((k) => k.getBoundingClientRect().height > 0).map((k) => k.getBoundingClientRect())
+          return { top: kids[0].top - main.top, left: kids[0].left - main.left, gaps: kids.slice(1).map((k, i) => k.top - kids[i].bottom) }
+        })
+        near(`${at} on ${where}, the space over the first control`, m.top, gap)
+        if (size.width === 390) near(`${at} on ${where}, the inset on the left`, m.left, pad)
+        m.gaps.forEach((g, i) => near(`${at} on ${where}, the space over section ${i + 2}`, g, gap))
+      }
+    }
+    return wrong.join('\n\t')
+  },
+})
+
 const browser = await chromium.launch()
 let failed = 0
 for (const w of walks) {

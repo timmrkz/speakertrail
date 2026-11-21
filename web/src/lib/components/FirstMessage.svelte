@@ -239,7 +239,9 @@
     {/if}
     {#if failed}
       <p class="failed small" role="alert">
-        {failed}{#if failed.includes('Settings')} <a href="/app/settings#language">Open Settings</a>{/if}
+        <!-- A failure that needs the Exa key leads to the top of Settings,
+             where the key is, and any other to the language model. -->
+        {failed}{#if failed.includes('Settings')}{' '}<a href={failed.includes('Exa') ? '/app/settings' : '/app/settings#language'}>Open Settings</a>{/if}
       </p>
     {/if}
     {#if problem}
@@ -249,7 +251,7 @@
 {/if}
 
 <style>
-  .first-message { display: grid; gap: 10px; }
+  .first-message { display: grid; gap: var(--gap-group); }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .act { position: relative; }
   /* The box is as tall as the message, see lib/fit.ts, so it never

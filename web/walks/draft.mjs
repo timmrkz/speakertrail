@@ -231,6 +231,23 @@ const walks = [
     },
   },
   {
+    // The key is at the top of Settings, not at the language model.
+    name: 'A draft that failed for want of the Exa key leads to the key in Settings',
+    async run(page) {
+      await open(page, 1002)
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      await say(page, job(1002, 1, { state: 'failed', error: 'The app has no profile text for them yet, and reading it needs the Exa key. Add it in Settings.' }))
+      const link = page.locator('.first-message .failed').getByRole('link', { name: 'Open Settings' })
+      await link.click()
+      await page.locator('#exa-key').waitFor()
+      if (new URL(page.url()).hash) return `the link went to ${new URL(page.url()).hash}, not the top of Settings`
+      const top = await page.locator('#exa-key').evaluate((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight })
+      if (!top) return 'the key is not in view'
+      return ''
+    },
+  },
+  {
     name: 'A draft that failed for want of something in Settings leads there',
     async run(page) {
       await open(page, 1006)
@@ -240,6 +257,9 @@ const walks = [
       const alert = page.locator('.first-message .failed')
       await alert.waitFor()
       if ((await act(page).innerText()).trim() !== 'Draft') return `after it failed the button reads ${await act(page).innerText()}`
+      // Tim saw "Settings.Open Settings", the link stuck to the full stop.
+      const said = (await alert.innerText()).trim()
+      if (!said.endsWith('Mac. Open Settings')) return `the line reads ${JSON.stringify(said)}`
       await alert.getByRole('link', { name: 'Open Settings' }).click()
       await page.locator('#language').waitFor()
       await page.waitForFunction(() => {

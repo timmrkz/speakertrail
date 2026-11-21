@@ -71,8 +71,12 @@
      this wide at most, centred in the window. */
   --col-w: 880px;
   /* Two gaps and no others on a page: between its sections, and between
-     the parts of one section, like a heading and its list. */
-  --gap-page: 24px;
+     the parts of one section, like a heading and its list. The gap
+     between sections is the page's own inset, --pad, so the space over
+     the first control, at the sides and between the controls and the list
+     under them is one, on every page and in both panes of People (Tim, 21
+     November 2026). */
+  --gap-page: var(--pad);
   --gap-group: 12px;
   /* Two gaps and no others between controls. --gap-control stands between
      two controls side by side or one over the other: the buttons of a
@@ -476,7 +480,7 @@ button { -webkit-tap-highlight-color: transparent; }
 @keyframes pulse { from { transform: scale(1); opacity: .8; } to { transform: scale(2.8); opacity: 0; } }
 
 /* Section inside sheets */
-.section { display: grid; gap: 10px; min-width: 0; }
+.section { display: grid; gap: var(--gap-group); min-width: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
 .kv dt { color: var(--ink-3); }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

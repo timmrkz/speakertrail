@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,6 +54,28 @@ func BenchmarkUpdateWithANewText(b *testing.B) {
 	for b.Loop() {
 		n++
 		if err := s.Update(func(d *Data) error { d.SetProfileText(d.People[0], text+strconv.Itoa(n), t0); return nil }); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+// BenchmarkListPeople lists 5000 people the way People asks, the best fit
+// first, which works out every person's fit on each call.
+func BenchmarkListPeople(b *testing.B) {
+	d := &Data{}
+	d.fill()
+	d.Exclusions = []*Exclusion{}
+	s, _ := d.AddSearch("Yogalehrerin NRW", 0, t0)
+	cities := []string{"Köln", "Bonn", "Essen", "Münster", ""}
+	for i := range 5000 {
+		p, _ := d.AddFound(Found{URL: fmt.Sprintf("https://www.linkedin.com/in/p%d", i), Name: fmt.Sprintf("Person %d", i), Headline: "Yogalehrerin",
+			City: cities[i%len(cities)], BornAbout: 1980 + i%25, LastActive: t0.Add(-time.Duration(i%180) * 24 * time.Hour)}, s, 0, t0)
+		p.Signals = []Signal{{Key: "works_with_people", For: true}}
+	}
+	_ = d.SetSetting(HomeCity, []byte(`"Köln"`), t0)
+	b.ResetTimer()
+	for range b.N {
+		if _, _, err := d.ListPeople(PeopleQuery{Sort: "", Now: t0}); err != nil {
 			b.Fatal(err)
 		}
 	}

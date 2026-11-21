@@ -137,8 +137,7 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 		out.People = make([]personJSON, 0, len(people))
 		fitOf := d.Fitter(now)
 		for _, p := range people {
-			fit, _ := fitOf(p)
-			out.People = append(out.People, listPerson(p, fit))
+			out.People = append(out.People, listPerson(p, fitOf(p)))
 		}
 	})
 	if err != nil {

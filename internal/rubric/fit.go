@@ -69,7 +69,7 @@ var who = map[string]bool{
 // Fit is a person's fit and its parts, in the order Why shows them. The
 // fit is the sum of the parts' points.
 func Fit(p FitPerson) (int, []Part) {
-	parts := []Part{whoPart(p), youngerPart(p), activePart(p), nearPart(p)}
+	parts := []Part{whoPart(p, true), youngerPart(p, true), activePart(p, true), nearPart(p, true)}
 	total := 0
 	for _, pt := range parts {
 		total += pt.Points
@@ -77,11 +77,18 @@ func Fit(p FitPerson) (int, []Part) {
 	return total, parts
 }
 
+// FitPoints is the fit alone, the same as Fit gives, without writing why,
+// so a list of thousands is sorted by it quickly.
+func FitPoints(p FitPerson) int {
+	return whoPart(p, false).Points + youngerPart(p, false).Points + activePart(p, false).Points + nearPart(p, false).Points
+}
+
 func points(share float64) int {
 	return int(math.Round(PartPoints * math.Max(0, math.Min(1, share))))
 }
 
-func whoPart(p FitPerson) Part {
+// Each part says why only when say is true.
+func whoPart(p FitPerson, say bool) Part {
 	n := 0
 	var pro, contra []string
 	for _, s := range p.Signals {
@@ -89,13 +96,20 @@ func whoPart(p FitPerson) Part {
 		if d == nil || !who[s.Key] {
 			continue
 		}
-		if s.For {
+		switch {
+		case s.For:
 			n++
-			pro = append(pro, d.Label)
-		} else {
+		default:
 			n--
+		}
+		if say && s.For {
+			pro = append(pro, d.Label)
+		} else if say {
 			contra = append(contra, d.Label)
 		}
+	}
+	if !say {
+		return Part{Points: points(float64(n) / 3)}
 	}
 	why := strings.Join(pro, ", ")
 	if len(contra) > 0 {
@@ -112,7 +126,7 @@ func whoPart(p FitPerson) Part {
 	return Part{Key: "who", Label: "Who they are", Points: points(float64(n) / 3), Why: why}
 }
 
-func youngerPart(p FitPerson) Part {
+func youngerPart(p FitPerson, say bool) Part {
 	part := Part{Key: "younger", Label: "Younger"}
 	if p.BornAbout == 0 {
 		part.Points, part.Why = points(0.5), "Age not known"
@@ -121,6 +135,9 @@ func youngerPart(p FitPerson) Part {
 	age := p.Now.Year() - p.BornAbout
 	// Points whole first, so 39 gives exactly 2.5 to round.
 	part.Points = int(math.Round(math.Max(0, math.Min(PartPoints, float64(PartPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
+	if !say {
+		return part
+	}
 	part.Why = fmt.Sprintf("About %d", age)
 	if p.AgeReason != "" {
 		part.Why = agePassage(p.BornAbout, p.AgeReason, p.Now.Year())
@@ -136,9 +153,14 @@ func fading(since time.Duration, half time.Duration) float64 {
 	return math.Pow(0.5, float64(since)/float64(half))
 }
 
-func activePart(p FitPerson) Part {
+func activePart(p FitPerson, say bool) Part {
 	part := Part{Key: "active", Label: "Active lately"}
-	day := func(t time.Time) string { return t.Format("2 January 2006") }
+	day := func(t time.Time) string {
+		if !say {
+			return ""
+		}
+		return t.Format("2 January 2006")
+	}
 	switch {
 	case p.LastActive.IsZero() && p.LastWrote.IsZero():
 		part.Why = "No activity on LinkedIn known"
@@ -174,7 +196,7 @@ func activePart(p FitPerson) Part {
 	return part
 }
 
-func nearPart(p FitPerson) Part {
+func nearPart(p FitPerson, say bool) Part {
 	part := Part{Key: "near", Label: "Near you", Points: points(0.5)}
 	switch {
 	case p.Home == "":
@@ -187,7 +209,9 @@ func nearPart(p FitPerson) Part {
 		part.Points, part.Why = points(1), p.City+", where you are"
 	default:
 		part.Points = points(math.Pow(0.5, p.Km/NearHalfKm))
-		part.Why = fmt.Sprintf("%s, about %.0f km", p.City, p.Km)
+		if say {
+			part.Why = fmt.Sprintf("%s, about %.0f km", p.City, p.Km)
+		}
 	}
 	return part
 }

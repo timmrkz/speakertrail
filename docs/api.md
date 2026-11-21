@@ -107,7 +107,10 @@ the app was closed while it went.
 ## Settings and the key
 
 `GET /api/settings` lists every setting with its value and what it
-does. Where LinkedIn opens is not one of them, it has its own endpoints
+does. `hook_prompt` is the prompt the language model writes the hook of a
+first message from, see Drafts, and must keep `{{profile}}`. It was
+`first_message_prompt` while the model wrote the whole message, and a
+prompt kept under that name is dropped when the file is read. Where LinkedIn opens is not one of them, it has its own endpoints
 below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
 value of the wrong kind gets 400, an unknown key 404.
 
@@ -305,10 +308,18 @@ same shape as `GET /api/language`.
 
 ## Drafts
 
-A draft is a first message to a person, written on the Mac by the
-language model from their profile and the prompt in Settings,
-`first_message_prompt`. See `internal/draft`. Drafts are written one at a
-time, in the order they were asked for.
+A draft is a first message to a person, put together on the Mac from the
+template in Settings, with one variation of each part picked at random.
+The language model writes only its hook, the parts `portrait`, `reason`
+and `reaction_part`, from their profile and the prompt in Settings,
+`hook_prompt`. It answers in JSON held to `draft.HookSchema`, which
+llama-server turns into a grammar and the app checks again. The prompt
+goes in two turns: the paragraphs before the one of its first field as a
+system turn, the same for every draft, and the rest, filled in for the
+person, as the user's. llama-server keeps a checkpoint where the last
+user turn starts, so the next draft reads only the person's part again. See
+`internal/draft`. Drafts are written one at a time, in the order they
+were asked for.
 
 | Request | What it does |
 | --- | --- |
@@ -324,8 +335,12 @@ A draft is
 
 `state` is `queued`, `reading` (their profile from Exa, when the app has
 no text of it yet), `loading` (the model, when it is not loaded), `writing`,
-`done`, `failed` or `cancelled`. `text` is what the model wrote so far, and
-the whole message once it is done. It is untrusted and shown as text.
+`done`, `failed` or `cancelled`. `text` is the message, from `writing` on
+with `…` where the model's parts go, and whole once it is done. What the
+model wrote in it is untrusted and shown as text. `problem` is set on a
+draft that is done when the model's answer did not fit the schema: the
+message then has `…` where the model's parts go, for Tim to write, and
+`problem` says why in a sentence, never with the answer itself.
 `fraction` and `seconds_left` come from how long earlier drafts took, -1
 and null before there was one. `error` says why a draft failed, in a
 sentence that can go on screen. `seq` is higher for every change than for
@@ -336,6 +351,48 @@ A draft that is done is kept on the person as `draft`. Reading a profile
 counts against Exa's monthly budget like a search. Each change is sent as
 the Wails event `draft`, one draft at a time, and once a second while one
 runs. Where the app runs no language model, starting one answers 409.
+
+## First message template
+
+The template a first message is put together from, as Tracery does it:
+each part has variations, a draft starts at `origin` and picks one
+variation of each part it meets at random, and `#name#` inside a
+variation stands for a variation of the part `name`. An empty variation
+leaves the part out now and then, a part with no variation at all leaves
+it out always, and a variation written twice is picked twice as often. The app fills `#first_name#`, the language model `#portrait#`,
+`#reason#` and `#reaction_part#`, a space and the reaction or nothing.
+What they fill in is put in as it is, never read for `#name#` again.
+Tim's first template is `internal/store/first_message_template.json`.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/template` | the template, below |
+| `PUT /api/template/parts/{name}` | `{"variations": ["Hallo", ""], "at": 2}` gives the part its variations, or adds it at `at`, at the end without one. A part that is there keeps its place |
+| `DELETE /api/template/parts/{name}` | takes the part out. 404 for a part that is not there |
+| `DELETE /api/template` | puts Tim's first template back |
+| `PUT /api/template` | `{"parts": [...]}` puts a whole template in place, the one before a reset when it is undone |
+| `GET /api/template/example?seed=7` | `{"text": "Hallo [first_name], ..."}`, one message put together at random, with what the app and the model fill in shown by name. The same seed makes the same picks, so Settings keeps its example while the text of a variation changes. Adding or removing one, or a `#part#`, can change the picks after it. Without a seed the picks are new each time |
+
+Each change answers with the template:
+
+```json
+{ "parts": [{ "name": "origin", "variations": ["#greeting# #first_name#, ... #reason##reaction_part# ..."],
+             "kept": "Origin is where the message starts, so it stays." }],
+  "fields": [{ "name": "reason", "by": "model", "about": "Why they caught Tim's eye, the part after \"weil\"" }],
+  "changed": true }
+```
+
+A change that leaves a template that cannot work answers 400 with why,
+and changes nothing: a part named other than with small letters, digits
+and `_`, or with the name of a field, `#name#` for a part there is not,
+an invisible character, like a zero width space or a mark that turns text
+right to left, where a control character other than a line break, the
+joiner inside an emoji aside, counts as one, a part inside itself or more than 20 deep, no
+`origin`, no `#reason#` that origin reaches, a longest message of more
+than 3,000 letters, or origin taken out. Each part is walked once, so the
+check takes as long as the template is. `kept` says why a part cannot be
+taken out, origin or a part another part uses, and is missing when it
+can. `changed` says the template is not Tim's first one any more.
 
 ## Report a Problem
 

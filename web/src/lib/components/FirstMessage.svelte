@@ -171,6 +171,9 @@
   // While the model writes, the box shows what it wrote so far.
   const shown = $derived(running ? (running.text ?? '').trimStart() : text)
   const failed = $derived(job?.state === 'failed' ? (job.error ?? 'The draft stopped.') : '')
+  // A draft the model's answer did not fit has … where its part goes, and
+  // says why until the next draft.
+  const problem = $derived(job?.state === 'done' ? (job.problem ?? '') : '')
   const stateText = $derived(
     saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved' : saveState === 'error' ? 'Not saved'
       : draftedAt && !busy ? `Drafted ${fmtAgo(draftedAt)}` : '',
@@ -197,6 +200,9 @@
     <p class="failed small" role="alert">
       {failed}{#if failed.includes('Settings')} <a href="/app/settings#language">Open Settings</a>{/if}
     </p>
+  {/if}
+  {#if problem}
+    <p class="failed small" role="alert">{problem}</p>
   {/if}
   <div class="actions">
     {#if busy}

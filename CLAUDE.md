@@ -30,14 +30,14 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | Report a Problem, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
-| Draft, the first message to a person, the language model and llama-server | `internal/draft/`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/BUILD.md](docs/BUILD.md) |
+| Draft, the first message to a person, its template, the language model and llama-server | `internal/draft/`, `internal/store/template.go`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/BUILD.md](docs/BUILD.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
 | interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md) |
-| working with Claude | | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
+| working with Claude, telling a pull request that conflicts with main | `.github/workflows/conflicts.yml`, `cmd/speakertrail-release/conflicts.go` | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 
 ## The skills
 
@@ -118,6 +118,15 @@ that, the skills listed last show their name without what they are for.
   them: a failing CI run is still your work, so is a review comment. But
   never set up a recurring check, never poll, and never write a message that
   says nothing happened. Tim comes back when he is ready.
+- **Merge main in for a conflict, and only then.** When a pull request no
+  longer merges into main, merge main in, resolve it and push at once,
+  without asking. `conflicts.yml` comments on such a pull request, which
+  wakes its session, and a session checks itself right after opening one
+  and before calling it ready, with git, since GitHub may not know yet.
+  The resolution is new code: run the tests of what it touches, then
+  push and let CI run. Read this file again after the merge, because main
+  may have changed it. See When main moves in
+  [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
 
@@ -133,7 +142,10 @@ messages, pull request text, code comments and chat replies.
   **exclusion** is a word or phrase, like "Online Marketing", that leaves a
   person out of profile searches and People. A **first message** is what
   Tim sends a person on LinkedIn once connected, and a **draft** is one
-  the **language model** wrote on the Mac for him to change. A **run** is
+  the app put together on the Mac for him to change: one **variation** of
+  each **part** of the **template** in Settings, picked at random, and the
+  **hook**, the portrait, reason and reaction the **language model**
+  wrote. A **run** is
   one pass over the due searches, started by hand. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A

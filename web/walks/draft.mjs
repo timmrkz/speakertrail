@@ -261,7 +261,7 @@ const walks = [
         return l && s ? l.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING : 0
       })
       if (!order) return 'the speech model comes before the language model'
-      const prompt = page.locator('#set-first_message_prompt')
+      const prompt = page.locator('#set-hook_prompt')
       if ((await prompt.evaluate((t) => t.tagName)) !== 'TEXTAREA') return 'the prompt is a field of one line'
       // The box stands on its own: nothing round it draws a line of its own.
       const framed = await prompt.evaluate((t) => {
@@ -271,12 +271,35 @@ const walks = [
         return ''
       })
       if (framed) return `the prompt sits in a frame, ${framed}`
-      if ((await prompt.getAttribute('aria-labelledby')) !== 'head-first_message_prompt') return 'the prompt has no name'
+      if ((await prompt.getAttribute('aria-labelledby')) !== 'head-hook_prompt') return 'the prompt has no name'
       const text = await prompt.inputValue()
       if (!text.includes('{{profile}}')) return 'the prompt has no {{profile}}'
       await prompt.fill(text.replace('{{profile}}', ''))
       await prompt.blur()
       await page.locator('.field-error').filter({ hasText: '{{profile}}' }).waitFor()
+      return ''
+    },
+  },
+  {
+    name: 'A draft whose hook did not fit has … in its place, and says why until the next',
+    async run(page) {
+      await open(page, 1004)
+      const text = 'Hallo Mara, du bist mir aufgefallen, weil …'
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      // While the model writes, the message is there with … for its part.
+      await say(page, job(1004, 1, { state: 'writing', text, fraction: 0.5, seconds_left: 2 }))
+      await page.waitForFunction((text) => document.querySelector('.first-message textarea')?.value === text, text)
+      await keep(page, 1004, text)
+      const why = 'The language model\'s answer did not fit, so … marks what it should have written: it left out portrait.'
+      await say(page, job(1004, 1, { state: 'done', text, fraction: 1, seconds_left: 0, problem: why }))
+      const line = page.locator('.first-message .failed')
+      await line.filter({ hasText: 'it left out portrait' }).waitFor()
+      if ((await line.getAttribute('role')) !== 'alert') return 'the line is not read out'
+      if (await box(page).evaluate((t) => t.readOnly)) return 'the message cannot be changed'
+      // The next draft that fits says nothing of it.
+      await drafted(page, 1004, 2, first)
+      if (await line.count()) return `after the next draft it still says ${await line.innerText()}`
       return ''
     },
   },

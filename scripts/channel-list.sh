@@ -92,15 +92,14 @@ if [ -e "$entries/channel-main.json" ] &&
 	esac
 fi
 
-# The newest pull requests that are not open any more, merged and closed,
-# so the app can say which became of the one it followed. gh lists merged
-# ones under closed as well, and the release tool sorts them by the state
-# GitHub gives each. One that cannot be read leaves the list as it was
-# before, saying only that the pull request has ended.
+# The newest pull requests that are not open any more, so the app can say
+# whether the one it followed was merged or closed. gh lists merged ones
+# under closed as well, and the release tool sorts them by the state
+# GitHub gives each. When they cannot be read the list says neither, and
+# the app says only that the pull request is not open any more.
 ended=$(mktemp -d)
 trap 'rm -rf "$entries" "$ended"' EXIT
-gh pr list --state merged --limit 100 --json number,state > "$ended/merged.json" || true
-gh pr list --state closed --limit 100 --json number,state > "$ended/closed.json" || true
+gh pr list --state closed --limit 200 --json number,state > "$ended/ended.json" || true
 
 set -- "$entries"/*.json
 [ -e "$1" ] || set --
@@ -108,7 +107,7 @@ set -- "$entries"/*.json
 # channel, so they are split on purpose.
 # shellcheck disable=SC2086
 go run ./cmd/speakertrail-release list -out channels.json $newest $conflict \
-	-ended "$ended/merged.json" -ended "$ended/closed.json" "$@"
+	-ended "$ended/ended.json" "$@"
 cat channels.json
 
 # The new list goes up under a name of its own and is then renamed into

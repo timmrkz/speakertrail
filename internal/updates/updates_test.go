@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -188,7 +189,7 @@ func TestFollowNeverFallsBackToMain(t *testing.T) {
 // A pull request that is not open any more is said to be merged or closed,
 // as the list has it. PR #46 was merged and the page called it closed,
 // because the list only ever said that it had gone. What is not a pull
-// request is left out, and one the list says nothing about has ended.
+// request is left out, and one the list says nothing about is not open.
 func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
 	t.Parallel()
 	list, err := Parse([]byte(`{"channels": [], "merged": ["pr-46", "main", "../pr-9", "pr-46"], "closed": ["pr-12", "pr-x"]}`))
@@ -205,6 +206,24 @@ func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
 		if got := list.Ended(channel); got != want {
 			t.Errorf("%s ended %q, want %q", channel, got, want)
 		}
+	}
+	// The list is untrusted and may be a megabyte: what it names is read
+	// once and kept up to maxEnded, so a long one costs no time.
+	var many []string
+	for i := range 40000 {
+		many = append(many, fmt.Sprintf("pr-%d", i%30000+1))
+	}
+	data, _ := json.Marshal(map[string]any{"channels": []any{}, "merged": many})
+	start := time.Now()
+	list, err = Parse(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Merged) != maxEnded {
+		t.Errorf("kept %d merged, want %d", len(list.Merged), maxEnded)
+	}
+	if took := time.Since(start); took > time.Second { //nolint:forbidigo // measures the reading, waits on nothing
+		t.Errorf("reading a list naming %d pull requests took %v", len(many), took)
 	}
 }
 

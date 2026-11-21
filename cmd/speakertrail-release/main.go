@@ -483,7 +483,7 @@ func writeJSON(path string, v any) error {
 // any more, as `gh pr list --json number,state` writes them, into the
 // channels of those merged and those closed without a merge, newest
 // first. A file that cannot be read says nothing: the list is still
-// written, and the app says a pull request on neither has ended. One
+// written, and the app says a pull request on neither is not open. One
 // GitHub calls open is on neither, since its entry says so.
 func endedPullRequests(paths []string) (merged, closed []string) {
 	seen := map[int]bool{}

@@ -32,11 +32,11 @@ export const following = (u: UpdateState | null) => (u ? u.picked || u.follows |
 // What became of the pull request followed that has gone, in a word: merged
 // in the colour of a warning, closed without a merge in the colour of an
 // error. Tim followed PR #46 after it was merged and the page called it
-// closed. One the channel list says nothing about has ended.
+// closed. One the channel list says neither of is not open.
 export function ended(u: UpdateState | null): { word: string; tone: 'warn' | 'err' } {
   if (u?.ended === 'merged') return { word: 'merged', tone: 'warn' }
   if (u?.ended === 'closed') return { word: 'closed', tone: 'err' }
-  return { word: 'ended', tone: 'warn' }
+  return { word: 'not open', tone: 'warn' }
 }
 
 // The pull request followed no longer merges into main. Its builds still
@@ -116,8 +116,7 @@ export function standing(
     // by itself: which channel to follow next is the person's to say.
     case 'gone': {
       const { word, tone } = ended(u)
-      const head = word === 'ended' ? `${channelName(u.gone)} has ended` : `${channelName(u.gone)} is ${word}`
-      return { mark: tone, head, more: 'Nothing downloads until you choose what to follow next.' }
+      return { mark: tone, head: `${channelName(u.gone)} is ${word}`, more: 'Nothing downloads until you choose what to follow next.' }
     }
   }
   if (!followingName) {

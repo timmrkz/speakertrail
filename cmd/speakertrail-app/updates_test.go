@@ -364,7 +364,7 @@ func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
 }
 
 // A pull request closed without a merge is said to be closed, and one the
-// list says nothing about has only ended.
+// list says neither of is only not open.
 func TestAClosedPullRequestIsSaidToBeClosed(t *testing.T) {
 	cs := newChannelServer(t)
 	cs.closed = []string{"pr-12"}

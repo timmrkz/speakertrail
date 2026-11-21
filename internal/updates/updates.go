@@ -166,7 +166,7 @@ type List struct {
 	// merge. A pull request leaves Channels when it stops being open, and
 	// the app says which of the two became of the one it followed. A pull
 	// request on neither, one that ended long ago or a list from before
-	// they were written, is said to have ended. Untrusted like the rest,
+	// they were written, is said to be not open any more. Untrusted like the rest,
 	// and only ever shown.
 	Merged []string `json:"merged,omitempty"`
 	Closed []string `json:"closed,omitempty"`
@@ -184,12 +184,22 @@ func (l List) Ended(channel string) string {
 	return ""
 }
 
+// maxEnded is the most pull requests a list names as merged or closed.
+// The workflow writes a few hundred at most, and an app reading a list
+// does not look through more than this for the one it followed.
+const maxEnded = 1000
+
 // pullRequests is the channels of pull requests among names, each once,
-// in order. Anything else a list says there is left out.
+// in order, at most maxEnded. Anything else a list says there is left out.
 func pullRequests(names []string) []string {
 	var out []string
+	seen := map[string]bool{}
 	for _, n := range names {
-		if ValidChannel(n) && n != "main" && !slices.Contains(out, n) {
+		if len(out) == maxEnded {
+			break
+		}
+		if ValidChannel(n) && n != "main" && !seen[n] {
+			seen[n] = true
 			out = append(out, n)
 		}
 	}

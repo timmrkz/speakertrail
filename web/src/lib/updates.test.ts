@@ -39,7 +39,7 @@ describe('the dot on Updates in the sidebar', () => {
   const cases: [string, Partial<UpdateState>, string, string][] = [
     ['a pull request followed that closed', { phase: 'gone', gone: 'pr-400', ended: 'closed', channels: [{ id: 'main' }] as UpdateState['channels'] }, 'err', 'err'],
     ['a pull request followed that was merged', { phase: 'gone', gone: 'pr-400', ended: 'merged', channels: [{ id: 'main' }] as UpdateState['channels'] }, 'warn', 'warn'],
-    ['a pull request followed that has ended', { phase: 'gone', gone: 'pr-400', channels: [{ id: 'main' }] as UpdateState['channels'] }, 'warn', 'warn'],
+    ['a pull request followed that is not open', { phase: 'gone', gone: 'pr-400', channels: [{ id: 'main' }] as UpdateState['channels'] }, 'warn', 'warn'],
     ['up to date on a pull request in conflict', { channels: inConflict }, 'warn', 'warn'],
     ['a check that did not get through', { phase: 'failed', problem: 'No network.' }, 'err', 'err'],
     ['a newer build ready', { phase: 'ready', next: '0.1.0-pr400.abcdef0' }, 'new', 'ready'],
@@ -130,7 +130,7 @@ describe('the line under the build', () => {
     ['up to date', { follows: 'main', channel: 'main' }, {}, 'Up to date', 'This is the newest build of Branch main.'],
     ['closed', { phase: 'gone', gone: 'pr-400', ended: 'closed' }, {}, 'PR #400 is closed', 'Nothing downloads until you choose what to follow next.'],
     ['merged', { phase: 'gone', gone: 'pr-400', ended: 'merged' }, {}, 'PR #400 is merged', 'Nothing downloads until you choose what to follow next.'],
-    ['ended', { phase: 'gone', gone: 'pr-400' }, {}, 'PR #400 has ended', 'Nothing downloads until you choose what to follow next.'],
+    ['not open', { phase: 'gone', gone: 'pr-400' }, {}, 'PR #400 is not open', 'Nothing downloads until you choose what to follow next.'],
     ['built on this Mac', { channel: '', phase: '' }, {}, 'Built on this Mac', 'It stays as it is until you choose a channel to follow.'],
     ['not checked yet', { phase: '' }, {}, 'Not checked yet', 'It looks when the app starts and every ten minutes.'],
     ['off', { off: 'Made by make.' }, {}, 'This build does not update itself', 'Made by make.'],

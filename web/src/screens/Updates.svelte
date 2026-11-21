@@ -112,7 +112,7 @@
     }))
     // A pull request followed that has gone stays in the list while it is
     // followed, so the list never names nothing and says what became of
-    // it: merged, closed or ended, only when a list that was read says it
+    // it: merged, closed or not open, only when a list that was read says it
     // has gone.
     if (following && !listed.some((o) => o.value === following)) {
       listed.push({ value: following, label: update?.gone === following ? `${channelName(following)}, ${ended.word}` : channelName(following) })

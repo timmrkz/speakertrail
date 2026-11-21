@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -172,7 +173,7 @@ func TestStartAndAsk(t *testing.T) {
 	}
 	model := filepath.Join(t.TempDir(), "probe.gguf")
 	os.WriteFile(model, []byte("GGUF"), 0o644)
-	s, err := Start(t.Context(), self, model, nil, nil)
+	s, err := Start(t.Context(), self, model, "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +200,7 @@ func TestStartAndAsk(t *testing.T) {
 	}
 	broken := filepath.Join(filepath.Dir(model), "broken.gguf")
 	os.WriteFile(broken, []byte("GGUF"), 0o644)
-	if _, err := Start(t.Context(), self, broken, nil, nil); err == nil || !strings.Contains(err.Error(), "this is no model") {
+	if _, err := Start(t.Context(), self, broken, "", nil, nil); err == nil || !strings.Contains(err.Error(), "this is no model") {
 		t.Errorf("a server that stopped while loading: %v", err)
 	}
 }
@@ -373,12 +374,12 @@ func TestLeftoverServers(t *testing.T) {
 	dir := t.TempDir()
 	model := filepath.Join(dir, "probe.gguf")
 	os.WriteFile(model, []byte("GGUF"), 0o644)
-	left, err := Start(t.Context(), self, model, nil, nil)
+	left, err := Start(t.Context(), self, model, "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer left.Stop()
-	kept, err := Start(t.Context(), self, model, nil, nil)
+	kept, err := Start(t.Context(), self, model, "", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -656,3 +657,81 @@ func TestAskForJSONSendsTheSchema(t *testing.T) {
 		t.Errorf("a plain ask sent %v", got[1]["response_format"])
 	}
 }
+
+// A server is written down the moment it starts, before its model has
+// loaded, and the note goes once it has stopped. An app that ends while
+// the model loads, the updater's helper that ended inside application.New
+// on every Relaunch among them, then leaves a server the next start of
+// the app finds and stops. Written down only once the model had loaded,
+// three servers of 16 GB each were in no note on Tim's Mac (21 November
+// 2026).
+//
+// On the real disk: llama-server is another program, the test's own in
+// the stand-in's part, and the notes are files another start of the app
+// reads.
+func TestAServerIsNotedWhileItLoads(t *testing.T) {
+	t.Setenv("FAKE_LLAMA_SERVER", "1")
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	notes := filepath.Join(dir, "notes")
+	noted := func() []serverNote {
+		paths, _ := filepath.Glob(filepath.Join(notes, "*.json"))
+		var all []serverNote
+		for _, p := range paths {
+			var n serverNote
+			data, err := os.ReadFile(p)
+			if err == nil && json.Unmarshal(data, &n) == nil {
+				all = append(all, n)
+			}
+		}
+		return all
+	}
+	// The stand-in stops while it loads a broken model. What the notes
+	// held is read at the moment Start hears it stop, while it loaded.
+	broken := filepath.Join(dir, "broken.gguf")
+	os.WriteFile(broken, []byte("GGUF"), 0o644)
+	var whileLoading []serverNote
+	log := slog.New(onRecord(func(r slog.Record) {
+		if r.Message == "llama-server stopped while loading the model" {
+			whileLoading = noted()
+		}
+	}))
+	if _, err := Start(t.Context(), self, broken, notes, nil, log); err == nil {
+		t.Fatal("a broken model loaded")
+	}
+	if len(whileLoading) != 1 || whileLoading[0].Owner != os.Getpid() || whileLoading[0].Model != broken || whileLoading[0].PID <= 0 {
+		t.Errorf("noted while loading %+v, want the server, owned by this process", whileLoading)
+	}
+	if left := noted(); len(left) != 0 {
+		t.Errorf("the note of a server that stopped stayed: %+v", left)
+	}
+	// A server that loads stays written down until it is stopped.
+	model := filepath.Join(dir, "probe.gguf")
+	os.WriteFile(model, []byte("GGUF"), 0o644)
+	s, err := Start(t.Context(), self, model, notes, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Stop()
+	if n := noted(); len(n) != 1 || n[0].PID != s.PID || n[0].Port != s.Port {
+		t.Errorf("noted %+v, want the server %d on %d", n, s.PID, s.Port)
+	}
+	s.Stop()
+	if left := noted(); len(left) != 0 {
+		t.Errorf("the note of a stopped server stayed: %+v", left)
+	}
+}
+
+// onRecord is a log that hands every line to f.
+type onRecord func(slog.Record)
+
+func (onRecord) Enabled(context.Context, slog.Level) bool { return true }
+func (f onRecord) Handle(_ context.Context, r slog.Record) error {
+	f(r)
+	return nil
+}
+func (f onRecord) WithAttrs([]slog.Attr) slog.Handler { return f }
+func (f onRecord) WithGroup(string) slog.Handler      { return f }

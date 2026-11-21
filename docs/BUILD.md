@@ -160,8 +160,8 @@ The model is downloaded in Settings, Language model, into the models
 folder, or linked from FrameFairy's `~/.framefairy/models` when it is
 there whole. Before llama-server starts, the model's needs are held
 against the memory free now, and a server a crashed app left running is
-stopped when the app starts, noted in `llama-servers` in the app's
-folder. As in FrameFairy. `SPEAKERTRAIL_LLAMA_SERVER` names another llama-server, for a try
+stopped when the app starts. Every server is noted in `llama-servers` in
+the app's folder the moment it starts, before its model has loaded. As in FrameFairy. `SPEAKERTRAIL_LLAMA_SERVER` names another llama-server, for a try
 with a build of one's own.
 
 ## Elsewhere than on a Mac

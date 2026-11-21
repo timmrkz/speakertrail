@@ -112,7 +112,13 @@ var readyMarks = []string{"model loaded", "server is listening"}
 // is loaded. log hears the server's last lines when it fails, and how long
 // the load took when it does not. Nothing it says while it works is
 // logged, since it is about a person's profile.
-func Start(ctx context.Context, server, model string, client *http.Client, log *slog.Logger) (*Server, error) {
+//
+// The server is written down in notes the moment it starts, and the note
+// goes once it has stopped, see leftover.go. Written only once the model
+// had loaded, as it was at first, a server whose app ended while it
+// loaded was in no note, and no later start of the app stopped it.
+// FrameFairy writes it down at the same moment.
+func Start(ctx context.Context, server, model, notes string, client *http.Client, log *slog.Logger) (*Server, error) {
 	if _, err := os.Stat(model); err != nil {
 		return nil, fmt.Errorf("the language model cannot be read: %w", err)
 	}
@@ -143,6 +149,7 @@ func Start(ctx context.Context, server, model string, client *http.Client, log *
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("cannot start llama-server: %w", err)
 	}
+	noteServer(notes, serverNote{PID: cmd.Process.Pid, Port: port, Model: model})
 	exited := make(chan struct{})
 	var exitErr error
 	go func() {
@@ -152,6 +159,7 @@ func Start(ctx context.Context, server, model string, client *http.Client, log *
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
+			defer forgetServer(notes, cmd.Process.Pid)
 			select {
 			case <-exited:
 				return
@@ -179,6 +187,7 @@ func Start(ctx context.Context, server, model string, client *http.Client, log *
 			if log != nil {
 				log.Warn("llama-server stopped while loading the model", "error", exitErr, "said", out.last())
 			}
+			stop()
 			return nil, stoppedLoading(exitErr, out.last())
 		case <-ready:
 		case <-look.C:

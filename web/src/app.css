@@ -274,7 +274,6 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .row-btn:hover { background: var(--hover); text-decoration: none; }
 .row-btn:active { background: var(--press); }
-.row-btn:hover .avatar, .row-btn[aria-current="true"] .avatar { background: var(--surface); }
 .row-btn[aria-current="true"] { background: var(--chosen); }
 
 /* Controls. Everything in one row shares --control-h.
@@ -408,12 +407,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .plat.ok { border-color: var(--good); color: var(--good); background: var(--good-soft); }
 .plat.no { text-decoration: line-through; opacity: .6; }
 
-.avatar {
-  width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center;
-  font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--ink-2);
-}
-.avatar.lg { width: 52px; height: 52px; font-size: 17px; }
-
 /* Messages */
 .banner {
   display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 8px; font-size: 14px; font-weight: 500;
@@ -497,6 +490,9 @@ button { -webkit-tap-highlight-color: transparent; }
   --wails-draggable: drag;
 }
 .bar h1 { font-size: 15px; font-weight: 650; letter-spacing: 0; flex: 1 1 auto; min-width: 0; }
+/* A person's name, at the head of the pane or the sheet that shows them,
+   on the row of the cross that closes it. */
+.person-name { font-size: 22px; font-weight: 650; letter-spacing: -.01em; min-width: 0; }
 .bar .num-count { font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; }
 a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-drag; }
 /* A page of its own: the bar runs the width of the window, and what is in

@@ -360,7 +360,7 @@ for (const theme of ['light', 'dark']) {
           await page.locator(ready).first().waitFor()
           if (where === '/app/people') {
             await page.locator('.prow').first().click()
-            await page.locator('.person h2').first().waitFor()
+            await page.locator('.person .connect').waitFor()
           }
           for (const w of await page.evaluate(measure)) wrong.push(`at ${size.width} px on ${where}: ${w}`)
         }
@@ -402,7 +402,7 @@ for (const theme of ['light', 'dark']) {
         await page.locator(ready).first().waitFor()
         if (where === '/app/people') {
           await page.locator('.prow').first().click()
-          await page.locator('.person h2').first().waitFor()
+          await page.locator('.person .connect').waitFor()
         }
         for (const w of await page.evaluate(rings)) wrong.push(`on ${where}: ${w}`)
         if (where === '/report') {

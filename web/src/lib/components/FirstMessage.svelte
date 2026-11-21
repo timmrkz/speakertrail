@@ -1,10 +1,14 @@
 <script lang="ts">
   // The first message to a person: Draft has the language model write it
   // on this Mac, in the background, and it grows here as it is written.
-  // Then it is Tim's to change, saved the moment he leaves it. A double
-  // click selects all of it, ready for Cmd+C, and Copy does the same in
-  // one press. LinkedIn above opens the profile to send it from. See
-  // internal/draft and docs/api.md, Drafts.
+  // Then it is Tim's to change, saved the moment he leaves it. The box is
+  // as tall as the message, so it never scrolls. A double click selects
+  // all of it, ready for Cmd+C, and the copy mark in its corner, there
+  // while the pointer is on the box, copies it in one press. Draft stands
+  // in the person's row of buttons, between Connect and LinkedIn, which
+  // row draws. See internal/draft and docs/api.md, Drafts.
+  import type { Snippet } from 'svelte'
+  import { fit } from '../fit'
   import { api, type DraftJob, type PersonDetail } from '../api'
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
@@ -14,7 +18,12 @@
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
 
-  let { person, onsaved }: { person: PersonDetail; onsaved?: (p: PersonDetail) => void } = $props()
+  let { person, row, onsaved }: {
+    person: PersonDetail
+    // The person's row of buttons, handed the Draft button to place.
+    row: Snippet<[Snippet]>
+    onsaved?: (p: PersonDetail) => void
+  } = $props()
 
   $effect(() => draftWatch.watch())
   $effect(() => languageWatch.watch())
@@ -180,61 +189,82 @@
   )
 </script>
 
-<section class="section first-message" aria-labelledby="message-{person.id}">
-  <div class="row between">
-    <label class="label" id="message-{person.id}" for="message-text-{person.id}">First message</label>
-    <span class="small state" aria-live="polite">{stateText}</span>
-  </div>
-  {#if busy || shown}
-    <textarea id="message-text-{person.id}" class="textarea" rows="8" value={shown} readonly={busy}
-      aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
-      ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
+<!-- Draft and Cancel take one place in the row, so nothing moves when
+     one turns into the other. While it writes, the draft carries the beam
+     and the fill in the one control that can do something about it, as a
+     download does in Settings. Only one button in the row is filled:
+     Connect, until Tim is connected, and then Draft while there is no
+     message. -->
+{#snippet draftButton()}
+  {#if busy}
+    <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
+      title="Stop writing. The message before it stays as it was">
+      <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
+    </button>
+  {:else}
+    <button class="btn act" class:primary={!text && person.connected} type="button" disabled={starting} onclick={draft}
+      title={noModel ? languageWatch.state.standing.why
+        : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
+      {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
+    </button>
   {/if}
-  {#if running}
-    <div class="draft-progress" aria-live="polite">
-      <p class="step ellipsis">{stepOf(running)}</p>
-      <p class="meta num">{fmtElapsed(now - new Date(running.started_at).getTime())} so far, {left}</p>
+{/snippet}
+
+{@render row(draftButton)}
+
+{#if busy || shown || failed || problem || stateText}
+  <section class="section first-message" aria-labelledby="message-{person.id}">
+    <div class="row between">
+      <label class="label" id="message-{person.id}" for="message-text-{person.id}">First message</label>
+      <span class="small state" aria-live="polite">{stateText}</span>
     </div>
-  {/if}
-  {#if failed}
-    <p class="failed small" role="alert">
-      {failed}{#if failed.includes('Settings')} <a href="/app/settings#language">Open Settings</a>{/if}
-    </p>
-  {/if}
-  {#if problem}
-    <p class="failed small" role="alert">{problem}</p>
-  {/if}
-  <div class="actions">
-    {#if busy}
-      <!-- The draft carries the beam and the fill in the one control that
-           can do something about it, as a download does in Settings. -->
-      <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
-        title="Stop writing. The message before it stays as it was">
-        <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
-      </button>
-    {:else}
-      <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
-        title={noModel ? languageWatch.state.standing.why
-          : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
-        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
-      </button>
+    {#if busy || shown}
+      <div class="box">
+        <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
+          use:fit={shown} aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+          ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
+        {#if text && !busy}
+          <button class="btn icon copy" type="button" onclick={copy} aria-label="Copy" title="Copy the whole message">
+            <Icon name="copy" />
+          </button>
+        {/if}
+      </div>
     {/if}
-    {#if text && !busy}
-      <button class="btn act" type="button" onclick={copy} title="Copy the whole message">
-        <Icon name="copy" />Copy
-      </button>
+    {#if running}
+      <div class="draft-progress" aria-live="polite">
+        <p class="step ellipsis">{stepOf(running)}</p>
+        <p class="meta num">{fmtElapsed(now - new Date(running.started_at).getTime())} so far, {left}</p>
+      </div>
     {/if}
-  </div>
-</section>
+    {#if failed}
+      <p class="failed small" role="alert">
+        {failed}{#if failed.includes('Settings')} <a href="/app/settings#language">Open Settings</a>{/if}
+      </p>
+    {/if}
+    {#if problem}
+      <p class="failed small" role="alert">{problem}</p>
+    {/if}
+  </section>
+{/if}
 
 <style>
   .first-message { display: grid; gap: 10px; }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-  /* Draft, Draft again and Cancel take the same place, each with room
-     for the longest of them, see .room in app.css, so nothing moves when
-     one turns into another. */
   .act { position: relative; }
+  /* The box is as tall as the message, see lib/fit.ts, so it never
+     scrolls and needs no handle to pull it longer. */
+  .box { position: relative; min-width: 0; }
+  .box .textarea { display: block; width: 100%; resize: none; overflow-y: hidden; }
+  /* The copy mark sits in the box's top right corner, there while the
+     pointer is on the box or the keyboard is on the mark, the way a code
+     block on GitHub shows its copy button. Its ground is the box's, so
+     it never sits on the words under it unseen, and its states are every
+     plain button's. */
+  .box .copy {
+    position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-color: transparent; color: var(--ink-2);
+    opacity: 0; pointer-events: none;
+  }
+  .box:hover .copy, .copy:focus-visible { opacity: 1; pointer-events: auto; }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

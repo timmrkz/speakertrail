@@ -32,7 +32,7 @@ async function open(page, id) {
     route.fulfill({ json: job(id, ++n, { state: 'queued' }) }))
   await page.route(/\/api\/people\/\d+\/draft\/cancel$/, (route) => route.fulfill({ status: 204 }))
   await page.goto(`${url}/app/people/${id}`)
-  await page.locator('.first-message').waitFor()
+  await act(page).waitFor()
 }
 
 // Each change numbered higher than the one before, as Seq in
@@ -51,7 +51,7 @@ const keep = (page, id, draft) =>
 const kept = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.draft), id)
 
 const box = (page) => page.locator('.first-message textarea')
-const act = (page) => page.locator('.first-message button.act').first()
+const act = (page) => page.locator('.person button.act').first()
 
 // A draft written from start to end: Draft, the text as it grows, then
 // the whole message, Tim's to change.
@@ -95,7 +95,7 @@ const walks = [
     },
   },
   {
-    name: 'The message is Tim’s to change, a double click selects all of it, and Copy copies it',
+    name: 'The message is Tim’s to change, a double click selects all of it, and the copy mark copies it',
     async run(page) {
       await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
       await open(page, 1004)
@@ -107,7 +107,13 @@ const walks = [
       await box(page).blur()
       await page.locator('.first-message .state').filter({ hasText: 'Saved' }).waitFor()
       if ((await kept(page, 1004)) !== `${first} PS`) return 'the change was not saved'
-      await page.locator('.first-message button', { hasText: 'Copy' }).click()
+      // The copy mark shows only while the pointer is on the box.
+      const mark = page.locator('.first-message button.copy')
+      await page.mouse.move(0, 0)
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '0') return 'the copy mark shows with the pointer away from the box'
+      await box(page).hover()
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the copy mark does not show with the pointer on the box'
+      await mark.click()
       const copied = await page.evaluate(() => navigator.clipboard.readText())
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
       return ''
@@ -138,10 +144,10 @@ const walks = [
         await route.fulfill({ json: queued })
       })
       await page.goto(`${url}/app/people/1008`)
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       await act(page).click()
       await page.locator('.first-message .failed').waitFor()
-      await page.locator('.first-message button.act', { hasText: /^Draft$/ }).waitFor()
+      await page.locator('.person button.act', { hasText: /^Draft$/ }).waitFor()
       if (await page.locator('.first-message .step').count()) return 'the draft still waits after it failed'
       return ''
     },
@@ -161,7 +167,7 @@ const walks = [
         await route.fulfill({ json: [writing] })
       })
       await page.goto(`${url}/app/people/1007`)
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       await say(page, job(1007, 1, { state: 'done', text: first }))
       release()
       await page.waitForResponse('**/api/drafts')
@@ -178,7 +184,7 @@ const walks = [
       const answered = Promise.all([page.waitForResponse('**/api/keys'), page.waitForResponse('**/api/language')])
       await page.goto(`${url}/app/people/1000`)
       await answered
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       if (await page.locator('a.nav[href="/app/settings"] .dot').count()) return 'Settings wears a dot with the key saved and the model here'
       return ''
     },
@@ -206,8 +212,8 @@ const walks = [
       let asked = 0
       await page.route(/\/api\/people\/\d+\/draft$/, (route) => { asked++; return route.fulfill({ status: 409, json: { error: 'no' } }) })
       await page.goto(`${url}/app/people/1000`)
-      await page.locator('.first-message').waitFor()
-      await page.waitForFunction(() => /Download it in Settings/.test(document.querySelector('.first-message button.act')?.title ?? ''))
+      await act(page).waitFor()
+      await page.waitForFunction(() => /Download it in Settings/.test(document.querySelector('.person button.act')?.title ?? ''))
       await act(page).click()
       await page.locator('#language').waitFor()
       await page.waitForFunction(() => {

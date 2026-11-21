@@ -239,6 +239,13 @@
   let others = $derived(counts ? counts.all : 0)
 
   // Keep the list in step with changes made in the sheet.
+  // The open person's name, from the person once loaded, and from the
+  // list until then. A person can be open who is not in the list shown.
+  let named = $state<{ id: number; name: string } | null>(null)
+  let openName = $derived(
+    openId === null ? '' : named?.id === openId ? named.name : (people.data?.find((x) => x.id === openId)?.name ?? ''),
+  )
+
   function updated(p: Detail) {
     if (!people.data) return
     people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))
@@ -326,14 +333,17 @@
         onpointerdown={startDrag} onkeydown={edgeKey} ondblclick={() => setShare(0.45)}>
         {#if dragging}<span class="share">{percent} %</span>{/if}
       </div>
-      <!-- The cross stands in the row the list's controls stand in, the
-           same height, its glyph on the edge of the person under it. -->
+      <!-- The name and the cross stand in the row the list's controls
+           stand in, the same height, the cross's glyph on the edge of the
+           person under it. Tim asked for the name there on 21 November
+           2026, so the person starts with what he does. -->
       <div class="detail-top">
+        <h2 class="person-name ellipsis" data-personal title={openName}>{openName}</h2>
         <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
       </div>
       <div class="detail-body">
         {#key openId}
-          <PersonDetail id={openId} onupdate={updated} />
+          <PersonDetail id={openId} onupdate={updated} onname={(n) => (named = { id: openId!, name: n })} />
         {/key}
       </div>
     </section>
@@ -423,7 +433,7 @@
   @media (max-width: 520px) { .prow { padding: 12px 14px; } }
   /* The person stands in a column of its own width, and the cross in the
      bar over it ends where the column ends. */
-  .detail-top { flex: none; display: flex; justify-content: flex-end; align-items: center; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
+  .detail-top { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 12px; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
   .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
   .detail-body { padding: 0 var(--dx) 48px; }
 </style>

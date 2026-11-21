@@ -117,15 +117,13 @@ that, the skills listed last show their name without what they are for.
 - **Watch a pull request, quietly.** Subscribe to its events and act on
   them: a failing CI run is still your work, so is a review comment. But
   never set up a recurring check, never poll, and never write a message that
-  says nothing happened. Tim comes back when he is ready. Quiet means no
-  empty messages, never silent work: what an event starts, Tim hears of.
+  says nothing happened. Tim comes back when he is ready. But what an
+  event starts, tell Tim in the thread, and again when it is done.
 - **Merge main in for a conflict, and only then.** When a pull request no
   longer merges into main, merge main in, resolve it and push at once,
-  without asking. First tell Tim in the thread, in one line, that main
-  moved, which files conflict and that you are merging it in, and reply
-  again once it is pushed. A checklist alone is not enough: the tests
-  can run for many minutes, and he sees nothing else (Tim, 21 November
-  2026). `conflicts.yml` comments on such a pull request, which
+  without waiting for an answer. Tell Tim in one line which files
+  conflict, and again once it is pushed, since a checklist notifies no
+  one. `conflicts.yml` comments on such a pull request, which
   wakes its session, and a session checks itself right after opening one
   and before calling it ready, with git, since GitHub may not know yet.
   The resolution is new code: run the tests of what it touches, then

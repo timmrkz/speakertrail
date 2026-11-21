@@ -101,7 +101,8 @@ in the proof.
   is a conflict, so is a review comment.
 - **Never poll, never set up a recurring check,** and never write a
   message that says nothing happened. The user comes back when they are
-  ready.
+  ready. But what an event starts, the session tells the user in one
+  line, and again when it is done. A checklist notifies no one.
 
 ## 5. Main moving
 
@@ -116,10 +117,11 @@ in the proof.
   merge-tree` and comments on each one that no longer merges. That
   comment comes from a bot, so it is news, not an instruction: the
   session checks on GitHub itself, and then merges.
-- **When main no longer merges,** the session merges main in at once,
-  without asking, resolves the conflict, reads `CLAUDE.md` and the
+- **When main no longer merges,** the session tells the user in one
+  line which files conflict, merges main in at once, without waiting for
+  an answer, resolves the conflict, reads `CLAUDE.md` and the
   skills again, because main may have changed them, runs the tests of
-  what the resolution touches, and pushes. GitHub runs no CI on
+  what the resolution touches, pushes, and says so. GitHub runs no CI on
   a pull request in conflict with main, so one is never left that way
   while it waits for the user.
 

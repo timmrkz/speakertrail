@@ -101,6 +101,45 @@ const walks0 = [
     },
   },
   {
+    name: 'A save leaves New example as it is, only its own press makes it wait',
+    async run(page) {
+      await settings(page)
+      await page.evaluate(() => {
+        window.flips = 0
+        const b = [...document.querySelectorAll('section.template .example button')][0]
+        new MutationObserver(() => window.flips++).observe(b, { attributes: true, attributeFilter: ['disabled'] })
+      })
+      await part(page, 'greeting').locator('summary').click()
+      const box = part(page, 'greeting').locator('textarea').first()
+      await box.fill('Servus')
+      await box.blur()
+      await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Servus'))
+      const flips = await page.evaluate(() => window.flips)
+      if (flips) return `New example went grey and back ${flips / 2} times on a save`
+      return ''
+    },
+  },
+  {
+    name: 'The part clicked stays under the pointer when the one above it closes, in WebKit too',
+    viewport: { width: 1100, height: 700 },
+    async run(page) {
+      for (const anchoring of ['auto', 'none']) {
+        await settings(page)
+        // WebKit keeps nothing in place when content above it shrinks.
+        await page.addStyleTag({ content: `* { overflow-anchor: ${anchoring} !important }` })
+        const row = part(page, 'ending').locator('summary')
+        await row.scrollIntoViewIfNeeded()
+        const was = (await row.boundingBox()).y
+        await row.click()
+        await page.waitForFunction(() => document.querySelectorAll('section.template details.part[open]').length === 1)
+        await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r())))
+        const now = (await row.boundingBox()).y
+        if (Math.abs(now - was) > 1) return `with overflow-anchor ${anchoring} the row moved from ${was} to ${now}`
+      }
+      return ''
+    },
+  },
+  {
     name: 'Tab from one variation to the next keeps what is typed in both',
     async run(page) {
       await settings(page)
@@ -174,15 +213,15 @@ const walks0 = [
       await part(page, 'wave').waitFor()
       if (!(await part(page, 'wave').evaluate((d) => d.open))) return 'the new part is not open'
       // Origin stays, and its × says why the app keeps it when pressed,
-      // without closing the part.
+      // closed as it is now that wave is open, without opening it.
       const keepOrigin = part(page, 'origin').locator('button.remove-part')
       if ((await keepOrigin.getAttribute('aria-disabled')) !== 'true' || (await keepOrigin.getAttribute('title')) !== 'Origin is where the message starts, so it stays.') return 'origin can be removed'
-      await part(page, 'origin').locator('summary').click()
       // Playwright holds aria-disabled for not enabled, a person does not.
       await keepOrigin.click({ force: true })
-      await part(page, 'origin').locator('.field-error').filter({ hasText: 'Origin is where the message starts, so it stays.' }).waitFor()
-      if (!(await part(page, 'origin').evaluate((d) => d.open))) return 'the × of origin closed it'
+      await page.locator('.toast').filter({ hasText: 'Origin is where the message starts, so it stays.' }).waitFor()
+      if (await part(page, 'origin').evaluate((d) => d.open)) return 'the × of origin opened it'
       if (!(await part(page, 'origin').count())) return 'origin went'
+      await part(page, 'origin').locator('summary').click()
       // In use by origin, wave cannot go either, and says so.
       const origin = part(page, 'origin').locator('textarea').first()
       await origin.fill((await origin.inputValue()) + ' #wave#')

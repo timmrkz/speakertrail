@@ -5,6 +5,7 @@
   // one before back, as for every setting. The app checks every change
   // and says what is wrong, the window only shows it. See
   // internal/store/template.go and docs/api.md, First message template.
+  import { tick } from 'svelte'
   import { api, type FirstMessageTemplate, type TemplatePart } from '../api'
   import { plural } from '../format'
   import { Load } from '../load.svelte'
@@ -27,19 +28,19 @@
     return Math.floor(Math.random() * 2 ** 31)
   }
   async function showExample() {
-    rolling = true
     try {
       example = await api.templateExample(seed)
       exampleError = ''
     } catch (e) {
       exampleError = errorText(e)
-    } finally {
-      rolling = false
     }
   }
-  function newExample() {
+  // Only New example says it is working, so a save leaves its button be.
+  async function newExample() {
     seed = newSeed()
-    showExample()
+    rolling = true
+    await showExample()
+    rolling = false
   }
   showExample()
 
@@ -120,7 +121,7 @@
     e.preventDefault()
     e.stopPropagation()
     if (part.kept) {
-      errors = { ...errors, [part.name]: part.kept }
+      toast.show(part.kept)
       return
     }
     if (await change(part.name, () => api.deleteTemplatePart(part.name))) {
@@ -164,9 +165,24 @@
   // The part that is open, one at a time, so the list stays short enough
   // to see whole. Origin is first, because the message starts there.
   let openPart = $state<string | null>('origin')
-  function toggled(name: string, v: boolean) {
-    if (v) openPart = name
-    else if (openPart === name) openPart = null
+  const rows: Record<string, HTMLDetailsElement> = {}
+  // The part above that closes would pull the one clicked up under the
+  // pointer. Chromium holds it in place by itself, WebKit does not, so
+  // the page scrolls back by what it moved.
+  async function toggled(name: string, v: boolean) {
+    if (!v) {
+      if (openPart === name) openPart = null
+      return
+    }
+    const row = rows[name]
+    const was = row?.getBoundingClientRect().top
+    openPart = name
+    await tick()
+    if (!row || was === undefined) return
+    const moved = row.getBoundingClientRect().top - was
+    let scroller = row.parentElement
+    while (scroller && !/(auto|scroll)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement
+    if (Math.abs(moved) >= 1) (scroller ?? document.scrollingElement)?.scrollBy(0, moved)
   }
 
   // A variation's box is as tall as its text, whatever the width, so it
@@ -226,7 +242,7 @@
 
     <div class="list parts">
       {#each tpl.data.parts as part, at (part.name)}
-        <details class="part" bind:open={() => openPart === part.name, (v) => toggled(part.name, v)}>
+        <details class="part" bind:this={rows[part.name]} bind:open={() => openPart === part.name, (v) => toggled(part.name, v)}>
           <summary>
             <span class="turn" aria-hidden="true"><Icon name="chevron" size={14} /></span>
             <span class="name num">{part.name}</span>

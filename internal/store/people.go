@@ -14,6 +14,8 @@ type Found struct {
 	BornAbout                         int
 	AgeReason, Roles                  string
 	LastActive                        time.Time
+	// Text is the whole profile as Exa's index has it, see LinkedIn.Text.
+	Text string
 }
 
 // AddFound finds the person behind a profile, or adds them, with what the
@@ -45,6 +47,9 @@ func (d *Data) AddFound(f Found, search *Search, runID int64, at time.Time) (*Pe
 	}
 	if f.LastActive.After(l.LastActive) {
 		l.LastActive = f.LastActive
+	}
+	if f.Text != "" {
+		d.SetProfileText(p, f.Text, at)
 	}
 	seen := false
 	for i := range p.FoundBy {

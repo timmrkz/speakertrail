@@ -208,6 +208,15 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # The llama-server the app carries takes minutes to build, so it is
+      # kept until scripts/build-llama.sh changes, the rule make llama
+      # follows too. See docs/BUILD.md.
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/llama
+          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+
       - name: The app
         if: steps.needs.outputs.run == 'true'
         run: >-

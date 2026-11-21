@@ -281,21 +281,15 @@ button { -webkit-tap-highlight-color: transparent; }
 .row.end { justify-content: flex-end; }
 .row.between { justify-content: space-between; }
 
-.input, .select, .textarea {
+.input, .textarea {
   width: 100%; min-width: 0; border: var(--line-w) solid var(--line-strong); border-radius: 8px; background: var(--surface);
   color: var(--ink);
 }
-.input, .select { height: var(--control-h); padding: 0 12px; }
-.select {
-  appearance: none; padding-right: 32px; cursor: pointer;
-  background-image: linear-gradient(45deg, transparent 50%, var(--ink-3) 50%), linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
-  background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%;
-  background-size: 5px 5px; background-repeat: no-repeat;
-}
+.input { height: var(--control-h); padding: 0 12px; }
 .textarea { padding: 9px 12px; resize: vertical; min-height: 76px; line-height: 1.45; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
-.input:focus, .select:focus, .textarea:focus { border-color: var(--accent); }
+.input:focus, .textarea:focus { border-color: var(--accent); }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field > label, .field > .field-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
@@ -308,7 +302,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .search .input::-webkit-search-cancel-button { cursor: pointer; }
 
 .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-width: 0; }
-.toolbar > .select { width: auto; flex: none; }
 @media (max-width: 760px) {
   .toolbar.tight { flex-wrap: nowrap; }
   .toolbar.tight .search { flex: 1 1 0; }
@@ -469,7 +462,7 @@ a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-dr
 .btn.icon.flush-end { margin-right: calc((16px - var(--control-h)) / 2); }
 /* Controls in a bar are a size smaller, the way a Mac toolbar's are, and
    all the same size. */
-.bar .btn, .bar .select, .bar .input { height: 30px; font-size: 13px; }
+.bar .btn, .bar .input { height: 30px; font-size: 13px; }
 .bar .btn.icon { width: 30px; }
 .bar .btn.icon.flush-end { margin-right: -7px; }
 /* A control with work running in it carries the beam, see Busy.svelte.

@@ -4,12 +4,14 @@
   import { toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Info from '../lib/components/Info.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import KeyRow from '../lib/components/KeyRow.svelte'
   import LinkedinRow from '../lib/components/LinkedinRow.svelte'
   import LogsRow from '../lib/components/LogsRow.svelte'
   import SettingRow from '../lib/components/SettingRow.svelte'
   import SpeechRow from '../lib/components/SpeechRow.svelte'
+  import LanguageRow from '../lib/components/LanguageRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import ThemeRow from '../lib/components/ThemeRow.svelte'
 
@@ -25,6 +27,11 @@
   let matches = $derived(
     (settings.data ?? []).filter((s) => !q || `${s.key} ${s.description}`.toLowerCase().includes(q.toLowerCase())),
   )
+  // The prompt a first message is written from sits with the language
+  // model that writes it, the rest are about searches.
+  const drafting = new Set(['first_message_prompt'])
+  let forDrafts = $derived(matches.filter((s) => drafting.has(s.key)))
+  let forSearches = $derived(matches.filter((s) => !drafting.has(s.key)))
 
   function saved(s: Setting) {
     if (settings.data) settings.data = settings.data.map((x) => (x.key === s.key ? s : x))
@@ -43,6 +50,10 @@
 
   <ThemeRow />
 
+  <!-- The model that drafts first, the one Tim uses most, then the one
+       Dictate hears with, as Tim asked on 20 November 2026. -->
+  <LanguageRow />
+
   <SpeechRow />
 
   <LogsRow />
@@ -56,14 +67,31 @@
   {:else if !matches.length}
     <EmptyState icon="settings" title="No setting matches" text="Try another word." />
   {:else}
-    <section class="group">
-      <h2>Searches</h2>
-      <div class="list">
-        {#each matches as s (s.key)}
-          <SettingRow setting={s} onsaved={saved} />
+    {#if forDrafts.length}
+      <!-- The prompt is a box on its own under the heading, with no card
+           round it, because a box in a frame read as one thing wrapped in
+           another, Tim, 20 November 2026. What it is for waits behind the
+           info mark. -->
+      <section class="group prompt">
+        {#each forDrafts as s (s.key)}
+          <div class="headrow">
+            <h2 id="head-{s.key}">First message</h2>
+            <span class="ask"><Info label="About the prompt" side="left">{s.description}</Info></span>
+          </div>
+          <SettingRow setting={s} onsaved={saved} bare labelledby="head-{s.key}" />
         {/each}
-      </div>
-    </section>
+      </section>
+    {/if}
+    {#if forSearches.length}
+      <section class="group">
+        <h2>Searches</h2>
+        <div class="list">
+          {#each forSearches as s (s.key)}
+            <SettingRow setting={s} onsaved={saved} />
+          {/each}
+        </div>
+      </section>
+    {/if}
   {/if}
 
 </div>
@@ -71,4 +99,7 @@
 
 <style>
   .group h2 { font-size: 15px; margin: 0; }
+  /* The heading with its info mark at the far end, as on the model rows. */
+  .headrow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .headrow .ask { align-self: flex-start; margin: 1px 1px 0 0; }
 </style>

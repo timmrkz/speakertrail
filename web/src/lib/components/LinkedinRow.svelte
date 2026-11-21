@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, type LinkedinWhere } from '../api'
   import { errorText } from '../toast.svelte'
+  import Pick from './Pick.svelte'
 
   // Where the LinkedIn button opens a profile: one of the browser profiles
   // on this Mac, the one logged in to LinkedIn. The list is read from the
@@ -13,7 +14,7 @@
 
   // The LinkedIn button sends here when nothing is chosen, so the menu is
   // brought into view and focused, ready to pick.
-  let menu = $state<HTMLSelectElement>()
+  let menu = $state<HTMLButtonElement>()
   api.linkedin().then((w) => {
     where = w
     if (location.hash === '#linkedin') {
@@ -26,6 +27,10 @@
 
   const value = (app: string, folder: string) => JSON.stringify([app, folder])
   const chosen = $derived(where?.known ? value(where.app, where.folder) : '')
+  // Every profile, under the browser it belongs to.
+  const options = $derived(
+    (where?.browsers ?? []).flatMap((b) => b.profiles.map((p) => ({ value: value(b.app, p.folder), label: p.name, group: b.app }))),
+  )
   const profiles = $derived(where?.browsers.reduce((n, b) => n + b.profiles.length, 0) ?? 0)
   const name = $derived.by(() => {
     const b = where?.browsers.find((x) => x.app === where?.app)
@@ -55,7 +60,7 @@
   <div class="list">
     <div class="setting">
       <div class="info">
-        <label for="linkedin-profile" class="desc">LinkedIn opens in</label>
+        <span class="desc">LinkedIn opens in</span>
         <span class="state small">
           {#if !where}&nbsp;
           {:else if where.known}{name}
@@ -65,18 +70,11 @@
         </span>
       </div>
       <div class="editor">
-        <select bind:this={menu} id="linkedin-profile" class="select" value={chosen} disabled={!profiles || status === 'saving'}
+        <Pick bind:trigger={menu} id="linkedin-profile" label="LinkedIn opens in" value={chosen} options={options}
+          placeholder={profiles ? 'Choose a profile' : 'No browser profiles'} disabled={!profiles || status === 'saving'}
+          tone={where && !where.known && where.folder ? 'warn' : undefined} align="right"
           title="The browser profile the LinkedIn button opens profiles in. Pick the one logged in to LinkedIn"
-          onchange={(e) => choose(e.currentTarget.value)}>
-          {#if !chosen}<option value="" disabled>{profiles ? 'Choose a profile' : 'No browser profiles'}</option>{/if}
-          {#each where?.browsers ?? [] as b (b.app)}
-            <optgroup label={b.app}>
-              {#each b.profiles as p (p.folder)}
-                <option value={value(b.app, p.folder)}>{p.name}</option>
-              {/each}
-            </optgroup>
-          {/each}
-        </select>
+          onpick={(v) => choose(v)} />
       </div>
       <p class="foot small" aria-live="polite">
         {#if error}<span class="field-error">{error}</span>
@@ -99,7 +97,7 @@
   .desc { font-weight: 500; font-size: 14px; }
   .state { color: var(--ink-3); overflow-wrap: anywhere; }
   .editor { display: flex; justify-content: flex-end; min-width: 0; }
-  .editor .select { width: 220px; max-width: 100%; }
+  .editor :global(.pick) { width: max-content; max-width: 100%; }
   .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; margin: 0; }
   .foot:empty { display: none; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
@@ -107,6 +105,6 @@
   @media (max-width: 760px) {
     .setting { grid-template-columns: minmax(0, 1fr); }
     .editor, .foot { justify-content: flex-start; }
-    .editor .select { width: 100%; }
+    .editor :global(.pick) { width: 100%; }
   }
 </style>

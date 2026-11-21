@@ -48,10 +48,16 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 `linkedin` is null once the profile is rejected.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
-`sightings`: each search that found the person, newest first.
+`sightings`: each search that found the person, newest first. `draft` is
+the first message to them, empty before the first draft, and
+`drafted_at` when the language model wrote it. `profile_read_at` is when
+Exa's index first gave the profile text a draft is written from as it is
+now, null while the
+app has none and a draft reads it first. See [Drafts](#drafts).
 
-`PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`
-or `{"notes": "..."}` answers the person as `GET` does.
+`PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
+`{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`
+does.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
@@ -247,6 +253,89 @@ at the pace it has kept so far.
 
 Where a download stands is sent as the Wails event `speech`, in the same
 shape as `GET /api/speech`.
+
+## Language models
+
+`/api/language` is answered by the app itself, the same as
+[Speech models](#speech-models), see
+`cmd/speakertrail-app/languagemodels.go`. It is what Settings shows under
+Language model. The models live in the same folder.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/language` | every model, largest first, whether it is on this Mac, the folder written with `~`, whether the app carries llama-server to run one, and the download under way, `{"models": [{"name": "…", "title": "Gemma 4 26B A4B", "download": 14439363584, "needs": 16624595968, "fit": "fits", "recommended": true, "installed": false, "inUse": false, …}], "folder": "~/Library/…/models", "server": true, "job": {…}}` |
+| `POST /api/language/install` | `{"name": "…"}` fetches that model and answers the download at once |
+| `POST /api/language/cancel` | `{"id": "language-1"}` stops that download. What arrived stays and the next Download goes on from there |
+| `POST /api/language/use` | `{"name": "…"}` picks the model that drafts, downloaded or not, and answers in the shape of `GET /api/language`. 409 with why for a model that is not offered |
+| `DELETE /api/language/models/{name}` | takes that model off the Mac, after Settings asked. Not while a draft writes with it. Removing the model picked lets the choice go |
+
+A model FrameFairy has whole in `~/.framefairy/models`, by its size and
+checksum, is linked from there rather than downloaded, so the two apps
+share it on disk. While it is checked, `progress.text` is `copying`, with
+the share read so far and the seconds left as a download has them, and
+Cancel stops it. Such a model is `shared` from then on. A download that
+arrived whole before it was stopped is read through again the same way,
+with `progress.text` `checking`, rather than fetched again. The speech
+models do the same.
+
+`loaded` marks the model in memory now. The model that drafts is loaded
+as the app starts, after it is downloaded and after it is picked, and
+stays until the app quits, so every draft writes at once. The event
+`language` says when it is in.
+
+`standing` is whether a draft can be written now, `{"mark": "ok", "why": ""}`,
+and what stands in the way when it cannot: `warn` when the model that
+drafts is not downloaded, `err` when this build has no llama-server or
+the model needs more memory than this Mac has. `why` says it in a
+sentence. Settings, the dot on Settings in the sidebar and Draft all show
+this, and none of them works it out alone.
+
+`needs` is the memory the model takes while it writes, in bytes, and
+`fit` what this Mac can do with it: `fits`, `tight`, `too big` or
+`unknown`. `recommended` marks the largest model this Mac holds
+comfortably, the one Settings offers. `inUse` marks the one that drafts:
+the one picked in Settings, kept in the app's file as `language_model`,
+here or not, and with none picked the largest on this Mac. While the one
+picked is not downloaded, a draft is refused with 409 rather than
+written with another. `job` is in the shape of a speech model's
+download.
+
+Where a download stands is sent as the Wails event `language`, in the
+same shape as `GET /api/language`.
+
+## Drafts
+
+A draft is a first message to a person, written on the Mac by the
+language model from their profile and the prompt in Settings,
+`first_message_prompt`. See `internal/draft`. Drafts are written one at a
+time, in the order they were asked for.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/drafts` | the latest draft of each person since the app started, oldest first |
+| `POST /api/people/{id}/draft` | `{}` starts a draft for them and answers it at once. Asked again while theirs is under way, it answers that one. 409 with why when no language model is downloaded, and nothing starts |
+| `POST /api/people/{id}/draft/cancel` | `{}` stops theirs, 204. 409 when none is under way |
+
+A draft is
+
+```json
+{ "id": "draft-3", "person_id": 7, "state": "writing", "model": "Gemma 4 26B A4B", "text": "Hallo Lea, danke", "started_at": "2026-11-19T14:00:00Z", "fraction": 0.6, "seconds_left": 4, "seq": 12 }
+```
+
+`state` is `queued`, `reading` (their profile from Exa, when the app has
+no text of it yet), `loading` (the model, when it is not loaded), `writing`,
+`done`, `failed` or `cancelled`. `text` is what the model wrote so far, and
+the whole message once it is done. It is untrusted and shown as text.
+`fraction` and `seconds_left` come from how long earlier drafts took, -1
+and null before there was one. `error` says why a draft failed, in a
+sentence that can go on screen. `seq` is higher for every change than for
+the one before it, of any draft, so the window keeps the newer of the
+answer to `POST` and the event, whichever arrives last.
+
+A draft that is done is kept on the person as `draft`. Reading a profile
+counts against Exa's monthly budget like a search. Each change is sent as
+the Wails event `draft`, one draft at a time, and once a second while one
+runs. Where the app runs no language model, starting one answers 409.
 
 ## Report a Problem
 

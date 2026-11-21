@@ -12,6 +12,8 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import X from '@lucide/svelte/icons/x'
   import Check from '@lucide/svelte/icons/check'
+  import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down'
+  import Download from '@lucide/svelte/icons/download'
   import Plus from '@lucide/svelte/icons/plus'
   import UserPlus from '@lucide/svelte/icons/user-plus'
   import UserX from '@lucide/svelte/icons/user-x'
@@ -25,6 +27,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert'
   import Info from '@lucide/svelte/icons/info'
   import Copy from '@lucide/svelte/icons/copy'
+  import PenLine from '@lucide/svelte/icons/pen-line'
   import FileText from '@lucide/svelte/icons/file-text'
   import Code from '@lucide/svelte/icons/code'
   import Image from '@lucide/svelte/icons/image'
@@ -59,6 +62,10 @@
     undo: Undo2,
     external: ExternalLink,
     chevron: ChevronRight,
+    // The mark of a list to pick from, and of a model still to download
+    // in it, as FrameFairy draws them.
+    pick: ChevronsUpDown,
+    download: Download,
     back: ChevronLeft,
     sun: Sun,
     moon: Moon,
@@ -66,6 +73,8 @@
     alert: TriangleAlert,
     info: Info,
     copy: Copy,
+    // Draft, which writes a first message to a person.
+    draft: PenLine,
     doc: FileText,
     code: Code,
     image: Image,

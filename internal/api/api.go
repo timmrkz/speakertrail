@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/draft"
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
@@ -32,8 +33,11 @@ type API struct {
 	// Browsers opens LinkedIn in the right browser profile. Nil where
 	// there is no Mac to open it on.
 	Browsers Browsers
-	Log      *slog.Logger
-	mux      *http.ServeMux
+	// Drafts writes first messages on the Mac, nil where no language
+	// model can run.
+	Drafts *draft.Drafter
+	Log    *slog.Logger
+	mux    *http.ServeMux
 }
 
 // New builds the handler.
@@ -69,6 +73,9 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("GET /api/linkedin", a.linkedin)
 	m.HandleFunc("PUT /api/linkedin", a.setLinkedin)
 	m.HandleFunc("POST /api/people/{id}/linkedin", a.openLinkedin)
+	m.HandleFunc("GET /api/drafts", a.drafts)
+	m.HandleFunc("POST /api/people/{id}/draft", a.startDraft)
+	m.HandleFunc("POST /api/people/{id}/draft/cancel", a.cancelDraft)
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "No such endpoint") })
 	return a
 }

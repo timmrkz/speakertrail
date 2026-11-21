@@ -1,7 +1,9 @@
 #!/bin/sh
 # What this machine needs to build Speaker Trail, installed where it is
-# missing: Go and Node.js. make calls this on every build, so it costs
-# nothing when nothing is missing: every check is a command -v.
+# missing: Go and Node.js, and on a Mac CMake, which builds the
+# llama-server the app carries, see build-llama.sh. make calls this on
+# every build, so it costs nothing when nothing is missing: every check is
+# a command -v.
 #
 # On a Mac it uses Homebrew, the way FrameFairy's make does. Elsewhere it
 # says what to install, because that needs administrator rights.
@@ -10,6 +12,9 @@ set -e
 missing=""
 command -v go >/dev/null 2>&1 || missing="$missing go"
 command -v npm >/dev/null 2>&1 || missing="$missing node"
+if [ "$(uname -s 2>/dev/null)" = Darwin ]; then
+	command -v cmake >/dev/null 2>&1 || missing="$missing cmake"
+fi
 [ -n "$missing" ] || exit 0
 
 if [ "$(uname -s 2>/dev/null)" != Darwin ]; then

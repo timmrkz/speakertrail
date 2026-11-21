@@ -38,6 +38,11 @@ if [ "$(uname -s)" = Darwin ]; then
 	else
 		bad "the command line tools, for the app's window" "xcode-select --install"
 	fi
+	if command -v cmake >/dev/null 2>&1; then
+		ok "CMake, for the llama-server the app carries"
+	else
+		bad "CMake, for the llama-server the app carries" "brew install cmake"
+	fi
 elif ! pkg-config --exists gtk4 webkitgtk-6.0 2>/dev/null; then
 	bad "GTK 4 and WebKitGTK 6, for the app's window" "sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev"
 else

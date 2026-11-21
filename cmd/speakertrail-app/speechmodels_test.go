@@ -64,12 +64,7 @@ func speechFor(t *testing.T, m speech.Model) (*speechModels, func() []SpeechStat
 }
 
 func (s *speechModels) waitForDownload() {
-	s.mu.Lock()
-	done := s.done
-	s.mu.Unlock()
-	if done != nil {
-		<-done
-	}
+	s.get.wait()
 }
 
 // Download in Settings fetches the model, answers at once with a download
@@ -210,7 +205,7 @@ func TestSpeechRoutes(t *testing.T) {
 	if w := ask("GET", "/api/speech", ""); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &st) != nil || len(st.Models) != 1 {
 		t.Fatalf("GET: %d %s", w.Code, w.Body)
 	}
-	var j SpeechJob
+	var j ModelJob
 	if w := ask("POST", "/api/speech/install", `{"name":"test-model"}`); w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &j) != nil || j.ID == "" {
 		t.Fatalf("install: %d %s", w.Code, w.Body)
 	}

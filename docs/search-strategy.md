@@ -30,7 +30,11 @@ kind of person in a place, like "Yogalehrerin Köln" or "Gen Z Unternehmer
 NRW". It is one call to Exa, which reads its own index and never
 LinkedIn itself, so a run of ten takes well under a minute. Exa answers
 with the profile's headline, place, roles, education and the dates of its
-latest posts, comments and reactions.
+latest posts, comments and reactions. The whole text of the profile, up
+to 8,000 letters, is kept on the person: it is what Draft writes a first
+message from. A person found before it was kept has it read once from
+Exa's index when a draft asks for it, one call against the month's
+budget.
 
 **Only who passes every one of these is kept**, nobody else is stored:
 
@@ -90,12 +94,14 @@ practices, most of them between 30 and 50. A founder who writes
 - **People**, with the Run button. Only people a profile search found,
   and whoever Tim connected with before, the likely youngest first. Each row says
   about how old the person is and when they were last active on
-  LinkedIn. Filters: all, under 30, connected.
+  LinkedIn. Filters: all, under 30, connected. A person's view has
+  Draft, which writes a first message to them on the Mac.
 - **Searches**, the profile searches. Add one, pause one, see how many
   people each found and how many of them Tim connected with, those that
   led to the most connections on top. A search Tim adds runs before the
   starting ones. The exclusions sit here too, behind one click.
-- **Settings**, the Exa key and the settings for profile searches.
+- **Settings**, the Exa key, the settings for profile searches, and the
+  language model with the prompt a first message is written from.
 
 ## Connections steer the searches
 

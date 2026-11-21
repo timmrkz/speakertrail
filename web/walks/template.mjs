@@ -69,6 +69,31 @@ const walks = [
     },
   },
   {
+    name: 'Tab from one variation to the next keeps what is typed in both',
+    async run(page) {
+      await settings(page)
+      await part(page, 'opener').locator('summary').click()
+      const boxes = part(page, 'opener').locator('textarea')
+      await boxes.nth(0).fill('erstens')
+      // Tab goes to its ×, then to the next variation, while the first
+      // saves.
+      await boxes.nth(0).press('Tab')
+      await page.keyboard.press('Tab')
+      await page.keyboard.press('ControlOrMeta+a')
+      await page.keyboard.type('zweitens')
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))
+      if (focused !== 'Variation 2 of opener') return `after Tab the focus is on ${focused}`
+      await boxes.nth(1).blur()
+      await page.waitForFunction(() => fetch('/api/template').then((r) => r.json()).then((t) => {
+        const v = t.parts.find((p) => p.name === 'opener').variations
+        return v[0] === 'erstens' && v[1] === 'zweitens'
+      }))
+      const shown = await boxes.evaluateAll((ts) => ts.slice(0, 2).map((t) => t.value))
+      if (shown.join(',') !== 'erstens,zweitens') return `the boxes read ${shown}`
+      return ''
+    },
+  },
+  {
     name: 'A variation that uses a part there is not is refused, says why, and Escape puts it back',
     async run(page) {
       await settings(page)
@@ -100,9 +125,11 @@ const walks = [
       await page.locator('.toast').filter({ hasText: 'Removed a variation of intensity' }).waitFor()
       const left = await p.locator('textarea').evaluateAll((ts) => ts.map((t) => t.value))
       if (JSON.stringify(left) !== '["super gern","richtig gern"]') return `left ${JSON.stringify(left)}`
-      // The last one cannot go: the part needs one.
+      // The last one cannot go: the app says the part needs one.
       await part(page, 'greeting').locator('summary').click()
-      if (!(await part(page, 'greeting').locator('button[aria-label="Remove variation 1 of greeting"]').isDisabled())) return 'the last variation of greeting can be removed'
+      await part(page, 'greeting').locator('button[aria-label="Remove variation 1 of greeting"]').click()
+      await part(page, 'greeting').locator('.field-error').filter({ hasText: 'Greeting needs at least one variation' }).waitFor()
+      if ((await part(page, 'greeting').locator('textarea').count()) !== 1) return 'the last variation of greeting went'
       return ''
     },
   },
@@ -114,18 +141,23 @@ const walks = [
       await tpl(page).locator('#new-part').press('Enter')
       await part(page, 'wave').waitFor()
       if (!(await part(page, 'wave').evaluate((d) => d.open))) return 'the new part is not open'
-      // In use by origin, it cannot go.
+      // Origin stays, and the button says why the app keeps it.
+      const keepOrigin = part(page, 'origin').locator('button.remove-part')
+      if (!(await keepOrigin.isDisabled()) || (await keepOrigin.getAttribute('title')) !== 'Origin is where the message starts, so it stays.') return 'origin can be removed'
+      // In use by origin, wave cannot go either, and says so.
       const origin = part(page, 'origin').locator('textarea').first()
       await origin.fill((await origin.inputValue()) + ' #wave#')
       await origin.blur()
       await page.locator('.toast').filter({ hasText: 'Saved origin' }).waitFor()
-      await part(page, 'wave').locator('button.remove-part').click()
-      await part(page, 'wave').locator('.field-error').filter({ hasText: 'Origin still uses #wave#' }).waitFor()
+      const removeWave = part(page, 'wave').locator('button.remove-part')
+      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.title === 'Origin still uses #wave#. Take it out there first.' && b.disabled))
+      if (!(await removeWave.isDisabled())) return 'wave can be removed while origin uses it'
       // Unused, it goes, and Undo brings it back where it was.
       await origin.fill((await origin.inputValue()).replace(' #wave#', ''))
       await origin.blur()
       await page.waitForFunction(() => !document.querySelector('section.template details.part textarea')?.value.includes('#wave#'))
-      await part(page, 'wave').locator('button.remove-part').click()
+      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.textContent.includes('wave') && !b.disabled))
+      await removeWave.click()
       await page.locator('.toast').filter({ hasText: 'Removed wave' }).waitFor()
       if (await part(page, 'wave').count()) return 'wave is still there'
       await toastUndo(page).click()

@@ -442,7 +442,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	}
 	// What the model writes so far is JSON, which is nothing to read, so
 	// the window sees only that it grows.
-	answer, err := ask(ctx, s, []language.Message{{Role: "user", Content: Fill(prompt, name, notes, text)}}, json.RawMessage(HookSchema), func(string) {
+	answer, err := ask(ctx, s, Messages(prompt, name, notes, text), json.RawMessage(HookSchema), func(string) {
 		d.update(id, progress)
 	})
 	if err != nil {
@@ -589,6 +589,28 @@ func (m message) with(h Hook) string {
 		reaction = " " + h.Reaction
 	}
 	return strings.NewReplacer(portraitMark, or(h.Portrait), reasonMark, or(h.Reason), reactionMark, reaction).Replace(string(m))
+}
+
+// Messages is the prompt as the model is asked it: the paragraphs before
+// the one of its first field as a system turn, the same for every draft, and
+// the rest, filled in for the person, as the user's turn. llama-server
+// keeps a checkpoint where the last user turn starts, so the next draft
+// reads only the person's part again, whatever the model's sliding window
+// let go of. A prompt that starts with a field is one user turn.
+func Messages(prompt, name, notes, profile string) []language.Message {
+	first := len(prompt)
+	for _, f := range []string{"{{name}}", "{{first_name}}", "{{notes}}", store.ProfileField} {
+		if i := strings.Index(prompt, f); i >= 0 && i < first {
+			first = i
+		}
+	}
+	cut := max(strings.LastIndex(prompt[:first], "\n\n"), 0)
+	system := strings.TrimSpace(prompt[:cut])
+	user := Fill(strings.TrimSpace(prompt[cut:]), name, notes, profile)
+	if system == "" {
+		return []language.Message{{Role: "user", Content: user}}
+	}
+	return []language.Message{{Role: "system", Content: system}, {Role: "user", Content: user}}
 }
 
 // Fill puts a person into the prompt: {{profile}}, {{name}},

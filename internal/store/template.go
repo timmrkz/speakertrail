@@ -60,13 +60,16 @@ var TemplateFields = []Field{
 }
 
 // Limits of a template, so a slip never makes a file or a draft without
-// end.
+// end. Check holds a template to them, see walk.
 const (
 	maxParts      = 100
 	maxVariations = 200
 	maxVariation  = 2000
 	// maxDepth is how deep parts may lie inside each other.
 	maxDepth = 20
+	// maxMessage is the most letters a message may come to, several
+	// times Tim's.
+	maxMessage = 3000
 )
 
 //go:embed first_message_template.json
@@ -177,35 +180,71 @@ func checkVariation(t Template, part, v string) error {
 	return nil
 }
 
-// walk goes through every part origin reaches, and says which parts and
-// fields it found. A part that holds itself, or parts too deep inside
-// each other, would never end, so they are refused.
+// walk goes through every part origin reaches, each once, and says which
+// parts and fields it found. A part that holds itself, parts too deep
+// inside each other, or a template whose longest message would be longer
+// than maxMessage, would make a draft without end, so they are refused.
+// It takes as long as the template is, whatever it makes.
 func (t Template) walk() (map[string]bool, error) {
 	reached := map[string]bool{}
-	var visit func(name string, path []string) error
-	visit = func(name string, path []string) error {
-		if slices.Contains(path, name) {
-			return fmt.Errorf("%s holds itself, through %s", name, strings.Join(append(path, name), " → "))
-		}
-		if len(path) >= maxDepth {
-			return fmt.Errorf("the parts lie more than %d deep inside each other", maxDepth)
-		}
+	const (
+		open = 1
+		done = 2
+	)
+	state := map[string]int{}
+	// How many parts lie inside each other from a part down, and the most
+	// letters it can make.
+	depth, longest := map[string]int{}, map[string]int{}
+	var path []string
+	var visit func(name string) error
+	visit = func(name string) error {
 		reached[name] = true
 		p, ok := t.Part(name)
 		if !ok {
+			longest[name] = fieldLetters[name]
 			return nil
 		}
+		switch state[name] {
+		case open:
+			return fmt.Errorf("%s holds itself, through %s", name, strings.Join(append(path[slices.Index(path, name):], name), " → "))
+		case done:
+			return nil
+		}
+		state[name] = open
+		path = append(path, name)
+		deepest, most := 0, 0
 		for _, v := range p.Variations {
+			n := utf8.RuneCountInString(v)
 			for _, m := range ref.FindAllStringSubmatch(v, -1) {
-				if err := visit(m[1], append(slices.Clip(path), name)); err != nil {
+				if err := visit(m[1]); err != nil {
 					return err
 				}
+				deepest = max(deepest, depth[m[1]])
+				// Held below a bound, so a sum never runs over.
+				n = min(n-len(m[0])+longest[m[1]], maxMessage+1)
 			}
+			most = max(most, n)
 		}
+		path = path[:len(path)-1]
+		state[name] = done
+		depth[name], longest[name] = deepest+1, most
 		return nil
 	}
-	return reached, visit(TemplateOrigin, nil)
+	if err := visit(TemplateOrigin); err != nil {
+		return nil, err
+	}
+	if depth[TemplateOrigin] > maxDepth {
+		return nil, fmt.Errorf("the parts lie more than %d deep inside each other", maxDepth)
+	}
+	if longest[TemplateOrigin] > maxMessage {
+		return nil, fmt.Errorf("the longest message the template can make has more than %d letters", maxMessage)
+	}
+	return reached, nil
 }
+
+// fieldLetters is the most letters each field brings into a message: the
+// schema's limits for the model's, and a long first name.
+var fieldLetters = map[string]int{FirstNameField: 40, PortraitField: 40, ReasonField: 120, ReactionField: 61}
 
 // Expand puts a message together from origin: pick tells which of n
 // variations to take, from 0 to n-1, and fields what the app and the
@@ -221,7 +260,7 @@ func (t Template) Expand(fields map[string]string, pick func(n int) int) string 
 			return
 		}
 		p, ok := t.Part(name)
-		if !ok || depth > maxDepth || len(p.Variations) == 0 {
+		if !ok || depth > maxDepth || len(p.Variations) == 0 || b.Len() > 4*maxMessage {
 			return
 		}
 		i := pick(len(p.Variations))
@@ -355,11 +394,23 @@ func (d *Data) RemoveTemplatePart(name string) error {
 	if i < 0 {
 		return fmt.Errorf("%w %s", ErrNoPart, name)
 	}
+	if err := t.Removable(name); err != nil {
+		return err
+	}
+	t.Parts = slices.Delete(t.Parts, i, i+1)
+	return d.setTemplate(t)
+}
+
+// Removable says why a part cannot be taken out, nil when it can: origin
+// stays, and so does a part another one still uses.
+func (t Template) Removable(name string) error {
 	if name == TemplateOrigin {
 		return errors.New("origin is where the message starts, so it stays")
 	}
-	t.Parts = slices.Delete(t.Parts, i, i+1)
 	for _, p := range t.Parts {
+		if p.Name == name {
+			continue
+		}
 		for _, v := range p.Variations {
 			for _, m := range ref.FindAllStringSubmatch(v, -1) {
 				if m[1] == name {
@@ -368,7 +419,7 @@ func (d *Data) RemoveTemplatePart(name string) error {
 			}
 		}
 	}
-	return d.setTemplate(t)
+	return nil
 }
 
 // ResetTemplate puts Tim's template of 21 November 2026 back.

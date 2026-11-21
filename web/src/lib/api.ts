@@ -491,6 +491,8 @@ export interface DraftJob {
 export interface TemplatePart {
   name: string
   variations: string[]
+  // Why the part cannot be taken out, from the app. Missing when it can.
+  kept?: string
 }
 export interface TemplateField {
   name: string

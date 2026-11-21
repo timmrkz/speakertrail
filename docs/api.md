@@ -110,7 +110,7 @@ the app was closed while it went.
 does. `hook_prompt` is the prompt the language model writes the hook of a
 first message from, see Drafts, and must keep `{{profile}}`. It was
 `first_message_prompt` while the model wrote the whole message, and a
-prompt kept under that name is left alone. Where LinkedIn opens is not one of them, it has its own endpoints
+prompt kept under that name is dropped when the file is read. Where LinkedIn opens is not one of them, it has its own endpoints
 below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
 value of the wrong kind gets 400, an unknown key 404.
 
@@ -313,7 +313,11 @@ template in Settings, with one variation of each part picked at random.
 The language model writes only its hook, the parts `portrait`, `reason`
 and `reaction_part`, from their profile and the prompt in Settings,
 `hook_prompt`. It answers in JSON held to `draft.HookSchema`, which
-llama-server turns into a grammar and the app checks again. See
+llama-server turns into a grammar and the app checks again. The prompt
+goes in two turns: the paragraphs before the one of its first field as a
+system turn, the same for every draft, and the rest, filled in for the
+person, as the user's. llama-server keeps a checkpoint where the last
+user turn starts, so the next draft reads only the person's part again. See
 `internal/draft`. Drafts are written one at a time, in the order they
 were asked for.
 
@@ -372,7 +376,8 @@ Tim's first template is `internal/store/first_message_template.json`.
 Each change answers with the template:
 
 ```json
-{ "parts": [{ "name": "origin", "variations": ["#greeting# #first_name#, ... #reason##reaction_part# ..."] }],
+{ "parts": [{ "name": "origin", "variations": ["#greeting# #first_name#, ... #reason##reaction_part# ..."],
+             "kept": "Origin is where the message starts, so it stays." }],
   "fields": [{ "name": "reason", "by": "model", "about": "Why they caught Tim's eye, the part after \"weil\"" }],
   "changed": true }
 ```
@@ -381,9 +386,11 @@ A change that leaves a template that cannot work answers 400 with why,
 and changes nothing: a part named other than with small letters, digits
 and `_`, or with the name of a field, a part without a variation, `#name#`
 for a part there is not, a part inside itself or more than 20 deep, no
-`origin`, no `#reason#` that origin reaches, or origin taken out. A part
-another part uses cannot be taken out. `changed` says the template is not
-Tim's first one any more.
+`origin`, no `#reason#` that origin reaches, a longest message of more
+than 3,000 letters, or origin taken out. Each part is walked once, so the
+check takes as long as the template is. `kept` says why a part cannot be
+taken out, origin or a part another part uses, and is missing when it
+can. `changed` says the template is not Tim's first one any more.
 
 ## Report a Problem
 

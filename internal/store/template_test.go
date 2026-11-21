@@ -218,3 +218,48 @@ func TestTheDefaultTemplateComesBack(t *testing.T) {
 		t.Error("the template handed out should be a copy")
 	}
 }
+
+// Parts that each use the next four times stay inside every other limit
+// but would make a message of millions of letters, and walking every
+// path took 100 s inside Store.Update. Each part is walked once, and the
+// template is refused for the message it would make.
+func TestATemplateThatWouldMakeAMessageWithoutEndIsRefused(t *testing.T) {
+	parts := []Part{{"origin", []string{"#reason# #p1#"}}}
+	for i := 1; i <= 13; i++ {
+		v := "end"
+		if i < 13 {
+			n := "#p" + itoa(i+1) + "#"
+			v = n + n + n + n
+		}
+		parts = append(parts, Part{"p" + itoa(i), []string{v}})
+	}
+	err := (Template{Parts: parts}).Check()
+	if err == nil || !strings.Contains(err.Error(), "more than 3000 letters") {
+		t.Errorf("a message of 4^12 parts: %v", err)
+	}
+	// One part used twice in two places is fine, and counted once each.
+	ok := Template{Parts: []Part{{"origin", []string{"#reason# #a# #b#"}}, {"a", []string{"#c#"}}, {"b", []string{"#c#"}}, {"c", []string{strings.Repeat("x", 1300)}}}}
+	if err := ok.Check(); err != nil {
+		t.Errorf("2,600 letters and the reason should fit: %v", err)
+	}
+	ok.Parts[3].Variations = append(ok.Parts[3].Variations, strings.Repeat("y", 1450))
+	if err := ok.Check(); err == nil {
+		t.Error("3,000 letters with the reason should not fit")
+	}
+}
+
+// A prompt kept from the builds of pull request 38, which asked for a
+// whole message, goes when the file is read.
+func TestTheOldPromptGoes(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	s.Update(func(d *Data) error {
+		d.Settings["first_message_prompt"] = SettingValue{Value: json.RawMessage(`"Write a whole message {{profile}}"`)}
+		return nil
+	})
+	open(t, dir).Read(func(d *Data) {
+		if _, ok := d.Settings["first_message_prompt"]; ok {
+			t.Error("the old prompt is still there")
+		}
+	})
+}

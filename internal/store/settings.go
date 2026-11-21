@@ -31,8 +31,8 @@ var Defaults = []Default{
 // model writes the hook of a first message from, see internal/draft. Its
 // fields are written {{profile}}, {{name}}, {{first_name}} and {{notes}}.
 // It was first_message_prompt while the model wrote the whole message,
-// and a prompt kept under that name is left alone, since it asks for
-// something else.
+// and a prompt kept under that name is dropped when the file is read,
+// since it asks for something else.
 const FirstMessagePrompt = "hook_prompt"
 
 // ProfileField is the field of the prompt where the profile goes. A prompt

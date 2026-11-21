@@ -575,9 +575,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['DELETE', /^\/api\/template\/parts\/([^/]+)$/, (_s, m) => {
     const name = decodeURIComponent(m[1])
     if (!template.some((p) => p.name === name)) return err(404, `The template has no part ${name}.`)
-    if (name === 'origin') return err(400, 'Origin is where the message starts, so it stays.')
-    const user = template.find((p) => p.variations.some((v) => v.includes(`#${name}#`)))
-    if (user) return err(400, `${user.name[0].toUpperCase()}${user.name.slice(1)} still uses #${name}#. Take it out there first.`)
+    const why = keptWhy(name)
+    if (why) return err(400, why)
     template = template.filter((p) => p.name !== name)
     return ok(templateJSON())
   }],
@@ -994,7 +993,14 @@ function startTemplate(): TemplatePart[] {
 }
 let template = startTemplate()
 function templateJSON(): FirstMessageTemplate {
-  return { parts: template, fields: TEMPLATE_FIELDS, changed: JSON.stringify(template) !== JSON.stringify(startTemplate()) }
+  const parts = template.map((p) => ({ ...p, kept: keptWhy(p.name) || undefined }))
+  return { parts, fields: TEMPLATE_FIELDS, changed: JSON.stringify(template) !== JSON.stringify(startTemplate()) }
+}
+// Why a part cannot be taken out, as store.Template.Removable says it.
+function keptWhy(name: string): string {
+  if (name === 'origin') return 'Origin is where the message starts, so it stays.'
+  const user = template.find((p) => p.name !== name && p.variations.some((v) => v.includes(`#${name}#`)))
+  return user ? `${user.name[0].toUpperCase()}${user.name.slice(1)} still uses #${name}#. Take it out there first.` : ''
 }
 // The checks of store.Template.Check a walk meets, in its words.
 function checkTemplate(parts: TemplatePart[]): string {

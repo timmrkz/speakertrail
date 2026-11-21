@@ -32,6 +32,17 @@ func TestTimEditsTheTemplate(t *testing.T) {
 		!strings.HasPrefix(names(tj), "origin wave greeting") {
 		t.Errorf("a part added: %d %s", code, names(tj))
 	}
+	// The app says which parts cannot go, and why, so the window only
+	// shows it.
+	var now templateJSON
+	call(t, a, "GET", "/api/template", "", &now)
+	kept := map[string]string{}
+	for _, p := range now.Parts {
+		kept[p.Name] = p.Kept
+	}
+	if kept["origin"] != "Origin is where the message starts, so it stays." || kept["opener"] != "Origin still uses #opener#. Take it out there first." || kept["wave"] != "" {
+		t.Errorf("kept: %q", kept)
+	}
 	// What cannot work is refused and says why.
 	var refused map[string]string
 	for path, body := range map[string]string{

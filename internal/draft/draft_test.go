@@ -87,7 +87,7 @@ func newRig(t *testing.T) *rig {
 					break
 				}
 			}
-			if !strings.Contains(msgs[0].Content, "## About") {
+			if !strings.Contains(msgs[len(msgs)-1].Content, "## About") {
 				return language.Answer{}, errors.New("the prompt has no profile in it")
 			}
 			if string(schema) != HookSchema {
@@ -316,6 +316,35 @@ func TestDraftsFromSeveralGoroutines(t *testing.T) {
 	// The last may have been under way already when it was cancelled.
 	if int(r.asks.Load()) != len(done) || len(people) < len(ids)-1 {
 		t.Errorf("%d asked, %d done, for %d of %d people", r.asks.Load(), len(done), len(people), len(ids))
+	}
+}
+
+// The part of the prompt before its first field is the same for every
+// draft, and goes first, as a turn of its own, so llama-server can keep
+// it. The person's part is the last turn.
+func TestThePromptIsSentInTwoTurns(t *testing.T) {
+	prompt := store.DefaultFirstMessagePrompt
+	a := Messages(prompt, "Mara Beispiel", "", "# Mara\n\nKeramik")
+	b := Messages(prompt, "Jonas Probe", "Sport!", "# Jonas\n\nJudo")
+	if len(a) != 2 || a[0].Role != "system" || a[1].Role != "user" || a[0] != b[0] {
+		t.Fatalf("the turns differ in their first: %+v", a)
+	}
+	if !strings.HasSuffix(a[0].Content, `"portrait":"Maklerin"}`) || strings.Contains(a[0].Content, "{{") {
+		t.Errorf("the first turn ends %q", a[0].Content[len(a[0].Content)-60:])
+	}
+	if !strings.HasPrefix(a[0].Content, "You write one short German line") {
+		t.Errorf("the first turn starts %q", a[0].Content[:40])
+	}
+	if want := "Profile:\n# Jonas\n\nJudo\n\nTim's note: Sport!\nOutput:"; b[1].Content != want {
+		t.Errorf("the person's turn is %q, want %q", b[1].Content, want)
+	}
+	// A prompt that starts with a field is one turn, and the paragraph of
+	// the first field goes whole into the person's turn.
+	if m := Messages("{{profile}} and more", "", "", "P"); len(m) != 1 || m[0].Content != "P and more" {
+		t.Errorf("a prompt starting with a field: %+v", m)
+	}
+	if m := Messages("Write.\n\nGreet her.\nAbout {{first_name}}: {{profile}}", "Mara Beispiel", "", "P"); len(m) != 2 || m[0].Content != "Write." || m[1].Content != "Greet her.\nAbout Mara: P" {
+		t.Errorf("a field in a line: %+v", m)
 	}
 }
 

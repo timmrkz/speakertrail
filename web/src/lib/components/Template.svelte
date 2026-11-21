@@ -38,64 +38,71 @@
   let working = $state<string | null>(null)
   let errors = $state<Record<string, string>>({})
 
-  async function change(name: string, run: () => Promise<FirstMessageTemplate>): Promise<boolean> {
-    working = name
-    try {
-      tpl.data = await run()
-      errors = { ...errors, [name]: '' }
-      another()
-      return true
-    } catch (e) {
-      errors = { ...errors, [name]: errorText(e) }
-      return false
-    } finally {
-      working = null
+  // Changes go to the app one after another, each from the template the
+  // one before it left, so a box left while another saves loses nothing.
+  let queue: Promise<unknown> = Promise.resolve()
+  function change(name: string, run: () => Promise<FirstMessageTemplate> | undefined): Promise<boolean> {
+    const done = queue.then(async () => {
+      const asked = run()
+      if (!asked) return false
+      working = name
+      try {
+        tpl.data = await asked
+        errors = { ...errors, [name]: '' }
+        another()
+        return true
+      } catch (e) {
+        errors = { ...errors, [name]: errorText(e) }
+        return false
+      } finally {
+        working = null
+      }
+    })
+    queue = done
+    return done
+  }
+
+  const latest = (name: string) => tpl.data?.parts.find((p) => p.name === name)?.variations ?? []
+
+  // Gives a part the variations make makes of the ones it has then, and
+  // Undo the ones before.
+  async function put(name: string, make: (was: string[]) => string[], said: string) {
+    let was: string[] = []
+    const ok = await change(name, () => {
+      was = latest(name)
+      const next = make(was)
+      return JSON.stringify(next) === JSON.stringify(was) ? undefined : api.putTemplatePart(name, next)
+    })
+    if (ok) {
+      toast.show(said, 'plain', { label: 'Undo', run: () => void change(name, () => api.putTemplatePart(name, was)) })
     }
   }
 
-  // Gives a part its variations, and Undo the ones before.
-  async function put(part: TemplatePart, variations: string[], said: string) {
-    const was = part.variations
-    if (await change(part.name, () => api.putTemplatePart(part.name, variations))) {
-      toast.show(said, 'plain', {
-        label: 'Undo',
-        run: () => void change(part.name, () => api.putTemplatePart(part.name, was)),
-      })
-    }
-  }
-
-  function edited(part: TemplatePart, i: number, e: FocusEvent) {
+  function edited(name: string, i: number, e: FocusEvent) {
     const value = (e.currentTarget as HTMLTextAreaElement).value
-    if (value === part.variations[i]) return
-    put(part, part.variations.map((x, j) => (j === i ? value : x)), `Saved ${part.name}`)
+    put(name, (was) => was.map((x, j) => (j === i ? value : x)), `Saved ${name}`)
   }
 
-  function removeVariation(part: TemplatePart, i: number) {
-    put(part, part.variations.filter((_, j) => j !== i), `Removed a variation of ${part.name}`)
+  function removeVariation(name: string, i: number) {
+    put(name, (was) => was.filter((_, j) => j !== i), `Removed a variation of ${name}`)
   }
 
   // Escape puts back what is saved.
-  function keydown(part: TemplatePart, i: number, e: KeyboardEvent) {
+  function keydown(name: string, i: number, e: KeyboardEvent) {
     if (e.key !== 'Escape') return
     const box = e.currentTarget as HTMLTextAreaElement
-    box.value = part.variations[i]
-    errors = { ...errors, [part.name]: '' }
+    box.value = latest(name)[i] ?? ''
+    errors = { ...errors, [name]: '' }
     box.blur()
   }
 
   // What is typed for a new variation, by part.
   let adding = $state<Record<string, string>>({})
-  async function addVariation(part: TemplatePart, e: SubmitEvent) {
+  async function addVariation(name: string, e: SubmitEvent) {
     e.preventDefault()
-    const value = adding[part.name] ?? ''
-    if (await change(part.name, () => api.putTemplatePart(part.name, [...part.variations, value]))) {
-      adding = { ...adding, [part.name]: '' }
-      const was = part.variations
-      toast.show(value ? `Added a variation to ${part.name}` : `Added an empty variation to ${part.name}`, 'plain', {
-        label: 'Undo',
-        run: () => void change(part.name, () => api.putTemplatePart(part.name, was)),
-      })
-    }
+    const value = adding[name] ?? ''
+    await put(name, (was) => [...was, value], value ? `Added a variation to ${name}` : `Added an empty variation to ${name}`)
+    if (!errors[name]) adding = { ...adding, [name]: '' }
   }
 
   async function removePart(part: TemplatePart, at: number) {
@@ -131,7 +138,7 @@
   }
 
   async function reset() {
-    const was = tpl.data?.parts ?? []
+    const was = (tpl.data?.parts ?? []).map(({ name, variations }) => ({ name, variations }))
     if (await change('', api.resetTemplate)) {
       toast.show('Put back the first template', 'plain', { label: 'Undo', run: () => void change('', () => api.putTemplate(was)) })
     }
@@ -142,7 +149,7 @@
 
   // A variation's box is as tall as its text, whatever the width, so it
   // shows whole and never scrolls inside.
-  function grow(box: HTMLTextAreaElement) {
+  function grow(box: HTMLTextAreaElement, _value: string) {
     const fit = () => {
       box.style.height = 'auto'
       box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`
@@ -204,20 +211,21 @@
           </summary>
           <div class="body">
             <ul class="variations">
-              {#each part.variations as v, i (`${i}:${v}`)}
+              <!-- Keyed by place, so a box being typed in stays itself while
+                   the app answers for another. -->
+              {#each part.variations as v, i (i)}
                 <li class="variation">
-                  <textarea class="input text" rows="1" value={v} use:grow placeholder="Empty, leaves {part.name} out"
-                    aria-label="Variation {i + 1} of {part.name}" spellcheck="false" disabled={working === part.name}
-                    onblur={(e) => edited(part, i, e)} onkeydown={(e) => keydown(part, i, e)}></textarea>
+                  <textarea class="input text" rows="1" value={v} use:grow={v} placeholder="Empty, leaves {part.name} out"
+                    aria-label="Variation {i + 1} of {part.name}" spellcheck="false"
+                    onblur={(e) => edited(part.name, i, e)} onkeydown={(e) => keydown(part.name, i, e)}></textarea>
                   <button class="btn icon quiet" type="button" aria-label="Remove variation {i + 1} of {part.name}"
-                    title={part.variations.length === 1 ? 'A part needs one variation. Remove the part instead' : 'Remove this variation'}
-                    disabled={working === part.name || part.variations.length === 1} onclick={() => removeVariation(part, i)}>
+                    title="Remove this variation" onclick={() => removeVariation(part.name, i)}>
                     <Icon name="x" />
                   </button>
                 </li>
               {/each}
             </ul>
-            <form class="add" onsubmit={(e) => addVariation(part, e)} novalidate>
+            <form class="add" onsubmit={(e) => addVariation(part.name, e)} novalidate>
               <input class="input" type="text" placeholder="A new variation" aria-label="New variation of {part.name}"
                 spellcheck="false" bind:value={() => adding[part.name] ?? '', (v) => (adding = { ...adding, [part.name]: v })} />
               <button class="btn" type="submit" disabled={working === part.name} title="Add it. Left empty, it leaves {part.name} out now and then">
@@ -225,12 +233,11 @@
               </button>
             </form>
             {#if errors[part.name]}<p class="field-error" role="alert">{errors[part.name]}</p>{/if}
-            {#if part.name !== 'origin'}
-              <button class="btn sm quiet danger remove-part" type="button" disabled={working === part.name}
-                onclick={() => removePart(part, at)} title="Take the part out. A part another one uses stays">
-                <Icon name="trash" />Remove {part.name}
-              </button>
-            {/if}
+            <!-- The app says why a part stays, and the button says it. -->
+            <button class="btn sm quiet danger remove-part" type="button" disabled={working === part.name || !!part.kept}
+              onclick={() => removePart(part, at)} title={part.kept ?? 'Take the part out. Undo brings it back'}>
+              <Icon name="trash" />Remove {part.name}
+            </button>
           </div>
         </details>
       {/each}

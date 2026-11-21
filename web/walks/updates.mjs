@@ -97,6 +97,37 @@ await walk('What the system said is a field under the words, with Try again besi
   }
 })
 
+// Tim followed PR #46 after it was merged, and the list and the line under
+// the build called it closed. A merged pull request is said to be merged,
+// in the colour of a warning, and one closed without a merge closed, in
+// the colour of an error, on the list's edge and the line's mark alike.
+await walk('A pull request followed that was merged says merged in amber, one closed says closed in red', async (browser) => {
+  for (const [ended, word, colour] of [['merged', 'merged', '--warn'], ['closed', 'closed', '--bad']]) {
+    const page = await browser.newPage({ viewport: { width: 390, height: 800 } })
+    await page.route('**/api/updates', async (route) => {
+      const st = await (await route.fetch()).json()
+      await route.fulfill({ json: { ...st, picked: 'pr-46', follows: '', gone: 'pr-46', ended, phase: 'gone' } })
+    })
+    await page.goto(`${url}/app/updates`)
+    await page.waitForFunction(() => /PR #46/.test(document.querySelector('#channel')?.textContent ?? ''))
+    const label = (await trigger(page).textContent()).trim()
+    expect(`the list says "${label}", want "PR #46, ${word}"`, label === `PR #46, ${word}`)
+    const head = (await page.locator('.status .words').textContent()).replace(/\s+/g, ' ')
+    expect(`the line says "${head}", want PR #46 is ${word}`, head.includes(`PR #46 is ${word}`))
+    const seen = await page.evaluate((name) => {
+      const probe = document.createElement('span')
+      probe.style.color = `var(${name})`
+      document.body.append(probe)
+      const want = getComputedStyle(probe).color
+      probe.remove()
+      return { want, edge: getComputedStyle(document.querySelector('#channel')).borderTopColor, mark: getComputedStyle(document.querySelector('.status .mark')).color }
+    }, colour)
+    expect(`${ended}: the list's edge is ${seen.edge}, want ${colour}, ${seen.want}`, seen.edge === seen.want)
+    expect(`${ended}: the line's mark is ${seen.mark}, want ${colour}, ${seen.want}`, seen.mark === seen.want)
+    await page.close()
+  }
+})
+
 await server.close()
 if (failed) {
   console.log(`${failed} walk${failed === 1 ? '' : 's'} failed`)

@@ -29,9 +29,19 @@ export const channelName = (id: string) => (id.startsWith('pr-') ? `PR #${id.sli
 // Empty for a build made on the Mac until a channel is chosen.
 export const following = (u: UpdateState | null) => (u ? u.picked || u.follows || u.gone || u.channel || '' : '')
 
+// What became of the pull request followed that has gone, in a word: merged
+// in the colour of a warning, closed without a merge in the colour of an
+// error. Tim followed PR #46 after it was merged and the page called it
+// closed. One the channel list says nothing about has ended.
+export function ended(u: UpdateState | null): { word: string; tone: 'warn' | 'err' } {
+  if (u?.ended === 'merged') return { word: 'merged', tone: 'warn' }
+  if (u?.ended === 'closed') return { word: 'closed', tone: 'err' }
+  return { word: 'ended', tone: 'warn' }
+}
+
 // The pull request followed no longer merges into main. Its builds still
 // come, but CI does not run on them, so it wears the colour of a warning,
-// the way one that closed does.
+// the way one that was merged does.
 export const conflicted = (u: UpdateState | null) => {
   const f = following(u)
   return !!u?.channels?.some((c) => c.id === f && c.conflict)
@@ -104,8 +114,11 @@ export function standing(
       return { mark: 'ok', head: 'Up to date', more: `This is the newest build of ${followingName}. ${when(u.checked, now)}`.trim() }
     // The pull request followed was merged or closed. Nothing downloads
     // by itself: which channel to follow next is the person's to say.
-    case 'gone':
-      return { mark: 'warn', head: `${channelName(u.gone)} is closed`, more: 'Nothing downloads until you choose what to follow next.' }
+    case 'gone': {
+      const { word, tone } = ended(u)
+      const head = word === 'ended' ? `${channelName(u.gone)} has ended` : `${channelName(u.gone)} is ${word}`
+      return { mark: tone, head, more: 'Nothing downloads until you choose what to follow next.' }
+    }
   }
   if (!followingName) {
     return { mark: 'idle', head: 'Built on this Mac', more: 'It stays as it is until you choose a channel to follow.' }

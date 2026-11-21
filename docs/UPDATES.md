@@ -59,7 +59,9 @@ then on every build comes from GitHub.
    status **Ready to update to** on the pull request.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
-   request that closed leaves the list. A newer commit whose build failed
+   request that closed leaves the list, and the list names the newest
+   hundred merged and the newest hundred closed without a merge, as
+   `merged` and `closed`. A newer commit whose build failed
    is not said to be on its way. `speakertrail-release unreachable` then
    names, and gh removes, an hour after they went up, the zips and packed zips no entry points
    at, the parts of every build that is neither listed nor one of the
@@ -147,8 +149,10 @@ build on `dev` had parts to patch against. See
   updater: it waits for the app to quit, puts the new build in place and
   opens it. Started so, `main` does that step before anything of the
   app: it opens no log and no app's file and loads no language model.
-- A pull request that closed shows as closed, and nothing downloads until
-  another channel is picked.
+- A pull request that was merged shows as merged, in amber, and one
+  closed without a merge as closed, in red. One the list says neither of
+  shows as ended, in amber. Nothing downloads until another channel is
+  picked.
 - What it picked is in `updates.json`, in the app's folder beside
   `speakertrail.json`.
 

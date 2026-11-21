@@ -30,8 +30,9 @@ type fakeMac struct {
 	flags      uint32
 	microphone bool
 	// as, when set, is what codesign signs the app as, whatever it is
-	// told.
-	as string
+	// told, and inner what it signs llama-server as, the way an
+	// Info.plist built into it would have codesign do.
+	as, inner string
 	// failOn makes the command whose last argument ends with it fail.
 	failOn string
 	// fetched is what apple.com sends, and roots what macOS ships as
@@ -55,6 +56,14 @@ func (m *fakeMac) tools() macOS {
 			if name == "codesign" && slices.Contains(args, "-s") {
 				target := args[len(args)-1]
 				p := speech
+				// Told nothing, codesign signs a file as its name.
+				p.ident = strings.TrimSuffix(filepath.Base(target), ".dylib")
+				if i := slices.Index(args, "--identifier"); i >= 0 {
+					p.ident = args[i+1]
+				}
+				if m.inner != "" && filepath.Base(target) == "llama-server" {
+					p.ident = m.inner
+				}
 				if strings.HasSuffix(target, ".app") {
 					p = app
 					if m.microphone {
@@ -149,6 +158,11 @@ func TestTheAppIsSignedInsideOutInAKeychainOfItsOwn(t *testing.T) {
 		if at := slices.Index(c, "--identifier"); last && (at < 0 || c[at+1] != bundleID) {
 			t.Errorf("the app was not signed as %s: %q", bundleID, c)
 		}
+		// Each part of the app as a part of it, never as what its name
+		// or an Info.plist built into it says.
+		if at := slices.Index(c, "--identifier"); !last && (at < 0 || c[at+1] != codeIdentifier(c[len(c)-1])) {
+			t.Errorf("%s was not signed as %s: %q", c[len(c)-1], codeIdentifier(c[len(c)-1]), c)
+		}
 	}
 	want := []string{
 		"/Contents/Frameworks/libonnxruntime.dylib",
@@ -201,17 +215,18 @@ func TestAnAppSignedWrongIsRefused(t *testing.T) {
 		name       string
 		flags      uint32
 		microphone bool
-		as         string
+		as, inner  string
 		want       string
 	}{
-		{"without the hardened runtime", 0, true, "", "llama-server is not signed with the hardened runtime"},
-		{"ad hoc", flagRuntime | flagAdhoc, true, "", "libonnxruntime.dylib is not signed with the hardened runtime"},
-		{"without the microphone", flagRuntime, false, "", "signed without the microphone"},
-		{"as another app", flagRuntime, true, "com.other.app", `speakertrail-app is signed as "com.other.app", not com.speakertrail.app`},
+		{"without the hardened runtime", 0, true, "", "", "llama-server is not signed with the hardened runtime"},
+		{"ad hoc", flagRuntime | flagAdhoc, true, "", "", "libonnxruntime.dylib is not signed with the hardened runtime"},
+		{"without the microphone", flagRuntime, false, "", "", "signed without the microphone"},
+		{"as another app", flagRuntime, true, "com.other.app", "", `speakertrail-app is signed as "com.other.app", not com.speakertrail.app`},
+		{"llama-server as another app", flagRuntime, true, "", "com.other.app", `llama-server is signed as "com.other.app", not com.speakertrail.app.llama-server`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := signer(&fakeMac{flags: c.flags, microphone: c.microphone, as: c.as}).signApp(bundle(t))
+			err := signer(&fakeMac{flags: c.flags, microphone: c.microphone, as: c.as, inner: c.inner}).signApp(bundle(t))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("signing it said %v, want %q", err, c.want)
 			}
@@ -333,5 +348,70 @@ func TestHardenKeepsItsSecretsAndToolsToItself(t *testing.T) {
 		if _, set := os.LookupEnv(k); set {
 			t.Errorf("%s is still in the environment the tools are started with", k)
 		}
+	}
+}
+
+// Once everything is signed, codesign checks each program and the app
+// against the requirement harden is given, which names Tim's team in
+// Apple's certificate itself, not only the string a code directory
+// carries.
+//
+// On the real disk: codesign's stand-in writes the files it signs.
+func TestEverythingSignedIsCheckedAgainstTheTeam(t *testing.T) {
+	m := &fakeMac{flags: flagRuntime, microphone: true}
+	d := signer(m)
+	d.requirement = `anchor apple generic and certificate leaf[subject.OU] = "TEAM123456"`
+	app := bundle(t)
+	if err := d.signApp(app); err != nil {
+		t.Fatal(err)
+	}
+	var checked []string
+	for _, c := range m.commands {
+		if c[0] == "codesign" && slices.Contains(c, "--verify") && slices.Contains(c, "-R="+d.requirement) {
+			checked = append(checked, strings.TrimPrefix(c[len(c)-1], app))
+		}
+	}
+	want := []string{
+		"/Contents/Frameworks/libonnxruntime.dylib",
+		"/Contents/Frameworks/libsherpa-onnx-c-api.dylib",
+		"/Contents/Frameworks/libsherpa-onnx-cxx-api.dylib",
+		"/Contents/MacOS/llama-server",
+		"",
+	}
+	if !slices.Equal(checked, want) {
+		t.Errorf("checked %q against the team, want %q", checked, want)
+	}
+}
+
+// The team goes into codesign's requirement as it is written, so only
+// a team ID Apple could have given passes.
+func TestATeamThatIsNoTeamIsRefused(t *testing.T) {
+	for _, team := range []string{"TEAM12345", "team123456", `T" or true`, "TEAM1234567"} {
+		if _, err := teamRequirement(team); err == nil {
+			t.Errorf("%q was taken as a team", team)
+		}
+	}
+	if r, err := teamRequirement("C4XN6QQPS9"); err != nil || r != `anchor apple generic and certificate leaf[subject.OU] = "C4XN6QQPS9"` {
+		t.Errorf("Tim's team gave %q, %v", r, err)
+	}
+}
+
+// A program outside Contents/MacOS and the libraries of
+// Contents/Frameworks is not signed by harden, so it is refused before
+// the build is packed, whatever signature it came with.
+//
+// On the real disk: codesign's stand-in writes the files it signs.
+func TestAProgramLeftUnsignedInTheAppIsRefused(t *testing.T) {
+	app := bundle(t)
+	extra := filepath.Join(app, "Contents", "Resources", "helper")
+	if err := os.MkdirAll(filepath.Dir(extra), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(extra, devid(speech, "TEAM123456").bytes(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := signer(&fakeMac{flags: flagRuntime, microphone: true}).signApp(app)
+	if err == nil || !strings.Contains(err.Error(), "helper is a program outside what harden signs") {
+		t.Errorf("signing it said %v", err)
 	}
 }

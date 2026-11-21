@@ -145,7 +145,8 @@ jobs:
           /usr/bin/openssl pkcs12 -export -inkey "$dir/test.key" -in "$dir/test.crt" \
             -out "$dir/test.p12" -passout "pass:$SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"
           go run ./cmd/speakertrail-release harden -app "$dir/Speaker Trail.app" -p12 "$dir/test.p12" \
-            -identity "Speaker Trail Test Signing" -timestamp=false
+            -identity "Speaker Trail Test Signing" -timestamp=false \
+            -requirement 'certificate leaf[subject.CN] = "Speaker Trail Test Signing"'
       - name: The release tool reads what codesign wrote
         run: >-
           SIGNED_APP="$RUNNER_TEMP/signing/Speaker Trail.app"

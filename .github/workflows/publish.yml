@@ -243,11 +243,15 @@ jobs:
             echo "::notice::The build left no app.zip, so there is nothing to sign."
           fi
 
+      # No cache. The Go cache of main is written by builds.yml and ci.yml
+      # too, while they run npm's install scripts, cgo and cmake on
+      # third-party code, and Go trusts what it compiled before. Restored
+      # here, it would build the tool that holds the Developer ID.
       - if: steps.zip.outputs.ready == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
       # What the zip holds is read here, in a step that has no key, and a
       # build that is refused never reaches the step that has one. sign
@@ -272,15 +276,23 @@ jobs:
       # the way it is made. Once it does, a build without the Developer ID
       # is never published. See cmd/speakertrail-release/devid.go and
       # docs/UPDATES.md, The Developer ID.
-      - id: harden
+      #
+      # The release tool is built in a step of its own first, so the
+      # secrets reach only harden itself, never go, its compiler or what
+      # it downloads.
+      - id: tool
         if: steps.check.outcome == 'success'
+        name: Build the tool that signs
+        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
+      - id: harden
+        if: steps.tool.outcome == 'success'
         name: Sign it with the Developer ID
         env:
           SPEAKERTRAIL_DEVELOPER_ID: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID }}
           SPEAKERTRAIL_DEVELOPER_ID_PASSWORD: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID_PASSWORD }}
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! go run ./cmd/speakertrail-release harden -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+          if ! "$RUNNER_TEMP/speakertrail-release" harden -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi

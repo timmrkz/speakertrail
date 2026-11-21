@@ -249,7 +249,10 @@ func inputsOf(name string, data []byte) []string {
 			found = append(found, "names "+n)
 		}
 	}
-	if path.Base(name) == "Info.plist" {
+	// A Mac's disk does not tell capitals from small letters, so
+	// Contents/info.plist is the app's Info.plist there, and in the
+	// updater that unpacks the build.
+	if strings.EqualFold(path.Base(name), "Info.plist") {
 		keys, err := plistKeys(data)
 		if err != nil {
 			return append(found, fmt.Sprintf("cannot be read: %v", err))
@@ -261,9 +264,12 @@ func inputsOf(name string, data []byte) []string {
 		}
 		// The app is always itself: macOS gives an app signed by Tim's team
 		// the permissions and keychain items of whatever app it says it is.
-		if name == appName+"/Contents/Info.plist" {
+		if strings.EqualFold(name, appName+"/Contents/Info.plist") {
 			id, err := plistString(data, "CFBundleIdentifier")
-			if err != nil || id != bundleID {
+			switch {
+			case err != nil:
+				found = append(found, fmt.Sprintf("its identifier cannot be read: %v", err))
+			case id != bundleID:
 				found = append(found, fmt.Sprintf("says it is %q, not %s", id, bundleID))
 			}
 		}
@@ -540,15 +546,18 @@ func insideApp(name string) bool {
 }
 
 // plistString is the string the dictionary at the top of a property list
-// in XML holds under key, or "" when it holds none.
+// in XML holds under key, or "" when it holds none. A key that is there
+// twice is an error: macOS reads one of the two, and which is not what a
+// check should guess.
 func plistString(data []byte, key string) (string, error) {
 	d := xml.NewDecoder(bytes.NewReader(data))
 	d.Strict = false
-	depth, found := 0, false
+	depth, next, seen := 0, false, false
+	value := ""
 	for {
 		t, err := d.Token()
 		if err == io.EOF {
-			return "", nil
+			return value, nil
 		}
 		if err != nil {
 			return "", err
@@ -564,13 +573,19 @@ func plistString(data []byte, key string) (string, error) {
 				return "", err
 			}
 			depth--
-			if found {
-				if e.Name.Local != "string" {
-					return "", nil
+			if next {
+				if e.Name.Local == "string" {
+					value = strings.TrimSpace(v)
 				}
-				return strings.TrimSpace(v), nil
+				next = false
+				continue
 			}
-			found = e.Name.Local == "key" && strings.TrimSpace(v) == key
+			if e.Name.Local == "key" && strings.TrimSpace(v) == key {
+				if seen {
+					return "", fmt.Errorf("it holds %s twice", key)
+				}
+				seen, next = true, true
+			}
 		case xml.EndElement:
 			depth--
 		}

@@ -347,6 +347,19 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 		{"no identifier", "Speaker Trail.app/Contents/Info.plist",
 			[]byte(plistHead + "</dict>\n</plist>\n"),
 			[]string{`says it is "", not com.speakertrail.app`}},
+		// A Mac's disk does not tell capitals from small letters, so
+		// these are the app's Info.plist too, there and in the updater.
+		{"another identifier, in contents", "Speaker Trail.app/contents/Info.plist",
+			[]byte(plistHead + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{`says it is "com.other.app", not com.speakertrail.app`}},
+		{"the camera asked for, in info.plist", "Speaker Trail.app/Contents/info.plist",
+			[]byte(plistHead + identified + "<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
+			[]string{"asks for NSCameraUsageDescription"}},
+		// macOS reads the last of two keys of one name, the check would
+		// read the first.
+		{"the identifier twice", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + identified + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{"its identifier cannot be read: it holds CFBundleIdentifier twice"}},
 		// The speech library goes in Contents/Frameworks, and links what
 		// it is listed with.
 		{"the speech library", "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib",

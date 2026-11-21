@@ -59,6 +59,9 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 		if !s.signed || s.flags&flagRuntime == 0 || s.flags&flagAdhoc != 0 {
 			t.Errorf("%s signed by harden reads as signed %v with flags %#x", file, s.signed, s.flags)
 		}
+		if s.ident != codeIdentifier(file) {
+			t.Errorf("%s signed by harden reads as signed as %q, not %s", file, s.ident, codeIdentifier(file))
+		}
 	}
 	s, keys := read(t, programs(t, signedApp)[0])
 	if !slices.Contains(keys, "com.apple.security.device.audio-input") {

@@ -104,6 +104,10 @@ type devID struct {
 	p12, password, identity string
 	entitlements            string
 	timestamp               bool
+	// requirement, when set, is what codesign checks every program and
+	// the app against once they are signed: Tim's team in Apple's own
+	// certificate, see teamRequirement.
+	requirement string
 }
 
 // harden is the command.
@@ -125,12 +129,13 @@ func harden(args []string) error {
 	identity := fs.String("identity", "Developer ID Application", "the certificate's name, or the start of it")
 	entitlements := fs.String("entitlements", "build/entitlements.plist", "what the app is signed as entitled to")
 	timestamp := fs.Bool("timestamp", true, "with Apple's time stamp")
+	requirement := fs.String("requirement", "", "what codesign checks the signed code against, for -app")
 	_ = fs.Parse(args)
 	// The secrets are read once and leave the environment at once, so no
 	// program harden starts inherits them.
 	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
 	d := devID{macOS: macTools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
-		identity: *identity, entitlements: *entitlements, timestamp: *timestamp}
+		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement}
 	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
 		if err := os.Unsetenv(k); err != nil {
 			return err
@@ -147,6 +152,9 @@ func harden(args []string) error {
 		fmt.Printf("::notice::No team in %s, so the build stays signed ad hoc, without the hardened runtime. See docs/UPDATES.md, The Developer ID.\n", *teamFile)
 		return nil
 	}
+	if d.requirement, err = teamRequirement(team); err != nil {
+		return fmt.Errorf("%s: %w", *teamFile, err)
+	}
 	if cert == "" {
 		return fmt.Errorf("%s names team %s, but SPEAKERTRAIL_DEVELOPER_ID is not set. See docs/UPDATES.md, The Developer ID", *teamFile, team)
 	}
@@ -154,6 +162,19 @@ func harden(args []string) error {
 		return err
 	}
 	return output("team", team)
+}
+
+// teamRequirement is what codesign checks code signed with the Developer
+// ID against: signed through Apple's own authority, by a certificate
+// Apple gave to the team. That is read from the certificate, which
+// nobody but Apple can make, not from the team a code directory names,
+// which is only a string. The team goes into it as written, so only a
+// team ID as Apple gives them is taken.
+func teamRequirement(team string) (string, error) {
+	if len(team) != 10 || strings.Trim(team, "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789") != "" {
+		return "", fmt.Errorf("%q is no team ID, which is ten capital letters and digits", team)
+	}
+	return `anchor apple generic and certificate leaf[subject.OU] = "` + team + `"`, nil
 }
 
 // teamOf is the team the file names, or none when there is no file.
@@ -300,8 +321,10 @@ func (d devID) signApp(app string) (err error) {
 		_, err := d.run("codesign", append([]string{"--force", "--options", "runtime", stamp, "--keychain", keychain, "-s", d.identity}, extra...)...)
 		return err
 	}
+	// Each part of the app is signed as a part of it, never as what its
+	// name or an Info.plist built into it says, see codeIdentifier.
 	for _, code := range inner {
-		if err := sign(code); err != nil {
+		if err := sign("--identifier", codeIdentifier(code), code); err != nil {
 			return err
 		}
 	}
@@ -315,6 +338,13 @@ func (d devID) signApp(app string) (err error) {
 	}
 	if _, err := d.run("codesign", "--verify", "--strict", "--deep", app); err != nil {
 		return err
+	}
+	if d.requirement != "" {
+		for _, code := range append(inner, app) {
+			if _, err := d.run("codesign", "--verify", "--strict", "-R="+d.requirement, code); err != nil {
+				return err
+			}
+		}
 	}
 	if err := readBack(app, inner); err != nil {
 		return err
@@ -355,9 +385,9 @@ func innerCode(app string) ([]string, error) {
 }
 
 // readBack reads every program the way the release check will, and says
-// what is not signed with the hardened runtime by a developer, an app
-// signed as another app, or one signed without the microphone, which
-// would then hear only silence.
+// what is not signed with the hardened runtime by a developer, a program
+// signed as anything but its part of the app, or an app signed without
+// the microphone, which would then hear only silence.
 func readBack(app string, inner []string) error {
 	own := filepath.Join(app, "Contents", "MacOS", appProgram)
 	var found []string
@@ -379,8 +409,8 @@ func readBack(app string, inner []string) error {
 			case !s.signed || s.flags&flagAdhoc != 0 || s.flags&flagRuntime == 0:
 				found = append(found, fmt.Sprintf("%s is not signed with the hardened runtime, flags %#x", code, s.flags))
 			}
-			if code == own && err == nil && s.ident != bundleID {
-				found = append(found, fmt.Sprintf("%s is signed as %q, not %s", code, s.ident, bundleID))
+			if err == nil && s.ident != codeIdentifier(code) {
+				found = append(found, fmt.Sprintf("%s is signed as %q, not %s", code, s.ident, codeIdentifier(code)))
 			}
 			if code == own {
 				keys, err := entitlements(a.f, a.data)
@@ -389,6 +419,27 @@ func readBack(app string, inner []string) error {
 				}
 			}
 		}
+	}
+	// A program anywhere else keeps whatever signature the branch gave
+	// it, which nothing here made.
+	err := filepath.WalkDir(app, func(file string, e os.DirEntry, err error) error {
+		if err != nil || !e.Type().IsRegular() || file == own || slices.Contains(inner, file) {
+			return err
+		}
+		f, err := os.Open(file)
+		if err != nil {
+			return err
+		}
+		head := make([]byte, 4)
+		_, err = io.ReadFull(f, head)
+		f.Close()
+		if err == nil && looksMachO(head) {
+			found = append(found, file+" is a program outside what harden signs, Contents/MacOS and the libraries in Contents/Frameworks")
+		}
+		return nil
+	})
+	if err != nil {
+		return err
 	}
 	if len(found) > 0 {
 		return fmt.Errorf("the app is not signed as it should be:\n  %s", strings.Join(found, "\n  "))

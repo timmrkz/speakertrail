@@ -215,7 +215,9 @@ fails the run on main and on the commit, never quietly. To set it up once:
    lacks Apple's certificate between it and Apple's root. That changes
    nothing here, because `harden` fetches that one from Apple. Make it
    for Speaker Trail alone, and FrameFairy its own later, so either can
-   be revoked without the other. Apple allows five.
+   be revoked without the other. Apple allows five. Both are still the
+   same team to macOS, which trusts code by its team and what it is
+   signed as, not by its certificate, see below.
 4. In Keychain Access, right-click the certificate, **Export**, and save
    it as `developer-id.p12` on the Desktop with a new password. The file
    holds the private key too, which Apple cannot give out again, so it is
@@ -234,7 +236,8 @@ fails the run on main and on the commit, never quietly. To set it up once:
 The next build after that is signed with it. From then on
 `speakertrail-release sign -team` refuses a build in which any program is
 signed ad hoc, without the hardened runtime, or by another team, or
-whose app is signed as anything but `com.speakertrail.app`.
+whose app is signed as anything but `com.speakertrail.app`, or any other
+program or library as anything but its part of it.
 
 Every build of a pull request is signed with the Developer ID too, so
 Tim can try it. Its zip comes from the pull request's branch and is
@@ -247,15 +250,26 @@ nothing in it:
 - It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
   never a program found through `PATH`.
 - It reads both secrets once and takes them out of its environment, so
-  no program it starts sees them. The key goes into a keychain made for
-  the run, marked so it cannot be exported again, and the keychain is
-  deleted at the end, also when signing fails.
+  no program it starts sees them. It is built in a step before, without
+  them, so `go` and its compiler never see them either, and without the
+  Go cache, which builds of third-party code write too. The key goes
+  into a keychain made for the run, marked so it cannot be exported
+  again, and the keychain is deleted at the end, also when signing
+  fails.
 - It takes Apple's certificate between the Developer ID and Apple's root
   only when it is signed by the Apple Root CA that macOS itself ships.
 - It signs the app as `com.speakertrail.app`, whatever its `Info.plist`
-  says. macOS gives an app of the team the microphone and the keychain
-  items of the app it is signed as, so no build can be signed as
-  another of Tim's apps.
+  says, and each program and library in it as a part of it, like
+  `com.speakertrail.app.llama-server`, whatever its name or an
+  `Info.plist` built into it says. macOS gives code of the team the
+  microphone and the keychain items of the app it is signed as, so no
+  build, and nothing in one, can be signed as another of Tim's apps.
+- It refuses a build with a program anywhere but `Contents/MacOS` and
+  the libraries of `Contents/Frameworks`, which it signs itself. Such a
+  program would keep the signature the branch gave it.
+- Once signed, codesign checks every program and the app against
+  Apple's certificate of Tim's team, not only the team the signature
+  names, which is a string.
 
 If a build signed this way does not open, the app cannot update away
 from it. `make install` in a checkout puts a build made on the Mac back

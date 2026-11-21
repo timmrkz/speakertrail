@@ -14,6 +14,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -77,8 +79,35 @@ func cString(cd []byte, at uint32) (string, error) {
 	return name, nil
 }
 
+// codeIdentifier is what a program or library of the build is signed
+// as, by the name of its file: com.speakertrail.app for the app's own
+// program, and a part of it for everything it carries, like
+// com.speakertrail.app.llama-server. Told nothing, codesign takes it from
+// the file's name or from an Info.plist built into the file, both of
+// which the branch writes, and macOS trusts code of Tim's team as
+// whatever app it is signed as, with that app's keychain items.
+func codeIdentifier(name string) string {
+	base := path.Base(filepath.ToSlash(name))
+	if base == appProgram {
+		return bundleID
+	}
+	return bundleID + "." + strings.TrimSuffix(base, ".dylib")
+}
+
+// signedHere says whether a program at name in the build's zip is one
+// harden signs itself: one in Contents/MacOS, or a library in
+// Contents/Frameworks, see innerCode. A Mac's disk does not tell capitals
+// from small letters in the folders' names.
+func signedHere(name string) bool {
+	dir, base := path.Split(name)
+	dir = strings.TrimSuffix(dir, "/")
+	return strings.EqualFold(dir, appName+"/Contents/MacOS") ||
+		strings.EqualFold(dir, appName+"/Contents/Frameworks") && strings.HasSuffix(base, ".dylib")
+}
+
 // checkHardened reads every program of the zip and says each that is not
-// signed with the hardened runtime by the team given.
+// signed with the hardened runtime by the team given, as its part of the
+// app.
 func checkHardened(zipPath, team string) error {
 	z, err := zip.OpenReader(zipPath)
 	if err != nil {
@@ -120,8 +149,10 @@ func checkHardened(zipPath, team string) error {
 				found = append(found, f.Name+": is signed by no team")
 			case s.team != team:
 				found = append(found, f.Name+": is signed by team "+s.team)
-			case f.Name == appName+"/Contents/MacOS/"+appProgram && s.ident != bundleID:
-				found = append(found, fmt.Sprintf("%s: is signed as %q, not %s", f.Name, s.ident, bundleID))
+			case !signedHere(f.Name):
+				found = append(found, f.Name+": is a program outside what harden signs, Contents/MacOS and the libraries in Contents/Frameworks")
+			case s.ident != codeIdentifier(f.Name):
+				found = append(found, fmt.Sprintf("%s: is signed as %q, not %s", f.Name, s.ident, codeIdentifier(f.Name)))
 			default:
 				programs++
 			}

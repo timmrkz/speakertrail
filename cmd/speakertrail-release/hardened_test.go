@@ -66,7 +66,12 @@ func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
 			release(t)
 			files := theApp("main")
 			files[exe] = c.exe.bytes()
-			files[lib] = c.lib.bytes()
+			// The library as harden signs it, a part of the app.
+			l := c.lib
+			if l.ident == "" {
+				l.ident = codeIdentifier(lib)
+			}
+			files[lib] = l.bytes()
 			zipPath := filepath.Join(t.TempDir(), "app.zip")
 			if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
 				t.Fatal(err)
@@ -90,6 +95,96 @@ func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
 			}
 			if !os.IsNotExist(written) {
 				t.Error("an entry was written for it")
+			}
+		})
+	}
+}
+
+// Every program and library of a build is signed as a part of the app,
+// never as another app. codesign would otherwise take what it signs a
+// program as from the program's name or from an Info.plist built into
+// it, which the branch writes, and macOS gives code of Tim's team the
+// keychain items of whatever app it is signed as.
+//
+// On the real disk: the release tool reads the zip and writes the entry as files.
+func TestNoProgramIsSignedAsAnotherAppOfTheTeam(t *testing.T) {
+	const server = "Speaker Trail.app/Contents/MacOS/llama-server"
+	as := func(p program, ident string) program { p.ident = ident; return p }
+	cases := []struct {
+		name   string
+		server program
+		lib    program
+		want   string
+	}{
+		{"each as a part of the app",
+			as(devid(speech, "TEAM123456"), "com.speakertrail.app.llama-server"),
+			as(devid(speech, "TEAM123456"), "com.speakertrail.app.libsherpa-onnx-c-api"), ""},
+		{"llama-server as another app",
+			as(devid(speech, "TEAM123456"), "com.other.app"),
+			as(devid(speech, "TEAM123456"), "com.speakertrail.app.libsherpa-onnx-c-api"),
+			server + `: is signed as "com.other.app", not com.speakertrail.app.llama-server`},
+		{"llama-server as the app itself",
+			as(devid(speech, "TEAM123456"), bundleID),
+			as(devid(speech, "TEAM123456"), "com.speakertrail.app.libsherpa-onnx-c-api"),
+			server + `: is signed as "com.speakertrail.app", not com.speakertrail.app.llama-server`},
+		{"a library by its name alone, as codesign signs it untold",
+			as(devid(speech, "TEAM123456"), "com.speakertrail.app.llama-server"),
+			as(devid(speech, "TEAM123456"), "libsherpa-onnx-c-api"),
+			lib + `: is signed as "libsherpa-onnx-c-api", not com.speakertrail.app.libsherpa-onnx-c-api`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			release(t)
+			files := theApp("main")
+			files[exe] = devid(app, "TEAM123456").bytes()
+			files[server] = c.server.bytes()
+			files[lib] = c.lib.bytes()
+			zipPath := filepath.Join(t.TempDir(), "app.zip")
+			if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := checkHardened(zipPath, "TEAM123456")
+			if c.want == "" {
+				if err != nil {
+					t.Errorf("it said %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("it said %v, want %q", err, c.want)
+			}
+		})
+	}
+}
+
+// harden signs the programs in Contents/MacOS and the libraries in
+// Contents/Frameworks. A program anywhere else would keep whatever
+// signature the branch gave it, and the team a code directory names is
+// only a string the branch can write, so such a program is refused
+// however it reads.
+//
+// On the real disk: the release tool reads the zip and writes the entry as files.
+func TestAProgramHardenDoesNotSignIsRefused(t *testing.T) {
+	cases := []string{
+		"Speaker Trail.app/Contents/Resources/llama-server",
+		"Speaker Trail.app/Contents/Frameworks/sub/libonnxruntime.dylib",
+		"Speaker Trail.app/Contents/Frameworks/llama-server",
+	}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			files := theApp("main")
+			files[exe] = devid(app, "TEAM123456").bytes()
+			p := devid(speech, "TEAM123456")
+			p.ident = codeIdentifier(name)
+			files[name] = p.bytes()
+			zipPath := filepath.Join(t.TempDir(), "app.zip")
+			if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			err := checkHardened(zipPath, "TEAM123456")
+			want := name + ": is a program outside what harden signs"
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("it said %v, want %q", err, want)
 			}
 		})
 	}

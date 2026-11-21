@@ -83,6 +83,10 @@ type Data struct {
 	// Settings to draft with, downloaded or not. Empty until Tim picks one,
 	// and then the largest on the Mac drafts.
 	LanguageModel string `json:"language_model,omitempty"`
+	// Template is the template a first message is put together from, as
+	// Tim changed it in Settings, nil while it is his first one. See
+	// template.go.
+	Template *Template `json:"first_message_template,omitempty"`
 
 	// textsChanged says a profile text arrived since the texts were
 	// written, see SetProfileText.

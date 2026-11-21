@@ -71,15 +71,24 @@ function helpers() {
 function deep(page) {
   return page.evaluate(() => {
     const found = []
+    // The two colours a line may be drawn in, as the browser writes them.
+    const probe = document.createElement('i')
+    document.body.append(probe)
+    const lines = ['--line', '--line-strong'].map((t) => {
+      probe.style.color = `var(${t})`
+      return getComputedStyle(probe).color
+    })
+    probe.remove()
     for (const el of document.querySelectorAll('body *')) {
       if (el.closest('.beam')) continue
       for (const pseudo of [null, '::before', '::after']) {
         const s = getComputedStyle(el, pseudo)
         const what = []
         // A hairline drawn inside an edge, so it takes no room, is a line,
-        // not a shadow: inset, one pixel, with no blur and no spread.
-        const line = /^\S+(?: \S+)*? (-?1px 0px|0px -?1px) 0px 0px inset$/
-        if (s.boxShadow !== 'none' && !s.boxShadow.split(/,(?![^(]*\))/).every((x) => line.test(x.trim()))) what.push(`a shadow ${s.boxShadow}`)
+        // not a shadow: inset, one pixel, with no blur and no spread, in
+        // the colour of a line. A bright edge on top is not one.
+        const line = (x) => lines.some((c) => [`${c} 1px 0px 0px 0px inset`, `${c} -1px 0px 0px 0px inset`, `${c} 0px 1px 0px 0px inset`, `${c} 0px -1px 0px 0px inset`].includes(x))
+        if (s.boxShadow !== 'none' && !s.boxShadow.split(/,(?![^(]*\))/).every((x) => line(x.trim()))) what.push(`a shadow ${s.boxShadow}`)
         if (s.backdropFilter && s.backdropFilter !== 'none') what.push(`a backdrop ${s.backdropFilter}`)
         if (s.filter && s.filter !== 'none') what.push(`a filter ${s.filter}`)
         if (what.length) found.push(`${el.tagName.toLowerCase()}.${[...el.classList].join('.')}${pseudo ?? ''} has ${what.join(' and ')}`)
@@ -147,6 +156,13 @@ for (const theme of ['light', 'dark']) {
         await page.waitForLoadState('networkidle')
         found.push(...(await deep(page)).map((f) => `${path}: ${f}`))
       }
+      // A person in a sheet, in a narrow window.
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().click()
+      await page.locator('.sheet').waitFor()
+      found.push(...(await deep(page)).map((f) => `a person in a sheet: ${f}`))
+      await page.setViewportSize({ width: 1280, height: 860 })
       // A person open, with the sidebar kept open beside it, and the list
       // of an order open over it.
       await page.goto(`${url}/app/people`)
@@ -155,7 +171,40 @@ for (const theme of ['light', 'dark']) {
       await page.locator('main .pick').first().click()
       await page.locator('.pick-list').waitFor()
       found.push(...(await deep(page)).map((f) => `a person open: ${f}`))
-      return found.slice(0, 6).join('\n\t')
+      await page.keyboard.press('Escape')
+      // Every other layer that lies over a page: a toast, plain and bad,
+      // an info bubble, the question asked before something is removed,
+      // and a button with work running in it.
+      await page.goto(`${url}/app/settings`)
+      await page.locator('main button', { hasText: 'System' }).waitFor()
+      await page.evaluate(async () => {
+        const { toast } = await import('/src/lib/toast.svelte.ts')
+        toast.show('Saved', 'plain', { label: 'Undo', run: () => {} })
+      })
+      await page.locator('.toast').waitFor()
+      found.push(...(await deep(page)).map((f) => `a toast: ${f}`))
+      await page.evaluate(async () => {
+        const { toast } = await import('/src/lib/toast.svelte.ts')
+        toast.show('The file could not be written', 'bad')
+      })
+      await page.locator('.toast.bad').waitFor()
+      found.push(...(await deep(page)).map((f) => `a toast that says what went wrong: ${f}`))
+      await page.locator('main .info .mark').first().hover()
+      await page.locator('.bubble.placed').waitFor()
+      found.push(...(await deep(page)).map((f) => `an info bubble: ${f}`))
+      await page.mouse.move(1, 1)
+      await page.locator('main button[aria-label="Remove the app\'s log"]').click()
+      await page.locator('dialog[open]').waitFor()
+      found.push(...(await deep(page)).map((f) => `the question before removing: ${f}`))
+      await page.keyboard.press('Escape')
+      const download = page.locator('.speech button.act')
+      await download.click()
+      await page.locator('.speech button.act > .beam').waitFor()
+      found.push(...(await deep(page)).map((f) => `a download running: ${f}`))
+      // Cancelled again, so the walks after this one find it not started.
+      await download.click()
+      await page.locator('.speech button.act', { hasText: /^\s*Download\s*$/ }).waitFor()
+      return found.slice(0, 8).join('\n\t')
     },
   })
   walks.push({
@@ -163,6 +212,8 @@ for (const theme of ['light', 'dark']) {
     name: `In ${theme}, every control in People reads in every state, and chosen looks the same everywhere`,
     async run(page) {
       await page.goto(`${url}/app/people`)
+      // No run going, so Run is the button it is at rest.
+      await page.locator('main button.start', { hasText: /^\s*Run\s*$/ }).waitFor()
       await page.locator('.prow').nth(1).click()
       await page.locator('.detail-pane .btn').first().waitFor()
       await page.evaluate(helpers)
@@ -188,9 +239,27 @@ for (const theme of ['light', 'dark']) {
       if (new Set(tint).size > 1) wrong.push(`what is chosen is drawn in ${new Set(tint).size} tints: ${tint.join(', ')}`)
       wrong.push(...(await greyed(page, [
         ['Run', page.locator('main button.start')],
-        ['Draft', page.locator('.detail-pane button.btn.primary').first()],
+        ['Connect', page.locator('.detail-pane button.connect')],
+        ['Draft', page.locator('.detail-pane button.btn', { hasText: 'Draft' })],
         ['the one who is not a fit', page.locator('.detail-pane button.btn:not(.primary)').last()],
       ])))
+      // A toggle that is on, the one connected, in the colour it says.
+      await page.locator('.prow', { hasText: 'Connected' }).first().click()
+      await page.locator('.detail-pane button.connect[aria-pressed="true"]').waitFor()
+      wrong.push(...(await states(page, 'Connected', page.locator('.detail-pane button.connect'))))
+      // A row of a list to pick from, under the pointer and pressed.
+      await page.locator('main .pick').first().click()
+      const row = page.locator('.pick-row:not([data-chosen])').first()
+      await row.hover()
+      const lit = await row.evaluate((e) => window.look.reads(e))
+      const box = await row.boundingBox()
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+      await page.mouse.down()
+      const pressed = await row.evaluate((e) => window.look.reads(e))
+      await page.keyboard.press('Escape')
+      await page.mouse.up()
+      if (pressed.bg === lit.bg) wrong.push('a row of the order does not change when pressed')
+      for (const r of [lit, pressed]) if (r.ink < 4.5) wrong.push(`a row of the order reads at ${r.ink.toFixed(2)} to 1`)
       return wrong.join('\n\t')
     },
   })
@@ -231,10 +300,11 @@ for (const theme of ['light', 'dark']) {
   })
   walks.push({
     theme,
-    name: `In ${theme}, the fill of a run stands out from its track, its light too, and the light stays on the fill`,
+    name: `In ${theme}, the fill of a run stands out from its track, the band over it shows, and the band stays on the fill`,
     async run(page) {
       await page.goto(`${url}/app/people`)
-      await page.locator('main button.start').click()
+      const start = page.locator('main button.start')
+      await start.click()
       const fill = page.locator('.progress > i').first()
       await fill.waitFor()
       await page.evaluate(helpers)
@@ -242,39 +312,45 @@ for (const theme of ['light', 'dark']) {
         const { bytes, over, ground, contrast } = window.look
         const track = ground(i.parentElement)
         const done = over(bytes(getComputedStyle(i).backgroundColor), track)
-        // The brightest point of the light that travels over the fill is
+        // The strongest point of the band that travels over the fill is
         // the middle stop of its gradient.
         const stops = getComputedStyle(i, '::after').backgroundImage.match(/(rgba?|color)\([^)]*\)/g) ?? []
-        const lit = stops.length >= 3 ? over(bytes(stops[1]), done) : done
-        return { fill: contrast(done, track), lit: contrast(lit, track) }
+        const band = stops.length >= 3 ? over(bytes(stops[1]), done) : done
+        return { fill: contrast(done, track), band: contrast(band, done), bandTrack: contrast(band, track) }
       })
+      // The run is stopped again, so the walks after this one find the
+      // mock at rest.
+      await start.click()
+      await page.locator('main button.start', { hasText: /^\s*Run\s*$/ }).waitFor()
       const wrong = []
-      // The light travels over what is done and never on past it onto the
-      // track. The run moves on by itself, so a fill of its own, a third
-      // done, is laid beside the run's, every animation on the page is
-      // held at points along the light's way, and the track just past the
-      // fill is read off the screen at each.
-      const third = await fill.evaluate((i) => {
-        const bar = document.createElement('div')
-        bar.className = 'progress'
-        bar.id = 'look-third'
-        bar.innerHTML = '<i style="width: 33%"></i>'
-        i.parentElement.after(bar)
-        return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))
+      if (m.fill < 3) wrong.push(`the fill stands out from its track at ${m.fill.toFixed(2)} to 1`)
+      if (m.band < 1.5) wrong.push(`the band shows on the fill at ${m.band.toFixed(2)} to 1`)
+      if (m.bandTrack < 3) wrong.push(`under the band the fill stands out from its track at ${m.bandTrack.toFixed(2)} to 1`)
+      // The band travels over what is done and never on past it onto the
+      // track. A bar a third done is laid on the page where nothing else
+      // moves, every animation on it is held at points along the band's
+      // way, and the track just past the fill is read off the screen at
+      // each.
+      await page.evaluate(() => {
+        const box = document.createElement('div')
+        box.id = 'look-third'
+        box.style.cssText = 'position: fixed; left: 40px; top: 40px; width: 300px; padding: 16px; background: var(--surface); z-index: 1000'
+        box.innerHTML = '<div class="progress"><i style="width: 33%"></i></div>'
+        document.body.append(box)
+        return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
       })
-      const own = page.locator('#look-third > i')
-      for (const at of third ? [0.5, 0.7, 0.9] : []) {
+      const own = page.locator('#look-third .progress > i')
+      for (const at of [0.5, 0.7, 0.9]) {
         const strip = await own.evaluate((i, at) => {
-          for (const a of document.getAnimations()) {
+          for (const a of i.getAnimations({ subtree: true })) {
             a.pause()
             const d = a.effect?.getComputedTiming().duration
             if (typeof d === 'number' && Number.isFinite(d)) a.currentTime = d * at
           }
           const f = i.getBoundingClientRect()
           const t = i.parentElement.getBoundingClientRect()
-          return { x: Math.ceil(f.right) + 2, y: Math.round(t.top + t.height / 2), width: Math.min(40, Math.floor(t.right - f.right) - 8), track: window.look.ground(i.parentElement).slice(0, 3) }
+          return { x: Math.ceil(f.right) + 2, y: Math.round(t.top + t.height / 2), width: 40, track: window.look.ground(i.parentElement).slice(0, 3) }
         }, at)
-        if (strip.width < 8) break
         const png = await page.screenshot({ clip: { x: strip.x, y: strip.y, width: strip.width, height: 1 }, caret: 'hide' })
         const lit = await page.evaluate(async ({ b64, track }) => {
           const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' }))
@@ -286,12 +362,10 @@ for (const theme of ['light', 'dark']) {
           return most
         }, { b64: png.toString('base64'), track: strip.track })
         if (lit > 4) {
-          wrong.push(`the light runs on past the fill onto the track, ${Math.round(at * 100)} % of the way through it lights the track by ${lit} of 255`)
+          wrong.push(`the band runs on past the fill onto the track, ${Math.round(at * 100)} % of the way through it changes the track by ${lit} of 255`)
           break
         }
       }
-      if (m.fill < 3) wrong.push(`the fill stands out from its track at ${m.fill.toFixed(2)} to 1`)
-      if (m.lit < 3) wrong.push(`the light on the fill stands out from its track at ${m.lit.toFixed(2)} to 1`)
       return wrong.join(', ')
     },
   })

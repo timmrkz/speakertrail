@@ -79,10 +79,19 @@
      in the sidebar, a quiet button, takes the mix as its ground. One on
      --surface takes the same mix laid on it, so the two look alike side
      by side. */
-  --hover: color-mix(in srgb, var(--ink) 6%, transparent);
-  --press: color-mix(in srgb, var(--ink) 11%, transparent);
-  --surface-hover: color-mix(in srgb, var(--ink) 6%, var(--surface));
-  --surface-press: color-mix(in srgb, var(--ink) 11%, var(--surface));
+  --hover-mix: 6%;
+  --press-mix: 11%;
+  --hover: color-mix(in srgb, var(--ink) var(--hover-mix), transparent);
+  --press: color-mix(in srgb, var(--ink) var(--press-mix), transparent);
+  --surface-hover: color-mix(in srgb, var(--ink) var(--hover-mix), var(--surface));
+  --surface-press: color-mix(in srgb, var(--ink) var(--press-mix), var(--surface));
+  /* A control in the colour of what it says, a toggle that is on in green
+     or red, a button that removes, takes a wash of its own words under
+     the pointer and a stronger one pressed, read at 4.5 to 1. */
+  --tone-hover: color-mix(in srgb, currentColor 15%, transparent);
+  --tone-press: color-mix(in srgb, currentColor 19%, transparent);
+  /* The edge of a field under the pointer. */
+  --line-hover: color-mix(in srgb, var(--ink) 32%, transparent);
   /* What is chosen, a page in the sidebar, a filter, the person open,
      a chip pressed, is one flat tint of the accent. Under the pointer the
      tint deepens, pressed a little more. */
@@ -103,6 +112,11 @@
   /* The ground a progress fill runs on, dark enough that the fill and
      what is still to do are told apart at a glance. */
   --track: color-mix(in srgb, var(--ink) 12%, var(--surface));
+  /* The band that travels over a fill, a shade darker than the fill, so
+     it shows on it at 1.5 to 1 and the fill still stands out from the
+     track at 3 to 1, see walks/look.mjs. Toward the ink in light, toward
+     the page in dark. */
+  --sheen: color-mix(in srgb, var(--ink) 50%, var(--accent));
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the
      two ends of the wash a fill lays over what is done. */
@@ -138,6 +152,7 @@
     --series-1: #f0a868;
     --series-2: #7fa8f0;
     --scrim: rgba(0, 0, 0, .55);
+    --sheen: color-mix(in srgb, var(--bg) 26%, var(--accent));
   }
 }
 :root[data-theme="dark"] {
@@ -164,6 +179,7 @@
   --series-1: #f0a868;
   --series-2: #7fa8f0;
   --scrim: rgba(0, 0, 0, .55);
+  --sheen: color-mix(in srgb, var(--bg) 26%, var(--accent));
 }
 
 * { box-sizing: border-box; }
@@ -271,20 +287,21 @@ button { -webkit-tap-highlight-color: transparent; }
 /* A toggle that is on wears the colour of what it says. */
 .btn.good[aria-pressed="true"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .btn.bad[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
-.btn.good[aria-pressed="true"]:hover:enabled { background: color-mix(in srgb, var(--good) 22%, transparent); }
-.btn.bad[aria-pressed="true"]:hover:enabled { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+:is(.btn.good, .btn.bad)[aria-pressed="true"]:hover:enabled { background: var(--tone-hover); }
+:is(.btn.good, .btn.bad)[aria-pressed="true"]:active:enabled { background: var(--tone-press); }
 /* A quiet button has no ground of its own until the pointer is on it. */
 .btn.quiet { border-color: transparent; background: none; color: var(--ink-2); }
 .btn.quiet:hover:enabled, a.btn.quiet:hover { background: var(--hover); color: var(--ink); }
 .btn.quiet:active:enabled, a.btn.quiet:active { background: var(--press); }
 /* What cannot be taken back, in the colour of something going wrong. */
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.btn.danger:hover:enabled { background: var(--bad-soft); }
-.btn.danger:active:enabled { background: color-mix(in srgb, var(--bad) 24%, transparent); }
+.btn.danger:hover:enabled { background: var(--tone-hover); }
+.btn.danger:active:enabled { background: var(--tone-press); }
 .btn.quiet.danger { border-color: transparent; }
 /* A button that cannot be pressed is the same grey in every kind, so it
    never reads as one that can. One with work running in it is the
-   exception, see the beam below. */
+   exception: it is still seen working at full strength, and its words
+   say what is happening. */
 .btn:disabled:not(:has(> .beam)) {
   background: var(--disabled); border-color: transparent; color: var(--disabled-ink); cursor: default;
 }
@@ -304,7 +321,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea { padding: 9px 12px; resize: vertical; min-height: 76px; line-height: 1.45; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
-.input:hover:enabled, .textarea:hover:enabled { border-color: color-mix(in srgb, var(--ink) 32%, transparent); }
+.input:hover:enabled, .textarea:hover:enabled { border-color: var(--line-hover); }
 .input:focus, .textarea:focus { border-color: var(--accent); }
 .input:disabled, .textarea:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
@@ -419,11 +436,11 @@ button { -webkit-tap-highlight-color: transparent; }
   display: block; position: relative; height: 100%; border-radius: 4px; background: var(--accent); overflow: hidden;
   transition: width .4s cubic-bezier(.4, 0, .2, 1);
 }
-/* A light travels over what is done, so the bar lives while the number
+/* A band travels over what is done, so the bar lives while the number
    stands still. */
 .progress > i::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-lit) 30%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, var(--sheen), transparent);
   animation: sheen 2.2s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 @keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
@@ -500,6 +517,3 @@ a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-dr
    control clips nothing itself: it would clip the light at the inside of
    its line. The beam cuts itself to the control's corners. */
 .btn:has(> .beam) { position: relative; isolation: isolate; --beam-edge: var(--line-w); --lit: var(--accent-lit); }
-/* A control that cannot be pressed while its work runs is still seen
-   working at full strength. Its words say what is happening. */
-.btn:has(> .beam):disabled { opacity: 1; }

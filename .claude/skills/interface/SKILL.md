@@ -71,7 +71,7 @@ Fairy's rules, without its styling:
 
 - **Say what happens now.** "Checking Startplatz events", "Reading the
   page of Pitch Abend Köln". Not "Working".
-- **Show how far.** The `.progress` fill in `app.css`, with its light
+- **Show how far.** The `.progress` fill in `app.css`, with a band
   travelling over what is done. Work that cannot say how far it is uses
   `.progress.unknown`, the shuttle, never a bar stuck at a number it does
   not have. The fill never jumps back: count what the work will add, like
@@ -118,25 +118,38 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   page in the sidebar. A pane, a list, a panel and a control lie on the
   page in a solid `--surface` or `--side`, set apart by colour and a line.
   A layer over the page, a list to pick from, a bubble, a dialog, a sheet,
-  a toast, has a `--line-strong` edge instead of a shadow. Where a line
-  must take no room it is an inset box-shadow one pixel wide with no blur,
+  has a `--line-strong` edge instead of a shadow. A toast needs none: it
+  is the ink with the page's colour for words, the other way round from
+  the page under it. Where a line must take no room it is an inset
+  box-shadow one pixel wide with no blur in `--line` or `--line-strong`,
   which the walk counts as a line. The light of work in hand, the beam,
-  glows on purpose and is the one exception. `walks/look.mjs` checks every
-  screen for a shadow, a blur or a filter.
+  glows on purpose and is the one exception. `walks/look.mjs` looks for a
+  shadow, a blur or a filter on People, Searches, Settings, Updates and
+  Report, with a person open, in a sheet, a list open, a toast, an info
+  bubble, the question before removing and a download running.
 - **Every control takes its states from the same tokens.** Under the
   pointer `--hover`, pressed `--press`, both a little of the ink over what
-  is there, or `--surface-hover` and `--surface-press` for a control with
-  a ground of its own, so the two look alike side by side. The primary
-  button moves toward the ink, `--accent-hover` and `--accent-press`,
-  darker in light and lighter in dark. A button that cannot be pressed is
-  `--disabled` with `--disabled-ink`, the same grey in every kind, never
-  a paler copy of itself, except one with the beam, which works at full
-  strength. A new control uses these tokens and never a number of its own.
+  is there, `--hover-mix` and `--press-mix` of it, or `--surface-hover`
+  and `--surface-press` for a control on `--surface`, so the two look
+  alike side by side. A control on another ground mixes the same two
+  shares into it. The primary button moves toward the ink, `--accent-hover`
+  and `--accent-press`, darker in light and lighter in dark. A control in
+  the colour of what it says, a toggle that is on or a button that
+  removes, takes `--tone-hover` and `--tone-press`, a wash of its own
+  words. A field's edge under the pointer is `--line-hover`. A button that
+  cannot be pressed is `--disabled` with `--disabled-ink`, the same grey
+  in every kind, never a paler copy of itself, except one with the beam,
+  which works at full strength. A new control uses these tokens and never
+  a number of its own. The one exception is the action on a toast, which
+  greys out as its own words at less strength, since the grey would not
+  read on the toast's dark ground.
 - **What is chosen is one flat tint.** The page in the sidebar, the
   filter shown, the theme chosen, a pressed chip and the open person all
   wear `--chosen`, deeper under the pointer and pressed, with their words
   in `--chosen-ink`, the accent a shade toward the ink so they read at
-  4.5 to 1 in every state.
+  4.5 to 1 in every state. A list to pick from marks its choice the way
+  a Mac menu does, with a tick and the words in `--chosen-ink`, since a
+  tint there would read as the row under the pointer.
 - **Focus is never a ring.** Tim found the outlines round focused
   controls loud and wrong. A field in use shows the accent on its edge.
   Anything else reached with the keyboard shows it too, 2 px inside its
@@ -171,8 +184,9 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
 - **Every colour has a light and a dark value.** Check both, and check that
   small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--surface`,
   in every state. `walks/look.mjs` measures the words of the controls at
-  rest, under the pointer and pressed, and that a run's fill and the
-  light on it stand out from the track by 3 to 1.
+  rest, under the pointer and pressed, that a run's fill stands out from
+  its track by 3 to 1, and that the band travelling over it, `--sheen`,
+  shows on the fill by 1.5 to 1 and stays on it.
 
 ## What to report
 

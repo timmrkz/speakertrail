@@ -280,14 +280,18 @@
   /* The row under the pointer and the row the keyboard is on are one
      thing, so bits-ui marks both the same. */
   .pick-row[data-highlighted] { background: var(--hover); }
+  .pick-row[data-highlighted]:active { background: var(--press); }
 
-  /* What is chosen is in the accent. */
-  .pick-row[data-chosen] { color: var(--accent); }
+  /* What is chosen is in the words every chosen thing wears, with the
+     tick before it, the way a menu on the Mac marks it. The tint is for
+     a choice that stays on screen. In a menu it would read as the row
+     under the pointer. */
+  .pick-row[data-chosen] { color: var(--chosen-ink); }
   .pick-row[data-disabled] { color: var(--ink-3); cursor: default; }
 
   /* The tick keeps its place whether or not it is there, so no row moves
      sideways as the chosen one changes. */
-  .tick { display: flex; align-items: center; justify-content: center; flex: none; width: 12px; color: var(--accent); }
+  .tick { display: flex; align-items: center; justify-content: center; flex: none; width: 12px; color: var(--chosen-ink); }
   .tick.marked { color: inherit; }
   .tick.faint { color: var(--ink-3); }
 

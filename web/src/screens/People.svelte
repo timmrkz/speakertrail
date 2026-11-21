@@ -404,8 +404,9 @@
     display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;
     background: var(--surface-2); border: 0; border-radius: var(--radius);
   }
-  .run-now:hover { background: color-mix(in srgb, var(--ink) 6%, var(--surface-2)); }
-  .run-now:active { background: color-mix(in srgb, var(--ink) 11%, var(--surface-2)); }
+  .run-now:hover:enabled { background: color-mix(in srgb, var(--ink) var(--hover-mix), var(--surface-2)); }
+  .run-now:active:enabled { background: color-mix(in srgb, var(--ink) var(--press-mix), var(--surface-2)); }
+  .run-now:disabled { cursor: default; }
   .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row as Searches has one: 12 by 16 in, the name over its line. */

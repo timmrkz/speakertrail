@@ -43,6 +43,49 @@ session, but the app builds and every test runs.
 
 `make run` still builds a change on the Mac itself, from a checkout.
 
+## When main moves
+
+GitHub runs no CI on a pull request that conflicts with `main`, and
+sends no event when one starts to conflict. So after every push to
+`main`, [`conflicts.yml`](../.github/workflows/conflicts.yml) merges each
+open pull request of this repository into it in memory, with `git
+merge-tree`, and comments on each one that no longer merges, naming the
+files. It tries a pull request after a push to its branch as well, at
+the commit pushed, since that push may conflict. It tells a pull request
+once for each pair of its commit and `main`'s, so every push to `main`
+that still leaves it in conflict tells it again. A comment that gets
+lost on its way to the session is followed by the next, and that costs
+no run of its own. When several pushes to `main` come close together,
+the newest run stops the older ones, and a hidden mark in the comment,
+both commits, keeps a run stopped halfway from telling a pull request
+twice about the same pair. The work is the command `conflicts` of
+`speakertrail-release`, with its tests, and the workflow only calls it.
+It is ported from FrameFairy, where the same steps are shell.
+
+It comments, so it needs a token that writes, and it gets one only from
+`main`'s own copy of the file, the way `publish.yml` does. A push to
+`main` starts it, and a push to any other branch starts it through
+`builds.yml`, which GitHub reports to `main`'s copy. A branch's own copy
+never runs with the token, because a branch is code nobody has reviewed
+yet. `TestNoPullRequestTarget` in `internal/workflows` fails on a
+workflow that runs on `pull_request_target`, and on `conflicts.yml`
+starting any other way.
+
+The comment wakes the session that owns the pull request. It comes from
+a bot, so the session reads it as news, checks on GitHub that its pull
+request does not merge, and then merges `main` in at once, without
+asking, resolves the conflict, reads `CLAUDE.md` again and pushes. The
+resolution is new code, so it is pushed the way a change of the
+session's own is, the tests of what it touches first and CI after. A
+pull request that conflicts from its first push is not open when that
+push runs the workflow, so the session also checks right after opening
+it, and before it says it is ready. GitHub may not know yet whether a
+pull request just opened merges, so the session asks git itself, `git
+fetch origin main && git merge-tree --write-tree --name-only origin/main
+HEAD`, which fails and names the files when it does not merge. A pull request that still
+merges is left alone: merging `main` into it would only add a commit, a
+CI run and a build to take, and change nothing being tested.
+
 ## What is on your Mac
 
 Git, this folder, and what make installs with Homebrew the first time, Go

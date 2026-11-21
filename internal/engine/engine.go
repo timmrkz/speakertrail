@@ -43,7 +43,19 @@ var (
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
 	ErrNothing  = errors.New("no search is due. Add one in Searches, or resume a paused one")
 	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
+	// ErrUnread is a key that is saved and could not be read, like one
+	// macOS kept back because its password box was closed. The error a
+	// run starts with says why in its own words.
+	ErrUnread = errors.New("the Exa key could not be read")
 )
+
+// unread is a Finder's failure other than ErrNoKey, said in its own
+// words and matched as ErrUnread.
+type unread struct{ err error }
+
+func (u unread) Error() string        { return u.err.Error() }
+func (u unread) Unwrap() error        { return u.err }
+func (u unread) Is(target error) bool { return target == ErrUnread }
 
 // Engine runs profile searches against a store.
 type Engine struct {
@@ -139,8 +151,10 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	if e.Finder == nil {
 		return 0, false, ErrNoKey
 	}
-	if _, err := e.Finder(); err != nil {
-		return 0, false, err
+	if _, err := e.Finder(); errors.Is(err, ErrNoKey) {
+		return 0, false, ErrNoKey
+	} else if err != nil {
+		return 0, false, unread{err}
 	}
 	now := e.Store.Now()
 	var run *store.Run

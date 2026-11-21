@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -230,6 +231,31 @@ func TestAKeyKeptBackIsAskedForAgain(t *testing.T) {
 	}
 	if k, err := e.Get(); k != "kept" || err != nil || m.reads != 2 {
 		t.Errorf("a third time: %q, %v, %d reads, want 2", k, err, m.reads)
+	}
+}
+
+// The searches of a run ask for the key at once. A read macOS kept back
+// is read again by the next of them, never kept, and the key found then
+// is kept for all the others: two reads, whatever the order.
+func TestAKeyKeptBackOnceIsReadTwiceFromSeveralGoroutines(t *testing.T) {
+	m := &memory{secret: "kept", keptBack: 1}
+	e := &Exa{v: m, env: func(string) string { return "" }}
+	var keptBack atomic.Int32
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			k, err := e.Get()
+			switch {
+			case errors.Is(err, ErrKeptBack) && k == "":
+				keptBack.Add(1)
+			case err != nil || k != "kept":
+				t.Errorf("get %q, %v", k, err)
+			}
+		})
+	}
+	wg.Wait()
+	if m.reads != 2 || keptBack.Load() != 1 {
+		t.Errorf("%d reads, want 2, and %d kept back, want 1", m.reads, keptBack.Load())
 	}
 }
 

@@ -157,8 +157,8 @@ func TestARunWhoseKeyWasKeptBackSaysWhyAndStartsNextTime(t *testing.T) {
 		}
 		return found()
 	}
-	if _, _, err := e.Start("manual", 0); err != keptBack {
-		t.Fatalf("err = %v, want it kept back", err)
+	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrUnread) || !errors.Is(err, keptBack) || err.Error() != keptBack.Error() {
+		t.Fatalf("err = %v, want it kept back, as ErrUnread", err)
 	}
 	id, started, err := e.Start("manual", 0)
 	if err != nil || !started {

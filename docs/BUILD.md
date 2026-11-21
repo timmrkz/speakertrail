@@ -38,7 +38,8 @@ while no key is saved.
 
 The first build signed with the Developer ID asks for the keychain
 password once, the first time it reads the key. Always Allow there
-covers every build signed with it after, see The Developer ID in
+covers every build signed with it after, until the key is saved again
+in Settings, see The Developer ID in
 [UPDATES.md](UPDATES.md). A build signed ad hoc, like one from `make
 run`, asks once for itself. Closing the box without an answer keeps the
 key back for that one read, and the next run or draft asks again. Keychain

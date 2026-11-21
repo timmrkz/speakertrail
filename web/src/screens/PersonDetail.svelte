@@ -14,7 +14,14 @@
   import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
 
-  let { id, onupdate, onname }: { id: number; onupdate?: (p: PersonDetail) => void; onname?: (name: string) => void } = $props()
+  // onconnected follows once the app took a change of connected, or
+  // turned it down, so a list can read again what it shows.
+  let { id, onupdate, onconnected, onname }: {
+    id: number
+    onupdate?: (p: PersonDetail) => void
+    onconnected?: () => void
+    onname?: (name: string) => void
+  } = $props()
 
   const person = new Load<PersonDetail>()
   let notes = $state('')
@@ -129,6 +136,7 @@
       fault(e)
     } finally {
       deciding = false
+      onconnected?.()
     }
   }
 </script>

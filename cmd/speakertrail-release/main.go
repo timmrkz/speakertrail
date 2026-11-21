@@ -27,10 +27,11 @@
 //	    pack wrote, it signs the stored zip beside them too. With -team,
 //	    it refuses a build not signed by that team with the hardened
 //	    runtime, see hardened.go.
-//	speakertrail-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
+//	speakertrail-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... [-ended F]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
-//	    newest commit of each channel that has one still to be built, and
-//	    the pull requests that no longer merge into main
+//	    newest commit of each channel that has one still to be built, the
+//	    pull requests that no longer merge into main, and those merged or
+//	    closed, from files of gh pr list
 //	speakertrail-release unreachable -list F -assets F [-from URL]
 //	    name the files of the release that no build an app may run
 //	    reaches any more, one a line, for the workflow to remove, see
@@ -57,6 +58,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -396,6 +398,14 @@ func list(args []string) error {
 		conflict[v] = true
 		return nil
 	})
+	// The pull requests that are not open any more, in files as
+	// `gh pr list --json number,state` writes them, so the app can say
+	// whether the one it followed was merged or closed.
+	var ended []string
+	fs.Func("ended", "a file of pull requests that are not open, as gh pr list --json number,state writes it", func(v string) error {
+		ended = append(ended, v)
+		return nil
+	})
 	_ = fs.Parse(args)
 	text, err := os.ReadFile(publicKeyFile)
 	if err != nil {
@@ -447,6 +457,7 @@ func list(args []string) error {
 	// When it was written, so the app can tell the newer of the list's
 	// two copies, see updates.ListCopies.
 	l.Written = time.Now().UTC().Truncate(time.Second)
+	l.Merged, l.Closed = endedPullRequests(ended)
 	data, err := json.Marshal(l)
 	if err != nil {
 		return err
@@ -466,4 +477,49 @@ func writeJSON(path string, v any) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+// endedPullRequests reads the files of pull requests that are not open
+// any more, as `gh pr list --json number,state` writes them, into the
+// channels of those merged and those closed without a merge, newest
+// first. A file that cannot be read says nothing: the list is still
+// written, and the app says a pull request on neither is not open. One
+// GitHub calls open is on neither, since its entry says so.
+func endedPullRequests(paths []string) (merged, closed []string) {
+	seen := map[int]bool{}
+	type pr struct {
+		Number int    `json:"number"`
+		State  string `json:"state"`
+	}
+	var all []pr
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "no pull requests read from %s: %v\n", path, err)
+			continue
+		}
+		var prs []pr
+		if err := json.Unmarshal(data, &prs); err != nil {
+			fmt.Fprintf(os.Stderr, "no pull requests read from %s: %v\n", path, err)
+			continue
+		}
+		all = append(all, prs...)
+	}
+	slices.SortStableFunc(all, func(a, b pr) int { return b.Number - a.Number })
+	for _, p := range all {
+		channel := fmt.Sprintf("pr-%d", p.Number)
+		if seen[p.Number] || !updates.ValidChannel(channel) {
+			continue
+		}
+		switch p.State {
+		case "MERGED":
+			merged = append(merged, channel)
+		case "CLOSED":
+			closed = append(closed, channel)
+		default:
+			continue
+		}
+		seen[p.Number] = true
+	}
+	return merged, closed
 }

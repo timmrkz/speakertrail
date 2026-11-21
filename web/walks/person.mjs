@@ -188,6 +188,67 @@ const walks = [
       return ''
     },
   },
+  {
+    // Someone connected is only under Connected, so a search for their
+    // name under All finds nobody there. The empty list says where they
+    // are and leads there with the search kept.
+    name: 'Searching All for someone connected leads to them under Connected',
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      await page.locator('main .filters button', { hasText: 'Connected' }).click()
+      const name = await page.locator('.prow b').first().innerText()
+      await page.locator('main .filters button', { hasText: 'All' }).click()
+      await page.getByRole('searchbox', { name: 'Search people' }).or(page.getByLabel('Search people')).first().fill(name)
+      const empty = page.locator('.rows-wrap', { hasText: 'Only under Connected' })
+      await empty.waitFor()
+      await empty.getByRole('button', { name: 'Show under Connected' }).click()
+      await page.locator('.prow', { hasText: name }).waitFor()
+      const pressed = await page.locator('main .filters button[aria-pressed="true"]').innerText()
+      if (!pressed.startsWith('Connected')) return `the filter shown is ${pressed}`
+      return ''
+    },
+  },
+  {
+    // Tim, 21 November 2026: people he connected with stayed in All and
+    // Under 30, so he scrolled past them to find someone open. Connected,
+    // a person leaves both for Connected, the counts follow, the person
+    // stays open, and Down goes to whom took their place.
+    name: 'Connecting a person moves them from All to Connected, and taking it back brings them back',
+    async run(page) {
+      const count = (label) => page.locator('main .filters button', { hasText: label }).locator('.n').innerText().then(Number)
+      const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      await page.waitForLoadState('networkidle')
+      const before = await rows()
+      if (await page.locator('.prow', { hasText: 'Connected' }).count()) return 'someone connected is listed under All'
+      const all = await count('All')
+      const connected = await count('Connected')
+      const row = page.locator('.prow').nth(1)
+      const id = await row.getAttribute('id')
+      await row.click()
+      await page.locator('.detail-pane button.connect[aria-pressed="false"]').click()
+      await page.locator('.detail-pane button.connect[aria-pressed="true"]').waitFor()
+      await page.locator(`#${id}`).waitFor({ state: 'detached' })
+      const wrong = []
+      if ((await count('All')) !== all - 1) wrong.push(`All counts ${await count('All')}, want ${all - 1}`)
+      if ((await count('Connected')) !== connected + 1) wrong.push(`Connected counts ${await count('Connected')}, want ${connected + 1}`)
+      if (!(await page.locator('.detail-pane').isVisible())) wrong.push('the person closed')
+      await page.keyboard.press('ArrowDown')
+      await page.waitForURL(`**/app/people/${before[2].replace('person-row-', '')}`)
+      await page.goBack()
+      await page.locator('main .filters button', { hasText: 'Connected' }).click()
+      await page.locator(`#${id}`).waitFor()
+      await page.locator(`#${id}`).click()
+      await page.locator('.detail-pane button.connect[aria-pressed="true"]').click()
+      await page.locator(`#${id}`).waitFor({ state: 'detached' })
+      await page.locator('main .filters button', { hasText: 'All' }).click()
+      await page.locator(`#${id}`).waitFor()
+      if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`taken back, the list is ${await rows()}, was ${before}`)
+      if ((await count('All')) !== all) wrong.push(`taken back, All counts ${await count('All')}, want ${all}`)
+      return wrong.join('\n\t')
+    },
+  },
 ]
 
 const browser = await chromium.launch()

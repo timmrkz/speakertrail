@@ -8,3 +8,4 @@
 /cmd/*/speakertrail-release
 vite.log
 /.build/
+/speakertrail-release

@@ -11,6 +11,8 @@
 # The rest, for when you want one part of it:
 #
 #   make            build the app, bin/Speaker Trail.app on a Mac
+#   make llama      the llama-server the app carries, built from llama.cpp.
+#                   make does it once by itself, on a Mac
 #   make install    the same, copied to /Applications, to start it like
 #                   any other app. Once is enough: from then on it updates
 #                   itself, see docs/UPDATES.md
@@ -49,7 +51,15 @@ export GOTOOLCHAIN
 BUILD_VERSION ?=
 BUILD_CHANNEL ?=
 BUILD_COMMIT ?=
-APP_LDFLAGS := -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+# What the app is built with. -s -w leaves out the symbol table and the
+# debug information, about 5 MB of what an update downloads. Nobody reads
+# them from a build: a panic still names every function and line, from the
+# table Go keeps to run. -buildvcs=false leaves out the commit Go stamps in
+# by itself, so a build whose code did not change has the same bytes as
+# the one before and an update can tell what it already has. A build still
+# says its commit, in buildCommit. See docs/UPDATES.md.
+SHIP_FLAGS := -trimpath -buildvcs=false
+APP_LDFLAGS := -s -w -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
 # On a Mac every part of the app is built for the same oldest macOS, the
 # one the bundle's Info.plist names. Without it clang builds the window's
 # C for the macOS it runs on and Go links for 11.0, and the linker warns
@@ -58,7 +68,13 @@ MACOS_MIN := 13.0
 ifeq ($(UNAME),Darwin)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
-export CGO_LDFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
+# -headerpad_max_install_names leaves room in the program's header for the
+# paths carry-libs.sh adds, where it looks for the speech library. Go
+# leaves that room by itself only while it keeps the debug information,
+# which the app no longer has, see APP_LDFLAGS. Without it
+# install_name_tool has no room and the app cannot find its library, as
+# FrameFairy found.
+export CGO_LDFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) -Wl,-headerpad_max_install_names
 APP_LDFLAGS += -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 endif
 # The app's version, in its Info.plist. The build's own, with its channel
@@ -72,10 +88,10 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain mock test lint golangci-lint unit interface walks check clean help
+.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
 
 help:
-	@sed -n '1,31p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
 
 all: app
 
@@ -108,17 +124,36 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 # it. See scripts/carry-libs.sh and docs/BUILD.md.
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
-	@$(GO) build -trimpath -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
+	@$(GO) build $(SHIP_FLAGS) -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
 ifeq ($(UNAME),Darwin)
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 endif
 
+# The llama-server that runs the language model, built from llama.cpp at
+# the version scripts/build-llama.sh pins. It takes a few minutes, so it
+# is built once into .build/llama and again only when that script
+# changed, which the stamp beside it says by the script's checksum. A
+# date would not do: a fresh checkout makes the script newer than the
+# server the build workflow keeps in its cache. The sources it was built
+# from go once it is built, about a gigabyte.
+LLAMA_DIR := .build/llama
+LLAMA := $(LLAMA_DIR)/bin/llama-server
+llama:
+	@want=$$(cksum scripts/build-llama.sh | cut -d' ' -f1); \
+	if [ -x $(LLAMA) ] && [ "$$(cat $(LLAMA_DIR)/built 2>/dev/null)" = "$$want" ]; then exit 0; fi; \
+	echo "Building llama-server from llama.cpp. Once, and it takes a few minutes"; \
+	rm -rf .build/llama && sh scripts/build-llama.sh .build/llama && rm -rf .build/llama/work && \
+	echo "$$want" >$(LLAMA_DIR)/built
+
 # The app as the folder Finder draws as one icon. Only on a Mac: elsewhere
-# the program in bin/ is the app.
-app: toolchain $(EXE)
+# the program in bin/ is the app. llama-server and its licence go beside
+# the program, where the app looks for it, see internal/language.
 ifeq ($(UNAME),Darwin)
+app: toolchain llama $(EXE)
+	@cp $(LLAMA) $(LLAMA_DIR)/bin/LICENSE-llama.cpp $(BIN)/
 	@sh scripts/bundle-macos.sh $(BIN) "$(VERSION)"
 else
+app: toolchain $(EXE)
 	@echo "Ready: $(EXE)"
 endif
 
@@ -202,7 +237,7 @@ interface: web/node_modules/.package-lock.json
 # The walks drive the interface with invented data in Chromium, the way
 # FrameFairy's walks drive its own, see web/walks/.
 walks: web/node_modules/.package-lock.json
-	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/focus.mjs && node walks/beam.mjs
+	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/draft.mjs && node walks/focus.mjs && node walks/beam.mjs && node walks/pick.mjs
 
 check:
 	@sh scripts/check.sh || true

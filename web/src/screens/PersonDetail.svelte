@@ -1,6 +1,7 @@
 <script lang="ts">
   // One person, with room to read: who they are, Connect and LinkedIn,
-  // why they fit, which search found them, and Tim's notes. The pane
+  // the first message to them, why they fit, which search found them, and
+  // Tim's notes. The pane
   // beside the list in a wide window and the sheet in a narrow one both
   // show this, so the two never drift apart.
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
@@ -9,6 +10,7 @@
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
+  import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
 
   let { id, onupdate }: { id: number; onupdate?: (p: PersonDetail) => void } = $props()
@@ -179,6 +181,10 @@
         </p>
       {/if}
     </header>
+
+    {#if linkedin}
+      <FirstMessage person={p} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />
+    {/if}
 
     {#if reasons.length || doubts.length}
       <section class="section" aria-labelledby="why-{p.id}">

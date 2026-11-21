@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"hash/crc32"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,12 +20,19 @@ import (
 // would read them, with what each test needs in them.
 
 // program is a 64-bit arm64 Mach-O program: the libraries it links, the
-// functions and classes it imports, text anywhere in it, and the
-// entitlements it is signed with, as the XML codesign writes, or none.
+// places it looks for those it links as @rpath, the functions and classes
+// it imports, text anywhere in it, and the entitlements it is signed
+// with, as the XML codesign writes, or none.
 type program struct {
 	// cpu is arm64 when it is 0.
-	cpu      uint32
-	links    []string
+	cpu uint32
+	// library makes it a library, MH_DYLIB, rather than a program.
+	library bool
+	links   []string
+	rpaths  []string
+	// other are load commands that name something, by their number:
+	// a weak link, the loader, the loader's environment.
+	other    []load
 	imports  []string
 	text     string
 	entitled string
@@ -54,6 +62,31 @@ func (p program) bytes() []byte {
 		// LC_LOAD_DYLIB, its size, where its name starts, a time and two
 		// versions, then the name.
 		add(0xc, uint32(24+len(name)), 24, 2, 0x10000, 0x10000)
+		cmds.Write(name)
+	}
+	for _, o := range p.other {
+		if o.short {
+			// Only what it is and its size, as small as Go reads one.
+			add(o.cmd, 8)
+			continue
+		}
+		name := append([]byte(o.name), 0)
+		for (12+len(name))%8 != 0 {
+			name = append(name, 0)
+		}
+		// Any command with a name: what it is, its size, where its name
+		// starts, then the name. A link would carry a time and versions
+		// too, which the check never reads.
+		add(o.cmd, uint32(12+len(name)), 12)
+		cmds.Write(name)
+	}
+	for _, r := range p.rpaths {
+		name := append([]byte(r), 0)
+		for (12+len(name))%8 != 0 {
+			name = append(name, 0)
+		}
+		// LC_RPATH, its size, where its path starts, then the path.
+		add(0x8000001c, uint32(12+len(name)), 12)
 		cmds.Write(name)
 	}
 	// After the header and the commands: the symbols, the names, the
@@ -134,7 +167,11 @@ func (p program) bytes() []byte {
 		cpu = 0x0100000c
 	}
 	var out bytes.Buffer
-	for _, w := range []uint32{0xfeedfacf, cpu, 0, 2, uint32(ncmds), uint32(cmds.Len()), 0, 0} {
+	kind := uint32(2)
+	if p.library {
+		kind = 6
+	}
+	for _, w := range []uint32{0xfeedfacf, cpu, 0, kind, uint32(ncmds), uint32(cmds.Len()), 0, 0} {
 		_ = binary.Write(&out, le, w)
 	}
 	out.Write(cmds.Bytes())
@@ -143,6 +180,20 @@ func (p program) bytes() []byte {
 	out.WriteString(p.text)
 	out.Write(sig)
 	return out.Bytes()
+}
+
+// load is a load command that names something, or with short one too
+// small to.
+type load struct {
+	cmd   uint32
+	name  string
+	short bool
+}
+
+// dylib makes a program a library.
+func dylib(p program) program {
+	p.library = true
+	return p
 }
 
 // fat wraps programs in a universal file, one architecture each, each
@@ -183,9 +234,18 @@ var app = program{
 		"/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit",
 		"/System/Library/Frameworks/Security.framework/Versions/A/Security",
 		"/usr/lib/libSystem.B.dylib",
+		"@rpath/libsherpa-onnx-c-api.dylib", "@rpath/libonnxruntime.dylib",
 	},
 	imports: []string{"_NSClassFromString", "_OBJC_CLASS_$_NSEvent", "_RegisterEventHotKey", "_dlsym", "_SecItemCopyMatching"},
 }
+
+// bundled is the app's program in its bundle, Contents/MacOS, looking for
+// the speech library where main's build of 18 November 2026 does.
+var bundled = func() program {
+	p := app
+	p.rpaths = []string{"@executable_path", "@executable_path/../Frameworks", "@executable_path/lib"}
+	return p
+}()
 
 // adhoc is the app signed ad hoc, with no entitlement, which is how the
 // build signs it.
@@ -357,6 +417,132 @@ func TestWhatCouldAskForAdministratorRightsIsFound(t *testing.T) {
 	}
 }
 
+// A program finds the libraries it links as @rpath, the speech library,
+// in the places its LC_RPATH entries name, the first that has one, and
+// loads it whatever it is. So a build that looks anywhere outside itself
+// could load a library the check never read, and is refused, issue #26.
+func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
+	const (
+		exe  = "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+		lib  = "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib"
+		gomc = "/Users/runner/go/pkg/mod/github.com/k2-fsa/sherpa-onnx-go-macos/v2@v2.0.1/lib/aarch64-apple-darwin"
+	)
+	looking := func(p program, rpaths ...string) []byte {
+		p.rpaths = rpaths
+		return p.bytes()
+	}
+	speech := program{links: []string{"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib"}}
+	cases := []struct {
+		name, file string
+		data       []byte
+		want       []string
+	}{
+		// What main's build of 18 November 2026 carries.
+		{"the app as it is", exe, bundled.bytes(), nil},
+		{"the speech library as it is", lib, looking(speech, "@loader_path"), nil},
+		{"elsewhere inside the app", exe, looking(app, "@executable_path/../Resources", "@executable_path/../.."), nil},
+		// carry-libs.sh takes it out, and its --verify refuses a program
+		// still looking there, on the Mac that builds it. This is the
+		// wall after that one.
+		{"the module cache of the Mac that built it", exe, looking(app, "@executable_path/../Frameworks", gomc),
+			[]string{"looks for libraries outside the build, in " + gomc}},
+		{"a folder anyone can write to", lib, looking(speech, "@loader_path", "/Users/Shared"),
+			[]string{"looks for libraries outside the build, in /Users/Shared"}},
+		{"beside the app", exe, looking(app, "@executable_path/../../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../../.."}},
+		{"the speech library, beside the app", lib, looking(speech, "@loader_path/../../../lib"),
+			[]string{"looks for libraries outside the build, in @loader_path/../../../lib"}},
+		{"a name that only starts the same", exe, looking(app, "@executable_paths"),
+			[]string{"looks for libraries outside the build, in @executable_paths"}},
+		{"a program in no app, climbing out", "speakertrail-app", looking(app, "@executable_path/.."),
+			[]string{"looks for libraries outside the build, in @executable_path/.."}},
+		// A program's @executable_path is its own folder, wherever in
+		// the app it is, and a library's is the app's program's.
+		{"a program in Contents, climbing out", "Speaker Trail.app/Contents/speakertrail-app", looking(app, "@executable_path/../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../.."}},
+		{"a program at the top of the app, climbing out", "Speaker Trail.app/speakertrail-app", looking(app, "@executable_path/.."),
+			[]string{"looks for libraries outside the build, in @executable_path/.."}},
+		{"the speech library, by the app's program", lib, looking(dylib(speech), "@executable_path/../Frameworks"), nil},
+		{"the speech library, beside the app by the app's program", lib, looking(dylib(speech), "@executable_path/../../.."),
+			[]string{"looks for libraries outside the build, in @executable_path/../../.."}},
+		// A universal program is read for every architecture.
+		{"a universal program, one architecture looking outside", exe,
+			fat(bundled, program{cpu: 0x01000007, links: app.links, rpaths: []string{"/usr/local/lib"}}),
+			[]string{"looks for libraries outside the build, in /usr/local/lib"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(c.file, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// A build whose program still looks in the module cache is refused by
+// the check publish.yml runs before it signs.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildThatLooksInTheModuleCacheIsNotSigned(t *testing.T) {
+	files := theApp("main")
+	p := bundled
+	p.rpaths = append(slices.Clone(bundled.rpaths), "/Users/runner/go/pkg/mod/lib")
+	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = p.bytes()
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := check([]string{"-zip", zipPath})
+	if err == nil || !strings.Contains(err.Error(), "speakertrail-app: looks for libraries outside the build, in /Users/runner/go/pkg/mod/lib") {
+		t.Errorf("checking a build that looks in the module cache said %v", err)
+	}
+}
+
+// A library linked weakly, re-exported, lazily or upward loads as surely
+// as one linked plainly, and Go's debug/macho reads only the plain ones.
+// So every kind is held to the list, and so is the loader and anything
+// that sets where it looks.
+func TestEveryWayOfLinkingIsRead(t *testing.T) {
+	const exe = "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+	const sck = "/System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"
+	with := func(other ...load) []byte {
+		p := bundled
+		p.other = other
+		return p.bytes()
+	}
+	cases := []struct {
+		name string
+		data []byte
+		want []string
+	}{
+		// What main's build of 18 November 2026 carries.
+		{"the app as it is", with(
+			load{cmd: 0xe, name: "/usr/lib/dyld"},
+			load{cmd: 0x80000018, name: "/System/Library/Frameworks/ServiceManagement.framework/Versions/A/ServiceManagement"},
+			load{cmd: 0x80000018, name: "/System/Library/Frameworks/UniformTypeIdentifiers.framework/Versions/A/UniformTypeIdentifiers"},
+		), nil},
+		{"the screen, weakly", with(load{cmd: 0x80000018, name: sck}), []string{"links " + sck}},
+		{"the screen, re-exported", with(load{cmd: 0x8000001f, name: sck}), []string{"links " + sck}},
+		{"the screen, lazily", with(load{cmd: 0x20, name: sck}), []string{"links " + sck}},
+		{"the screen, upward", with(load{cmd: 0x80000023, name: sck}), []string{"links " + sck}},
+		{"a loader of its own", with(load{cmd: 0xe, name: "/tmp/dyld"}), []string{"is loaded by /tmp/dyld"}},
+		{"the loader told where to look", with(load{cmd: 0x27, name: "DYLD_LIBRARY_PATH=/tmp"}),
+			[]string{"sets the loader's environment, DYLD_LIBRARY_PATH=/tmp"}},
+		// What cannot be read cannot be checked.
+		{"a weak link too short to name anything", with(load{cmd: 0x80000018, short: true}),
+			[]string{"its load command 0x80000018 cannot be read"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := inputsOf(exe, c.data)
+			if !slices.Equal(got, c.want) {
+				t.Errorf("found %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 // A program marked set-user-ID or set-group-ID runs with its owner's
 // rights, root's once it is installed by root, so a build that carries
 // one is refused, whatever the program is.
@@ -393,6 +579,46 @@ func TestABuildWithAProgramThatRunsAsItsOwnerIsNotSigned(t *testing.T) {
 				t.Errorf("a build whose app is %v said %v", mode, err)
 			}
 		})
+	}
+}
+
+// A link in the build could point a folder the check reads as inside it,
+// Contents/Frameworks say, at one outside it, and the updater keeps a
+// link that does. So a build with any link is refused.
+//
+// On the real disk: the release tool reads the build as a zip file.
+func TestABuildWithALinkIsNotSigned(t *testing.T) {
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	files := theApp("main")
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		f, err := w.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := f.Write(files[name]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &zip.FileHeader{Name: "Speaker Trail.app/Contents/Frameworks"}
+	h.SetMode(0o755 | fs.ModeSymlink)
+	f, err := w.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("../../../elsewhere")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = checkInputs(zipPath)
+	if err == nil || !strings.Contains(err.Error(), "Speaker Trail.app/Contents/Frameworks: is a link, which could lead outside the build") {
+		t.Errorf("a build with a link said %v", err)
 	}
 }
 
@@ -475,7 +701,7 @@ func zipped(t *testing.T, files map[string][]byte) []byte {
 // theApp is a build of the app for a channel that watches nothing.
 func theApp(channel string) map[string][]byte {
 	return map[string][]byte{
-		"Speaker Trail.app/Contents/MacOS/speakertrail-app": app.bytes(),
+		"Speaker Trail.app/Contents/MacOS/speakertrail-app": bundled.bytes(),
 		"Speaker Trail.app/Contents/Info.plist": []byte(plistHead +
 			"<key>CFBundleName</key><string>Speaker Trail " + channel + "</string>\n</dict>\n</plist>\n"),
 	}
@@ -488,7 +714,7 @@ func theApp(channel string) map[string][]byte {
 func TestABuildThatCouldWatchInputIsNotSigned(t *testing.T) {
 	release(t)
 	files := theApp("main")
-	watcher := app
+	watcher := bundled
 	watcher.imports = append(slices.Clone(app.imports), "_CGWindowListCreateImage")
 	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = watcher.bytes()
 	zipPath := filepath.Join(t.TempDir(), "app.zip")

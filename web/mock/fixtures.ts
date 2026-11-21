@@ -313,6 +313,20 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
   return { runs, checks }
 }
 
+// The prompt a first message is written from, as the app has it, see
+// DefaultFirstMessagePrompt in internal/store/settings.go.
+const FIRST_MESSAGE_PROMPT = `You write the first LinkedIn message from Tim to {{name}}, a new connection he just made.
+
+Tim hosts the podcast "My First Memory". Each guest tells the story of their earliest memory and what it says about who they became. Tim looks for people in North Rhine-Westphalia who run their own business.
+
+Write the message in the language of the profile, German when in doubt, and use "du" in German. Three to five short sentences. Thank them for connecting, name one specific thing from their profile that caught Tim's interest, and ask whether they would like to hear more about being a guest. No subject line, no hashtags, no emojis, no flattery. Address them by first name, {{first_name}}. Sign with "Tim". Write only the message.
+
+Tim's notes about them:
+{{notes}}
+
+Their LinkedIn profile:
+{{profile}}`
+
 export function buildSettings(): Setting[] {
   const t = hoursAgo(24 * 9)
   // The app's settings, as internal/store/settings.go lists them.
@@ -324,6 +338,7 @@ export function buildSettings(): Setting[] {
     ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
     ['probation_weeks', 3, 'Weeks a new search may find nobody before runs leave it out'],
     ['retire_after_empty_checks', 4, 'Runs in a row without anyone new before a search is left out'],
+    ['first_message_prompt', FIRST_MESSAGE_PROMPT, 'What the language model is asked to write a first message from. {{profile}} is where the profile goes'],
   ]
   return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))
 }

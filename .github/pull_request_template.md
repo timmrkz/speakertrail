@@ -20,6 +20,7 @@ Now they wrap inside the screen."
 
 - **Architecture:** <!-- better, the same or worse -->
 - **Speed:** <!-- faster, slower or the same -->
+- **Security:** <!-- what it lets in and what guards it, or nothing changes -->
 
 <!--
 The bottom line, always, and nothing else in it. Architecture: one word,
@@ -35,6 +36,12 @@ spread, `2 % faster, ± 5 %`. Everything else goes in Proof: what was
 measured, where and how often, the parts, CI when the product changed
 too, what was read from the code, where each new thing went, and what a
 slower part buys. See the engineering skill on speed.
+Security: in a few words, what the change lets the program, a build or a
+person reach that it could not before, and what guards it, for example
+`the build may ask for the microphone, the release check allows only
+that usage key`. When nothing opens, `nothing changes`. What is left open,
+and the test that proves the guard refuses, go in Proof. See the review
+skill on security.
 -->
 
 ## Root cause

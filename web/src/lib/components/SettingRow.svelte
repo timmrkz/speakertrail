@@ -3,8 +3,15 @@
   import { fmtAgo } from '../format'
   import { errorText } from '../toast.svelte'
 
-  // One setting with an editor that fits its JSON type.
-  let { setting, onsaved }: { setting: Setting; onsaved: (s: Setting) => void } = $props()
+  // One setting with an editor that fits its JSON type. Bare, it is the
+  // editor alone, named by the heading above it, labelledby, with no row
+  // round it: the prompt in Settings.
+  let { setting, onsaved, bare = false, labelledby }: {
+    setting: Setting
+    onsaved: (s: Setting) => void
+    bare?: boolean
+    labelledby?: string
+  } = $props()
 
   type Kind = 'boolean' | 'number' | 'string' | 'list' | 'json'
   function kindOf(v: Json): Kind {
@@ -28,6 +35,10 @@
   let status = $state<'idle' | 'saving' | 'saved'>('idle')
   let error = $state('')
   let id = $derived(`set-${setting.key}`)
+  // Text of several lines, a prompt above all, gets a box across the whole
+  // row, tall enough to read it, rather than a field of one line.
+  // svelte-ignore state_referenced_locally
+  const long = kind === 'string' && (setting.value as string).includes('\n')
 
   let parsed = $derived.by((): { ok: true; value: Json } | { ok: false; msg: string } => {
     switch (kind) {
@@ -50,7 +61,7 @@
     }
   })
 
-  let lines = $derived(Math.min(10, Math.max(3, text.split('\n').length + 1)))
+  let lines = $derived(Math.min(long ? 18 : 10, Math.max(3, text.split('\n').length + 1)))
 
   // A setting saves the moment it is left or Enter is pressed, the way
   // System Settings does, and Undo puts the value before it back.
@@ -93,11 +104,13 @@
   }
 </script>
 
-<form class="setting" onsubmit={save} novalidate>
-  <div class="info">
-    <label for={id} class="desc">{setting.description || setting.key}</label>
-    <span class="key num" title="Changed {fmtAgo(setting.updated_at)}">{setting.key}</span>
-  </div>
+<form class="setting" class:long class:bare onsubmit={save} novalidate>
+  {#if !bare}
+    <div class="info">
+      <label for={id} class="desc">{setting.description || setting.key}</label>
+      <span class="key num" title="Changed {fmtAgo(setting.updated_at)}">{setting.key}</span>
+    </div>
+  {/if}
   <div class="editor" class:bool={kind === 'boolean'}>
     {#if kind === 'boolean'}
       <button {id} type="button" role="switch" class="switch" aria-checked={text === 'true'} onclick={toggle} disabled={status === 'saving'}>
@@ -107,6 +120,9 @@
     {:else if kind === 'number'}
       <input {id} class="input num-input" type="text" inputmode="decimal" bind:value={text} oninput={() => (status = 'idle')}
         onblur={() => save()} onkeydown={keydown} aria-invalid={!parsed.ok ? 'true' : undefined} />
+    {:else if long}
+      <textarea {id} class="textarea" rows={lines} bind:value={text} oninput={() => (status = 'idle')}
+        onblur={() => save()} onkeydown={keydown} aria-labelledby={labelledby}></textarea>
     {:else if kind === 'string'}
       <input {id} class="input" type="text" bind:value={text} oninput={() => (status = 'idle')} onblur={() => save()} onkeydown={keydown} />
     {:else}
@@ -138,6 +154,11 @@
   .key { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
   .editor { display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-width: 0; }
   .editor .textarea { width: min(340px, 100%); }
+  .long { grid-template-columns: minmax(0, 1fr); }
+  .long .editor { justify-content: stretch; }
+  .long .editor .textarea { width: 100%; }
+  .long .foot { justify-content: flex-start; }
+  .bare { padding: 0; }
   .editor .input { width: 220px; }
   .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
   .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }

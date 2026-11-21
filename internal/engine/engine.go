@@ -333,7 +333,7 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 			born, reason, roles := careerOf(prof, c.At)
 			p, isNew := d.AddFound(store.Found{
 				URL: profile, Handle: handleOf(profile), Name: prof.Name, Headline: prof.Headline, City: city,
-				BornAbout: born, AgeReason: reason, Roles: roles, LastActive: prof.LastActive,
+				BornAbout: born, AgeReason: reason, Roles: roles, LastActive: prof.LastActive, Text: prof.Text,
 			}, s, g.id, c.At)
 			score(p, c.At)
 			c.PeopleFound++

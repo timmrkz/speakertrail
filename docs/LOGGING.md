@@ -105,7 +105,10 @@ follow, the way a job does in FrameFairy.
 
 An act never names a person. Whatever shows a person's words is marked
 `data-personal`: the rows of People, the person's view and the sheet it
-slides in on. A control there is named by its kind, `pressed a.prow`, or,
+slides in on, the first message among them. A draft is logged by the
+person's id and its counts, how long it took and how much the model read
+and wrote, never by the profile, the prompt or the message. A control
+there is named by its kind, `pressed a.prow`, or,
 for a button, by its own words, which are ours, `pressed button.btn
 "Connect"`. FrameFairy names a word clicked in its caption box as the
 caption box the same way.

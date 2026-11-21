@@ -41,19 +41,23 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | Path | Contents |
 | --- | --- |
 | `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate, and `carry-over` |
-| `cmd/speakertrail-release` | Makes the update key, signs builds, writes the channel list |
+| `cmd/speakertrail-release` | Makes the update key, packs builds in pieces and patches, signs them, writes the channel list |
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
 | `internal/api` | The JSON API the interface talks to, described in [docs/api.md](docs/api.md) |
 | `internal/keys` | The Exa key in the macOS keychain |
-| `internal/updates` | Where builds to update to come from, and checking their signatures |
+| `internal/updates` | Where builds to update to come from, putting one together from the app's own files, patches and pieces, and checking their signatures |
 | `internal/search` | Exa's index of LinkedIn profiles |
 | `internal/place` | Whether a place lies in NRW, and which city it names |
 | `internal/browser` | Opening LinkedIn in the Chrome profile chosen in Settings, see [docs/open-in-profile.md](docs/open-in-profile.md) |
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/speech` | The speech models in Settings and hearing with them on this Mac, for Dictate |
+| `internal/language` | The language models in Settings, and llama-server, which runs one on this Mac |
+| `internal/draft` | Drafts of a first message to a person, written one at a time in the background |
+| `internal/fetch` | Downloading a model, resumed where it stopped and checked as it comes |
+| `internal/workflows` | No code, only the test that holds the Go tests to what CI's filters start, see CI in [docs/BUILD.md](docs/BUILD.md#ci) |
 | `web` | The interface, Svelte 5 with TypeScript |
-| `scripts` | Installing what is missing, bundling the app, the carry-over, the cloud session setup |
+| `scripts` | Installing what is missing, building llama-server, bundling the app, the carry-over, the cloud session setup |
 | `docs` | Building, the API, the search strategy, working with Claude |
 
 The public calendar, the crawler of event pages, post searches and the

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
+	"github.com/timmrkz/speakertrail/internal/language"
 	"github.com/timmrkz/speakertrail/internal/speech"
 )
 
@@ -136,12 +137,17 @@ func (l *leaving) closing() {
 // a build that is ready goes in place once the app is gone, see
 // installOnQuit. main runs it once, as the shutdown hook and as what
 // Cmd+Q stops. A part that is to stop on the way out stops here.
-func closeDown(e *engine.Engine, c *updating, l *listening, h *speech.Host) {
+func closeDown(e *engine.Engine, c *updating, l *listening, h *speech.Host, w *language.Host) {
 	if l != nil {
 		l.CancelListening()
 	}
 	if h != nil {
 		h.Close()
+	}
+	// The language model holds gigabytes, and llama-server is a program of
+	// its own that would outlive the app.
+	if w != nil {
+		w.Close()
 	}
 	if id, _ := e.Going(); id != 0 {
 		e.Stop(id)

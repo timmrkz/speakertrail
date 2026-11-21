@@ -57,6 +57,13 @@ type personDetail struct {
 	FitEvidence  string         `json:"fit_evidence"`
 	Affiliations []any          `json:"affiliations"`
 	Sightings    []sightingJSON `json:"sightings"`
+	// Draft is the first message to them, as the language model wrote it
+	// at DraftedAt and as Tim changed it since, empty before the first.
+	Draft     string     `json:"draft"`
+	DraftedAt *time.Time `json:"drafted_at"`
+	// ProfileReadAt is when Exa's index gave the profile text a draft is
+	// written from, nil while the app has none and a draft reads it first.
+	ProfileReadAt *time.Time `json:"profile_read_at"`
 }
 
 func listPerson(p *store.Person) personJSON {
@@ -84,7 +91,11 @@ func listPerson(p *store.Person) personJSON {
 
 func detailPerson(d *store.Data, p *store.Person) personDetail {
 	out := personDetail{personJSON: listPerson(p), Appearances: []any{}, Affiliations: []any{},
-		Notes: p.Notes, FitEvidence: p.Evidence, Sightings: []sightingJSON{}}
+		Notes: p.Notes, FitEvidence: p.Evidence, Sightings: []sightingJSON{},
+		Draft: p.Draft, DraftedAt: ptrTime(p.DraftedAt)}
+	if p.LinkedIn.Text != "" {
+		out.ProfileReadAt = ptrTime(p.LinkedIn.TextAt)
+	}
 	for _, s := range p.FoundBy {
 		name := "a search since removed"
 		if search := d.Search(s.SearchID); search != nil {
@@ -151,6 +162,8 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 		Notes *string `json:"notes"`
 		// Connected is whether Tim connected with the person on LinkedIn.
 		Connected *bool `json:"connected"`
+		// Draft is the first message as Tim changed it.
+		Draft *string `json:"draft"`
 	}
 	if !decode(w, r, &body) {
 		return
@@ -166,6 +179,9 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Notes != nil {
 			p.Notes, p.UpdatedAt = *body.Notes, now
+		}
+		if body.Draft != nil {
+			p.Draft, p.UpdatedAt = *body.Draft, now
 		}
 		return nil
 	}) {

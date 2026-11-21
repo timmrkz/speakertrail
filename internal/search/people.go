@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -27,6 +28,10 @@ type Profile struct {
 	// LastActive is the date of the newest post, comment or reaction the
 	// profile shows, zero when it shows none.
 	LastActive time.Time
+	// Text is the whole profile as the index wrote it down: the headline,
+	// the About, the jobs, the education and the latest activity. It is
+	// what a first message is written from.
+	Text string
 }
 
 // Step is one job or one education in a profile.
@@ -85,6 +90,45 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 	return res, nil
 }
 
+// Profile asks Exa's index for one LinkedIn profile by its link, with
+// everything it says, for a person whose profile text the app does not
+// have yet. Like People, it reads only Exa's own copy, never LinkedIn
+// live, so the copy can be weeks old. A link the index does not hold is
+// an error.
+func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
+	body, _ := json.Marshal(map[string]any{
+		"urls": []string{link},
+		"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contentsURL(e.URL), bytes.NewReader(body))
+	if err != nil {
+		return Profile{}, err
+	}
+	req.Header.Set("x-api-key", e.Key)
+	req.Header.Set("Content-Type", "application/json")
+	var out struct {
+		Results []exaProfile `json:"results"`
+	}
+	if err := call(e.Client, req, "exa", &out); err != nil {
+		return Profile{}, err
+	}
+	for _, p := range profilesOf(out.Results) {
+		if p.Text != "" {
+			return p, nil
+		}
+	}
+	return Profile{}, fmt.Errorf("Exa's index holds no profile at %s", link)
+}
+
+// contentsURL is where Exa's contents API is, beside its search, whose
+// address a test may change.
+func contentsURL(searchURL string) string {
+	if searchURL == "" {
+		return "https://api.exa.ai/contents"
+	}
+	return strings.TrimSuffix(searchURL, "/search") + "/contents"
+}
+
 // retryWait is how long People waits before it asks again.
 func (e *Exa) retryWait() time.Duration {
 	if e.RetryWait > 0 {
@@ -126,7 +170,7 @@ var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
 func profilesOf(results []exaProfile) []Profile {
 	res := make([]Profile, 0, len(results))
 	for _, r := range results {
-		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title)}
+		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: WithoutContact(strings.TrimSpace(r.Text))}
 		for _, en := range r.Entities {
 			if en.Type == "person" {
 				if en.Properties.Name != "" {

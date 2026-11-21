@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -76,7 +77,7 @@ func exaPostServer(t *testing.T, searches, contents *atomic.Int32) *httptest.Ser
 				t.Errorf("exa contents %+v", body)
 			}
 			fmt.Fprint(w, `{"results":[
-				{"title":"Erika Beispiel","url":"https://www.linkedin.com/in/erika-beispiel","text":"# Erika Beispiel\n\nYogalehrerin und Inhaberin | Beispiel Yoga\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n120 connections • 130 followers\n\n## About",
+				{"title":"Erika Beispiel","url":"https://www.linkedin.com/in/erika-beispiel","text":"# Erika Beispiel\n\nYogalehrerin und Inhaberin | Beispiel Yoga\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n120 connections • 130 followers\n\n## About\n\nKurse in Köln. Anmeldung: erika@beispiel-yoga.de, Tel. 0221 1234567",
 				 "entities":[{"type":"person","properties":{"name":"Erika Beispiel","location":"Cologne, North Rhine-Westphalia, Germany",
 				  "workHistory":[{"title":"Inhaberin","location":null,"dates":{"from":"2023-04-01","to":null},"company":{"id":null,"name":"Beispiel Yoga"}},
 				    {"title":"Werkstudentin","dates":{"from":"2019-10-01","to":"2022-03-01"},"company":{"name":"Muster GmbH"}},
@@ -107,6 +108,8 @@ func TestExaPeople(t *testing.T) {
 		URL: "https://de.linkedin.com/in/lea-probe", Name: "Lea Probe", Headline: "Personal Trainerin | Selbstständig",
 		Location: "Cologne, North Rhine-Westphalia, Germany", Career: []search.Step{{Title: "Personal Trainerin", Org: "Selbstständig", From: 2023}},
 		LastActive: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC),
+		// The whole text is kept, since a first message is written from it.
+		Text: "# Lea Probe\n\nPersonal Trainerin | Selbstständig\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n300 connections\n\n## Activity\n\n- [2026-06-02 · Gefällt mir: Ein Beitrag](https://www.linkedin.com/posts/x)\n- [2026-10-30 · Kommentar: Starker Kurs!](https://www.linkedin.com/posts/y)",
 	}}
 	if !reflect.DeepEqual(people, want) {
 		t.Errorf("people\n%+v\nwant\n%+v", people, want)
@@ -141,5 +144,24 @@ func TestExaPeopleAsksAgainOnce(t *testing.T) {
 		if failed.Load() != 2 {
 			t.Errorf("%d failures: %d calls, want 2", fails, failed.Load())
 		}
+	}
+}
+
+// A person whose text the app lacks has it read from Exa's index by the
+// link, never from LinkedIn live.
+func TestExaProfile(t *testing.T) {
+	var s, c atomic.Int32
+	srv := exaPostServer(t, &s, &c)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	p, err := exa.Profile(t.Context(), "https://www.linkedin.com/in/erika-beispiel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "Erika Beispiel" || p.Headline != "Yogalehrerin und Inhaberin | Beispiel Yoga" ||
+		!strings.HasPrefix(p.Text, "# Erika Beispiel") || !strings.HasSuffix(p.Text, "Kurse in Köln. Anmeldung: , Tel.") {
+		t.Errorf("profile %+v", p)
+	}
+	if s.Load() != 0 || c.Load() != 1 {
+		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
 	}
 }

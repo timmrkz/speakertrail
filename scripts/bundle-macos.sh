@@ -36,6 +36,21 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BINDIR/$EXE" "$APP/Contents/MacOS/$EXE"
 
+# llama-server, which runs the language model that drafts a first message,
+# beside the program, the only place internal/language takes it from. A
+# bundle without it is not made: Draft would have nothing to run the model
+# with, and Tim no terminal step to add it. Its licence goes in Resources,
+# not beside it, because codesign takes everything in Contents/MacOS for
+# code. As in FrameFairy. make builds it, see build-llama.sh.
+if [ ! -x "$BINDIR/llama-server" ]; then
+	echo "bundle-macos.sh: no llama-server in $BINDIR, and the app runs no other. Build it with make." >&2
+	exit 1
+fi
+cp "$BINDIR/llama-server" "$APP/Contents/MacOS/llama-server"
+if [ -f "$BINDIR/LICENSE-llama.cpp" ]; then
+	cp "$BINDIR/LICENSE-llama.cpp" "$APP/Contents/Resources/"
+fi
+
 # The speech library Dictate hears with. carry-libs.sh has already pointed
 # the program at @executable_path/../Frameworks, which from
 # Contents/MacOS is this folder, so copying it here is the whole of it.
@@ -111,6 +126,9 @@ printf 'APPL????' >"$APP/Contents/PkgInfo"
 # that fails leaves an app macOS refuses to open with nothing to say why,
 # so it stops the build here, and the bundle is read back as macOS will.
 codesign --remove-signature "$APP/Contents/MacOS/$EXE" 2>/dev/null || true
+# llama-server first, because signing the program seals the bundle with
+# what is in it then.
+codesign -s - -f "$APP/Contents/MacOS/llama-server"
 codesign -s - -f "$APP/Contents/MacOS/$EXE"
 codesign --verify --strict "$APP"
 

@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Activity, Appearance, DraftJob, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
 } from '../src/lib/api.ts'
 import {
@@ -44,6 +44,9 @@ interface PersonRow {
   // found.
   linkedin?: Omit<NonNullable<Person['linkedin']>, 'url'>
   searchId?: number
+  // The first message to them and when it was drafted.
+  draft?: string
+  drafted_at?: string
 }
 
 function createState() {
@@ -300,7 +303,10 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
   const fit_evidence = search ? `Found by the profile search ${search.name}` : p.id >= 900
     ? `Managing director of ${p.affiliations[0].organisation}, by its imprint. In the portfolio of Gateway startups`
     : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
-  return { ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()] }
+  return {
+    ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()],
+    draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.linkedin ? hoursAgo(30) : null,
+  }
 }
 
 function sourceOut(m: MockSource, s?: State): Source {
@@ -413,6 +419,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
+    if (typeof b.draft === 'string') p.draft = b.draft
     if (typeof b.connected === 'boolean') p.connected = b.connected
     else if (b.connected !== undefined) return err(400, 'connected must be true or false')
     return ok(personDetail(s, p))
@@ -492,6 +499,66 @@ const ROUTES: [string, RegExp, Handler][] = [
     const name = decodeURIComponent(m[1])
     if (!SPEECH_MODELS.some((x) => x.name === name)) return err(409, `There is no speech model called ${name}`)
     speechHere.delete(name)
+    return { status: 204 }
+  }],
+  // The language models, like languageAPI in
+  // cmd/speakertrail-app/languagemodels.go, the same as the speech models.
+  // The largest is here from the start, so Draft writes at once.
+  ['GET', /^\/api\/language$/, () => ok(languageState())],
+  ['POST', /^\/api\/language\/install$/, (_s, _m, _q, b) => {
+    const st = languageState()
+    if (st.job && st.job.state === 'running') return ok(st.job)
+    const m = LANGUAGE_MODELS.find((x) => x.name === b.name)
+    languageJobs++
+    if (!m) {
+      languageJob = { id: `language-${languageJobs}`, kind: 'model', title: 'Language model', state: 'failed', error: `There is no language model called ${String(b.name)}` }
+      return ok(languageJob)
+    }
+    languageJob = { id: `language-${languageJobs}`, kind: 'model', title: m.title, state: 'running', from: Date.now(), name: m.name }
+    return ok(languageState().job)
+  }],
+  ['POST', /^\/api\/language\/cancel$/, (_s, _m, _q, b) => {
+    const st = languageState()
+    if (!st.job || st.job.state !== 'running' || st.job.id !== b.id) return err(409, `There is no download ${String(b.id)} running`)
+    languageJob = { ...languageJob!, state: 'cancelled', from: undefined }
+    return { status: 204 }
+  }],
+  ['DELETE', /^\/api\/language\/models\/(.+)$/, (_s, m) => {
+    const name = decodeURIComponent(m[1])
+    if (!LANGUAGE_MODELS.some((x) => x.name === name)) return err(409, `There is no language model called ${name}`)
+    languageHere.delete(name)
+    if (languageChosen === name) languageChosen = ''
+    return { status: 204 }
+  }],
+  ['POST', /^\/api\/language\/use$/, (_s, _m, _q, b) => {
+    const name = String(b.name)
+    if (!LANGUAGE_MODELS.some((x) => x.name === name)) return err(409, `There is no language model called ${name}.`)
+    languageChosen = name
+    return ok(languageState())
+  }],
+  // First messages, like the drafts in internal/api/drafts.go. A draft
+  // loads the model for three seconds and writes for five. The app sends
+  // where it stands as the event draft, which the mock cannot, so it is
+  // worked out from the clock whenever it is asked, and a walk sends the
+  // event the way the app does, see walks/draft.mjs.
+  ['GET', /^\/api\/drafts$/, (s) => ok([...drafts.values()].map((d) => draftJob(s, d)))],
+  ['POST', /^\/api\/people\/(\d+)\/draft$/, (s, m) => {
+    const p = s.people.find((x) => x.id === Number(m[1]))
+    if (!p) return err(404, 'Not found')
+    // Without a model it is refused, as Start in internal/draft does.
+    const using = languageState().models.find((x) => x.inUse)
+    if (!using?.installed) return err(409, 'Download a language model in Settings first. It writes the message on this Mac.')
+    const was = drafts.get(p.id)
+    if (was && !['done', 'failed', 'cancelled'].includes(draftJob(s, was).state)) return ok(draftJob(s, was))
+    draftJobs++
+    const d: MockDraft = { id: `draft-${draftJobs}`, person_id: p.id, from: Date.now(), started_at: new Date().toISOString() }
+    drafts.set(p.id, d)
+    return ok(draftJob(s, d))
+  }],
+  ['POST', /^\/api\/people\/(\d+)\/draft\/cancel$/, (s, m) => {
+    const d = drafts.get(Number(m[1]))
+    if (!d || ['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) return err(409, 'No draft is under way for them')
+    d.cancelled = true
     return { status: 204 }
   }],
   // Report a Problem, like reportAPI in cmd/speakertrail-app/report_api.go.
@@ -728,6 +795,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!row) return err(404, 'No such setting')
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
+    if (row.key === 'first_message_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
     row.value = b.value as Json
     row.updated_at = new Date().toISOString()
     return ok(row)
@@ -824,6 +892,88 @@ function speechState() {
     folder: '~/Library/Application Support/Speaker Trail/models',
     job,
   }
+}
+
+// The language models the mock offers, the app's four, and which are
+// here. The Mac it pretends to be has 32 GB.
+const LANGUAGE_MODELS = [
+  { name: 'gemma-4-26B_q4_0-it.gguf', title: 'Gemma 4 26B A4B', maker: 'Google', about: 'Twenty six billion parameters with four of them used per token, so it runs like a far smaller model. The largest of these.', download: 14_439_363_584, needs: 16_624_595_968, url: 'https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/main/gemma-4-26B_q4_0-it.gguf', recommended: true, fit: 'fits' },
+  { name: 'Qwen3-14B-Q4_K_M.gguf', title: 'Qwen3 14B', maker: 'Alibaba', about: 'Fourteen billion parameters, quantised to four bits.', download: 9_001_752_960, needs: 11_417_672_064, url: 'https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf', recommended: false, fit: 'fits' },
+  { name: 'gemma-4-12b-it-qat-q4_0.gguf', title: 'Gemma 4 12B', maker: 'Google', about: 'Twelve billion parameters, trained to be quantised to four bits rather than cut down to them afterwards.', download: 6_975_879_296, needs: 9_693_788_288, url: 'https://huggingface.co/google/gemma-4-12B-it-qat-q4_0-gguf/resolve/main/gemma-4-12b-it-qat-q4_0.gguf', recommended: false, fit: 'fits' },
+  { name: 'Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', title: 'Ministral 3 8B', maker: 'Mistral', about: 'Eight billion parameters, quantised to four bits. The smallest of these, for a machine with less to spare.', download: 5_198_911_904, needs: 7_413_504_416, url: 'https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF/resolve/main/Ministral-3-8B-Instruct-2512-Q4_K_M.gguf', recommended: false, fit: 'fits' },
+] as const
+const LANGUAGE_MS = 8000
+const languageHere = new Set<string>([LANGUAGE_MODELS[0].name])
+// The model picked in Settings, like Data.LanguageModel. Empty is none.
+let languageChosen = ''
+let languageJobs = 0
+let languageJob: { id: string; kind: 'model'; title: string; state: string; error?: string; from?: number; name?: string } | undefined
+function languageState() {
+  let job: Record<string, unknown> | undefined
+  if (languageJob) {
+    const { from, name, ...rest } = languageJob
+    job = rest
+    if (languageJob.state === 'running' && from !== undefined) {
+      const ran = Date.now() - from
+      if (ran >= LANGUAGE_MS) {
+        if (name) languageHere.add(name)
+        languageJob = { ...rest, state: 'done' }
+        job = languageJob
+      } else {
+        const share = ran / LANGUAGE_MS
+        job = { ...rest, progress: { text: 'fetching', fraction: share, remaining: (LANGUAGE_MS * (1 - share)) / 1000 } }
+      }
+    }
+  }
+  const using = languageChosen || LANGUAGE_MODELS.find((m) => languageHere.has(m.name))?.name
+  return {
+    models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using, shared: false, loaded: m.name === using && languageHere.has(m.name), loading: false })),
+    folder: '~/Library/Application Support/Speaker Trail/models',
+    server: true,
+    // As standing in cmd/speakertrail-app/languagemodels.go judges it.
+    standing: !using
+      ? { mark: 'warn', why: 'Drafts need a language model. Download one in Settings' }
+      : !languageHere.has(using)
+        ? { mark: 'warn', why: `Drafts need ${LANGUAGE_MODELS.find((m) => m.name === using)?.title}. Download it in Settings` }
+        : { mark: 'ok', why: '' },
+    job,
+  }
+}
+
+// A first message being drafted, worked out from the clock.
+type MockDraft = { id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean }
+const DRAFT_LOAD_MS = 3000
+const DRAFT_WRITE_MS = 5000
+const drafts = new Map<number, MockDraft>()
+let draftJobs = 0
+// An invented message, the way the prompt asks for one: German, du, a few
+// sentences.
+function draftText(name: string): string {
+  return `Hallo ${name.split(' ')[0]}, danke fürs Vernetzen! Ich mache den Podcast „My First Memory“, in dem Menschen aus NRW von ihrer ersten Erinnerung erzählen und davon, wie sie zu ihrem eigenen Unternehmen kamen. Dein Weg hat mich neugierig gemacht. Hättest du Lust, mein Gast zu sein?`
+}
+function draftJob(s: State, d: MockDraft): DraftJob {
+  const p = s.people.find((x) => x.id === d.person_id)
+  const using = languageState().models.find((m) => m.inUse && m.installed)
+  // The clock, so it grows with every answer, as Seq does in
+  // internal/draft.
+  const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: Date.now() }
+  if (d.cancelled) return { ...base, state: 'cancelled', fraction: -1, seconds_left: null }
+  if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
+  const ran = Date.now() - d.from
+  const whole = DRAFT_LOAD_MS + DRAFT_WRITE_MS
+  const text = draftText(p?.name ?? 'Mara Beispiel')
+  if (ran >= whole) {
+    if (!d.kept && p) {
+      d.kept = true
+      p.draft = text
+      p.drafted_at = new Date(d.from + whole).toISOString()
+    }
+    return { ...base, state: 'done', text, fraction: 1, seconds_left: 0 }
+  }
+  const left = (whole - ran) / 1000
+  if (ran < DRAFT_LOAD_MS) return { ...base, state: 'loading', fraction: ran / whole, seconds_left: left }
+  const share = (ran - DRAFT_LOAD_MS) / DRAFT_WRITE_MS
+  return { ...base, state: 'writing', text: text.slice(0, Math.round(text.length * share)), fraction: ran / whole, seconds_left: left }
 }
 
 // The draft of a report and the recordings Dictate started.

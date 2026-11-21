@@ -19,8 +19,9 @@
 # The hardened runtime is what keeps other programs from putting their own
 # code into the app: macOS ignores the DYLD_ settings it is started with,
 # refuses debuggers, and loads only libraries signed by Apple or by the
-# same developer as the app. So every library is signed with the same
-# Developer ID, first, and the app around them last. Inside out, as Apple
+# same developer as the app. So every library and every program beside
+# the app is signed with the same Developer ID, first, and the app around
+# them last. Inside out, as Apple
 # asks, and as FrameFairy plans its signing in docs/PACKAGING.md.
 #
 # TIMESTAMP=none leaves out Apple's time stamp, for the test in CI. A real
@@ -81,6 +82,12 @@ for lib in "$APP"/Contents/Frameworks/*.dylib; do
 	[ -e "$lib" ] || continue
 	sign "$lib"
 done
+# Then every program beside the app's own, llama-server above all, which
+# the app starts as a process of its own. It needs no entitlement.
+for program in "$APP"/Contents/MacOS/*; do
+	[ "$(basename "$program")" = speakertrail-app ] && continue
+	sign "$program"
+done
 # Signing the bundle signs its program, with the entitlements, and seals
 # everything else in it.
 sign --entitlements "$ENTITLEMENTS" "$APP"
@@ -89,7 +96,7 @@ sign --entitlements "$ENTITLEMENTS" "$APP"
 # like one that is right until the app will not open, or opens and hears
 # only silence.
 codesign --verify --strict --deep "$APP"
-for code in "$APP" "$APP"/Contents/Frameworks/*.dylib; do
+for code in "$APP"/Contents/MacOS/* "$APP"/Contents/Frameworks/*.dylib; do
 	[ -e "$code" ] || continue
 	if ! codesign -d --verbose=2 "$code" 2>&1 | grep -q 'flags=0x10000(runtime)'; then
 		echo "sign-macos.sh: $code is not signed with the hardened runtime:" >&2

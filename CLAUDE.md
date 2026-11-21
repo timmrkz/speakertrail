@@ -9,7 +9,8 @@ Speaker Trail finds people in North Rhine-Westphalia who run their own
 business and could be guests on Tim's podcast, *My First Memory*. It is a
 Mac app, built like Tim's FrameFairy: Go with Wails v3 for the window, the
 Svelte interface built in, and everything it knows in one JSON file in
-`~/Library/Application Support/Speaker Trail`. Runs ask profile searches
+`~/Library/Application Support/Speaker Trail`, with the profile texts in
+a second beside it. Runs ask profile searches
 through Exa. No Docker, no database, no server.
 
 It once also crawled event pages for a public calendar. That engine, its
@@ -29,6 +30,7 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | Report a Problem, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
+| Draft, the first message to a person, the language model and llama-server | `internal/draft/`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/BUILD.md](docs/BUILD.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
@@ -87,8 +89,8 @@ that, the skills listed last show their name without what they are for.
   it. The first commit does not have to be worth looking at. It exists so
   the pull request exists, because that is where Tim follows the work.
 - His machine is an M2 Max with 32 GB of memory, on the latest macOS. What
-  the build needs, Go and Node.js, make installs with Homebrew, as it does
-  for FrameFairy. Nothing beyond that, and never as a step he has to do.
+  the build needs, Go, Node.js and CMake for llama-server, make installs
+  with Homebrew, as it does for FrameFairy. Nothing beyond that, and never as a step he has to do.
 - He tests the app himself on his Mac. After each change say exactly what
   to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
@@ -126,8 +128,10 @@ messages, pull request text, code comments and chat replies.
   asks Exa for LinkedIn profiles, like "Yogalehrerin Köln", and keeps the
   people in NRW who were active lately and run their own business. An
   **exclusion** is a word or phrase, like "Online Marketing", that leaves a
-  person out of profile searches and People. A **run** is one pass over the
-  due searches, started by hand. A **check** is one search asked once in a
+  person out of profile searches and People. A **first message** is what
+  Tim sends a person on LinkedIn once connected, and a **draft** is one
+  the **language model** wrote on the Mac for him to change. A **run** is
+  one pass over the due searches, started by hand. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. A **channel** is what the app
@@ -188,13 +192,21 @@ messages, pull request text, code comments and chat replies.
   releases.
 - **Built like FrameFairy.** A native Mac app with Wails v3, no Docker, no
   database process, no server. What the app knows lives in one JSON file,
-  written whole to a new file that then replaces the old one. Secrets live
+  written whole to a new file that then replaces the old one. Only the
+  profile texts live in a second, `profile-texts.json`, written only when
+  one arrives, because they made every save ten times slower (Tim, 20
+  November 2026). Secrets live
   in the macOS keychain, never in a file.
 - **One command.** `make run` goes from a fresh clone to a running app.
   Nobody should have to remember a second command. On a Mac make installs
   what is missing with Homebrew, `scripts/tools.sh`, and nothing else ever
   installs anything. Never tell Tim to `brew install` or `npm install -g`
   anything himself. With `CI` set make installs nothing.
+- **No shell scripts.** Tim does not want any: logic in shell nobody can
+  read becomes a mess. What a build or a workflow has to work out is Go,
+  in a program like `cmd/speakertrail-release`, with tests. A workflow
+  step only calls tools that are there, like `gh` and `go run`. The
+  scripts still in `scripts/` are from before this rule.
 - **It builds on Linux too.** Build runners and cloud sessions build the
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.

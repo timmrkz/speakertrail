@@ -45,7 +45,14 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 		if err != nil || len(libs) == 0 {
 			t.Fatalf("%s carries no speech library: %v", app, err)
 		}
-		return append([]string{filepath.Join(app, "Contents", "MacOS", "speakertrail-app")}, libs...)
+		// The app's own program first, then llama-server and any other.
+		own := filepath.Join(app, "Contents", "MacOS", "speakertrail-app")
+		others, err := filepath.Glob(filepath.Join(app, "Contents", "MacOS", "*"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		others = slices.DeleteFunc(others, func(p string) bool { return p == own })
+		return slices.Concat([]string{own}, others, libs)
 	}
 	for _, file := range programs(t, signedApp) {
 		s, _ := read(t, file)

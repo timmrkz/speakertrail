@@ -23,6 +23,10 @@ skill how it is judged. This one says how it is made.
   before accepting it because the arithmetic adds up. Why does one small
   page take 2 MB? Why does loading take five seconds? Work out what it
   should be from what the product needs, and look for the difference.
+- **Standard, supported paths only.** A clever trick few others use,
+  like writing to another program's private socket, is not built, even
+  when it is faster. It breaks with the next update and nobody else
+  keeps it working.
 - **Known problems have known answers.** A cache, a retry, an undo, an
   update flow, an animation curve: look up how established software does
   it before inventing. Where people already know a way of doing
@@ -112,6 +116,17 @@ skill how it is judged. This one says how it is made.
   by hand: fix the build so the step is never needed.
 - **A rule a tool can check is checked by the tool,** in CI, on every
   pull request. A rule that is only written down slips.
+- **No shell scripts.** What a build or a workflow has to work out is a
+  program in the project's own language, with tests. A workflow step
+  only calls tools that are there. Nobody reads or tests logic in shell,
+  and it piles up.
+- **A port copies its source as it is.** Bringing a design over from
+  another project means copying it, changing only what the new project
+  makes necessary, and naming every difference before the user finds
+  it. Copy from the source's main as it stands that day. Diff the port against its source before calling it done. A flaw a
+  review finds in ported code is checked in the source too, and the user
+  is told whether it was copied or came with the port. A copied flaw gets
+  a short briefing for the source project's sessions.
 
 ## 7. CI stays quick
 

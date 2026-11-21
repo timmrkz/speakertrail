@@ -120,6 +120,32 @@ AppleScript does not say which profile a window belongs to.
 - An error from `Open` shows beside the button in plain words, like "Chrome
   has no profile Profile 1 any more".
 
+## Why a click starts a second Chrome
+
+Each click runs `open -n`, which starts a short second Chrome only to hand
+the link to the one already open, over its `SingletonSocket`. Writing to
+that socket ourselves would be faster. It is not built, because it is not
+the standard way on a Mac: Finicky and Raycast use `open -n` as we do, and
+the socket is Chrome's private detail. Tim builds only on standard,
+supported paths, and chose on 16 November 2026 to leave it as it is,
+issue #15.
+
+## Why the app does not drive LinkedIn
+
+Tim asked on 12 November 2026 whether the app could read the LinkedIn tab
+and connect or send messages for him. It does not, and should not:
+
+- LinkedIn's User Agreement, section 8.2, forbids plugins that copy
+  profiles and bots that add contacts or send messages. LinkedIn looks for
+  thousands of Chrome extensions, so the account is at risk.
+- Chrome's "Allow JavaScript from Apple Events" opens every tab to any
+  app. Remote debugging is refused on the real profile since Chrome 136.
+- A language model that reads pages and can click is open to prompt
+  injection from any profile it reads.
+
+So the app drafts the first message from what Exa already gives, and Tim
+opens the profile, pastes it and sends it himself.
+
 ## Try it on the Mac
 
 ```sh

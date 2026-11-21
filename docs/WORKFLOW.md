@@ -73,18 +73,37 @@ starting any other way.
 
 The comment wakes the session that owns the pull request. It comes from
 a bot, so the session reads it as news, checks on GitHub that its pull
-request does not merge, and then merges `main` in at once, without
-asking, resolves the conflict, reads `CLAUDE.md` again and pushes. The
-resolution is new code, so it is pushed the way a change of the
-session's own is, the tests of what it touches first and CI after. A
-pull request that conflicts from its first push is not open when that
-push runs the workflow, so the session also checks right after opening
-it, and before it says it is ready. GitHub may not know yet whether a
-pull request just opened merges, so the session asks git itself, `git
-fetch origin main && git merge-tree --write-tree --name-only origin/main
-HEAD`, which fails and names the files when it does not merge. A pull request that still
+request does not merge, tells you in its thread in one line that `main`
+moved and which files conflict, and then merges `main` in at once,
+without asking, resolves the conflict, reads `CLAUDE.md` again and
+pushes. The resolution is new code, so it is pushed the way a change of
+the session's own is, the tests of what it touches first and CI after,
+and the session tells you again once it is pushed. A pull request that
+conflicts from its first push is not open when that push runs the
+workflow, so the session also checks right after opening it, and before
+it says it is ready. GitHub may not know yet whether a pull request just
+opened merges, so the session asks git itself, `git fetch origin main &&
+git merge-tree --write-tree --name-only origin/main HEAD`, which fails
+and names the files when it does not merge. A pull request that still
 merges is left alone: merging `main` into it would only add a commit, a
 CI run and a build to take, and change nothing being tested.
+
+## Where the skills come from
+
+The skills in `.claude/skills/` are written for any project. They are
+developed in FrameFairy, at `timmrkz/framefairy`, and copied here made
+generic: no FrameFairy names, paths or product words. `interface-design`
+is FrameFairy's `interface` skill, renamed because `interface` here is
+Speaker Trail's own. The last copy was pull request #13, on 13 November
+2026.
+
+To bring them up to date, compare FrameFairy's `.claude/skills/`, its
+`.github` templates, `CLAUDE.md` and its docs on how it works since the
+last copy, and bring over the lessons, never its facts. Search the result
+for FrameFairy's words before pushing. A lesson learned here first goes
+into the skill here in generic words, and to FrameFairy as a briefing in
+`briefings/` in the project files, since sessions here cannot push to
+it. Until FrameFairy has the lesson, the next copy would undo it.
 
 ## What is on your Mac
 

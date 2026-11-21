@@ -10,30 +10,48 @@
 //	    say whether a build could read input meant for other apps, watch
 //	    the screen or the camera, or ask for administrator rights, see
 //	    inputs.go. It needs no key, so it runs before the key is near.
-//	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F
+//	speakertrail-release pack -zip F -out D [-list F -assets F] [-from URL]
+//	    write the build again as the zip it is published as, its files
+//	    stored, with its parts, a piece for every file, a patch of every
+//	    file that changed against the builds an app may run, read from the
+//	    release, and the zip packed with zstd, see pack.go, patches.go and
+//	    release.go
+//	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F]
 //	    sign a build with the private half, read from SPEAKERTRAIL_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
 //	    read input meant for other apps, watch the screen or the camera,
-//	    or ask for administrator rights, see inputs.go
+//	    or ask for administrator rights, see inputs.go. With the parts
+//	    pack wrote, it signs the stored zip beside them too.
 //	speakertrail-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and
 //	    the pull requests that no longer merge into main
+//	speakertrail-release unreachable -list F -assets F [-from URL]
+//	    name the files of the release that no build an app may run
+//	    reaches any more, one a line, for the workflow to remove, see
+//	    release.go
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 
 	"github.com/timmrkz/speakertrail/internal/updates"
 )
@@ -50,12 +68,16 @@ func main() {
 	switch os.Args[1] {
 	case "key":
 		err = makeKey()
+	case "pack":
+		err = packCommand(os.Args[2:])
 	case "check":
 		err = check(os.Args[2:])
 	case "sign":
 		err = sign(os.Args[2:])
 	case "list":
 		err = list(os.Args[2:])
+	case "unreachable":
+		err = unreachableCommand(os.Args[2:])
 	default:
 		usage()
 	}
@@ -66,7 +88,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | check -zip FILE | sign ... | list -out FILE ENTRY...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE")
 	os.Exit(2)
 }
 
@@ -155,15 +177,25 @@ func sign(args []string) error {
 	commit := fs.String("commit", "", "the commit it was built from")
 	where := fs.String("url", "", "where the zip will be downloaded from")
 	out := fs.String("out", "", "where the entry goes")
+	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
 	_ = fs.Parse(args)
-	if err := checkInputs(*zipPath); err != nil {
+	return signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out)
+}
+
+// signBuild signs the zip and writes its entry. With parts, it signs the
+// stored zip beside them too, once they are read as its parts, the zip
+// packed beside them unpacks to it and it holds the same files as the zip
+// check read, and the entry names it. An app that knows parts installs
+// that zip, and an app from before installs the zip.
+func signBuild(zipPath, channel, name, version, commit, where, parts, out string) error {
+	if err := checkInputs(zipPath); err != nil {
 		return err
 	}
 	private, public, err := keys()
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(*zipPath)
+	f, err := os.Open(zipPath)
 	if err != nil {
 		return err
 	}
@@ -173,16 +205,26 @@ func sign(args []string) error {
 		return err
 	}
 	// A pull request's title can be long, and the app shows it in a list.
-	shown := []rune(strings.TrimSpace(*name))
+	shown := []rune(strings.TrimSpace(name))
 	if len(shown) > 100 {
 		shown = append(shown[:99], '…')
 	}
 	b := updates.Build{
-		Channel: *channel, Name: string(shown), Version: *version, Commit: *commit, URL: *where,
+		Channel: channel, Name: string(shown), Version: version, Commit: commit, URL: where,
 		Size: size, SHA256: hex.EncodeToString(digest), Signature: updates.Sign(private, digest),
 		Published: time.Now().UTC().Truncate(time.Second),
 	}
 	b.Claim = updates.SignClaim(private, b)
+	if parts != "" {
+		if err := sameApp(zipPath, filepath.Join(filepath.Dir(parts), storedZip)); err != nil {
+			return err
+		}
+		st, err := signStored(private, b, filepath.Dir(parts), parts)
+		if err != nil {
+			return err
+		}
+		b.Stored = &st
+	}
 	if err := b.Check(); err != nil {
 		return err
 	}
@@ -192,7 +234,118 @@ func sign(args []string) error {
 	if err := updates.VerifyClaim(public, b); err != nil {
 		return err
 	}
-	return writeJSON(*out, b)
+	if st, ok := b.AsStored(); ok {
+		if err := updates.Verify(public, st); err != nil {
+			return err
+		}
+		if err := updates.VerifyClaim(public, st); err != nil {
+			return err
+		}
+	}
+	return writeJSON(out, b)
+}
+
+// unpacksTo says whether a zip packed with zstd unpacks to the zip with
+// this SHA-256.
+func unpacksTo(packed, digest []byte) error {
+	dec, err := zstd.NewReader(bytes.NewReader(packed))
+	if err != nil {
+		return err
+	}
+	defer dec.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, dec); err != nil {
+		return fmt.Errorf("the packed zip does not unpack: %w", err)
+	}
+	if !bytes.Equal(h.Sum(nil), digest) {
+		return errors.New("the packed zip is of another zip")
+	}
+	return nil
+}
+
+// sameApp says whether two zips hold the same files, by name, size, mode
+// and the SHA-256 of what each holds, so the stored zip signed beside a
+// zip is the app check passed, byte for byte.
+func sameApp(a, b string) error {
+	za, err := zip.OpenReader(a)
+	if err != nil {
+		return err
+	}
+	defer za.Close()
+	zb, err := zip.OpenReader(b)
+	if err != nil {
+		return err
+	}
+	defer zb.Close()
+	if len(za.File) != len(zb.File) {
+		return errors.New("the stored zip holds other files than the zip")
+	}
+	for i, f := range za.File {
+		g := zb.File[i]
+		if f.Name != g.Name || f.UncompressedSize64 != g.UncompressedSize64 || f.Mode() != g.Mode() {
+			return fmt.Errorf("the stored zip holds %s otherwise than the zip", f.Name)
+		}
+		fs, err := fileSum(f)
+		if err != nil {
+			return err
+		}
+		gs, err := fileSum(g)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(fs, gs) {
+			return fmt.Errorf("the stored zip holds other bytes in %s than the zip", f.Name)
+		}
+	}
+	return nil
+}
+
+// fileSum is the SHA-256 of what a file of a zip holds.
+func fileSum(f *zip.File) ([]byte, error) {
+	r, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, r); err != nil {
+		return nil, err
+	}
+	return h.Sum(nil), nil
+}
+
+// signStored signs the stored zip pack left in packed as the build b is,
+// and checks that the parts and the zip packed beside it make that zip.
+func signStored(private ed25519.PrivateKey, b updates.Build, packed, parts string) (updates.Stored, error) {
+	f, err := os.Open(filepath.Join(packed, storedZip))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	digest, size, err := updates.Digest(f)
+	f.Close()
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	sum := hex.EncodeToString(digest)
+	data, err := os.ReadFile(parts)
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if _, err := updates.ParseParts(data, size, sum); err != nil {
+		return updates.Stored{}, err
+	}
+	whole, err := os.ReadFile(filepath.Join(packed, packedWhole))
+	if err != nil {
+		return updates.Stored{}, err
+	}
+	if err := unpacksTo(whole, digest); err != nil {
+		return updates.Stored{}, err
+	}
+	b.Size, b.SHA256 = size, sum
+	return updates.Stored{
+		Size: size, SHA256: sum, Signature: updates.Sign(private, digest),
+		Claim: updates.SignClaim(private, b), PackedSize: int64(len(whole)),
+	}, nil
 }
 
 // list writes the channel list from every channel's entry. Each entry is
@@ -256,6 +409,14 @@ func list(args []string) error {
 		// One whose claim is there and wrong is no build of ours.
 		if b.Claim != "" {
 			if err := updates.VerifyClaim(public, b); err != nil {
+				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
+				continue
+			}
+		}
+		// The stored zip is what an app that knows parts installs, so its
+		// signature and claim are held the same way.
+		if st, ok := b.AsStored(); ok {
+			if err := errors.Join(updates.Verify(public, st), updates.VerifyClaim(public, st)); err != nil {
 				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
 				continue
 			}

@@ -46,20 +46,84 @@ then on every build comes from GitHub.
    from GitHub's own record of the run, and refuses a commit that is not
    in the history of main or of the pull request it is for. It checks
    what the app links and asks for with `cmd/speakertrail-release check`,
-   in a step that has no key, signs the zip with the key from the
-   environment `updates`, and uploads it with its entry to the
-   pre-release `dev`. The commit that was built gets the status **Ready
-   to update to** on the pull request.
+   in a step that has no key. `speakertrail-release pack` writes the
+   build again in parts, see What an update downloads below. `sign`
+   signs the zip and the stored zip with the key from the environment
+   `updates`. The pieces and patches the release does not hold yet go up
+   to the pre-release `dev`, then the zip, the stored zip packed, its
+   parts and its entry. The commit that was built gets the status
+   **Ready to update to** on the pull request.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. A newer commit whose build failed
-   is not said to be on its way.
+   is not said to be on its way. `speakertrail-release unreachable` then
+   names, and gh removes, an hour after they went up, the zips and packed zips no entry points
+   at, the parts of every build that is neither listed nor one of the
+   newest eight that left the list, and the pieces and patches no
+   remaining parts name.
 
 A build takes a few minutes after the push. A version reads like
 `0.1.0-pr9.e808a87`: the app's version, the channel and the commit.
 
 Until the pull request that adds this is merged, `publish.yml` is not on
 main, so nothing is published yet.
+
+## What an update downloads
+
+Only what changed, and of a file that changed, only the difference.
+
+- **The programs ship lean.** The app program is built without its
+  debug information and without the commit Go stamps in, `-s -w
+  -buildvcs=false`, and the speech libraries lose their local symbols,
+  `strip -x` in `scripts/carry-libs.sh`. A build whose code did not
+  change then has the same bytes as the one before.
+- **Each file is a piece.** `pack` writes the build again as a zip that
+  stores its files as they are, and beside it its parts: that zip in
+  order, as its few bytes of headers and each file named by its SHA-256.
+  Each file is published once, packed with zstd, as a piece named by its
+  SHA-256, whichever build holds it.
+- **A changed file is a patch.** For each file that changed, `pack` also
+  makes a patch, with bsdiff, against the same file of the builds an app
+  may run, picked in `cmd/speakertrail-release/release.go`: every build
+  the channel list holds, and the
+  newest eight that left it, such as the last build of a pull request
+  just merged. The parts name each patch by the SHA-256 of the file it
+  starts from. A patch is kept only where it weighs less than the piece.
+  A build older than the one running was published before it, so
+  picking it takes the piece.
+- **The app puts the build together.** It writes the stored zip from the
+  files it already has with the same bytes, a file made from its own and
+  a patch where there is a patch from it, and a downloaded piece for the
+  rest, `internal/updates/assemble.go`. It applies a patch with code of
+  its own, `patch.go`, and checks what it makes against the file's
+  SHA-256. Wails' updater then checks the whole zip against its signature
+  as it checks any.
+- **What can go wrong costs time, never the update.** A patch that cannot
+  make its file costs that file's piece. When the parts do not work, a
+  piece is gone, or what the app lacks weighs more than the stored zip
+  packed with zstd, as for an app built on the Mac, the app downloads
+  that packed zip instead, `whole.go`. The deflated zip stays at its
+  address, signed as before, for the apps from before parts.
+
+What that weighs, measured once on the cloud machine: on main's build of
+20 November and #38's, their programs stripped with `llvm-strip` the way
+the build now strips them, and for the 605 lines, on Linux builds made at
+both commits, because `dev` keeps only the newest Mac build of each
+channel. A size packed the same way is the same every time.
+
+| What changed | today (MB) | after (MB) | change |
+| --- | ---: | ---: | --- |
+| nothing in the app, a docs or release tool change | 19.9 | 0.002 | 100 % smaller |
+| a pull request of 605 lines of Go and interface | 19.9 | 0.24 | 99 % smaller |
+| a new feature of thousands of lines | 19.9 | 0.79 | 96 % smaller |
+| a build no patch starts from: the app program's piece | 19.9 | 4.7 | 76 % smaller |
+| an app built on the Mac: the packed zip | 19.9 | 11.5 | 42 % smaller |
+
+The kept build in `~/Library/Caches/Speaker Trail/builds` is the stored
+zip, about 34 MB. The first update after this arrived is still the whole
+zip, and the first build published after it has no patches yet, since no
+build on `dev` had parts to patch against. See
+[the decision record](decisions/2026-11-20-an-update-downloads-only-what-changed.md).
 
 ## What the app does
 
@@ -69,8 +133,10 @@ main, so nothing is published yet.
   every ten minutes, every twenty seconds while a newer commit is being
   built.
 - When the channel followed has a build that is not the one running, it
-  downloads it into `~/Library/Caches/Speaker Trail/builds`, checks the
-  signature against the public half built into it, and has it ready.
+  puts it together from its own files, patches and pieces into
+  `~/Library/Caches/Speaker Trail/builds`, see What an update downloads,
+  checks the signature against the public half built into it, and has it
+  ready. The app's log says what each update kept, patched and fetched.
 - **Relaunch** waits while a run goes, so a run is never stopped half
   way. The engine refuses a new run while the app relaunches.
 - A pull request that closed shows as closed, and nothing downloads until
@@ -129,7 +195,9 @@ a program that sets where macOS's loader looks, or that looks for the
 libraries it links as `@rpath` anywhere but inside the .app, holds a
 link, has a file that names what taps keys, records the screen, opens
 the camera or asks for administrator rights, has a file that looks like
-a program and cannot be read as one, or unpacks to more than 1 GB. It may ask for the microphone, for Dictate on Report a
+a program and cannot be read as one, or unpacks to more than 1 GB. The
+stored zip `pack` wrote is signed only when it holds the same files, byte
+for byte, as the zip `check` read. It may ask for the microphone, for Dictate on Report a
 Problem, and for nothing else, and it may carry sherpa-onnx's speech
 library in `Contents/Frameworks` and llama-server, which drafts a first
 message, in `Contents/MacOS`, each linking only what the list names. A

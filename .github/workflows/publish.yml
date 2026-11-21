@@ -28,9 +28,11 @@
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
 # 2. publish, per channel, one after another and never stopped half way,
-#    checks the zip, signs it and uploads it with its entry to the release
-#    dev. When it is a pull request's build, it marks the commit ready to
-#    update to.
+#    checks the zip, packs it in parts, signs the zip and the stored zip,
+#    and uploads to the release dev the pieces and patches the release
+#    lacks, the zip, the stored zip packed with zstd, its parts and its
+#    entry. When it is a pull request's build, it marks the commit ready
+#    to update to.
 # 3. list, when a build ends, writes channels.json again from every entry.
 #    It also takes away the entry of any pull request that is not open any
 #    more, which is how a closed pull request leaves the list. A list job
@@ -260,8 +262,33 @@ jobs:
             exit 1
           fi
 
-      - id: key
+      # The zip the build left deflates every file. Packed again, each file
+      # is stored as it is, and its parts and pieces let an app that knows
+      # them download only the files it does not have, and the stored zip
+      # packed with zstd is what it downloads when they fail. Each file
+      # that changed also gets a patch against the same file of the builds
+      # an app may run, the listed ones and the newest that left the list,
+      # which the release tool picks from the channel list and the
+      # release's files. What of them cannot be read costs patches, never
+      # the publish, and is a warning on the run. It runs after check, so
+      # it only reads a zip whose size check has held, and before the key,
+      # which it has no need of. See docs/UPDATES.md.
+      - id: pack
         if: steps.check.outcome == 'success'
+        name: Pack it in parts
+        env:
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
+          gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
+          if ! go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
+            -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
+
+      - id: key
+        if: steps.pack.outcome == 'success'
         name: Is there an update key
         env:
           KEY: ${{ secrets.SPEAKERTRAIL_UPDATE_KEY }}
@@ -283,7 +310,8 @@ jobs:
           COMMIT: ${{ steps.which.outputs.commit }}
         run: |
           if ! go run ./cmd/speakertrail-release sign \
-            -zip "dist/$ZIP" -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
+            -zip "dist/$ZIP" -parts "$RUNNER_TEMP/packed/parts.json" \
+            -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
             -url "https://github.com/$GH_REPO/releases/download/dev/$ZIP" \
             -out "dist/channel-$CHANNEL.json" 2> "$RUNNER_TEMP/refused.txt"; then
@@ -297,7 +325,7 @@ jobs:
       # update to with no reason given. The refusal goes on the commit
       # that was built, where the pull request shows it.
       - name: Say on the commit why it is not signed
-        if: failure() && (steps.check.outcome == 'failure' || steps.sign.outcome == 'failure')
+        if: failure() && (steps.check.outcome == 'failure' || steps.pack.outcome == 'failure' || steps.sign.outcome == 'failure')
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
@@ -317,20 +345,40 @@ jobs:
               --notes "The builds of main and of each open pull request, for the app to update itself to while it is being made. See docs/UPDATES.md." ||
             gh release view dev >/dev/null
 
-      # The two files of this channel by name, never a pattern: one channel
-      # has no business with another's entry. The zip goes up first and the
-      # entry only once it is there, because the app reads the entry of the
-      # channel it follows and would be offered a build it cannot download
-      # yet. One command sends its files side by side, so the small entry
-      # would be up long before the zip.
+      # The files of this channel by name, never a pattern: one channel has
+      # no business with another's entry. First every piece and patch the
+      # release does not hold yet, then the zip, the stored zip packed and
+      # the parts, and the entry only once they are there, because the app
+      # reads the entry of the channel it follows and would be offered a
+      # build it cannot download yet. One command sends its files side by
+      # side, so the small entry would be up long before the zip. A piece
+      # or a patch is named by the SHA-256 of what it makes, so one that is
+      # there already is the same and stays. The stored zip itself is never
+      # uploaded: the app puts it together or unpacks it.
       - id: upload
         if: steps.sign.outcome == 'success'
         name: Upload the build and its entry
         env:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
+          PACKED: ${{ runner.temp }}/packed
         run: |
+          gh release view dev --json assets --jq '.assets[].name' > "$RUNNER_TEMP/there.txt"
+          # Another channel's publish may upload the same piece at the same
+          # moment. It holds the same bytes, so one that is there once the
+          # upload failed is uploaded.
+          for f in "$PACKED"/piece-*.zst "$PACKED"/patch-*.bsdiff; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f")
+            grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
+            gh release upload dev "$f" ||
+              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name"
+          done
           gh release upload dev "dist/$ZIP" --clobber
+          cp "$PACKED/app.zip.zst" "dist/$ZIP.zst"
+          cp "$PACKED/parts.json" "dist/${ZIP%.zip}.parts.json"
+          gh release upload dev "dist/$ZIP.zst" --clobber
+          gh release upload dev "dist/${ZIP%.zip}.parts.json" --clobber
           gh release upload dev "dist/channel-$CHANNEL.json" --clobber
 
       # This workflow runs from main, so its checks show on main's commit
@@ -389,21 +437,18 @@ jobs:
         name: Write the channel list from every entry
         run: sh scripts/channel-list.sh
 
-      # A zip no entry points at is gone an hour after it was made. Not at
-      # once: a publish that runs beside this job may have uploaded a zip
-      # whose entry this job has not seen yet.
+      # A zip no entry points at is gone an hour after it was made, with
+      # its packed zip, and so are the parts of every build no new build is
+      # patched against and every piece and patch no remaining parts name.
+      # Not at once: a publish that runs beside this job may have uploaded
+      # files whose entry this job has not seen yet. A piece that goes all
+      # the same, because a publish found it there and did not upload it
+      # again, costs the app the packed zip of that one build, never the
+      # update. The release tool names what goes, gh removes it. See
+      # unreachable in cmd/speakertrail-release.
       - if: steps.key.outputs.ready == 'true'
         name: Remove builds nobody can reach any more
         run: |
-          jq -r '.channels[].url | split("/") | last' channels.json > kept.txt
-          now=$(date -u +%s)
-          gh release view dev --json assets \
-            --jq '.assets[] | select(.name | test("^app-.*\\.zip$")) | "\(.name) \(.createdAt)"' |
-          while read -r name created; do
-            grep -qxF "$name" kept.txt && continue
-            age=$(( now - $(date -u -d "$created" +%s) ))
-            if [ "$age" -gt 3600 ]; then
-              echo "removing $name"
-              gh release delete-asset dev "$name" -y || true
-            fi
-          done
+          gh release view dev --json assets > "$RUNNER_TEMP/assets.json"
+          go run ./cmd/speakertrail-release unreachable -list channels.json -assets "$RUNNER_TEMP/assets.json" > "$RUNNER_TEMP/gone.txt"
+          xargs -r -n 1 gh release delete-asset dev -y < "$RUNNER_TEMP/gone.txt"

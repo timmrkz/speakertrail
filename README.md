@@ -41,12 +41,12 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | Path | Contents |
 | --- | --- |
 | `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate, and `carry-over` |
-| `cmd/speakertrail-release` | Makes the update key, signs builds, writes the channel list |
+| `cmd/speakertrail-release` | Makes the update key, packs builds in pieces and patches, signs them, writes the channel list |
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
 | `internal/api` | The JSON API the interface talks to, described in [docs/api.md](docs/api.md) |
 | `internal/keys` | The Exa key in the macOS keychain |
-| `internal/updates` | Where builds to update to come from, and checking their signatures |
+| `internal/updates` | Where builds to update to come from, putting one together from the app's own files, patches and pieces, and checking their signatures |
 | `internal/search` | Exa's index of LinkedIn profiles |
 | `internal/place` | Whether a place lies in NRW, and which city it names |
 | `internal/browser` | Opening LinkedIn in the Chrome profile chosen in Settings, see [docs/open-in-profile.md](docs/open-in-profile.md) |

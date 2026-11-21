@@ -131,15 +131,15 @@ const walks = [
     },
   },
   {
-    // Report says Making while it makes the report, in the room it had,
-    // and then the field is empty for the next one.
-    name: 'Report keeps its width while it makes the report',
+    // Report says Making while it makes the report, as wide as those
+    // words, and then the field is empty for the next one. A button is as
+    // wide as what it says now, Tim asked testing #46.
+    name: 'Report says Making while it makes the report',
     async run(page) {
       await openReport(page)
       await page.locator('textarea.telling').click()
       await page.keyboard.type('It froze.')
       const button = page.locator('button.make')
-      const before = (await button.boundingBox()).width
       const [made, make] = later()
       await page.route('**/api/report/send', async (route) => {
         await made
@@ -147,11 +147,50 @@ const walks = [
       })
       await button.click()
       await page.locator('button.make .beam').waitFor()
-      const during = (await button.boundingBox()).width
+      const during = (await button.textContent()).trim()
       make()
       await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
       await page.waitForFunction(() => document.querySelector('textarea.telling').value === '')
-      if (during !== before) return `Report is ${before} px wide and ${during} px while making`
+      if (during !== 'Making…') return `Report says ${JSON.stringify(during)} while making`
+      return ''
+    },
+  },
+  {
+    // Tab goes through the window in the order it is drawn, Clear
+    // included, and comes back round to the field. Tim never reached
+    // Clear with Tab, testing #46.
+    name: 'Tab goes through Report a Problem in the order it is drawn, Clear included',
+    async run(page) {
+      await openReport(page)
+      await page.locator('textarea.telling').click()
+      await page.keyboard.type('It froze.')
+      await page.locator('button.attach').click()
+      await page.locator('.pictures figure').waitFor()
+      await page.locator('textarea.telling').click()
+      const want = ['Dictate', 'Attach screenshots', 'How a report works', 'Clear', 'Report', 'a picture', 'the field']
+      const went = []
+      for (let i = 0; i < want.length; i++) {
+        await page.keyboard.press('Tab')
+        went.push(await page.evaluate(() => {
+          const e = document.activeElement
+          if (e?.matches('textarea.telling')) return 'the field'
+          if (e?.matches('figure')) return 'a picture'
+          return e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'nothing'
+        }))
+      }
+      const back = []
+      for (let i = 0; i < want.length; i++) {
+        await page.keyboard.press('Shift+Tab')
+        back.push(await page.evaluate(() => {
+          const e = document.activeElement
+          if (e?.matches('textarea.telling')) return 'the field'
+          if (e?.matches('figure')) return 'a picture'
+          return e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'nothing'
+        }))
+      }
+      const wantBack = [...want].reverse().slice(1).concat('the field')
+      if (went.join(', ') !== want.join(', ')) return `Tab went ${went.join(', ')}, want ${want.join(', ')}`
+      if (back.join(', ') !== wantBack.join(', ')) return `Shift+Tab went ${back.join(', ')}, want ${wantBack.join(', ')}`
       return ''
     },
   },

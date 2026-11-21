@@ -314,15 +314,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
-/* The words of a control that answers a click with other words, like
-   Run and Starting. The control keeps room for the longer answer, named
-   in data-room and data-room-2, so it never changes width as it is used,
-   and it is no wider than its words, Tim asked testing #46. The room is
-   drawn and hidden, and is no part of the control's text. */
-.room { display: inline-grid; justify-items: center; }
-.room::before { content: attr(data-room-2); }
-.room::after { content: attr(data-room); }
-.room::before, .room::after { height: 0; overflow: hidden; visibility: hidden; white-space: nowrap; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .row.end { justify-content: flex-end; }
 .row.between { justify-content: space-between; }

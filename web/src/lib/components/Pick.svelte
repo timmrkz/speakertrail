@@ -58,9 +58,6 @@
     // What the trigger says while nothing is picked. It is a state, not a
     // row: a list never offers nothing as a choice.
     placeholder = '',
-    // A trigger as wide as what it says now, rather than as wide as the
-    // longest thing it could say, for a list alone at the end of a row.
-    fit = false,
     // Lets the caller reach the trigger, to bring it into view and focus it.
     trigger: button = $bindable(),
   }: {
@@ -78,7 +75,6 @@
     tone?: 'warn' | 'err'
     refuse?: () => boolean
     placeholder?: string
-    fit?: boolean
     trigger?: HTMLButtonElement
   } = $props()
 
@@ -93,10 +89,6 @@
   const shown = $derived(picked?.label ?? (value || placeholder))
   const unpicked = $derived(!value && !!placeholder)
 
-  // The longest thing the list can say. The trigger keeps room for it, so
-  // the row does not change width as it is used. The stylesheet measures
-  // it: the longest label is drawn and hidden.
-  const longest = $derived(options.reduce((most, o) => (o.label.length > most.length ? o.label : most), placeholder))
 
   // A list whose rows say something beside their names reads from the
   // left, the way a pop-up menu on the Mac puts names down the left.
@@ -151,7 +143,6 @@
     {id}
   >
     <span class="said">
-      {#if !fit}<span class="room" aria-hidden="true">{longest}</span>{/if}
       <span class:unpicked>{shown}</span>
     </span>
     <span class="updown"><Icon name="pick" size={12} /></span>
@@ -225,8 +216,8 @@
      every field in the app, with what is picked and the mark that says it
      is a list. */
   .pick {
-    display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
-    height: var(--control-h); padding: 0 8px 0 12px; max-width: var(--pick-max);
+    display: flex; align-items: center; gap: 8px; width: max-content; min-width: 0;
+    height: var(--control-h); padding: 0 8px 0 12px; max-width: min(100%, var(--pick-max));
     border: var(--line-w) solid var(--line-strong); border-radius: 8px; background: var(--surface);
     color: var(--ink); text-align: left; cursor: pointer;
   }
@@ -243,14 +234,13 @@
      beside it. */
   .pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; background-image: none; }
 
-  /* The two lie on top of each other, so the box is as wide as the longest
-     thing the list can say and what is picked is drawn in it. */
+  /* The trigger is as wide as what is picked, up to --pick-max, and a
+     longer name ends in dots (Tim, testing #46). */
   .said { display: grid; flex: 1; min-width: 0; }
   .said > span {
     grid-area: 1 / 1; align-self: center; min-width: 0;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
-  .room { visibility: hidden; }
   .unpicked { color: var(--ink-3); }
   .pick.right .said { text-align: right; }
 

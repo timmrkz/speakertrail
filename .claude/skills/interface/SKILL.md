@@ -171,14 +171,15 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   rows, each a name over one line of what is known, with what is
   connected in green at its start. Tim asked for one look for all lists
   on 14 November 2026.
-- **A control is as wide as its words.** A button fits what it says,
-  never a width guessed in `em`. One that answers a click with other
-  words, Run with Starting, Check with Checking, keeps room for the
-  longer with `.room` and `data-room` in `app.css`, so it does not
-  change width under the pointer. A list to pick from is as wide as the
-  longest thing it can say, up to `--pick-max`, and cuts the rest with an
-  ellipsis. Tim found Check and the LinkedIn profile list too wide
-  testing #46, and `walks/look.mjs` measures both.
+- **A control is as wide as what it shows now.** A button fits what it
+  says this moment, never a width guessed in `em` and never room kept
+  for words it may say later: Check grows to Checking while it checks,
+  as in FrameFairy. A list to pick from is as wide as what is picked, up
+  to `--pick-max`, and cuts the rest with an ellipsis. At 390 px the
+  controls that share a line stay as wide as their words too. Tim found
+  Run, Add, Check and the LinkedIn profile list too wide twice testing
+  #46, and `walks/look.mjs` adds up what each button and list on every
+  page shows, at 1280 and 390 px, and fails one that is wider.
 - **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
   built on bits-ui, so a list looks the same in the window on a Mac as it
   does in the harness, and a row can say more than a name: a size, a

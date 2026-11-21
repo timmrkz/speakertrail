@@ -204,13 +204,13 @@
            can do something about it, as a download does in Settings. -->
       <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
         title="Stop writing. The message before it stays as it was">
-        <Busy {fraction} /><span class="room" data-room="Cancelling" data-room-2="Draft again">{cancelling ? 'Cancelling' : 'Cancel'}</span>
+        <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
       </button>
     {:else}
       <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
         title={noModel ? languageWatch.state.standing.why
           : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
-        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} /><span class="room" data-room="Cancelling" data-room-2="Draft again">{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}</span>
+        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
       </button>
     {/if}
     {#if text && !busy}

@@ -48,7 +48,6 @@
   // text is worked out in lib/dictating.ts, in letters and numbers, and
   // written into the field where it changed.
   let field: HTMLTextAreaElement
-  let report: HTMLButtonElement
   let listening = $state(false)
   let hearing = $state(false)
   // The last words of a dictation being written down, which Report
@@ -663,14 +662,18 @@
     }
   }
 
-  // Tab goes from the field to Report, then through the pictures and
-  // back to the field, and Shift+Tab the other way. macOS only tabs
-  // between buttons when full keyboard access is on, so WebKit passed
-  // over Report. The page moves the focus itself, as Confirm.svelte does.
-  // While dictating Tab does nothing: only Enter, Escape and the button
-  // end a dictation.
-  const stops = () => [field, report, ...document.querySelectorAll<HTMLElement>('.pictures figure, .pictures button.back')]
-  const named = (e: Element | null) => (e === field ? 'the field' : e === report ? 'Report' : e?.matches('figure') ? 'a picture' : 'Put it back')
+  // Tab goes through the window in the order it is drawn: the field,
+  // then every button under it from left to right, Dictate, Attach, the
+  // info mark, Clear and Report, then the pictures, and back to the
+  // field. Shift+Tab goes the other way. FrameFairy went from the field
+  // straight to Report and never reached Clear, which Tim found odd
+  // testing #46. macOS only tabs between buttons when full keyboard
+  // access is on, so the page moves the focus itself, as Confirm.svelte
+  // does. While dictating Tab does nothing: only Enter, Escape and the
+  // button end a dictation.
+  const stops = () => [field, ...document.querySelectorAll<HTMLElement>('.card .actions button, .pictures figure, .pictures button.back')]
+  const named = (e: Element | null) =>
+    e === field ? 'the field' : e?.matches('figure') ? 'a picture' : e?.matches('.back') ? 'Put it back' : (e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'a button')
   function tab(e: KeyboardEvent) {
     const here = document.activeElement as HTMLElement | null
     if (listening) {
@@ -835,14 +838,13 @@
         Clear
       </button>
       <button
-        bind:this={report}
         class="btn primary make"
         type="button"
         onclick={make}
         disabled={nothing || making || listening || attaching}
         title="Saves the report on the Desktop, shows it in Finder and closes this window">
         {#if making}<Busy />{/if}
-        <span class="label-room"><span class:hidden={making}>Report</span><span class:hidden={!making}>Making…</span></span>
+        {making ? 'Making…' : 'Report'}
       </button>
     </div>
   </div>
@@ -924,12 +926,6 @@
   }
   .btn.icon :global(svg) { width: auto; height: auto; }
   .dictate.listening { color: var(--accent); }
-
-  /* Report keeps the room of its longer word, so the row never moves
-     when it says Making. */
-  .label-room { display: inline-grid; }
-  .label-room > span { grid-area: 1 / 1; text-align: center; }
-  .label-room > .hidden { visibility: hidden; }
 
   /* The pictures under the card, in tiles of one size with a space
      between them: three across, four once the page is wide enough. Every

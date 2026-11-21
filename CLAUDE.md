@@ -155,9 +155,11 @@ messages, pull request text, code comments and chat replies.
 - **Help waits until it is asked for.** No line of instructions sits on
   screen for good. What a control is for goes in its `title` or behind a
   small info mark.
-- **A row never changes width as you use it.** A button is as wide as its
-  words. One that answers a click with other words keeps room for the
-  longer, with `.room` in `app.css`, never a width guessed in `em`.
+- **A control is as wide as what it shows now.** A button fits the words
+  it says, Check while it says Check and Checking while it checks, as in
+  FrameFairy. A list to pick from fits what is picked, up to
+  `--pick-max`. Never a width kept for other words or guessed in `em`
+  (Tim, testing #46 on 21 November 2026).
 - **Controls in one row have the same size.** No one-off sizes.
 - **What cannot be taken back asks first.** Everything else saves at once
   and is undone with a click. No save buttons, except a form that adds

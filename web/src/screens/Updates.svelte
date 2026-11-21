@@ -133,7 +133,7 @@
         </div>
         {#if !update.off}
           <span class="channel">
-            <Pick label="Follow" value={following} {options} fit align="right"
+            <Pick label="Follow" value={following} {options} align="right"
               placeholder={options.length ? 'Choose what to follow' : 'No builds to follow yet'}
               tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
               title="Where this app updates from: main, or one pull request. Every push to it makes a new build, which downloads by itself"
@@ -160,13 +160,13 @@
         {#if update.phase === 'ready'}
           <button class="btn primary act" type="button" onclick={relaunch} disabled={restarting || !!working}
             title={working ? `Waits until ${working} is done` : 'Quits and comes back as the new build'}>
-            <span class="room" data-room="Relaunching">{restarting ? 'Relaunching' : 'Relaunch'}</span>
+            {restarting ? 'Relaunching' : 'Relaunch'}
           </button>
         {:else if !update.off && following}
           <button class="btn act" type="button" onclick={check} disabled={looking || downloading}
             title="Look for a newer build now">
             {#if looking || downloading}<Busy fraction={downloading && update.total ? update.written / update.total : -1} />{/if}
-            <span class="room" data-room="Checking">{downloading ? 'Downloading' : looking ? 'Checking' : update.phase === 'failed' ? 'Try again' : 'Check'}</span>
+            {downloading ? 'Downloading' : looking ? 'Checking' : update.phase === 'failed' ? 'Try again' : 'Check'}
           </button>
         {/if}
       </div>

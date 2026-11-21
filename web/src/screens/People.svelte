@@ -260,7 +260,7 @@
         disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
         title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
         {#if going}<Busy fraction={runShare(going)} />{/if}
-        <Icon name={going ? 'stop' : 'run'} /><span class="room" data-room="Starting" data-room-2="Stopping">{runLabel}</span>
+        <Icon name={going ? 'stop' : 'run'} />{runLabel}
         </button>
       </div>
       <div class="segmented filters" role="group" aria-label="Show">
@@ -392,11 +392,10 @@
   .controls .toolbar { flex-wrap: nowrap; }
   .controls .toolbar > :global(.search) { flex: 1 1 0; }
   /* A phone-wide window gives the search field a line of its own, and
-     the order and Run share the next, the same size. */
+     the order and Run follow on the next, each as wide as its words. */
   @media (max-width: 520px) {
     .controls .toolbar { flex-wrap: wrap; }
     .controls .toolbar > :global(.search) { flex: 1 1 100%; }
-    .controls .sort, .controls .start { flex: 1 1 0; }
   }
   .run-now {
     display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;

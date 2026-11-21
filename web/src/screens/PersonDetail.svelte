@@ -158,12 +158,12 @@
         <button class="btn connect good" class:primary={!p.connected} type="button"
           aria-pressed={p.connected} disabled={deciding} onclick={toggleConnected}
           title={p.connected ? 'Connected on LinkedIn. Click again to take it back' : 'Mark as connected once you connected on LinkedIn. It counts for the search that found them'}>
-          <Icon name={p.connected ? 'check' : 'connect'} /><span class="room" data-room="Connected">{p.connected ? 'Connected' : 'Connect'}</span>
+          <Icon name={p.connected ? 'check' : 'connect'} />{p.connected ? 'Connected' : 'Connect'}
         </button>
         {#if linkedin}
           <a class="btn" href={linkedin} target="_blank" rel="noopener noreferrer" aria-busy={opening} onclick={openLinkedin}
             title="Open the LinkedIn profile in the browser profile chosen in Settings">
-            {#if opening}<Busy />{/if}<Icon name="external" /><span class="room" data-room="Opening">{opening ? 'Opening' : 'LinkedIn'}</span>
+            {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
           </a>
           <button class="btn icon" type="button" disabled={settingAside} onclick={notThem}
             title="Not this person. The LinkedIn profile the search found is someone else's" aria-label="Not this person">

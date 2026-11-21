@@ -86,7 +86,7 @@
       <label class="sr-only" for="new-exclusion">New exclusion</label>
       <input bind:this={field} bind:value={phrase} id="new-exclusion" class="input" type="text" placeholder="Online Marketing"
         autocomplete="off" maxlength="60" aria-invalid={error ? 'true' : undefined} aria-describedby={error ? 'exclusion-err' : undefined} />
-      <button class="btn" type="submit" disabled={busy}><Icon name="plus" /><span class="room" data-room="Adding">{busy ? 'Adding' : 'Add'}</span></button>
+      <button class="btn" type="submit" disabled={busy}><Icon name="plus" />{busy ? 'Adding' : 'Add'}</button>
     </form>
     {#if error}<p id="exclusion-err" class="field-error" role="alert">{error}</p>{/if}
   {/if}

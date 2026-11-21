@@ -104,7 +104,7 @@
     <input bind:this={field} bind:value={newQuery} id="new-search" class="input" type="text" placeholder="Yogalehrerin Köln" autocomplete="off"
       maxlength="200" aria-invalid={addError ? 'true' : undefined} aria-describedby={addError ? 'search-err' : undefined}
       title="A kind of person and a place. Exa finds their LinkedIn profiles, and only people in NRW who were active lately and run their own business are kept" />
-    <button class="btn primary" type="submit" disabled={addBusy}><Icon name="plus" /><span class="room" data-room="Adding">{addBusy ? 'Adding' : 'Add'}</span></button>
+    <button class="btn primary" type="submit" disabled={addBusy}><Icon name="plus" />{addBusy ? 'Adding' : 'Add'}</button>
   </form>
   {#if addError}<p id="search-err" class="field-error" role="alert">{addError}</p>{/if}
 
@@ -139,7 +139,7 @@
             </span>
             <button class="btn sm quiet toggle" type="button" onclick={() => toggle(s)} disabled={busy === s.id}
               title={s.status === 'retired' ? 'Runs take this search again' : 'Runs leave this search out until you resume it'}>
-              <span class="room" data-room="Resume">{s.status === 'retired' ? 'Resume' : 'Pause'}</span>
+              {s.status === 'retired' ? 'Resume' : 'Pause'}
             </button>
           </li>
         {/each}

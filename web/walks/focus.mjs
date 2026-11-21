@@ -123,8 +123,8 @@ const walks = []
 for (const theme of ['light', 'dark']) {
   walks.push({
     theme,
-    // Report is where Tim lost it: Enter stops Dictate, Tab goes to
-    // Report, and Enter there sends it.
+    // Report is where Tim lost it. Tab goes through the window in the
+    // order it is drawn, see report.mjs.
     name: `In ${theme}, every button of Report a Problem shows it has focus on its edge`,
     async run(page) {
       await page.setViewportSize({ width: 560, height: 640 })
@@ -133,8 +133,6 @@ for (const theme of ['light', 'dark']) {
       await field.waitFor()
       await field.click()
       await page.keyboard.type('It froze.')
-      await page.keyboard.press('Tab')
-      if (!(await page.locator('button.make').evaluate((e) => e === document.activeElement))) return 'Tab from the field did not reach Report'
       return measure(page, report)
     },
   })

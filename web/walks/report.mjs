@@ -156,10 +156,11 @@ const walks = [
     },
   },
   {
-    // Tab goes through the window in the order it is drawn, Clear
-    // included, and comes back round to the field. Tim never reached
-    // Clear with Tab, testing #46.
-    name: 'Tab goes through Report a Problem in the order it is drawn, Clear included',
+    // Tab goes from the field to Report, so Enter, Tab, Enter still
+    // reports, then the buttons from right to left, Clear included, then
+    // the pictures, and back round to the field. Tim set this order
+    // testing #46, where FrameFairy's never reached Clear.
+    name: 'Tab goes from the field to Report, then Clear, Attach, Dictate and the pictures',
     async run(page) {
       await openReport(page)
       await page.locator('textarea.telling').click()
@@ -167,7 +168,7 @@ const walks = [
       await page.locator('button.attach').click()
       await page.locator('.pictures figure').waitFor()
       await page.locator('textarea.telling').click()
-      const want = ['Dictate', 'Attach screenshots', 'How a report works', 'Clear', 'Report', 'a picture', 'the field']
+      const want = ['Report', 'Clear', 'Attach screenshots', 'Dictate', 'a picture', 'the field']
       const went = []
       for (let i = 0; i < want.length; i++) {
         await page.keyboard.press('Tab')

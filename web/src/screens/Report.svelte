@@ -662,16 +662,21 @@
     }
   }
 
-  // Tab goes through the window in the order it is drawn: the field,
-  // then every button under it from left to right, Dictate, Attach, the
-  // info mark, Clear and Report, then the pictures, and back to the
-  // field. Shift+Tab goes the other way. FrameFairy went from the field
-  // straight to Report and never reached Clear, which Tim found odd
-  // testing #46. macOS only tabs between buttons when full keyboard
-  // access is on, so the page moves the focus itself, as Confirm.svelte
-  // does. While dictating Tab does nothing: only Enter, Escape and the
-  // button end a dictation.
-  const stops = () => [field, ...document.querySelectorAll<HTMLElement>('.card .actions button, .pictures figure, .pictures button.back')]
+  // Tab goes from the field to Report first, so Enter, Tab, Enter ends a
+  // dictation and makes the report, as in FrameFairy. From there it walks
+  // the row of buttons from right to left, Clear, Attach and Dictate, then
+  // the pictures from left to right, where Delete removes the one in
+  // focus, and back to the field. Shift+Tab goes the other way. Tim set
+  // this order testing #46: FrameFairy's never reached Clear. The info
+  // mark is left out, as the pointer's. macOS only tabs between buttons
+  // when full keyboard access is on, so the page moves the focus itself,
+  // as Confirm.svelte does. While dictating Tab does nothing: only Enter,
+  // Escape and the button end a dictation.
+  const stops = () => [
+    field,
+    ...[...document.querySelectorAll<HTMLElement>('.card .actions > button')].reverse(),
+    ...document.querySelectorAll<HTMLElement>('.pictures figure, .pictures button.back'),
+  ]
   const named = (e: Element | null) =>
     e === field ? 'the field' : e?.matches('figure') ? 'a picture' : e?.matches('.back') ? 'Put it back' : (e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'a button')
   function tab(e: KeyboardEvent) {

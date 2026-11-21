@@ -395,7 +395,7 @@
      of what is known. The column is the same with a person open or not,
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .controls { display: grid; gap: var(--gap-group); padding: var(--gap-page) var(--x) var(--gap-group); }
+  .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x) var(--gap-group); }
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }

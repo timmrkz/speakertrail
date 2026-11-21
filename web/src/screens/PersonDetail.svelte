@@ -220,7 +220,7 @@
 <style>
   .person { display: grid; gap: 28px; min-width: 0; }
   .top { display: grid; gap: 10px; min-width: 0; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
   .why { display: grid; gap: 10px; }
   .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
   .why .mark {

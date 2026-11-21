@@ -912,7 +912,7 @@
 
   /* One row of controls of one height: the icons on the left, what the
      microphone hears in the middle, the words on the right. */
-  .actions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; min-width: 0; }
+  .actions { display: flex; flex-direction: row-reverse; align-items: center; gap: var(--gap-control); min-width: 0; }
   .words { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .words .error { color: var(--bad); }
 

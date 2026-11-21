@@ -152,7 +152,7 @@
   .info { display: grid; gap: 2px; min-width: 0; }
   .desc { font-weight: 500; font-size: 14px; }
   .key { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
-  .editor { display: flex; gap: 8px; align-items: center; justify-content: flex-end; min-width: 0; }
+  .editor { display: flex; gap: var(--gap-control); align-items: center; justify-content: flex-end; min-width: 0; }
   .editor .textarea { width: min(340px, 100%); }
   .long { grid-template-columns: minmax(0, 1fr); }
   .long .editor { justify-content: stretch; }
@@ -161,7 +161,7 @@
   .bare { padding: 0; }
   .editor .input { width: 220px; }
   .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
-  .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; }
+  .foot { grid-column: 1 / -1; display: flex; gap: var(--gap-control); justify-content: flex-end; }
   .foot:empty { display: none; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
   .link:hover { text-decoration: underline; }

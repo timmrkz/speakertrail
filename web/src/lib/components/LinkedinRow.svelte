@@ -97,7 +97,7 @@
   .desc { font-weight: 500; font-size: 14px; }
   .state { color: var(--ink-3); overflow-wrap: anywhere; }
   .editor { display: flex; justify-content: flex-end; min-width: 0; }
-  .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; margin: 0; }
+  .foot { grid-column: 1 / -1; display: flex; gap: var(--gap-control); justify-content: flex-end; margin: 0; }
   .foot:empty { display: none; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
   .link:hover { text-decoration: underline; }

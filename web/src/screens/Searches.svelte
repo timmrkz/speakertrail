@@ -151,7 +151,7 @@
 </div>
 
 <style>
-  .add { display: flex; gap: 8px; }
+  .add { display: flex; gap: var(--gap-control); }
   .add .input { flex: 1; min-width: 0; }
   .add .btn { flex: none; }
   .summary { font-size: 13px; color: var(--ink-2); }

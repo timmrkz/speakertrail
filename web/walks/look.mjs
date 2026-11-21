@@ -486,6 +486,108 @@ for (const theme of ['light', 'dark']) {
   })
 }
 
+// The gaps are the same in both themes, so this walk runs once.
+walks.push({
+  theme: 'light',
+  name: 'Two controls side by side or one over the other stand --gap-control apart, and the items sharing one ground --gap-inset, at 1280 and at 390 px',
+  async run(page) {
+    // Tim found the page under the pointer in the sidebar touching the
+    // page chosen, the People filter's segments touching, and buttons in
+    // rows 6, 8 or 10 px apart, testing #46, issue #63. Every row of
+    // controls on a page is measured: the space between each two
+    // neighbours, on one line or one over the other, as drawn. A margin
+    // or a gap of its own shows as well as a wrong gap.
+    const gaps = () => {
+      const px = (t) => {
+        const probe = document.createElement('i')
+        probe.style.cssText = `position: absolute; width: var(${t})`
+        document.body.append(probe)
+        const w = probe.getBoundingClientRect().width
+        probe.remove()
+        return w
+      }
+      const control = px('--gap-control')
+      const inset = px('--gap-inset')
+      // A control, or a wrapper round one alone. An info mark is help,
+      // not a control, and Tab passes it by.
+      const is = 'button:not([tabindex="-1"]), a.btn, a.nav, input, textarea, .pick, .search'
+      const shown = (e) => e.checkVisibility({ visibilityProperty: true }) && getComputedStyle(e).position !== 'absolute'
+      const name = (e) => (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 30)
+      const wrong = []
+      for (const box of document.querySelectorAll('main *, aside *, .report *, dialog[open] *, .sheet *')) {
+        const d = getComputedStyle(box).display
+        if (!/flex|grid/.test(d) || !shown(box)) continue
+        // Only two controls with nothing between them are neighbours. The
+        // words between Clear and Attach in Report take the room there.
+        const kids = [...box.children].filter(shown)
+        // A row of controls counts as one too, like the search, the order
+        // and Run over the filter on People, so two rows of controls stand
+        // apart as two controls do. The sidebar's parts are measured below.
+        const one = (k) => k.matches(is) || (k.children.length === 1 && k.firstElementChild.matches(is))
+        const row = (k) => !k.closest('aside') && /flex|grid/.test(getComputedStyle(k).display)
+          && [...k.children].filter(shown).length > 1 && [...k.children].filter(shown).every(one)
+        const ctl = (k) => one(k) || row(k)
+        const want = box.matches('.segmented') || box.closest('aside') ? inset : control
+        for (let i = 0; i + 1 < kids.length; i++) {
+          if (!ctl(kids[i]) || !ctl(kids[i + 1])) continue
+          const a = kids[i].getBoundingClientRect()
+          const b = kids[i + 1].getBoundingClientRect()
+          const [first, second] = getComputedStyle(box).flexDirection === 'row-reverse' ? [b, a] : [a, b]
+          const across = Math.min(first.bottom, second.bottom) - Math.max(first.top, second.top) > 0
+          const got = across ? second.left - first.right : second.top - first.bottom
+          if (Math.abs(got - want) > 0.5) wrong.push(`${name(kids[i])} and ${name(kids[i + 1])} stand ${got.toFixed(1)} px apart, not ${want} px`)
+        }
+      }
+      // The button that opens the sidebar stands over the first page in
+      // it as the pages stand over each other.
+      const head = document.querySelector('aside .head .glyph')?.getBoundingClientRect()
+      const first = document.querySelector('aside .nav')?.getBoundingClientRect()
+      if (head && first && Math.abs(first.top - head.bottom - inset) > 0.5) {
+        wrong.push(`the sidebar's button stands ${(first.top - head.bottom).toFixed(1)} px over People, not ${inset} px`)
+      }
+      return wrong
+    }
+    const wrong = []
+    for (const size of [{ width: 1280, height: 860 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(size)
+      for (const [where, ready] of [
+        ['/app/people', 'main button.start'],
+        ['/app/searches', 'main button.btn.primary'],
+        ['/app/settings', '#linkedin-profile:enabled'],
+        ['/app/updates', 'main button.act'],
+        ['/report', '.report button.btn.primary'],
+      ]) {
+        await page.goto(`${url}${where}`)
+        await page.locator(ready).first().waitFor()
+        // The template comes after the rest of Settings, with its first
+        // part open.
+        if (where === '/app/settings') await page.locator('.variation').first().waitFor()
+        for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where}: ${w}`)
+        // What opens on a page has rows of controls too: the exclusions
+        // on Searches, and the question before removing the log.
+        // A person open, in the pane at 1280 px and in the sheet at 390,
+        // with Connect, Draft, LinkedIn and Not this person in one row.
+        if (where === '/app/people') {
+          await page.locator('.prow').first().click()
+          await page.locator('.person .connect').waitFor()
+          for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where} with a person open: ${w}`)
+        }
+        if (where === '/app/searches') {
+          await page.locator('main summary', { hasText: 'Exclusions' }).click()
+          await page.locator('main .exclusions .add').waitFor()
+          for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where} with the exclusions open: ${w}`)
+        }
+        if (where === '/app/settings') {
+          await page.locator('main button[aria-label="Remove the app\'s log"]').click()
+          await page.locator('dialog[open]').waitFor()
+          for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where} asking before removing: ${w}`)
+        }
+      }
+    }
+    return wrong.join('\n\t')
+  },
+})
+
 const browser = await chromium.launch()
 let failed = 0
 for (const w of walks) {

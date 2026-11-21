@@ -24,6 +24,7 @@ import (
 	"io"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -177,6 +178,13 @@ func checkInputs(zipPath string) error {
 	reads := make([]read, len(z.File))
 	var wg sync.WaitGroup
 	for i, f := range z.File {
+		// Every file of a build is inside the .app. A name that climbs out
+		// with ../, or starts at /, would land outside the folder it is
+		// unpacked into, on the runner that signs it.
+		if !insideApp(f.Name) {
+			reads[i].found = append(reads[i].found, f.Name+": lies outside "+appName)
+			continue
+		}
 		if f.Mode()&setID != 0 {
 			reads[i].found = append(reads[i].found, f.Name+": runs as its owner, set-user-ID or set-group-ID")
 		}
@@ -249,6 +257,14 @@ func inputsOf(name string, data []byte) []string {
 		for _, k := range keys {
 			if strings.HasPrefix(k, "NS") && strings.HasSuffix(k, "UsageDescription") && !slices.Contains(asks, k) {
 				found = append(found, "asks for "+k)
+			}
+		}
+		// The app is always itself: macOS gives an app signed by Tim's team
+		// the permissions and keychain items of whatever app it says it is.
+		if name == appName+"/Contents/Info.plist" {
+			id, err := plistString(data, "CFBundleIdentifier")
+			if err != nil || id != bundleID {
+				found = append(found, fmt.Sprintf("says it is %q, not %s", id, bundleID))
 			}
 		}
 		return tidy(found)
@@ -510,6 +526,55 @@ func signatureBlob(f *macho.File, data []byte, slot, magic uint32) ([]byte, erro
 		}
 	}
 	return nil, nil
+}
+
+// bundleID is what the app is, to macOS, and what it is signed as.
+const bundleID = "com.speakertrail.app"
+
+// insideApp says whether a name in a build's zip is a path inside the
+// .app, read the way a file system reads it.
+func insideApp(name string) bool {
+	clean := path.Clean(name)
+	return filepath.IsLocal(clean) && !strings.Contains(name, "\\") &&
+		(clean == appName || strings.HasPrefix(clean, appName+"/"))
+}
+
+// plistString is the string the dictionary at the top of a property list
+// in XML holds under key, or "" when it holds none.
+func plistString(data []byte, key string) (string, error) {
+	d := xml.NewDecoder(bytes.NewReader(data))
+	d.Strict = false
+	depth, found := 0, false
+	for {
+		t, err := d.Token()
+		if err == io.EOF {
+			return "", nil
+		}
+		if err != nil {
+			return "", err
+		}
+		switch e := t.(type) {
+		case xml.StartElement:
+			depth++
+			if depth != 3 {
+				continue
+			}
+			var v string
+			if err := d.DecodeElement(&v, &e); err != nil {
+				return "", err
+			}
+			depth--
+			if found {
+				if e.Name.Local != "string" {
+					return "", nil
+				}
+				return strings.TrimSpace(v), nil
+			}
+			found = e.Name.Local == "key" && strings.TrimSpace(v) == key
+		case xml.EndElement:
+			depth--
+		}
+	}
 }
 
 // plistKeys are the keys of the dictionary at the top of a property list

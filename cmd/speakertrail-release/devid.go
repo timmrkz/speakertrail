@@ -19,7 +19,9 @@ package main
 // speech library is not Apple's.
 
 import (
+	"archive/zip"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -29,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -43,9 +46,8 @@ const (
 
 // appleCAs are Apple's certificates between a Developer ID and Apple's
 // root, which a certificate exported from Keychain Access does not carry,
-// and codesign needs the whole chain. They are public, and trust still
-// comes from Apple's root in the system, so a wrong one could only make
-// the signing fail.
+// and codesign needs the whole chain. They are public, and each is taken
+// only when the Mac finds it issued by Apple's root, see appleCA.
 var appleCAs = []string{
 	"https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer",
 	"https://www.apple.com/certificateauthority/DeveloperIDCA.cer",
@@ -60,10 +62,15 @@ type tools struct {
 	fetch func(url string) ([]byte, error)
 }
 
-// macTools are the real ones.
+// macTools are the real ones. Each tool is the Mac's own, by its full
+// path, never one found through PATH, which a build's files must never be
+// able to put a program of their own ahead of.
 var macTools = tools{
 	run: func(name string, args ...string) ([]byte, error) {
-		out, err := exec.Command(name, args...).CombinedOutput()
+		if !slices.Contains([]string{"security", "codesign", "ditto"}, name) {
+			return nil, fmt.Errorf("%s is no tool harden runs", name)
+		}
+		out, err := exec.Command("/usr/bin/"+name, args...).CombinedOutput()
 		if err != nil {
 			return out, fmt.Errorf("%s %s: %w\n%s", name, args[0], err, strings.TrimSpace(string(out)))
 		}
@@ -114,8 +121,16 @@ func harden(args []string) error {
 	entitlements := fs.String("entitlements", "build/entitlements.plist", "what the app is signed as entitled to")
 	timestamp := fs.Bool("timestamp", true, "with Apple's time stamp")
 	_ = fs.Parse(args)
+	// The secrets are read once and leave the environment at once, so no
+	// program harden starts inherits them.
+	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
 	d := devID{tools: macTools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
 		identity: *identity, entitlements: *entitlements, timestamp: *timestamp}
+	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
+		if err := os.Unsetenv(k); err != nil {
+			return err
+		}
+	}
 	if *app != "" {
 		return d.signApp(*app)
 	}
@@ -127,7 +142,6 @@ func harden(args []string) error {
 		fmt.Printf("::notice::No team in %s, so the build stays signed ad hoc, without the hardened runtime. See docs/UPDATES.md, The Developer ID.\n", *teamFile)
 		return nil
 	}
-	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
 	if cert == "" {
 		return fmt.Errorf("%s names team %s, but SPEAKERTRAIL_DEVELOPER_ID is not set. See docs/UPDATES.md, The Developer ID", *teamFile, team)
 	}
@@ -181,8 +195,10 @@ func (d devID) signZip(zipPath, cert string) error {
 	if err := os.WriteFile(d.p12, p12, 0o600); err != nil {
 		return err
 	}
+	// Unpacked by the same reader check read it with, and only what lies
+	// inside the .app, so what is signed is what was checked.
 	unpacked := filepath.Join(dir, "unpacked")
-	if _, err := d.run("ditto", "-x", "-k", zipPath, unpacked); err != nil {
+	if err := unpack(zipPath, unpacked); err != nil {
 		return err
 	}
 	app := filepath.Join(unpacked, appName)
@@ -233,7 +249,8 @@ func (d devID) signApp(app string) (err error) {
 	steps := [][]string{
 		{"set-keychain-settings", "-lut", "1800", keychain},
 		{"unlock-keychain", "-p", password, keychain},
-		{"import", d.p12, "-P", d.password, "-f", "pkcs12", "-k", keychain, "-T", "/usr/bin/codesign"},
+		// -x: the key can be used to sign but never exported again.
+		{"import", d.p12, "-P", d.password, "-f", "pkcs12", "-x", "-k", keychain, "-T", "/usr/bin/codesign"},
 	}
 	for _, s := range steps {
 		if _, err := d.run("security", s...); err != nil {
@@ -242,8 +259,11 @@ func (d devID) signApp(app string) (err error) {
 	}
 	for i, url := range appleCAs {
 		cer, err := d.fetch(url)
+		if err == nil {
+			err = appleCA(cer)
+		}
 		if err != nil {
-			fmt.Printf("::warning::%v\n", err)
+			fmt.Printf("::warning::%s: %v\n", url, err)
 			continue
 		}
 		file := filepath.Join(dir, fmt.Sprintf("ca%d.cer", i))
@@ -278,7 +298,10 @@ func (d devID) signApp(app string) (err error) {
 	}
 	// Signing the bundle signs its program, with the entitlements, and
 	// seals everything else in it.
-	if err := sign("--entitlements", d.entitlements, app); err != nil {
+	// And as com.speakertrail.app whatever its Info.plist says, so no
+	// build is ever signed as another app of the same team, which macOS
+	// would trust with that app's permissions and keychain items.
+	if err := sign("--identifier", bundleID, "--entitlements", d.entitlements, app); err != nil {
 		return err
 	}
 	if _, err := d.run("codesign", "--verify", "--strict", "--deep", app); err != nil {
@@ -323,8 +346,9 @@ func innerCode(app string) ([]string, error) {
 }
 
 // readBack reads every program the way the release check will, and says
-// what is not signed with the hardened runtime by a developer, or an app
-// signed without the microphone, which would then hear only silence.
+// what is not signed with the hardened runtime by a developer, an app
+// signed as another app, or one signed without the microphone, which
+// would then hear only silence.
 func readBack(app string, inner []string) error {
 	own := filepath.Join(app, "Contents", "MacOS", appProgram)
 	var found []string
@@ -346,6 +370,9 @@ func readBack(app string, inner []string) error {
 			case !s.signed || s.flags&flagAdhoc != 0 || s.flags&flagRuntime == 0:
 				found = append(found, fmt.Sprintf("%s is not signed with the hardened runtime, flags %#x", code, s.flags))
 			}
+			if code == own && err == nil && s.ident != bundleID {
+				found = append(found, fmt.Sprintf("%s is signed as %q, not %s", code, s.ident, bundleID))
+			}
 			if code == own {
 				keys, err := entitlements(a.f, a.data)
 				if err != nil || !slices.Contains(keys, "com.apple.security.device.audio-input") {
@@ -356,6 +383,71 @@ func readBack(app string, inner []string) error {
 	}
 	if len(found) > 0 {
 		return fmt.Errorf("the app is not signed as it should be:\n  %s", strings.Join(found, "\n  "))
+	}
+	return nil
+}
+
+// appleCA says whether a certificate fetched from apple.com is one of
+// Apple's Developer ID authorities, issued by a root the Mac trusts, so
+// nothing else is put in the keychain the Developer ID signs from.
+func appleCA(der []byte) error {
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
+		return fmt.Errorf("it is no certificate: %w", err)
+	}
+	if c.Subject.CommonName != "Developer ID Certification Authority" || !c.IsCA {
+		return fmt.Errorf("it is %q, not Apple's Developer ID authority", c.Subject.CommonName)
+	}
+	if _, err := c.Verify(x509.VerifyOptions{KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
+		return fmt.Errorf("it is not issued by a root the Mac trusts: %w", err)
+	}
+	return nil
+}
+
+// unpack writes the files of the build's zip into dir, refusing any entry
+// that is not a file or folder inside the .app, so nothing in it lands
+// anywhere else on the runner.
+func unpack(zipPath, dir string) error {
+	z, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return fmt.Errorf("the build is not a zip: %w", err)
+	}
+	defer z.Close()
+	for _, f := range z.File {
+		if !insideApp(f.Name) {
+			return fmt.Errorf("%s lies outside %s", f.Name, appName)
+		}
+		target := filepath.Join(dir, filepath.FromSlash(path.Clean(f.Name)))
+		mode := f.Mode()
+		switch {
+		case mode.IsDir():
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+			continue
+		case !mode.IsRegular():
+			return fmt.Errorf("%s is no file", f.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return err
+		}
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		w, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode.Perm()&0o755)
+		if err != nil {
+			r.Close()
+			return err
+		}
+		_, err = io.Copy(w, io.LimitReader(r, int64(f.UncompressedSize64)+1))
+		r.Close()
+		if cerr := w.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

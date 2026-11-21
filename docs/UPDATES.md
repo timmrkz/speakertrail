@@ -231,7 +231,29 @@ fails the run on main and on the commit, never quietly. To set it up once:
 
 The next build after that is signed with it. From then on
 `speakertrail-release sign -team` refuses a build in which any program is
-signed ad hoc, without the hardened runtime, or by another team.
+signed ad hoc, without the hardened runtime, or by another team, or
+whose app is signed as anything but `com.speakertrail.app`.
+
+Every build of a pull request is signed with the Developer ID too, so
+Tim can try it. Its zip comes from the pull request's branch and is
+unpacked on the Mac that holds the certificate, so `harden` trusts
+nothing in it:
+
+- It unpacks the zip itself, after `check` read it, and only files and
+  folders inside `Speaker Trail.app`. A link, or a name that leads out of
+  the .app, stops it before anything is written.
+- It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
+  never a program found through `PATH`.
+- It reads both secrets once and takes them out of its environment, so
+  no program it starts sees them. The key goes into a keychain made for
+  the run, marked so it cannot be exported again, and the keychain is
+  deleted at the end, also when signing fails.
+- It takes Apple's certificate between the Developer ID and Apple's root
+  only when the Mac finds it issued by a root it trusts.
+- It signs the app as `com.speakertrail.app`, whatever its `Info.plist`
+  says. macOS gives an app of the team the microphone and the keychain
+  items of the app it is signed as, so no build can be signed as
+  another of Tim's apps.
 
 If a build signed this way does not open, the app cannot update away
 from it. `make install` in a checkout puts a build made on the Mac back
@@ -273,7 +295,9 @@ a program that sets where macOS's loader looks, or that looks for the
 libraries it links as `@rpath` anywhere but inside the .app, holds a
 link, has a file that names what taps keys, records the screen, opens
 the camera or asks for administrator rights, has a file that looks like
-a program and cannot be read as one, or unpacks to more than 1 GB. The
+a program and cannot be read as one, unpacks to more than 1 GB, has a
+file outside `Speaker Trail.app`, or has an `Info.plist` that names
+another app than `com.speakertrail.app`. The
 stored zip `pack` wrote is signed only when it holds the same files, byte
 for byte, as the zip `check` read. It may ask for the microphone, for
 Dictate on Report a Problem, and be entitled to it, and to nothing else,

@@ -55,6 +55,11 @@ func TestABuildWithoutTheHardenedRuntimeIsNotSigned(t *testing.T) {
 		{"a library of another team", devid(app, "TEAM123456"), devid(speech, "OTHER98765"), "TEAM123456", lib + ": is signed by team OTHER98765"},
 		{"all of another team", devid(app, "OTHER98765"), devid(speech, "OTHER98765"), "TEAM123456", exe + ": is signed by team OTHER98765"},
 		{"signed by no team", devid(app, ""), devid(speech, ""), "TEAM123456", exe + ": is signed by no team"},
+		// macOS trusts an app of the team as the app it is signed as, with
+		// that app's permissions and keychain items.
+		{"the app signed as another app of the team",
+			func() program { p := devid(app, "TEAM123456"); p.ident = "com.other.app"; return p }(),
+			devid(speech, "TEAM123456"), "TEAM123456", exe + `: is signed as "com.other.app", not com.speakertrail.app`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

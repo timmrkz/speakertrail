@@ -1,12 +1,19 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"errors"
+	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The signing with the Developer ID runs the Mac's own tools, which no
@@ -21,6 +28,9 @@ type fakeMac struct {
 	// flags and microphone are how codesign signs.
 	flags      uint32
 	microphone bool
+	// as, when set, is what codesign signs the app as, whatever it is
+	// told.
+	as string
 	// failOn makes the command whose last argument ends with it fail.
 	failOn string
 }
@@ -44,6 +54,15 @@ func (m *fakeMac) tools() tools {
 						p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
 					}
 					target = filepath.Join(target, "Contents", "MacOS", appProgram)
+					// codesign signs the bundle as its Info.plist says,
+					// unless it is told what as.
+					p.ident = "com.other.app"
+					if i := slices.Index(args, "--identifier"); i >= 0 {
+						p.ident = args[i+1]
+					}
+					if m.as != "" {
+						p.ident = m.as
+					}
 				}
 				p.signed, p.flags, p.team = true, m.flags, "TEAM123456"
 				return nil, os.WriteFile(target, p.bytes(), 0o755)
@@ -116,8 +135,12 @@ func TestTheAppIsSignedInsideOutInAKeychainOfItsOwn(t *testing.T) {
 				t.Errorf("%s was signed without %s: %q", c[len(c)-1], want, c)
 			}
 		}
-		if slices.Contains(c, "--entitlements") != (i == len(signed)-1) {
+		last := i == len(signed)-1
+		if slices.Contains(c, "--entitlements") != last {
 			t.Errorf("%s: entitlements %v", c[len(c)-1], slices.Contains(c, "--entitlements"))
+		}
+		if at := slices.Index(c, "--identifier"); last && (at < 0 || c[at+1] != bundleID) {
+			t.Errorf("the app was not signed as %s: %q", bundleID, c)
 		}
 	}
 	want := []string{
@@ -129,6 +152,11 @@ func TestTheAppIsSignedInsideOutInAKeychainOfItsOwn(t *testing.T) {
 	}
 	if !slices.Equal(targets, want) {
 		t.Errorf("signed %q, want %q", targets, want)
+	}
+	for _, c := range m.commands {
+		if c[0] == "security" && c[1] == "import" && slices.Contains(c, "pkcs12") && !slices.Contains(c, "-x") {
+			t.Errorf("the key was imported so it can be exported again: %q", c)
+		}
 	}
 	last := m.commands[len(m.commands)-2:]
 	if !slices.Equal(last[0], []string{"security", "list-keychains", "-d", "user", "-s",
@@ -157,8 +185,8 @@ func TestAFailedSigningLeavesNoKeychainBehind(t *testing.T) {
 }
 
 // What codesign left is read back as the release check reads it, so an
-// app it signed without the hardened runtime, ad hoc or without the
-// microphone is refused here, before it is packed.
+// app it signed without the hardened runtime, ad hoc, as another app or
+// without the microphone is refused here, before it is packed.
 //
 // On the real disk: codesign's stand-in writes the files it signs.
 func TestAnAppSignedWrongIsRefused(t *testing.T) {
@@ -166,15 +194,17 @@ func TestAnAppSignedWrongIsRefused(t *testing.T) {
 		name       string
 		flags      uint32
 		microphone bool
+		as         string
 		want       string
 	}{
-		{"without the hardened runtime", 0, true, "llama-server is not signed with the hardened runtime"},
-		{"ad hoc", flagRuntime | flagAdhoc, true, "libonnxruntime.dylib is not signed with the hardened runtime"},
-		{"without the microphone", flagRuntime, false, "signed without the microphone"},
+		{"without the hardened runtime", 0, true, "", "llama-server is not signed with the hardened runtime"},
+		{"ad hoc", flagRuntime | flagAdhoc, true, "", "libonnxruntime.dylib is not signed with the hardened runtime"},
+		{"without the microphone", flagRuntime, false, "", "signed without the microphone"},
+		{"as another app", flagRuntime, true, "com.other.app", `speakertrail-app is signed as "com.other.app", not com.speakertrail.app`},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := signer(&fakeMac{flags: c.flags, microphone: c.microphone}).signApp(bundle(t))
+			err := signer(&fakeMac{flags: c.flags, microphone: c.microphone, as: c.as}).signApp(bundle(t))
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Errorf("signing it said %v, want %q", err, c.want)
 			}
@@ -205,5 +235,60 @@ func TestHardenGoesByTheTeamFile(t *testing.T) {
 	err := harden([]string{"-zip", filepath.Join(dir, "app.zip"), "-team-file", team})
 	if err == nil || !strings.Contains(err.Error(), "SPEAKERTRAIL_DEVELOPER_ID is not set") {
 		t.Errorf("with a team and no certificate it said %v", err)
+	}
+}
+
+// What comes back from apple.com goes into the keychain the Developer ID
+// signs from only when it is Apple's Developer ID authority, issued by a
+// root the Mac trusts. Something else, or one made to look like it, is
+// left out.
+func TestOnlyApplesAuthorityGoesInTheKeychain(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Developer ID Certification Authority"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	lookalike, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, der := range map[string][]byte{"no certificate": []byte("a certificate"), "a lookalike": lookalike} {
+		if err := appleCA(der); err == nil {
+			t.Errorf("%s was taken for Apple's authority", name)
+		}
+	}
+	m := &fakeMac{flags: flagRuntime, microphone: true}
+	if err := signer(m).signApp(bundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range m.commands {
+		if c[0] == "security" && c[1] == "import" && strings.HasSuffix(c[2], ".cer") {
+			t.Errorf("what apple.com did not send was imported: %q", c)
+		}
+	}
+}
+
+// harden runs only the Mac's own tools, by their full path, and the
+// programs it starts never inherit the secrets.
+func TestHardenKeepsItsSecretsAndToolsToItself(t *testing.T) {
+	if _, err := macTools.run("sh", "-c", "true"); err == nil || !strings.Contains(err.Error(), "is no tool harden runs") {
+		t.Errorf("running sh said %v", err)
+	}
+	dir := t.TempDir()
+	t.Setenv("SPEAKERTRAIL_DEVELOPER_ID", "c2VjcmV0")
+	t.Setenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD", "the password")
+	_ = harden([]string{"-zip", filepath.Join(dir, "app.zip"), "-team-file", filepath.Join(dir, "none.txt")})
+	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
+		if _, set := os.LookupEnv(k); set {
+			t.Errorf("%s is still in the environment the tools are started with", k)
+		}
 	}
 }

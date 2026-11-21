@@ -28,11 +28,15 @@ type signing struct {
 	signed bool
 	flags  uint32
 	team   string
+	// ident is what the program is signed as, com.speakertrail.app for
+	// the app.
+	ident string
 }
 
 // signingOf reads the code directory codesign writes into slot 0 of the
-// signature: its flags, at 12, and from version 0x20200 on the offset of
-// its team's name, at 48, all big-endian.
+// signature: its flags, at 12, the offset of its identifier, at 20, and
+// from version 0x20200 on the offset of its team's name, at 48, all
+// big-endian.
 func signingOf(a arch) (signing, error) {
 	cd, err := signatureBlob(a.f, a.data, 0, 0xfade0c02)
 	if err != nil || cd == nil {
@@ -43,19 +47,34 @@ func signingOf(a arch) (signing, error) {
 		return signing{}, errors.New("its code directory is too short")
 	}
 	s := signing{signed: true, flags: be.Uint32(cd[12:])}
+	name, err := cString(cd, be.Uint32(cd[20:]))
+	if err != nil {
+		return signing{}, fmt.Errorf("its identifier: %w", err)
+	}
+	s.ident = name
 	if be.Uint32(cd[8:]) >= 0x20200 && len(cd) >= 52 {
 		if at := be.Uint32(cd[48:]); at != 0 {
-			if uint64(at) >= uint64(len(cd)) {
-				return signing{}, errors.New("its team is not where its code directory says")
-			}
-			name, _, found := strings.Cut(string(cd[at:]), "\x00")
-			if !found {
-				return signing{}, errors.New("its team's name has no end")
+			name, err := cString(cd, at)
+			if err != nil {
+				return signing{}, fmt.Errorf("its team: %w", err)
 			}
 			s.team = name
 		}
 	}
 	return s, nil
+}
+
+// cString is the name that starts at offset at of a code directory and
+// ends with a zero byte.
+func cString(cd []byte, at uint32) (string, error) {
+	if at == 0 || uint64(at) >= uint64(len(cd)) {
+		return "", errors.New("it is not where the code directory says")
+	}
+	name, _, found := strings.Cut(string(cd[at:]), "\x00")
+	if !found {
+		return "", errors.New("it has no end")
+	}
+	return name, nil
 }
 
 // checkHardened reads every program of the zip and says each that is not
@@ -101,6 +120,8 @@ func checkHardened(zipPath, team string) error {
 				found = append(found, f.Name+": is signed by no team")
 			case s.team != team:
 				found = append(found, f.Name+": is signed by team "+s.team)
+			case f.Name == appName+"/Contents/MacOS/"+appProgram && s.ident != bundleID:
+				found = append(found, fmt.Sprintf("%s: is signed as %q, not %s", f.Name, s.ident, bundleID))
 			default:
 				programs++
 			}

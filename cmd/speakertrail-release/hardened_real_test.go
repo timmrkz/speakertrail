@@ -60,8 +60,12 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 			t.Errorf("%s signed by harden reads as signed %v with flags %#x", file, s.signed, s.flags)
 		}
 	}
-	if _, keys := read(t, programs(t, signedApp)[0]); !slices.Contains(keys, "com.apple.security.device.audio-input") {
+	s, keys := read(t, programs(t, signedApp)[0])
+	if !slices.Contains(keys, "com.apple.security.device.audio-input") {
 		t.Errorf("the app signed by harden reads as entitled to %q", keys)
+	}
+	if s.ident != bundleID {
+		t.Errorf("the app signed by harden reads as signed as %q, not %s", s.ident, bundleID)
 	}
 	for _, file := range programs(t, adhocApp) {
 		s, _ := read(t, file)

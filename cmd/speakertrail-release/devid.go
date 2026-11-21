@@ -20,7 +20,11 @@ package main
 
 import (
 	"archive/zip"
+	"bytes"
+	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
@@ -393,7 +397,7 @@ func readBack(app string, inner []string) error {
 }
 
 // appleRoots are the certificates named Apple Root CA among the roots
-// macOS itself ships, each signed by itself.
+// macOS itself ships.
 func (d devID) appleRoots() ([]*x509.Certificate, error) {
 	out, err := d.run("security", "find-certificate", "-a", "-p", "-c", "Apple Root CA",
 		"/System/Library/Keychains/SystemRootCertificates.keychain")
@@ -408,7 +412,7 @@ func (d devID) appleRoots() ([]*x509.Certificate, error) {
 			break
 		}
 		c, err := x509.ParseCertificate(b.Bytes)
-		if err != nil || c.Subject.CommonName != "Apple Root CA" || c.CheckSignatureFrom(c) != nil {
+		if err != nil || c.Subject.CommonName != "Apple Root CA" || !c.IsCA {
 			continue
 		}
 		roots = append(roots, c)
@@ -433,11 +437,28 @@ func appleCA(der []byte, roots []*x509.Certificate) error {
 		return fmt.Errorf("it is %q, not Apple's Developer ID authority", c.Subject.CommonName)
 	}
 	for _, root := range roots {
-		if c.CheckSignatureFrom(root) == nil {
+		if signedBy(c, root) == nil {
 			return nil
 		}
 	}
-	return errors.New("it is not signed by Apple's root")
+	return fmt.Errorf("it is not signed by Apple's root, %v", c.SignatureAlgorithm)
+}
+
+// signedBy checks c's signature with parent's key. Apple's root of 2006
+// signs with SHA-1, which Go's own check no longer takes, so that one is
+// checked here: SHA-1 is broken for collisions, which only matter to
+// someone who can get Apple to sign what they made, not for a signature
+// Apple already made.
+func signedBy(c, parent *x509.Certificate) error {
+	key, isRSA := parent.PublicKey.(*rsa.PublicKey)
+	if c.SignatureAlgorithm != x509.SHA1WithRSA || !isRSA {
+		return c.CheckSignatureFrom(parent)
+	}
+	if !bytes.Equal(c.RawIssuer, parent.RawSubject) {
+		return errors.New("it names another issuer")
+	}
+	sum := sha1.Sum(c.RawTBSCertificate)
+	return rsa.VerifyPKCS1v15(key, crypto.SHA1, sum[:], c.Signature)
 }
 
 // unpack writes the files of the build's zip into dir, refusing any entry

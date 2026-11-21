@@ -40,8 +40,8 @@ const FirstMessagePrompt = "hook_prompt"
 const ProfileField = "{{profile}}"
 
 // DefaultFirstMessagePrompt is the prompt until Tim puts his own in, the
-// one he wrote on 21 November 2026, with the portrait he asked for the
-// same day.
+// one he wrote on 21 November 2026 with the examples he added, and the
+// portrait he asked for the same day.
 const DefaultFirstMessagePrompt = `You write one short German line for a LinkedIn message from Tim.
 It finishes this sentence: "Du bist mir in meinem LinkedIn Feed aufgefallen, weil …"
 
@@ -64,26 +64,72 @@ Rules:
 - Add an emoji only after a light line ending in "!".
 
 Examples:
-Neurologin, war Chefärztin, jetzt selbstständig
-{"reason":"du als Neurologin den Schritt in die Selbstständigkeit gewagt hast.","reaction":"","portrait":"Neurologin"}
 
-CEO eines Herstellers von Babytragen. Note: hardware is tough, we need more of that
-{"reason":"du ein Unternehmen mit echten Produkten zum Anfassen führst.","reaction":"Das ist richtig schwer. Und das ist richtig toll!","portrait":"Unternehmerin"}
+Profile: Neurologin, war Chefärztin, jetzt selbstständig
+Tim's note: none
+Output: {"reason":"du als Neurologin den Schritt in die Selbstständigkeit gewagt hast.","reaction":"","portrait":"Neurologin"}
 
-Eisbaden-Coach, vorher 24 Jahre TV-Produktion
-{"reason":"du mehr kaltes Wasser unter die Menschen bringst! 😄","reaction":"","portrait":"Coach"}
+Profile: CEO eines Herstellers von Babytragen
+Tim's note: hardware is tough, we need more of that
+Output: {"reason":"du ein Unternehmen mit echten Produkten zum Anfassen führst.","reaction":"Das ist richtig schwer. Und das ist richtig toll!","portrait":"Unternehmerin"}
 
-Geschäftsführer einer Sportstiftung
-{"reason":"du dich für Sport und Menschen einsetzt.","reaction":"Das sind auch für mich Herzens-Themen.","portrait":"Macher"}
+Profile: Eisbaden-Coach, vorher 24 Jahre TV-Produktion
+Tim's note: none
+Output: {"reason":"du mehr kaltes Wasser unter die Menschen bringst! 😄","reaction":"","portrait":"Coach"}
 
-Mitgründerin eines Klimarechners für die Landwirtschaft
-{"reason":"ich digitale Landwirtschaft richtig mega finde!","reaction":"","portrait":"Gründerin"}
+Profile: Geschäftsführer einer Sportstiftung
+Tim's note: none
+Output: {"reason":"du dich für Sport und Menschen einsetzt.","reaction":"Das sind auch für mich Herzens-Themen.","portrait":"Macher"}
+
+Profile: Mitgründerin eines Klimarechners für die Landwirtschaft
+Tim's note: none
+Output: {"reason":"ich digitale Landwirtschaft richtig mega finde!","reaction":"","portrait":"Gründerin"}
+
+Profile: Gründerin eines jungen Startups, postet über den Aufbau
+Tim's note: none
+Output: {"reason":"du etwas in der Welt bewegen möchtest, und einfach anpackst.","reaction":"Davon gibt's viel zu wenige!","portrait":"Gründerin"}
+
+Profile: Gründer einer Plattform, die Software automatisch in Produktion bringt
+Tim's note: I like the first principles thinking. He builds something and automates things
+Output: {"reason":"du Dinge von Grund auf durchdenkst und sie dann einfach automatisierst.","reaction":"","portrait":"Gründer"}
+
+Profile: Mitgründer eines Unternehmens, das für Firmen Wälder in Deutschland pflanzt
+Tim's note: none
+Output: {"reason":"Bäume ja doch schon voll gut sind! 😄","reaction":"","portrait":"Gründer"}
+
+Profile: Gründer einer Agentur, die Marken in Google und ChatGPT sichtbar macht
+Tim's note: none
+Output: {"reason":"du dich damit beschäftigst, wie wir Dinge finden.","reaction":"Das Thema find ich mega spannend!","portrait":"Unternehmer"}
+
+Profile: Führt mit ihren Geschwistern ein Süßwaren-Familienunternehmen in vierter Generation
+Tim's note: none
+Output: {"reason":"ihr ein Familienunternehmen pflegt, und weil damit ganz viel Verantwortung verbunden ist.","reaction":"","portrait":"Unternehmerin"}
+
+Profile: Mitgründerin eines Labels, das Kleidung aus Stoffresten macht
+Tim's note: none
+Output: {"reason":"ihr versucht ein total schwieriges Recycling Problem zu lösen.","reaction":"","portrait":"Gründerin"}
+
+Profile: Geschäftsführerin eines Feinkostladens mit eigener Schokoladenmarke, seit 2019
+Tim's note: none
+Output: {"reason":"du seit Jahren einen echten Laden führst.","reaction":"Und dann auch noch mit eigener Schokolade! 😄","portrait":"Ladeninhaberin"}
+
+Profile: Mitgründer einer Agentur für Videoproduktion und Social Media Content
+Tim's note: none
+Output: {"reason":"ich selbst Videos produziere.","reaction":"Und ich weiß, wie viel Arbeit in gutem Content steckt.","portrait":"Macher"}
+
+Profile: Gründerin einer Software, die Behördenprozesse vereinfacht
+Tim's note: none
+Output: {"reason":"du eine der wenigen bist, die etwas gegen diversen bürokratischen Wahnsinn macht. 🫠","reaction":"","portrait":"Gründerin"}
+
+Profile: Immobilienmaklerin, nach über 20 Jahren als Angestellte seit 2017 selbstständig
+Tim's note: none
+Output: {"reason":"du nach vielen Jahren im Angestelltenverhältnis den Schritt in die Selbstständigkeit gewagt hast.","reaction":"Das find ich richtig stark!","portrait":"Maklerin"}
 
 Profile:
 {{profile}}
 
-Tim's note:
-{{notes}}`
+Tim's note: {{notes}}
+Output:`
 
 func mustJSON(v any) string {
 	b, err := json.Marshal(v)

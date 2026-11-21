@@ -13,6 +13,7 @@
   import SpeechRow from '../lib/components/SpeechRow.svelte'
   import LanguageRow from '../lib/components/LanguageRow.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
+  import Template from '../lib/components/Template.svelte'
   import ThemeRow from '../lib/components/ThemeRow.svelte'
 
   const settings = new Load<Setting[]>()
@@ -29,7 +30,7 @@
   )
   // The prompt a first message is written from sits with the language
   // model that writes it, the rest are about searches.
-  const drafting = new Set(['first_message_prompt'])
+  const drafting = new Set(['hook_prompt'])
   let forDrafts = $derived(matches.filter((s) => drafting.has(s.key)))
   let forSearches = $derived(matches.filter((s) => !drafting.has(s.key)))
 
@@ -75,12 +76,17 @@
       <section class="group prompt">
         {#each forDrafts as s (s.key)}
           <div class="headrow">
-            <h2 id="head-{s.key}">First message</h2>
+            <h2 id="head-{s.key}">First message prompt</h2>
             <span class="ask"><Info label="About the prompt" side="left">{s.description}</Info></span>
           </div>
           <SettingRow setting={s} onsaved={saved} bare labelledby="head-{s.key}" />
         {/each}
       </section>
+    {/if}
+    {#if !q || 'template first message variation part'.includes(q.toLowerCase())}
+      <!-- The rest of a first message, picked at random from Tim's
+           variations, beside the prompt for the model's part. -->
+      <Template />
     {/if}
     {#if forSearches.length}
       <section class="group">

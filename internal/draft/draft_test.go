@@ -321,7 +321,7 @@ func TestDraftsFromSeveralGoroutines(t *testing.T) {
 
 func TestFill(t *testing.T) {
 	got := Fill("Hi {{first_name}} ({{name}}). {{notes}}\n{{profile}}", "Mara Beispiel", "", "Profil mit {{name}} darin")
-	if got != "Hi Mara (Mara Beispiel). None.\nProfil mit {{name}} darin" {
+	if got != "Hi Mara (Mara Beispiel). none\nProfil mit {{name}} darin" {
 		t.Errorf("%q", got)
 	}
 }

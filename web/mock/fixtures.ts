@@ -313,19 +313,97 @@ export function buildRuns(sources: MockSource[]): { runs: Run[]; checks: Map<num
   return { runs, checks }
 }
 
-// The prompt a first message is written from, as the app has it, see
+// The prompt the model writes the portrait, the reason and the reaction
+// of a first message from, as the app has it, see
 // DefaultFirstMessagePrompt in internal/store/settings.go.
-const FIRST_MESSAGE_PROMPT = `You write the first LinkedIn message from Tim to {{name}}, a new connection he just made.
+const HOOK_PROMPT = `You write one short German line for a LinkedIn message from Tim.
+It finishes this sentence: "Du bist mir in meinem LinkedIn Feed aufgefallen, weil …"
 
-Tim hosts the podcast "My First Memory". Each guest tells the story of their earliest memory and what it says about who they became. Tim looks for people in North Rhine-Westphalia who run their own business.
+Tim makes the podcast "My First Memory" and coaches kids in Brazilian Jiu-Jitsu. He likes real products, sport, people who just start things and people who bring others together.
 
-Write the message in the language of the profile, German when in doubt, and use "du" in German. Three to five short sentences. Thank them for connecting, name one specific thing from their profile that caught Tim's interest, and ask whether they would like to hear more about being a guest. No subject line, no hashtags, no emojis, no flattery. Address them by first name, {{first_name}}. Sign with "Tim". Write only the message.
+Return JSON with three fields:
+- reason: the part after "weil". Verb at the end. End with "." or "!".
+- reaction: an optional short sentence. Usually "".
+- portrait: what they are, in one or two German words, the way they show themselves in their profile, like "Coach", "Lehrerin", "Macher" or "Unternehmerin". It finishes "um deine Geschichte als … zu erzählen".
+Reason and reaction together, under 150 characters.
 
-Tim's notes about them:
-{{notes}}
+Rules:
+- If Tim wrote a note, use his words.
+- Use their main work only. Say what it means, not what it is.
+- Never repeat their headline, numbers, product description or mission.
+- Only claim what the profile shows.
+- Keep it plain, warm and casual. No wordplay. No jokes about the person.
+- Never mention family, health, private life or their employer.
+- No semicolons. No dashes. Never use the word "Erinnerung". Use du.
+- Add an emoji only after a light line ending in "!".
 
-Their LinkedIn profile:
-{{profile}}`
+Examples:
+
+Profile: Neurologin, war Chefärztin, jetzt selbstständig
+Tim's note: none
+Output: {"reason":"du als Neurologin den Schritt in die Selbstständigkeit gewagt hast.","reaction":"","portrait":"Neurologin"}
+
+Profile: CEO eines Herstellers von Babytragen
+Tim's note: hardware is tough, we need more of that
+Output: {"reason":"du ein Unternehmen mit echten Produkten zum Anfassen führst.","reaction":"Das ist richtig schwer. Und das ist richtig toll!","portrait":"Unternehmerin"}
+
+Profile: Eisbaden-Coach, vorher 24 Jahre TV-Produktion
+Tim's note: none
+Output: {"reason":"du mehr kaltes Wasser unter die Menschen bringst! 😄","reaction":"","portrait":"Coach"}
+
+Profile: Geschäftsführer einer Sportstiftung
+Tim's note: none
+Output: {"reason":"du dich für Sport und Menschen einsetzt.","reaction":"Das sind auch für mich Herzens-Themen.","portrait":"Macher"}
+
+Profile: Mitgründerin eines Klimarechners für die Landwirtschaft
+Tim's note: none
+Output: {"reason":"ich digitale Landwirtschaft richtig mega finde!","reaction":"","portrait":"Gründerin"}
+
+Profile: Gründerin eines jungen Startups, postet über den Aufbau
+Tim's note: none
+Output: {"reason":"du etwas in der Welt bewegen möchtest, und einfach anpackst.","reaction":"Davon gibt's viel zu wenige!","portrait":"Gründerin"}
+
+Profile: Gründer einer Plattform, die Software automatisch in Produktion bringt
+Tim's note: I like the first principles thinking. He builds something and automates things
+Output: {"reason":"du Dinge von Grund auf durchdenkst und sie dann einfach automatisierst.","reaction":"","portrait":"Gründer"}
+
+Profile: Mitgründer eines Unternehmens, das für Firmen Wälder in Deutschland pflanzt
+Tim's note: none
+Output: {"reason":"Bäume ja doch schon voll gut sind! 😄","reaction":"","portrait":"Gründer"}
+
+Profile: Gründer einer Agentur, die Marken in Google und ChatGPT sichtbar macht
+Tim's note: none
+Output: {"reason":"du dich damit beschäftigst, wie wir Dinge finden.","reaction":"Das Thema find ich mega spannend!","portrait":"Unternehmer"}
+
+Profile: Führt mit ihren Geschwistern ein Süßwaren-Familienunternehmen in vierter Generation
+Tim's note: none
+Output: {"reason":"ihr ein Familienunternehmen pflegt, und weil damit ganz viel Verantwortung verbunden ist.","reaction":"","portrait":"Unternehmerin"}
+
+Profile: Mitgründerin eines Labels, das Kleidung aus Stoffresten macht
+Tim's note: none
+Output: {"reason":"ihr versucht ein total schwieriges Recycling Problem zu lösen.","reaction":"","portrait":"Gründerin"}
+
+Profile: Geschäftsführerin eines Feinkostladens mit eigener Schokoladenmarke, seit 2019
+Tim's note: none
+Output: {"reason":"du seit Jahren einen echten Laden führst.","reaction":"Und dann auch noch mit eigener Schokolade! 😄","portrait":"Ladeninhaberin"}
+
+Profile: Mitgründer einer Agentur für Videoproduktion und Social Media Content
+Tim's note: none
+Output: {"reason":"ich selbst Videos produziere.","reaction":"Und ich weiß, wie viel Arbeit in gutem Content steckt.","portrait":"Macher"}
+
+Profile: Gründerin einer Software, die Behördenprozesse vereinfacht
+Tim's note: none
+Output: {"reason":"du eine der wenigen bist, die etwas gegen diversen bürokratischen Wahnsinn macht. 🫠","reaction":"","portrait":"Gründerin"}
+
+Profile: Immobilienmaklerin, nach über 20 Jahren als Angestellte seit 2017 selbstständig
+Tim's note: none
+Output: {"reason":"du nach vielen Jahren im Angestelltenverhältnis den Schritt in die Selbstständigkeit gewagt hast.","reaction":"Das find ich richtig stark!","portrait":"Maklerin"}
+
+Profile:
+{{profile}}
+
+Tim's note: {{notes}}
+Output:`
 
 export function buildSettings(): Setting[] {
   const t = hoursAgo(24 * 9)
@@ -338,7 +416,7 @@ export function buildSettings(): Setting[] {
     ['exa_monthly_searches', 1000, 'Exa searches per month. Its free $10 a month covers about 1,400'],
     ['probation_weeks', 3, 'Weeks a new search may find nobody before runs leave it out'],
     ['retire_after_empty_checks', 4, 'Runs in a row without anyone new before a search is left out'],
-    ['first_message_prompt', FIRST_MESSAGE_PROMPT, 'What the language model is asked to write a first message from. {{profile}} is where the profile goes'],
+    ['hook_prompt', HOOK_PROMPT, 'What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them'],
   ]
   return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))
 }

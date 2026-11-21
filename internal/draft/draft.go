@@ -1,8 +1,10 @@
-// Package draft writes a first message to a person on the Mac: it takes
-// the prompt from Settings and the person's profile text, asks the
-// language model, and keeps what it wrote on the person, where Tim reads
-// it, changes it, copies it into LinkedIn and sends it himself. Nothing
-// is ever sent from the app.
+// Package draft writes a first message to a person on the Mac. It puts
+// the message together from the template in Settings, one variation of
+// each part picked at random, and asks the language model only for the
+// hook, the portrait, the reason and the reaction, from the prompt in
+// Settings and the person's profile text. The draft is kept on the
+// person, where Tim reads it, changes it, copies it into LinkedIn and
+// sends it himself. Nothing is ever sent from the app.
 //
 // A draft is work that takes a while: reading the profile from Exa when
 // the app has no text for the person yet, loading the model when it is not
@@ -595,7 +597,7 @@ func (m message) with(h Hook) string {
 func Fill(prompt, name, notes, profile string) string {
 	first, _, _ := strings.Cut(strings.TrimSpace(name), " ")
 	if strings.TrimSpace(notes) == "" {
-		notes = "None."
+		notes = "none"
 	}
 	out := strings.NewReplacer("{{name}}", name, "{{first_name}}", first, "{{notes}}", notes).Replace(prompt)
 	return strings.ReplaceAll(out, store.ProfileField, profile)

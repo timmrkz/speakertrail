@@ -479,9 +479,28 @@ export interface DraftJob {
   fraction: number
   seconds_left: number | null
   error?: string
+  // Why a draft that is done lacks the model's part, with … in its place.
+  problem?: string
   // Higher for every change than for the one before it, of any draft, so
   // an answer that arrives after a newer event is told apart from it.
   seq: number
+}
+
+// The template a first message is put together from, see docs/api.md,
+// First message template.
+export interface TemplatePart {
+  name: string
+  variations: string[]
+}
+export interface TemplateField {
+  name: string
+  by: 'app' | 'model'
+  about: string
+}
+export interface FirstMessageTemplate {
+  parts: TemplatePart[]
+  fields: TemplateField[]
+  changed: boolean
 }
 
 export function onDraft(fn: (j: DraftJob) => void): () => void {
@@ -760,6 +779,15 @@ export const api = {
   // First messages: the drafts under way and the latest of each person,
   // one started for a person, and stopped again.
   drafts: () => request<DraftJob[]>('GET', '/api/drafts'),
+  template: () => request<FirstMessageTemplate>('GET', '/api/template'),
+  // Gives a part its variations, or adds it at a place.
+  putTemplatePart: (name: string, variations: string[], at?: number) =>
+    request<FirstMessageTemplate>('PUT', `/api/template/parts/${encodeURIComponent(name)}`, { variations, at }),
+  deleteTemplatePart: (name: string) => request<FirstMessageTemplate>('DELETE', `/api/template/parts/${encodeURIComponent(name)}`, {}),
+  // Puts Tim's first template back, and putTemplate the one before.
+  resetTemplate: () => request<FirstMessageTemplate>('DELETE', '/api/template', {}),
+  putTemplate: (parts: TemplatePart[]) => request<FirstMessageTemplate>('PUT', '/api/template', { parts }),
+  templateExample: () => request<{ text: string }>('GET', '/api/template/example').then((r) => r.text),
   startDraft: (id: number) => request<DraftJob>('POST', `/api/people/${id}/draft`, {}),
   cancelDraft: (id: number) => request<void>('POST', `/api/people/${id}/draft/cancel`, {}),
   updates: () => request<UpdateState>('GET', '/api/updates'),

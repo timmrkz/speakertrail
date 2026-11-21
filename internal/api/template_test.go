@@ -67,7 +67,7 @@ func TestTimEditsTheTemplate(t *testing.T) {
 	}
 	var ex map[string]string
 	if code := call(t, a, "GET", "/api/template/example", "", &ex); code != http.StatusOK ||
-		!strings.Contains(ex["text"], "weil [reason]") || !strings.Contains(ex["text"], "Hallo [first_name],") {
+		!strings.Contains(ex["text"], "weil [reason]") || !strings.Contains(ex["text"], " [first_name],\n\n") {
 		t.Errorf("example: %d %q", code, ex["text"])
 	}
 }

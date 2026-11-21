@@ -224,6 +224,7 @@
      every chosen thing wears. Its weight stays, so the word never moves. */
   .nav[aria-current="page"], .nav[aria-pressed="true"] { background: var(--chosen); color: var(--chosen-ink); }
   .nav[aria-current="page"]:hover, .nav[aria-pressed="true"]:hover { background: var(--chosen-hover); color: var(--chosen-ink); }
+  .nav[aria-current="page"]:active, .nav[aria-pressed="true"]:active { background: var(--chosen-press); }
   .nav .word { flex: 1; }
   /* The build stands at the far end of its row, whole, since it names
      what is being tested. */

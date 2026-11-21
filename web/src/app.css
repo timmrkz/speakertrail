@@ -84,11 +84,14 @@
   --surface-hover: color-mix(in srgb, var(--ink) 6%, var(--surface));
   --surface-press: color-mix(in srgb, var(--ink) 11%, var(--surface));
   /* What is chosen, a page in the sidebar, a filter, the person open,
-     a chip pressed, is one flat tint of the accent with its words in the
-     accent. Under the pointer the tint deepens. */
+     a chip pressed, is one flat tint of the accent. Under the pointer the
+     tint deepens, pressed a little more. */
   --chosen: color-mix(in srgb, var(--accent) 15%, transparent);
-  --chosen-hover: color-mix(in srgb, var(--accent) 22%, transparent);
-  --chosen-ink: var(--accent);
+  --chosen-hover: color-mix(in srgb, var(--accent) 20%, transparent);
+  --chosen-press: color-mix(in srgb, var(--accent) 25%, transparent);
+  /* The words on it are the accent a shade toward the ink, so they read
+     at 4.5 to 1 on the tint in every state, see walks/look.mjs. */
+  --chosen-ink: color-mix(in srgb, var(--accent) 85%, var(--ink));
   /* The accent under the pointer and pressed moves toward the ink: darker
      in light, lighter in dark, so it reads as a change in both. */
   --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--ink));
@@ -332,6 +335,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .chip:active { background: var(--surface-press); }
 .chip[aria-pressed="true"] { background: var(--chosen); border-color: transparent; color: var(--chosen-ink); }
 .chip[aria-pressed="true"]:hover { background: var(--chosen-hover); }
+.chip[aria-pressed="true"]:active { background: var(--chosen-press); }
 .chip .num { font-size: 12px; opacity: .7; }
 @media (max-width: 760px) {
   .chips.scroll {
@@ -356,6 +360,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .segmented button:active { background: var(--press); }
 .segmented button[aria-pressed="true"] { background: var(--chosen); color: var(--chosen-ink); }
 .segmented button[aria-pressed="true"]:hover { background: var(--chosen-hover); }
+.segmented button[aria-pressed="true"]:active { background: var(--chosen-press); }
 
 /* Pills */
 .pill {
@@ -416,7 +421,7 @@ button { -webkit-tap-highlight-color: transparent; }
    stands still. */
 .progress > i::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-lit) 40%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-lit) 30%, transparent), transparent);
   animation: sheen 2.2s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 @keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }

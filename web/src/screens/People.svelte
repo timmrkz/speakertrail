@@ -414,6 +414,7 @@
   .prow:active { background: var(--press); }
   .prow[aria-current="true"] { background: var(--chosen); }
   .prow[aria-current="true"]:hover { background: var(--chosen-hover); }
+  .prow[aria-current="true"]:active { background: var(--chosen-press); }
   /* The person open is marked already, the keyboard on it adds nothing. */
   .prow[aria-current="true"]:focus-visible { background-image: none; outline: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }

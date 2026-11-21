@@ -53,7 +53,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/rubric` | The fit rubric: signals for and against a person, each with its passage |
 | `internal/speech` | The speech models in Settings and hearing with them on this Mac, for Dictate |
 | `internal/language` | The language models in Settings, and llama-server, which runs one on this Mac |
-| `internal/draft` | Drafts of a first message to a person, written one at a time in the background |
+| `internal/draft` | Drafts of a first message to a person, put together from the template with the language model's hook, one at a time in the background |
 | `internal/fetch` | Downloading a model, resumed where it stopped and checked as it comes |
 | `internal/workflows` | No code, only the test that holds the Go tests to what CI's filters start, see CI in [docs/BUILD.md](docs/BUILD.md#ci) |
 | `web` | The interface, Svelte 5 with TypeScript |

@@ -7,11 +7,15 @@ import type { Plugin } from 'vite'
 import type {
   Activity, Appearance, DraftJob, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
+  FirstMessageTemplate, TemplateField, TemplatePart,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
   todayBerlin, type MockSource,
 } from './fixtures.ts'
+// Tim's first template, the very file the app holds, see
+// internal/store/first_message_template.json.
+import firstTemplate from '../../internal/store/first_message_template.json'
 
 // Just enough of Node's request and response for this file.
 interface Req {
@@ -541,6 +545,41 @@ const ROUTES: [string, RegExp, Handler][] = [
   // where it stands as the event draft, which the mock cannot, so it is
   // worked out from the clock whenever it is asked, and a walk sends the
   // event the way the app does, see walks/draft.mjs.
+  // The template a first message is put together from, like
+  // internal/api/template.go, with the app's checks that a walk meets.
+  ['GET', /^\/api\/template$/, () => ok(templateJSON())],
+  ['GET', /^\/api\/template\/example$/, () => ok({ text: expand(Object.fromEntries(TEMPLATE_FIELDS.map((f) => [f.name, f.name === 'reaction_part' ? ' [reaction]' : `[${f.name}]`]))) })],
+  ['DELETE', /^\/api\/template$/, () => {
+    template = startTemplate()
+    return ok(templateJSON())
+  }],
+  ['PUT', /^\/api\/template$/, (_s, _m, _q, b) => {
+    const parts = (b.parts as TemplatePart[]).map((p) => ({ name: p.name, variations: [...p.variations] }))
+    const wrong = checkTemplate(parts)
+    if (wrong) return err(400, wrong)
+    template = parts
+    return ok(templateJSON())
+  }],
+  ['PUT', /^\/api\/template\/parts\/([^/]+)$/, (_s, m, _q, b) => {
+    const name = decodeURIComponent(m[1])
+    const parts = template.map((p) => ({ ...p }))
+    const part = { name, variations: [...(b.variations as string[])] }
+    const i = parts.findIndex((p) => p.name === name)
+    if (i >= 0) parts[i] = part
+    else parts.splice(typeof b.at === 'number' && b.at >= 0 && b.at <= parts.length ? b.at : parts.length, 0, part)
+    const wrong = checkTemplate(parts)
+    if (wrong) return err(400, wrong)
+    template = parts
+    return ok(templateJSON())
+  }],
+  ['DELETE', /^\/api\/template\/parts\/([^/]+)$/, (_s, m) => {
+    const name = decodeURIComponent(m[1])
+    if (!template.some((p) => p.name === name)) return err(404, `The template has no part ${name}.`)
+    const why = keptWhy(name)
+    if (why) return err(400, why)
+    template = template.filter((p) => p.name !== name)
+    return ok(templateJSON())
+  }],
   ['GET', /^\/api\/drafts$/, (s) => ok([...drafts.values()].map((d) => draftJob(s, d)))],
   ['POST', /^\/api\/people\/(\d+)\/draft$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -795,7 +834,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!row) return err(404, 'No such setting')
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
-    if (row.key === 'first_message_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
+    if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
     row.value = b.value as Json
     row.updated_at = new Date().toISOString()
     return ok(row)
@@ -940,16 +979,70 @@ function languageState() {
   }
 }
 
+// The template, as the app keeps it: parts in Tim's order.
+const TEMPLATE_FIELDS: TemplateField[] = [
+  { name: 'first_name', by: 'app', about: 'Their first name' },
+  { name: 'portrait', by: 'model', about: 'What they are, the way they show themselves, like Coach or Gründerin' },
+  { name: 'reason', by: 'model', about: 'Why they caught Tim\'s eye, the part after "weil"' },
+  { name: 'reaction_part', by: 'model', about: 'Nothing, or a space and a short reaction' },
+]
+function startTemplate(): TemplatePart[] {
+  return Object.entries(firstTemplate as Record<string, string[]>)
+    .filter(([name]) => !name.startsWith('_'))
+    .map(([name, variations]) => ({ name, variations: [...variations] }))
+}
+let template = startTemplate()
+function templateJSON(): FirstMessageTemplate {
+  const parts = template.map((p) => ({ ...p, kept: keptWhy(p.name) || undefined }))
+  return { parts, fields: TEMPLATE_FIELDS, changed: JSON.stringify(template) !== JSON.stringify(startTemplate()) }
+}
+// Why a part cannot be taken out, as store.Template.Removable says it.
+function keptWhy(name: string): string {
+  if (name === 'origin') return 'Origin is where the message starts, so it stays.'
+  const user = template.find((p) => p.name !== name && p.variations.some((v) => v.includes(`#${name}#`)))
+  return user ? `${user.name[0].toUpperCase()}${user.name.slice(1)} still uses #${name}#. Take it out there first.` : ''
+}
+// The checks of store.Template.Check a walk meets, in its words.
+function checkTemplate(parts: TemplatePart[]): string {
+  const names = new Set(parts.map((p) => p.name))
+  for (const p of parts) {
+    if (!/^[a-z][a-z0-9_]*$/.test(p.name)) return `"${p.name}" cannot name a part. Use small letters, digits and _, starting with a letter.`
+    if (TEMPLATE_FIELDS.some((f) => f.name === p.name)) return `${p.name[0].toUpperCase()}${p.name.slice(1)} is filled in by the ${TEMPLATE_FIELDS.find((f) => f.name === p.name)?.by === 'model' ? 'language model' : 'app'}, so no part takes its name.`
+    if (!p.variations.length) return `${p.name[0].toUpperCase()}${p.name.slice(1)} needs at least one variation. An empty one leaves it out.`
+    for (const v of p.variations) {
+      for (const [, ref] of v.matchAll(/#([a-z][a-z0-9_]*)#/g)) {
+        if (!names.has(ref) && !TEMPLATE_FIELDS.some((f) => f.name === ref)) return `${p.name[0].toUpperCase()}${p.name.slice(1)} uses #${ref}#, and there is no part of that name.`
+      }
+    }
+  }
+  if (!names.has('origin')) return 'The template needs a part named origin, where the message starts.'
+  if (!parts.some((p) => p.variations.some((v) => v.includes('#reason#')))) return 'The template needs #reason#, where the language model\'s reason goes.'
+  return ''
+}
+function expand(fields: Record<string, string>, name = 'origin', depth = 0): string {
+  if (name in fields) return fields[name]
+  const p = template.find((x) => x.name === name)
+  if (!p || depth > 20) return ''
+  const v = p.variations[Math.floor(Math.random() * p.variations.length)]
+  return v.replace(/#([a-z][a-z0-9_]*)#/g, (_, ref: string) => expand(fields, ref, depth + 1))
+}
+
 // A first message being drafted, worked out from the clock.
 type MockDraft = { id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean }
 const DRAFT_LOAD_MS = 3000
 const DRAFT_WRITE_MS = 5000
 const drafts = new Map<number, MockDraft>()
 let draftJobs = 0
-// An invented message, the way the prompt asks for one: German, du, a few
-// sentences.
-function draftText(name: string): string {
-  return `Hallo ${name.split(' ')[0]}, danke fürs Vernetzen! Ich mache den Podcast „My First Memory“, in dem Menschen aus NRW von ihrer ersten Erinnerung erzählen und davon, wie sie zu ihrem eigenen Unternehmen kamen. Dein Weg hat mich neugierig gemacht. Hättest du Lust, mein Gast zu sein?`
+// An invented message, put together from the template, with an invented
+// hook, the way internal/draft does. The same picks for a whole draft.
+const draftTexts = new Map<string, string>()
+function draftText(id: string, name: string): string {
+  let text = draftTexts.get(id)
+  if (!text) {
+    text = expand({ first_name: name.split(' ')[0], portrait: 'Gründerin', reason: 'du dein eigenes Studio aufgebaut hast!', reaction_part: '' })
+    draftTexts.set(id, text)
+  }
+  return text
 }
 function draftJob(s: State, d: MockDraft): DraftJob {
   const p = s.people.find((x) => x.id === d.person_id)
@@ -961,7 +1054,7 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
   const ran = Date.now() - d.from
   const whole = DRAFT_LOAD_MS + DRAFT_WRITE_MS
-  const text = draftText(p?.name ?? 'Mara Beispiel')
+  const text = draftText(d.id, p?.name ?? 'Mara Beispiel')
   if (ran >= whole) {
     if (!d.kept && p) {
       d.kept = true
@@ -972,8 +1065,8 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   }
   const left = (whole - ran) / 1000
   if (ran < DRAFT_LOAD_MS) return { ...base, state: 'loading', fraction: ran / whole, seconds_left: left }
-  const share = (ran - DRAFT_LOAD_MS) / DRAFT_WRITE_MS
-  return { ...base, state: 'writing', text: text.slice(0, Math.round(text.length * share)), fraction: ran / whole, seconds_left: left }
+  // While the model writes, the message is there with … for its part.
+  return { ...base, state: 'writing', text: text.replace('du dein eigenes Studio aufgebaut hast!', '…').replace('Gründerin', '…'), fraction: ran / whole, seconds_left: left }
 }
 
 // The draft of a report and the recordings Dictate started.

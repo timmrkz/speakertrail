@@ -1,0 +1,77 @@
+{
+  "_about": [
+    "Tracery-style grammar for My First Memory LinkedIn first messages.",
+    "Each key is a slot. Pick one entry at random and expand every #slot# inside it.",
+    "The app sets first_name. portrait, reason and reaction_part come from the model.",
+    "reaction_part is empty, or a space followed by the model's reaction.",
+    "Keys starting with an underscore are ignored. An empty string makes a slot optional. Repeat an entry to make it more likely."
+  ],
+
+  "origin": [
+    "#greeting# #first_name#,\n\n#opener#. #hook_frame# #reason##reaction_part#\n\n#invitation#, um deine Geschichte als #portrait# zu erzählen. #extra##question# was ist deine erste Erinnerung?\n\n#condition#, dann lass uns die Tage gern einen kurzen Video Call machen, #ending#\n\n#signoff#"
+  ],
+
+  "greeting": ["Hallo"],
+
+  "opener": [
+    "super cool mit dir zu connecten",
+    "voll gut mit dir zu connecten",
+    "voll schön mit dir zu connecten",
+    "schön mit dir zu connecten",
+    "freut mich total mit dir zu connecten",
+    "freut mich richtig mit dir zu connecten",
+    "ich freu mich voll mit dir zu connecten"
+  ],
+
+  "hook_frame": [
+    "Du bist mir in meinem LinkedIn Feed aufgefallen, weil",
+    "Du bist in meinem LinkedIn Feed aufgefallen, weil"
+  ],
+
+  "invitation": [
+    "Ich würde dich #intensity# #podcast# #invite_verb#",
+    "Ich würde dich deswegen #intensity# #podcast# #invite_verb#",
+    "Ich würde dich daher #intensity# #podcast# #invite_verb#",
+    "Deswegen würde ich dich #intensity# #podcast# #invite_verb#",
+    "Daher würde ich dich #intensity# #podcast# #invite_verb#",
+    "Und daher würde ich dich auch #intensity# #podcast# #invite_verb#"
+  ],
+
+  "podcast": ["in meinen Podcast \"My First Memory\""],
+
+  "intensity": ["total gern", "super gern"],
+
+  "invite_verb": ["einladen", "einladen wollen"],
+
+  "extra": [
+    "",
+    "",
+    "",
+    "",
+    "Dabei gibt es auch ganz viel Platz für Freude und Emotionen. "
+  ],
+
+  "question": [
+    "Die erste Frage ist immer:",
+    "Die erste Frage in jeder Episode ist immer:",
+    "Die erste Frage im Podcast ist immer:",
+    "Die erste Frage ist hier immer:"
+  ],
+
+  "condition": [
+    "Wenn du Lust hast",
+    "Wenn du Lust hast mitzumachen",
+    "Wenn du Lust hast auf das Format",
+    "Wenn du Lust hast bei dem Format mitzumachen",
+    "Wenn du Lust hast dabei zu sein",
+    "Wenn du magst"
+  ],
+
+  "ending": [
+    "um uns ein bisschen kennen zu lernen.",
+    "um uns ein wenig kennen zu lernen.",
+    "und wir lernen uns ein bisschen kennen."
+  ],
+
+  "signoff": ["Liebe Grüße, Tim"]
+}

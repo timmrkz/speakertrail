@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -132,6 +133,8 @@ func (m reportMaker) ReportProblem(what string) (string, error) {
 		var settings []store.Setting
 		var template store.Template
 		m.st.Read(func(d *store.Data) { settings, template = d.AllSettings(), d.FirstMessageTemplate() })
+		// Where Tim is says where he lives, and helps no bug.
+		settings = slices.DeleteFunc(settings, func(s store.Setting) bool { return s.Key == store.HomeCity })
 		body, _ := json.MarshalIndent(settings, "", "  ")
 		if err := add("settings.json", body); err != nil {
 			return "", err

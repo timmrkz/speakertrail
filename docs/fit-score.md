@@ -159,13 +159,17 @@ unlike anyone before still gets seen.
 ### How it reads on screen
 
 A row in People shows the fit as a small figure in tabular figures. The
-person's Why lists the parts with the points each gave, for example:
+person shows the fit under Fit, above Why, with the points each part
+gave and why, for example:
 
-- Younger +20: Bachelor from 2019, so about 26
-- Active lately +18: comment on 16 November
-- Near you +11: Bonn, about 24 km
-- Who they are +11: Works with people, Athlete
-- Like your picks +9: "BJJ", 4 of 6 such people you connected with
+- +11 Who they are: Works with people, Athlete
+- +20 Younger: Bachelor from 2019, so about 26
+- +18 Active lately: Wrote on 16 November 2026
+- +11 Near you: Bonn, about 24 km
+- +9 Like your picks: "BJJ", 4 of 6 such people you connected with
+
+Why keeps the rubric's signals with the passages that show them, so an
+age or a date can show in both, once as points and once as the passage.
 
 Signals against keep their place as today.
 

@@ -59,6 +59,9 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 		if err := d.SetTemplatePart("greeting", []string{"Servus", ""}, -1); err != nil {
 			return err
 		}
+		if err := d.SetSetting(store.HomeCity, json.RawMessage(`"Köln"`), time.Now()); err != nil {
+			return err
+		}
 		return d.SetSetting("profile_searches_per_run", json.RawMessage("7"), time.Now())
 	}); err != nil {
 		t.Fatal(err)
@@ -111,6 +114,10 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 	}
 	if !strings.Contains(files["logs/app-2026-10-09-10-00-00.000.log"], "started yesterday") {
 		t.Error("the older file of the log is not in the report, unpacked")
+	}
+	// Where Tim is says where he lives, and helps no bug.
+	if strings.Contains(files["settings.json"], store.HomeCity) || strings.Contains(files["settings.json"], "Köln") {
+		t.Errorf("the report holds Where you are:\n%s", files["settings.json"])
 	}
 	if !strings.Contains(files["settings.json"], `"key": "profile_searches_per_run",`+"\n    \"value\": 7") {
 		t.Errorf("the settings in the report do not hold the changed setting:\n%s", files["settings.json"])

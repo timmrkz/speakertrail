@@ -164,3 +164,32 @@ func TestWriting(t *testing.T) {
 		t.Error("a profile without activity says what kind its activity is")
 	}
 }
+
+// A row shows FitPoints and the person Fit, so the two never disagree.
+func TestFitPointsIsFit(t *testing.T) {
+	now := day("2026-11-21")
+	signals := [][]Signal{nil, {{Key: "works_with_people", For: true}}, {{Key: "athlete", For: true}, {Key: "funded"}}}
+	dates := []time.Time{{}, day("2026-11-20"), day("2026-09-01"), day("2026-05-01")}
+	n := 0
+	for _, sigs := range signals {
+		for _, born := range []int{0, 2001, 1992, 1985} {
+			for _, active := range dates {
+				for _, wrote := range dates {
+					for _, known := range []bool{false, true} {
+						for _, near := range []FitPerson{{}, {Home: "Köln", City: "Bonn", Km: 24.3, Near: true}, {Home: "Köln", City: "Köln", Near: true}, {Home: "Köln", City: "Hückeswagen"}} {
+							p := near
+							p.Signals, p.BornAbout, p.AgeReason, p.LastActive, p.LastWrote, p.Wrote, p.Now = sigs, born, "Bachelor from 2019", active, wrote, known, now
+							if fit, parts := Fit(p); FitPoints(p) != fit {
+								t.Fatalf("FitPoints %d, Fit %d %v for %+v", FitPoints(p), fit, parts, p)
+							}
+							n++
+						}
+					}
+				}
+			}
+		}
+	}
+	if n < 1000 {
+		t.Errorf("only %d people compared", n)
+	}
+}

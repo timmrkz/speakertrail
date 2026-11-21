@@ -39,8 +39,8 @@ type fakeMac struct {
 	fetched, roots []byte
 }
 
-func (m *fakeMac) tools() tools {
-	return tools{
+func (m *fakeMac) tools() macOS {
+	return macOS{
 		run: func(name string, args ...string) ([]byte, error) {
 			m.commands = append(m.commands, append([]string{name}, args...))
 			if m.failOn != "" && strings.HasSuffix(args[len(args)-1], m.failOn) {
@@ -116,7 +116,7 @@ func bundle(t *testing.T) string {
 }
 
 func signer(m *fakeMac) devID {
-	return devID{tools: m.tools(), p12: "developer-id.p12", password: "the password",
+	return devID{macOS: m.tools(), p12: "developer-id.p12", password: "the password",
 		identity: "Developer ID Application", entitlements: "build/entitlements.plist", timestamp: true}
 }
 

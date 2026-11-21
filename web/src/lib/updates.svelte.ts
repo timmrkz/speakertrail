@@ -19,15 +19,19 @@ const LOOK_AT_LEAST = 1400
 // off show nothing.
 export type Mark = '' | 'off' | 'look' | 'new' | 'err' | 'warn' | 'ok' | 'idle'
 
-// A channel by what it is: main, or a pull request by its number.
-export const channelName = (id: string) => (id.startsWith('pr-') ? `PR #${id.slice(3)}` : id === 'main' ? 'main' : id)
+// A channel is what it is and nothing more: a branch or a pull request
+// by its number. The pull request's title says what it is about, which
+// is not what is being picked here, and it made the list as wide as the
+// window. As FrameFairy names them.
+export const channelName = (id: string) => (id.startsWith('pr-') ? `PR #${id.slice(3)}` : `Branch ${id}`)
 
 // The channel followed: the one picked, or the one this build came from.
 // Empty for a build made on the Mac until a channel is chosen.
 export const following = (u: UpdateState | null) => (u ? u.picked || u.follows || u.gone || u.channel || '' : '')
 
 // The pull request followed no longer merges into main. Its builds still
-// come, but it wears the colour of a warning.
+// come, but CI does not run on them, so it wears the colour of a warning,
+// the way one that closed does.
 export const conflicted = (u: UpdateState | null) => {
   const f = following(u)
   return !!u?.channels?.some((c) => c.id === f && c.conflict)
@@ -95,7 +99,7 @@ export function standing(
         return {
           mark: 'warn',
           head: 'Up to date',
-          more: `This is the newest build of ${followingName}. It conflicts with main. ${when(u.checked, now)}`.trim(),
+          more: `This is the newest build of ${followingName}. It conflicts with main, so CI has not tested it. ${when(u.checked, now)}`.trim(),
         }
       return { mark: 'ok', head: 'Up to date', more: `This is the newest build of ${followingName}. ${when(u.checked, now)}`.trim() }
     // The pull request followed was merged or closed. Nothing downloads
@@ -104,7 +108,7 @@ export function standing(
       return { mark: 'warn', head: `${channelName(u.gone)} is closed`, more: 'Nothing downloads until you choose what to follow next.' }
   }
   if (!followingName) {
-    return { mark: 'idle', head: 'Built on this Mac', more: 'It stays as it is until you choose what to follow.' }
+    return { mark: 'idle', head: 'Built on this Mac', more: 'It stays as it is until you choose a channel to follow.' }
   }
   return { mark: 'idle', head: 'Not checked yet', more: 'It looks when the app starts and every ten minutes.' }
 }

@@ -58,9 +58,9 @@ var appleCAs = []string{
 	"https://www.apple.com/certificateauthority/DeveloperIDCA.cer",
 }
 
-// tools runs the Mac's own tools, security, codesign and ditto, and
+// macOS runs the Mac's own tools, security, codesign and ditto, and
 // fetches Apple's certificates. Tests hand in their own.
-type tools struct {
+type macOS struct {
 	// run runs a program and gives back what it wrote, both streams.
 	run func(name string, args ...string) ([]byte, error)
 	// fetch downloads a file.
@@ -70,7 +70,7 @@ type tools struct {
 // macTools are the real ones. Each tool is the Mac's own, by its full
 // path, never one found through PATH, which a build's files must never be
 // able to put a program of their own ahead of.
-var macTools = tools{
+var macTools = macOS{
 	run: func(name string, args ...string) ([]byte, error) {
 		if !slices.Contains([]string{"security", "codesign", "ditto"}, name) {
 			return nil, fmt.Errorf("%s is no tool harden runs", name)
@@ -100,7 +100,7 @@ var macTools = tools{
 // signature stays good after the certificate runs out. The test in CI
 // signs with a certificate made for it and no time stamp.
 type devID struct {
-	tools
+	macOS
 	p12, password, identity string
 	entitlements            string
 	timestamp               bool
@@ -129,7 +129,7 @@ func harden(args []string) error {
 	// The secrets are read once and leave the environment at once, so no
 	// program harden starts inherits them.
 	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
-	d := devID{tools: macTools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
+	d := devID{macOS: macTools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
 		identity: *identity, entitlements: *entitlements, timestamp: *timestamp}
 	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
 		if err := os.Unsetenv(k); err != nil {

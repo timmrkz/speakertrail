@@ -85,7 +85,7 @@ func TestApplesRealAuthorityIsTaken(t *testing.T) {
 	if os.Getenv("APPLE_CAS") == "" {
 		t.Skip("needs a Mac and apple.com, see the macos job in ci.yml")
 	}
-	d := devID{tools: macTools}
+	d := devID{macOS: macTools}
 	roots, err := d.appleRoots()
 	if err != nil {
 		t.Fatal(err)

@@ -363,6 +363,10 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
 		{"an Info.plist for macOS alone, in capitals", "Speaker Trail.app/Contents/INFO-MACOS.PLIST", []byte("bplist00"),
 			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
+		// ſ, the long s, is an s to a Mac's disk, which folds case the
+		// way Unicode does, not only for A to Z.
+		{"an Info.plist for macOS alone, with a long s", "Speaker Trail.app/Contents/Info-macoſ.pliſt", []byte("bplist00"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
 		// macOS reads the last of two keys of one name, the check would
 		// read the first.
 		{"the identifier twice", "Speaker Trail.app/Contents/Info.plist",

@@ -253,7 +253,7 @@ nothing in it:
   no program it starts sees them. The release tool is built once, in a
   step before, without them and without the Go cache, which builds of
   third-party code write too. Every step that holds a key runs that one
-  program, so `go` and its compiler never see a secret. The key goes
+  program, so `go` and its compiler never see either key. The key goes
   into a keychain made for the run, marked so it cannot be exported
   again, and the keychain is deleted at the end, also when signing
   fails.

@@ -118,6 +118,12 @@ that, the skills listed last show their name without what they are for.
   them: a failing CI run is still your work, so is a review comment. But
   never set up a recurring check, never poll, and never write a message that
   says nothing happened. Tim comes back when he is ready.
+- **Merge main in for a conflict, and only then.** When a pull request no
+  longer merges into main, merge main in, resolve it and push at once,
+  without asking. `conflicts.yml` comments on such a pull request, which
+  wakes its session, and a session checks itself right after opening one
+  and before calling it ready. See When main moves in
+  [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 ## Writing rules
 

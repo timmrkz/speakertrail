@@ -30,6 +30,10 @@
 //	    name the files of the release that no build an app may run
 //	    reaches any more, one a line, for the workflow to remove, see
 //	    release.go
+//	speakertrail-release conflicts [-repo R] [-branch B -pushed X]
+//	    comment on each open pull request that no longer merges into
+//	    main, after a push to main, or on the one of branch B at commit X
+//	    after a push to it, see conflicts.go
 package main
 
 import (
@@ -78,6 +82,8 @@ func main() {
 		err = list(os.Args[2:])
 	case "unreachable":
 		err = unreachableCommand(os.Args[2:])
+	case "conflicts":
+		err = conflictsCommand(os.Args[2:])
 	default:
 		usage()
 	}
@@ -88,7 +94,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X]")
 	os.Exit(2)
 }
 

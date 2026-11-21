@@ -1,0 +1,80 @@
+# A pull request that no longer merges into main is told so in a comment
+# that names the files in conflict, once for each commit of it and each
+# commit of main it fails to merge into. GitHub sends no event when a pull
+# request starts to conflict, and runs no CI on one, so without the
+# comment nothing wakes the session that owns it. A comment can get lost
+# on its way to the session, so the next push to main that still leaves
+# the pull request in conflict tells it again. That costs no run of its
+# own: the run after a push to main happens anyway.
+# After a push to main every open pull request is tried, and after a push
+# to another branch of this repository, the pull request of that branch,
+# at the commit pushed. git merge-tree merges in memory, without a
+# checkout of either side, and no code of the pull request runs. A pull
+# request from a fork is left alone.
+#
+# It writes a comment, so it runs from main alone, the way publish.yml
+# does: on a push to main, and when builds.yml starts on a push to any
+# other branch, which GitHub always runs from main. A branch's own copy
+# of this file never gets the token, because a branch is code nobody has
+# reviewed yet, see builds.yml. pull_request runs on no pull request that
+# conflicts. pull_request_target runs main's workflow for a stranger's
+# pull request with a token that writes, so one step that reads the pull
+# request's code hands that token over. A pull request that conflicts
+# from its first push is not open yet when that push runs this, so the
+# session checks it after opening. The comment says what is so and asks
+# nothing: a session reads it as news and checks on GitHub itself.
+#
+# Ported from FrameFairy. What it does there in a loop of shell is the
+# command conflicts of speakertrail-release here, with its tests, and the
+# Go it is built with is set up first. See When main moves in
+# docs/WORKFLOW.md.
+name: Conflicts
+
+on:
+  push:
+    branches: [main]
+  workflow_run:
+    workflows: ["Builds to update to"]
+    types: [requested]
+
+# A newer main says all there is to say, and so does a newer push to a
+# branch. The hidden mark in each comment, the pull request's commit and
+# main's, keeps a run that was stopped halfway from telling a pull request
+# twice about the same two commits. The event is in the group, so
+# a build of main, which this skips, stops no run of main.
+concurrency:
+  group: conflicts-${{ github.event_name }}-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  tell:
+    # A build of a push to a branch of this repository other than main.
+    if: >-
+      github.event_name == 'push' || (
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        github.event.workflow_run.head_branch != 'main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Tell each pull request that no longer merges
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Empty on a push to main. On a branch, the commit pushed, which
+          # the pull request may not show as its head yet.
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PUSHED: ${{ github.event.workflow_run.head_sha }}
+        run: go run ./cmd/speakertrail-release conflicts -branch "$BRANCH" -pushed "$PUSHED"

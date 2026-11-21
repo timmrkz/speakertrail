@@ -41,15 +41,14 @@ const ProfileField = "{{profile}}"
 
 // DefaultFirstMessagePrompt is the prompt until Tim puts his own in, the
 // one he wrote on 21 November 2026 with the examples he added, and the
-// portrait he asked for the same day.
-const DefaultFirstMessagePrompt = `You write one short German line for a LinkedIn message from Tim.
-It finishes this sentence: "Du bist mir in meinem LinkedIn Feed aufgefallen, weil …"
+// portrait he asked for the same day, as he then changed it in Settings.
+const DefaultFirstMessagePrompt = `You write one short German line for a LinkedIn message, that  Tim sends to new LinkedIn contacts. It finishes this sentence: "Du bist mir in meinem LinkedIn Feed aufgefallen, weil …"
 
-Tim makes the podcast "My First Memory" and coaches kids in Brazilian Jiu-Jitsu. He likes real products, sport, people who just start things and people who bring others together.
+Tim makes the podcast "My First Memory". He likes real products, sport, people who just start things and people who bring others together.
 
 Return JSON with three fields:
-- reason: the part after "weil". Verb at the end. End with "." or "!".
-- reaction: an optional short sentence. Usually "".
+- reason: the part after "weil". End with "." or "!".
+- reaction: an optional short sentence. Usually empty.
 - portrait: what they are, in one or two German words, the way they show themselves in their profile, like "Coach", "Lehrerin", "Macher" or "Unternehmerin". It finishes "um deine Geschichte als … zu erzählen".
 Reason and reaction together, under 150 characters.
 

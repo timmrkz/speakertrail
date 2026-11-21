@@ -70,7 +70,7 @@ than read with the eye:
 | `time` | the moment, to the millisecond, with the Mac's offset from UTC |
 | `level` | `error`, `warn`, `info`, `debug` or `trace` |
 | `start` | one start of the app, so a restart is seen and two starts never mix |
-| `from` | the part that wrote it: `app`, `api`, `engine`, `updates`, `wails`, `window` |
+| `from` | the part that wrote it: `app`, `api`, `engine`, `keys`, `updates`, `wails`, `window` |
 | `msg` | what happened, in words |
 
 Other fields come where they mean something: `act` for what the person
@@ -87,6 +87,12 @@ searches, so the start is `start`, and `run` is the run's id.
 
 No line holds a person's name, headline, profile link or notes, nor the
 Exa key. A person is named by id.
+
+Each read of the Exa key from the keychain is a line from `keys`, `the
+Exa key was read from the keychain`, with `ms`, whether it was `found`
+and the keychain's `status`, `0` when it was. The app reads the key at
+most once per start. A read that waits on a password box from macOS
+waits as long as the box is on screen, and `ms` shows how long.
 
 ### Acts
 

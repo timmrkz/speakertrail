@@ -116,18 +116,18 @@ func (keychain) has() bool {
 	return found
 }
 
-func (keychain) get() (string, bool) {
-	secret, ok := "", false
+func (keychain) get() (string, int) {
+	secret, status := "", 0
 	names(func(service, account *C.char) {
 		var out *C.char
 		var length C.long
-		if C.st_get(service, account, &out, &length) != 0 {
+		if status = int(C.st_get(service, account, &out, &length)); status != 0 {
 			return
 		}
 		defer C.st_forget(out, length)
-		secret, ok = C.GoStringN(out, C.int(length)), true
+		secret = C.GoStringN(out, C.int(length))
 	})
-	return secret, ok
+	return secret, status
 }
 
 func (keychain) set(secret string) error {

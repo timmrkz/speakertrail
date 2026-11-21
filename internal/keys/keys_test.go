@@ -1,6 +1,10 @@
 package keys
 
 import (
+	"bytes"
+	"encoding/json"
+	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -12,11 +16,14 @@ type memory struct {
 }
 
 func (m *memory) has() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.secret != "" }
-func (m *memory) get() (string, bool) {
+func (m *memory) get() (string, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reads++
-	return m.secret, m.secret != ""
+	if m.secret == "" {
+		return "", errItemNotFound
+	}
+	return m.secret, 0
 }
 func (m *memory) set(s string) error { m.mu.Lock(); defer m.mu.Unlock(); m.secret = s; return nil }
 func (m *memory) remove()            { m.mu.Lock(); defer m.mu.Unlock(); m.secret = "" }
@@ -46,10 +53,12 @@ func TestTheSavedKeyComesBeforeTheEnvironment(t *testing.T) {
 	}
 }
 
-// Every search of a run asks for the key, from several goroutines.
+// Every search of a run asks for the key, from several goroutines. The
+// keychain is read once, and the log says so once, never with the key.
 func TestTheKeyIsReadOnceFromSeveralGoroutines(t *testing.T) {
 	m := &memory{secret: "kept"}
-	e := &Exa{v: m, env: func(string) string { return "" }}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
@@ -65,6 +74,53 @@ func TestTheKeyIsReadOnceFromSeveralGoroutines(t *testing.T) {
 	if m.reads != 1 {
 		t.Errorf("the keychain was read %d times, want once", m.reads)
 	}
+	lines := strings.Split(strings.TrimSpace(logged.String()), "\n")
+	if len(lines) != 1 || strings.Contains(logged.String(), "kept") {
+		t.Fatalf("want one line without the key, got %q", lines)
+	}
+	var l map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &l); err != nil {
+		t.Fatal(err)
+	}
+	if l["msg"] != "the Exa key was read from the keychain" || l["ms"] == nil || l["found"] != true || l["status"] != float64(0) {
+		t.Errorf("line %v", l)
+	}
+}
+
+// A key that is not in the keychain is logged as not found, with the
+// keychain's status.
+func TestAMissingKeyIsLoggedAsNotFound(t *testing.T) {
+	var logged safeBuffer
+	e := &Exa{v: &memory{}, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	if e.Get() != "" {
+		t.Fatal("a key from nowhere")
+	}
+	var l map[string]any
+	if err := json.Unmarshal(logged.Bytes(), &l); err != nil {
+		t.Fatal(err)
+	}
+	if l["found"] != false || l["status"] != float64(errItemNotFound) {
+		t.Errorf("line %v", l)
+	}
+}
+
+// safeBuffer is a log several goroutines write to.
+type safeBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *safeBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *safeBuffer) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+func (s *safeBuffer) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return bytes.Clone(s.b.Bytes())
 }
 
 func TestNoKeychainSaysSo(t *testing.T) {

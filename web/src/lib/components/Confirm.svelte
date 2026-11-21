@@ -65,5 +65,5 @@
   h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }
   .body { color: var(--ink-2); margin-bottom: 16px; overflow-wrap: anywhere; }
   .body :global(p) { margin: 0; }
-  .buttons { display: flex; justify-content: flex-end; gap: 8px; }
+  .buttons { display: flex; justify-content: flex-end; gap: var(--gap-control); }
 </style>

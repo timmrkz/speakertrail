@@ -230,7 +230,7 @@
 <style>
   .first-message { display: grid; gap: 10px; }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
   /* Draft, Draft again and Cancel take the same place, each with room
      for the longest of them, see .room in app.css, so nothing moves when
      one turns into another. */

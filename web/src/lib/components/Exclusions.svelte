@@ -98,7 +98,7 @@
   .title { font-weight: 600; }
   .count { font-variant-numeric: tabular-nums; }
   details[open] > summary { margin-bottom: var(--gap-group); }
-  .phrases { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 var(--gap-group); padding: 0; list-style: none; min-width: 0; }
+  .phrases { display: flex; flex-wrap: wrap; gap: var(--gap-control); margin: 0 0 var(--gap-group); padding: 0; list-style: none; min-width: 0; }
   /* Shaped like a chip, but a label with its own remove button. */
   .phrase {
     height: 32px; padding: 0 2px 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface);
@@ -111,7 +111,7 @@
   }
   .remove:hover { background: var(--hover); color: var(--ink); }
   .remove:active { background: var(--press); }
-  .add { display: flex; gap: 8px; }
+  .add { display: flex; gap: var(--gap-control); }
   .add .input { flex: 1; min-width: 0; }
   .add .btn { flex: none; }
 </style>

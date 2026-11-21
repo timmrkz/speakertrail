@@ -124,7 +124,7 @@
   .info { display: grid; gap: 2px; min-width: 0; }
   .desc { font-weight: 500; font-size: 14px; }
   .path, .when { color: var(--ink-3); overflow-wrap: anywhere; user-select: text; }
-  .actions { display: flex; gap: 8px; }
+  .actions { display: flex; gap: var(--gap-control); }
   .count { font-variant-numeric: tabular-nums; }
   .logged { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; }
   /* Report shows on the toast in hand, as in FrameFairy, and greyed out

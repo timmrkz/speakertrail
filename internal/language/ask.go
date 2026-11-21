@@ -49,7 +49,17 @@ const stall = 2 * time.Minute
 // Ask asks the server for an answer to messages. heard is told the text
 // written so far, each time more arrives. The ask ends with ctx.
 func Ask(ctx context.Context, client *http.Client, s *Server, messages []Message, heard func(string)) (Answer, error) {
-	body, err := json.Marshal(map[string]any{
+	return AskFor(ctx, client, s, messages, nil, heard)
+}
+
+// AskFor is Ask for an answer in JSON that fits schema, a JSON Schema.
+// llama-server turns the schema into a grammar the model cannot write
+// outside of, see response_format in its README. What comes back is
+// still checked by the one who asked, because the grammar may leave out
+// a limit of the schema, and the answer may stop at MaxTokens. Nil asks
+// for plain text, as Ask does.
+func AskFor(ctx context.Context, client *http.Client, s *Server, messages []Message, schema json.RawMessage, heard func(string)) (Answer, error) {
+	ask := map[string]any{
 		"messages":   messages,
 		"max_tokens": MaxTokens,
 		// No thinking before the message. Gemma 4 thinks for minutes
@@ -57,7 +67,14 @@ func Ask(ctx context.Context, client *http.Client, s *Server, messages []Message
 		"reasoning_budget_tokens": 0,
 		"stream":                  true,
 		"stream_options":          map[string]any{"include_usage": true},
-	})
+	}
+	if schema != nil {
+		ask["response_format"] = map[string]any{
+			"type":        "json_schema",
+			"json_schema": map[string]any{"name": "answer", "strict": true, "schema": schema},
+		}
+	}
+	body, err := json.Marshal(ask)
 	if err != nil {
 		return Answer{}, err
 	}

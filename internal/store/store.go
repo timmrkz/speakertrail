@@ -83,6 +83,10 @@ type Data struct {
 	// Settings to draft with, downloaded or not. Empty until Tim picks one,
 	// and then the largest on the Mac drafts.
 	LanguageModel string `json:"language_model,omitempty"`
+	// Template is the template a first message is put together from, as
+	// Tim changed it in Settings, nil while it is his first one. See
+	// template.go.
+	Template *Template `json:"first_message_template,omitempty"`
 
 	// textsChanged says a profile text arrived since the texts were
 	// written, see SetProfileText.
@@ -395,6 +399,10 @@ func (d *Data) fill() {
 	}
 	delete(d.Settings, "linkedin_browser")
 	delete(d.Settings, "linkedin_profile")
+	// Builds of pull request 38 asked the model for a whole message with
+	// first_message_prompt. Since 21 November 2026 it writes the hook
+	// only, from hook_prompt, so a prompt kept under the old name goes.
+	delete(d.Settings, "first_message_prompt")
 	if d.Calls == nil {
 		d.Calls = map[string]map[string]int{}
 	}

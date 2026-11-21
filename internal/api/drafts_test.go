@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -31,9 +32,10 @@ func TestDraftAFirstMessage(t *testing.T) {
 	m := language.Models()[0]
 	a.Drafts = &draft.Drafter{Store: st, Host: host,
 		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
-		Ask: func(_ context.Context, _ *language.Server, _ []language.Message, _ func(string)) (language.Answer, error) {
-			return language.Answer{Text: "Hallo Mara, danke fürs Vernetzen!", Finish: "stop"}, nil
+		Ask: func(context.Context, *language.Server, []language.Message, json.RawMessage, func(string)) (language.Answer, error) {
+			return language.Answer{Text: `{"reason":"du töpferst.","reaction":"","portrait":"Töpferin"}`, Finish: "stop"}, nil
 		},
+		Pick: func(int) int { return 0 },
 	}
 	// Without a model, Draft is refused and says why.
 	a.Drafts.Model = func() (language.Model, string, error) { return language.Model{}, "", draft.ErrNoModel }
@@ -55,7 +57,8 @@ func TestDraftAFirstMessage(t *testing.T) {
 	}
 	var p personDetail
 	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
-	if p.Draft != "Hallo Mara, danke fürs Vernetzen!" || p.DraftedAt == nil || p.ProfileReadAt == nil {
+	if !strings.HasPrefix(p.Draft, "Hallo Mara,\n\nsuper cool mit dir zu connecten. Du bist mir in meinem LinkedIn Feed aufgefallen, weil du töpferst.\n") ||
+		!strings.Contains(p.Draft, "als Töpferin zu erzählen") || p.DraftedAt == nil || p.ProfileReadAt == nil {
 		t.Errorf("person %+v", p)
 	}
 	call(t, a, "PATCH", "/api/people/"+itoa(id), `{"draft":"Hallo Mara, danke!"}`, &p)

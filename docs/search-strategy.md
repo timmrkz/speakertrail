@@ -101,7 +101,8 @@ practices, most of them between 30 and 50. A founder who writes
   led to the most connections on top. A search Tim adds runs before the
   starting ones. The exclusions sit here too, behind one click.
 - **Settings**, the Exa key, the settings for profile searches, and the
-  language model with the prompt a first message is written from.
+  language model with the prompt it writes the hook of a first message
+  from, and the template the rest of the message is picked from.
 
 ## Connections steer the searches
 

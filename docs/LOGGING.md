@@ -107,7 +107,9 @@ An act never names a person. Whatever shows a person's words is marked
 `data-personal`: the rows of People, the person's view and the sheet it
 slides in on, the first message among them. A draft is logged by the
 person's id and its counts, how long it took and how much the model read
-and wrote, never by the profile, the prompt or the message. A control
+and wrote, never by the profile, the prompt or the message. An answer of
+the model that did not fit the schema is logged with what did not fit,
+never with the answer. A control
 there is named by its kind, `pressed a.prow`, or,
 for a button, by its own words, which are ours, `pressed button.btn
 "Connect"`. FrameFairy names a word clicked in its caption box as the
@@ -200,6 +202,7 @@ and shows it in Finder. In it:
 | `what-happened.txt` | what Tim wrote, when he wrote anything |
 | `about.json` | when it was made, the build, `start`, macOS, the chip and the memory |
 | `settings.json` | the settings Settings shows. Never the people, the searches, the notes or a key |
+| `first-message-template.json` | the first message template as Settings has it, in the shape of `internal/store/first_message_template.json` |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
 | `pictures/` | the screenshots, as PNG |
 

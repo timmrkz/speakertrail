@@ -226,7 +226,7 @@
      is a list. */
   .pick {
     display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
-    height: var(--control-h); padding: 0 8px 0 12px;
+    height: var(--control-h); padding: 0 8px 0 12px; max-width: var(--pick-max);
     border: var(--line-w) solid var(--line-strong); border-radius: 8px; background: var(--surface);
     color: var(--ink); text-align: left; cursor: pointer;
   }
@@ -239,6 +239,9 @@
   /* No edge while the list is open: the lit row in the list already says
      where the keyboard is. */
   .pick[aria-expanded='true']:focus-visible { outline: none; background-image: none; }
+  /* A list to pick from is a field, and shows focus the way a field does,
+     by its edge in the accent. */
+  .pick:focus-visible { outline: none; background-image: none; border-color: var(--accent); }
 
   /* The two lie on top of each other, so the box is as wide as the longest
      thing the list can say and what is picked is drawn in it. */

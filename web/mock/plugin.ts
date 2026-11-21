@@ -823,7 +823,7 @@ const ROUTES: [string, RegExp, Handler][] = [
 ]
 
 // The mock's Mac: Chrome with two invented profiles, nothing chosen yet.
-const browsers = [{ app: 'Google Chrome', profiles: [{ folder: 'Default', name: 'Privat' }, { folder: 'Profile 1', name: 'Arbeit' }] }]
+const browsers = [{ app: 'Google Chrome', profiles: [{ folder: 'Default', name: 'Privat' }, { folder: 'Profile 1', name: 'Arbeit' }, { folder: 'Profile 2', name: 'Kunden, Projekte und alles für den Podcast' }] }]
 const linkedin = { app: 'Google Chrome', folder: '' }
 const where = () => ({ ...linkedin, known: browsers.some((b) => b.app === linkedin.app && b.profiles.some((p) => p.folder === linkedin.folder)), browsers })
 

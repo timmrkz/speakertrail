@@ -42,26 +42,35 @@ const lum = (d, i) => {
 }
 const contrast = (a, b) => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 
-// How much of the edge of a control changes, with focus and without it,
-// by a contrast of 3 to 1 or more, the least WCAG asks of what marks
-// focus. The edge is what marks it, so the edge is where it is measured:
-// at each point along it, the most any of the device pixels of its
-// outermost CSS pixel changed, so a box that starts between two pixels is
-// measured the same. The round corners are left out.
+// How much of the mark of focus changes, with focus and without it, by a
+// contrast of 3 to 1 or more, the least WCAG asks of what marks focus. A
+// button wears a ring round it and a row an edge inside it, see
+// :focus-visible in app.css, so the mark is measured where the control
+// draws it: the band its outline covers, out from its edge or in from
+// it. At each point along the band, the most any of its device pixels
+// changed counts, so a box that starts between two pixels is measured
+// the same. The round corners are left out.
 async function edgeChange(page, control) {
   await page.mouse.move(0, 0)
   await page.keyboard.press('Shift')
   await control.focus()
   if (!(await control.evaluate((e) => e.matches(':focus-visible')))) return { error: 'it took focus without showing it as the keyboard\'s' }
-  const corner = await control.evaluate((e) => parseFloat(getComputedStyle(e).borderTopLeftRadius) || 0)
+  const { corner, out } = await control.evaluate((e) => {
+    const s = getComputedStyle(e)
+    // How far out from the edge the band ends: the ring's offset and
+    // width for a ring, nothing for an edge drawn inside.
+    const offset = parseFloat(s.outlineOffset) || 0
+    return { corner: parseFloat(s.borderTopLeftRadius) || 0, out: offset > 0 ? offset + (parseFloat(s.outlineWidth) || 0) : 0 }
+  })
   // Each state is taken where the control is then, since focus can
   // scroll it into view.
+  const grow = (r) => ({ x: r.x - out, y: r.y - out, width: r.width + 2 * out, height: r.height + 2 * out })
   const around = (r) => ({ x: Math.floor(r.x) - 1, y: Math.floor(r.y) - 1, width: Math.ceil(r.width) + 3, height: Math.ceil(r.height) + 3 })
-  const r = await control.boundingBox()
+  const r = grow(await control.boundingBox())
   const box = around(r)
   const lit = await pixels(page, box)
   await control.evaluate((e) => e.blur())
-  const rest = await pixels(page, around(await control.boundingBox()))
+  const rest = await pixels(page, around(grow(await control.boundingBox())))
   const scale = rest.w / box.width
   // The control's own box in device pixels, inside the screenshot.
   const left = Math.ceil((r.x - box.x) * scale)
@@ -69,7 +78,7 @@ async function edgeChange(page, control) {
   const right = Math.floor((r.x + r.width - box.x) * scale) - 1
   const bottom = Math.floor((r.y + r.height - box.y) * scale) - 1
   const depth = Math.ceil(scale) + 1
-  const skip = Math.ceil(corner * scale)
+  const skip = Math.ceil((corner + out) * scale)
   const change = (x, y) => {
     const i = (y * rest.w + x) * 4
     return contrast(lum(rest.data, i), lum(lit.data, i))

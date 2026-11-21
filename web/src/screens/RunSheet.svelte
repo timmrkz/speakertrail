@@ -204,7 +204,6 @@
   .f-name { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
   .f-reason { font-size: 13px; color: var(--bad); }
   /* Every action in the list has the width of the longest, Check again. */
-  .act { min-width: 7.6em; justify-content: center; }
   .pill.act { height: 30px; border-radius: 8px; }
   .checks { display: grid; gap: 8px; }
   .check { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }

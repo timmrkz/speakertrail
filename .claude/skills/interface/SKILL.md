@@ -150,20 +150,35 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   4.5 to 1 in every state. A list to pick from marks its choice the way
   a Mac menu does, with a tick and the words in `--chosen-ink`, since a
   tint there would read as the row under the pointer.
-- **Focus is never a ring.** Tim found the outlines round focused
-  controls loud and wrong. A field in use shows the accent on its edge.
-  Anything else reached with the keyboard shows it too, 2 px inside its
-  own edge, with a faint wash of the accent over its own colour: the
-  page's colour on a primary control, its red on one that removes. The
-  wash alone was too faint to find, Tim said on 17 November 2026, and
-  `walks/focus.mjs` measures that the edge changes by 3 to 1 in both
-  themes, see `:focus-visible` in `app.css`. What is selected already,
-  like the open person's row, shows nothing more.
+- **A button in focus wears a ring, a field its edge.** A button, a
+  chip or a switch reached with the keyboard wears a ring 2 px out from
+  its edge and 2 px wide, in its own colour: the accent for a plain or a
+  primary button, red for one that removes, green for a toggle that is
+  on. Tim asked for it testing #46 on 21 November 2026, after the edge
+  cut inside a primary in the page's colour looked like a hole. Three
+  variations of it are in `screenshots/issue-45/focus/` in the project's
+  shared folder. A field in use, and a list to pick from, show
+  the accent on their own edge and nothing more. A row, a page in the
+  sidebar and a segment of a choice show the accent 2 px inside their
+  edge with a faint wash, since a ring would be cut off by the list or
+  pane round them. The wash alone was too faint to find, Tim said on 17
+  November 2026. `walks/focus.mjs` measures that the ring or the edge
+  changes by 3 to 1 in both themes, see `:focus-visible` in `app.css`.
+  What is selected already, like the open person's row, shows nothing
+  more.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
   rows, each a name over one line of what is known, with what is
   connected in green at its start. Tim asked for one look for all lists
   on 14 November 2026.
+- **A control is as wide as its words.** A button fits what it says,
+  never a width guessed in `em`. One that answers a click with other
+  words, Run with Starting, Check with Checking, keeps room for the
+  longer with `.room` and `data-room` in `app.css`, so it does not
+  change width under the pointer. A list to pick from is as wide as the
+  longest thing it can say, up to `--pick-max`, and cuts the rest with an
+  ellipsis. Tim found Check and the LinkedIn profile list too wide
+  testing #46, and `walks/look.mjs` measures both.
 - **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
   built on bits-ui, so a list looks the same in the window on a Mac as it
   does in the harness, and a row can say more than a name: a size, a

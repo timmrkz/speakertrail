@@ -160,13 +160,13 @@
         {#if update.phase === 'ready'}
           <button class="btn primary act" type="button" onclick={relaunch} disabled={restarting || !!working}
             title={working ? `Waits until ${working} is done` : 'Quits and comes back as the new build'}>
-            {restarting ? 'Relaunching' : 'Relaunch'}
+            <span class="room" data-room="Relaunching">{restarting ? 'Relaunching' : 'Relaunch'}</span>
           </button>
         {:else if !update.off && following}
           <button class="btn act" type="button" onclick={check} disabled={looking || downloading}
             title="Look for a newer build now">
             {#if looking || downloading}<Busy fraction={downloading && update.total ? update.written / update.total : -1} />{/if}
-            {downloading ? 'Downloading' : looking ? 'Checking' : update.phase === 'failed' ? 'Try again' : 'Check'}
+            <span class="room" data-room="Checking">{downloading ? 'Downloading' : looking ? 'Checking' : update.phase === 'failed' ? 'Try again' : 'Check'}</span>
           </button>
         {/if}
       </div>
@@ -199,8 +199,9 @@
   .mark.ok { color: var(--good); }
   .mark.warn { color: var(--warn); }
   .mark.err { color: var(--bad); }
-  /* Room for the longest word, so the button keeps its width. */
-  .act { flex: none; min-width: 7.6em; justify-content: center; }
+  /* Room for the word a click answers with, Checking, see .room in
+     app.css. A download that starts by itself may widen it. */
+  .act { flex: none; }
   .progress { margin-top: 6px; }
   .said { padding-top: 10px; padding-bottom: 10px; }
   .said code {

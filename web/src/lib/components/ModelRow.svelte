@@ -227,11 +227,11 @@
           <!-- The download carries the beam and the fill in the one control
                that can do something about it. -->
           <button class="btn act" type="button" disabled={cancelling} onclick={cancel} title={cancelTitle(running.progress)}>
-            <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
+            <Busy {fraction} /><span class="room" data-room="Cancelling" data-room-2="Download">{cancelling ? 'Cancelling' : 'Cancel'}</span>
           </button>
         {:else if model && !model.installed}
           <button class="btn act" type="button" disabled={starting} onclick={download} title={downloadTitle(model)}>
-            {#if starting}<Busy />{/if}{starting ? 'Starting' : 'Download'}
+            {#if starting}<Busy />{/if}<span class="room" data-room="Cancelling" data-room-2="Download">{starting ? 'Starting' : 'Download'}</span>
           </button>
         {/if}
         {#if pick}

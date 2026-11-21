@@ -260,7 +260,7 @@
         disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
         title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
         {#if going}<Busy fraction={runShare(going)} />{/if}
-        <Icon name={going ? 'stop' : 'run'} />{runLabel}
+        <Icon name={going ? 'stop' : 'run'} /><span class="room" data-room="Starting" data-room-2="Stopping">{runLabel}</span>
         </button>
       </div>
       <div class="segmented filters" role="group" aria-label="Show">
@@ -389,8 +389,6 @@
   .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
-  /* Room for the longest label, Starting or Stopping, so the button keeps its width. */
-  .start { min-width: 7.4em; }
   .controls .toolbar { flex-wrap: nowrap; }
   .controls .toolbar > :global(.search) { flex: 1 1 0; }
   /* A phone-wide window gives the search field a line of its own, and

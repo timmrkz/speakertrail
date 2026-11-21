@@ -300,6 +300,47 @@ for (const theme of ['light', 'dark']) {
   })
   walks.push({
     theme,
+    name: `In ${theme}, a list to pick from is no wider than its cap, and a button no wider than its words`,
+    async run(page) {
+      const wrong = []
+      // Tim found the LinkedIn profile list as wide as its longest name,
+      // and Check on Updates far wider than its word, testing #46.
+      await page.goto(`${url}/app/settings`)
+      // Enabled once the browser profiles are known, so it is as wide as
+      // their longest name.
+      const pick = page.locator('#linkedin-profile:enabled')
+      await pick.waitFor()
+      const p = await pick.evaluate((e) => {
+        const probe = document.createElement('i')
+        probe.style.cssText = 'position: absolute; display: block; width: var(--pick-max)'
+        e.append(probe)
+        const cap = probe.getBoundingClientRect().width
+        probe.remove()
+        return { width: e.getBoundingClientRect().width, cap }
+      })
+      if (p.width > p.cap + 0.5) wrong.push(`the LinkedIn profile list is ${Math.round(p.width)} px wide, over its cap of ${Math.round(p.cap)} px`)
+      await page.goto(`${url}/app/updates`)
+      const check = page.locator('main button.act', { hasText: 'Check' })
+      await check.waitFor()
+      const c = await check.evaluate((e) => {
+        // The widest word it may say as the answer to a click, set in its
+        // own font, with its padding and its line.
+        const s = getComputedStyle(e)
+        const probe = document.createElement('span')
+        probe.textContent = 'Checking'
+        probe.style.cssText = 'position: absolute; visibility: hidden; white-space: nowrap'
+        e.append(probe)
+        const words = probe.getBoundingClientRect().width
+        probe.remove()
+        const frame = parseFloat(s.paddingLeft) + parseFloat(s.paddingRight) + parseFloat(s.borderLeftWidth) + parseFloat(s.borderRightWidth)
+        return { width: e.getBoundingClientRect().width, most: words + frame }
+      })
+      if (c.width > c.most + 1) wrong.push(`Check is ${Math.round(c.width)} px wide, where its longest answer needs ${Math.round(c.most)} px`)
+      return wrong.join(', ')
+    },
+  })
+  walks.push({
+    theme,
     name: `In ${theme}, the fill of a run stands out from its track, the band over it shows, and the band stays on the fill`,
     async run(page) {
       await page.goto(`${url}/app/people`)

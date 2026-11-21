@@ -204,13 +204,13 @@
            can do something about it, as a download does in Settings. -->
       <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
         title="Stop writing. The message before it stays as it was">
-        <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
+        <Busy {fraction} /><span class="room" data-room="Cancelling" data-room-2="Draft again">{cancelling ? 'Cancelling' : 'Cancel'}</span>
       </button>
     {:else}
       <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
         title={noModel ? languageWatch.state.standing.why
           : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
-        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
+        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} /><span class="room" data-room="Cancelling" data-room-2="Draft again">{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}</span>
       </button>
     {/if}
     {#if text && !busy}
@@ -225,9 +225,10 @@
   .first-message { display: grid; gap: 10px; }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-  /* Draft, Draft again and Cancel take the same place, as wide as the
-     longest of them, so nothing moves when one turns into another. */
-  .act { position: relative; min-width: 9.5em; }
+  /* Draft, Draft again and Cancel take the same place, each with room
+     for the longest of them, see .room in app.css, so nothing moves when
+     one turns into another. */
+  .act { position: relative; }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

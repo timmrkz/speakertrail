@@ -155,8 +155,9 @@ messages, pull request text, code comments and chat replies.
 - **Help waits until it is asked for.** No line of instructions sits on
   screen for good. What a control is for goes in its `title` or behind a
   small info mark.
-- **A row never changes width as you use it.** A label that toggles gets
-  room for the longer word, so nothing wraps and nothing jumps.
+- **A row never changes width as you use it.** A button is as wide as its
+  words. One that answers a click with other words keeps room for the
+  longer, with `.room` in `app.css`, never a width guessed in `em`.
 - **Controls in one row have the same size.** No one-off sizes.
 - **What cannot be taken back asks first.** Everything else saves at once
   and is undone with a click. No save buttons, except a form that adds
@@ -185,9 +186,9 @@ messages, pull request text, code comments and chat replies.
 - **Flat.** No shadows, no blur, no glassy edges, solid colours in both
   themes (Tim, 21 November 2026). Hover, pressed, chosen and greyed out
   come from the state tokens in `app.css`, the same for every control.
-- **Quiet marks.** No rings around a control for focus and no lines or
-  patterns in the background. Focus is the control's own edge in the
-  accent. What is in hand gets a faint tint, see the interface skill.
+- **Quiet marks.** No lines or patterns in the background. A button in
+  focus wears a ring in its own colour, a field shows only its edge in
+  the accent (Tim, 21 November 2026). See the interface skill.
 
 ## Engineering rules
 

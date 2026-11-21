@@ -97,7 +97,7 @@
   .desc { font-weight: 500; font-size: 14px; }
   .state { color: var(--ink-3); overflow-wrap: anywhere; }
   .editor { display: flex; justify-content: flex-end; min-width: 0; }
-  .editor :global(.pick) { width: max-content; max-width: 100%; }
+  .editor :global(.pick) { width: max-content; max-width: min(100%, var(--pick-max)); }
   .foot { grid-column: 1 / -1; display: flex; gap: 10px; justify-content: flex-end; margin: 0; }
   .foot:empty { display: none; }
   .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }

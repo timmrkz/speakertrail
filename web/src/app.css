@@ -43,6 +43,9 @@
   --ink-0: #16171a;
   --on-ink-0: #ebe8e3;
   --control-h: 36px;
+  /* A list to pick from is as wide as the longest thing it can say, up to
+     this, and cuts what is longer with an ellipsis. */
+  --pick-max: 15em;
   /* How thick the line round a control or a list is, and the line between
      two rows of a list. The beam of work in hand runs on it, see Busy, so
      the two are the one number. */
@@ -203,25 +206,27 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-/* Focus is never a ring around a control. Tim found the rings loud and
-   wrong. A field in use takes the accent on its edge, and so does
-   anything else reached with the keyboard, with a faint wash of it laid
-   over its own colour. The wash alone was too faint to find, Tim said
-   testing #24 on 17 November 2026.
-   The edge is an outline 2 px wide drawn inside the control, over its
-   own border where it has one, so it follows its corners and lays
-   nothing out again. */
+/* Focus. A button reached with the keyboard wears a ring round it, 2 px
+   out from its edge and 2 px wide, in its own colour: the accent for a
+   plain or a primary button, red for one that removes, green for a
+   toggle that is on. Tim asked for it testing #46 on 21 November 2026:
+   the edge cut inside a primary in the page's colour looked like a hole,
+   and FrameFairy rings its buttons too.
+   A field shows focus by its edge alone, in the accent, and a list to
+   pick from is a field. A row, a page in the sidebar and a segment of a
+   choice keep the edge inside them, 2 px of the accent over their own
+   border with a faint wash of it, since a ring would be cut off by the
+   list or the pane round them. The wash alone was too faint to find, Tim
+   said testing #24 on 17 November 2026. */
 :focus, :focus-visible { outline: none; }
-:is(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
+:where(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--accent); outline-offset: -2px;
   background-image: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
 }
-/* A primary control is the accent already, so its edge is cut in the
-   page's own colour instead. */
-.btn.primary:focus-visible { outline-color: var(--bg); }
-/* A control that removes something wears its own red, which is about as
-   bright as the accent in dark, so its edge turns that red in full. */
+:is(.btn, .chip, .switch):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; background-image: none; }
 .btn.danger:focus-visible { outline-color: var(--bad); }
+.btn.good[aria-pressed="true"]:focus-visible { outline-color: var(--good); }
+.btn.bad[aria-pressed="true"]:focus-visible { outline-color: var(--bad); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }
@@ -309,6 +314,15 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
+/* The words of a control that answers a click with other words, like
+   Run and Starting. The control keeps room for the longer answer, named
+   in data-room and data-room-2, so it never changes width as it is used,
+   and it is no wider than its words, Tim asked testing #46. The room is
+   drawn and hidden, and is no part of the control's text. */
+.room { display: inline-grid; justify-items: center; }
+.room::before { content: attr(data-room-2); }
+.room::after { content: attr(data-room); }
+.room::before, .room::after { height: 0; overflow: hidden; visibility: hidden; white-space: nowrap; }
 .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .row.end { justify-content: flex-end; }
 .row.between { justify-content: space-between; }

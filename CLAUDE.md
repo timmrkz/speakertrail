@@ -182,6 +182,9 @@ messages, pull request text, code comments and chat replies.
   are the same size, in the same colour, in the same place.
 - Colours and sizes come from the tokens in `web/src/app.css`, in both
   themes. Tabular figures for times and counts.
+- **Flat.** No shadows, no blur, no glassy edges, solid colours in both
+  themes (Tim, 21 November 2026). Hover, pressed, chosen and greyed out
+  come from the state tokens in `app.css`, the same for every control.
 - **Quiet marks.** No rings around a control for focus and no lines or
   patterns in the background. Focus is the control's own edge in the
   accent. What is in hand gets a faint tint, see the interface skill.

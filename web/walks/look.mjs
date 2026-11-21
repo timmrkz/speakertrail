@@ -196,7 +196,42 @@ for (const theme of ['light', 'dark']) {
   })
   walks.push({
     theme,
-    name: `In ${theme}, the fill of a run stands out from its track, its light too`,
+    name: `In ${theme}, the controls of Settings and Searches read in every state, and chosen is the same tint as in People`,
+    async run(page) {
+      await page.goto(`${url}/app/settings`)
+      await page.locator('main button', { hasText: 'System' }).waitFor()
+      await page.waitForLoadState('networkidle')
+      await page.evaluate(helpers)
+      const wrong = []
+      const controls = [
+        ['Download', page.locator('.speech button.act')],
+        ['Remove', page.locator('main button.btn', { hasText: /^Remove$/ })],
+        ['the theme chosen', page.locator('main .segmented button[aria-pressed="true"]')],
+        ['a theme not chosen', page.locator('main .segmented button[aria-pressed="false"]').first()],
+        ['the LinkedIn profile', page.locator('main .pick').first()],
+        ['Downloaded models', page.locator('main .disclose')],
+      ]
+      for (const [name, control] of controls) wrong.push(...(await states(page, name, control)))
+      await page.mouse.move(1, 1)
+      const theme = await page.evaluate(() => getComputedStyle(document.querySelector('main .segmented button[aria-pressed="true"]')).backgroundColor)
+      const page2 = await page.evaluate(() => getComputedStyle(document.querySelector('aside .nav[aria-current="page"]')).backgroundColor)
+      if (theme !== page2) wrong.push(`the theme chosen is ${theme}, Settings in the sidebar ${page2}`)
+      await page.goto(`${url}/app/searches`)
+      await page.locator('main button.toggle').first().waitFor()
+      await page.evaluate(helpers)
+      for (const [name, control] of [
+        ['Add', page.locator('main button.btn.primary', { hasText: 'Add' })],
+        ['Pause', page.locator('main button.toggle').first()],
+      ]) wrong.push(...(await states(page, name, control)))
+      // A quiet button has no ground to grey, so only its words are read.
+      wrong.push(...(await greyed(page, [['Add', page.locator('main button.btn.primary', { hasText: 'Add' })]])))
+      wrong.push(...(await greyed(page, [['Pause', page.locator('main button.toggle').first()]])))
+      return wrong.join('\n\t')
+    },
+  })
+  walks.push({
+    theme,
+    name: `In ${theme}, the fill of a run stands out from its track, its light too, and the light stays on the fill`,
     async run(page) {
       await page.goto(`${url}/app/people`)
       await page.locator('main button.start').click()
@@ -214,6 +249,47 @@ for (const theme of ['light', 'dark']) {
         return { fill: contrast(done, track), lit: contrast(lit, track) }
       })
       const wrong = []
+      // The light travels over what is done and never on past it onto the
+      // track. The run moves on by itself, so a fill of its own, a third
+      // done, is laid beside the run's, every animation on the page is
+      // held at points along the light's way, and the track just past the
+      // fill is read off the screen at each.
+      const third = await fill.evaluate((i) => {
+        const bar = document.createElement('div')
+        bar.className = 'progress'
+        bar.id = 'look-third'
+        bar.innerHTML = '<i style="width: 33%"></i>'
+        i.parentElement.after(bar)
+        return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(true))))
+      })
+      const own = page.locator('#look-third > i')
+      for (const at of third ? [0.5, 0.7, 0.9] : []) {
+        const strip = await own.evaluate((i, at) => {
+          for (const a of document.getAnimations()) {
+            a.pause()
+            const d = a.effect?.getComputedTiming().duration
+            if (typeof d === 'number' && Number.isFinite(d)) a.currentTime = d * at
+          }
+          const f = i.getBoundingClientRect()
+          const t = i.parentElement.getBoundingClientRect()
+          return { x: Math.ceil(f.right) + 2, y: Math.round(t.top + t.height / 2), width: Math.min(40, Math.floor(t.right - f.right) - 8), track: window.look.ground(i.parentElement).slice(0, 3) }
+        }, at)
+        if (strip.width < 8) break
+        const png = await page.screenshot({ clip: { x: strip.x, y: strip.y, width: strip.width, height: 1 }, caret: 'hide' })
+        const lit = await page.evaluate(async ({ b64, track }) => {
+          const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' }))
+          const c = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')
+          c.drawImage(bitmap, 0, 0)
+          const d = c.getImageData(0, 0, bitmap.width, bitmap.height).data
+          let most = 0
+          for (let k = 0; k < d.length; k += 4) most = Math.max(most, ...[0, 1, 2].map((n) => Math.abs(d[k + n] - track[n])))
+          return most
+        }, { b64: png.toString('base64'), track: strip.track })
+        if (lit > 4) {
+          wrong.push(`the light runs on past the fill onto the track, ${Math.round(at * 100)} % of the way through it lights the track by ${lit} of 255`)
+          break
+        }
+      }
       if (m.fill < 3) wrong.push(`the fill stands out from its track at ${m.fill.toFixed(2)} to 1`)
       if (m.lit < 3) wrong.push(`the light on the fill stands out from its track at ${m.lit.toFixed(2)} to 1`)
       return wrong.join(', ')

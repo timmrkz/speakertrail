@@ -413,8 +413,10 @@ button { -webkit-tap-highlight-color: transparent; }
 .progress {
   position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: var(--track);
 }
+/* The fill clips its own light, so the light never runs on past what is
+   done onto the track, where it would read as more done than there is. */
 .progress > i {
-  display: block; position: relative; height: 100%; border-radius: 4px; background: var(--accent);
+  display: block; position: relative; height: 100%; border-radius: 4px; background: var(--accent); overflow: hidden;
   transition: width .4s cubic-bezier(.4, 0, .2, 1);
 }
 /* A light travels over what is done, so the bar lives while the number

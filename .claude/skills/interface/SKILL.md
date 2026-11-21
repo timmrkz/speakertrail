@@ -112,19 +112,31 @@ the time left only shrinks.
 Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
 mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
 
-- **The mist lies behind the window.** `--mist` in `app.css` draws the
-  soft fog, once, on the shell. Nothing else draws a background picture.
-  No lines or patterns in it: Tim found the contour lines of the mockup
-  distracting and had them taken out.
-- **Panes over it are frosted.** The sidebar, the title bar, the person's
-  pane, panels and lists use `--glass` or `--side` with
-  `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
-  `--surface`, so text over moving content is always readable.
-- **What is chosen lies on its pane like glass.** A pressed filter, the
-  page in the sidebar and the open person all take `--chosen`: the bright
-  top edge every pane has and a soft shadow. No blur of their own, since
-  what lies under them is a plain fill or a pane that blurs already, and
-  a second blur there changed no pixel a person could see.
+- **Flat, in solid colours.** Tim asked for it on 21 November 2026,
+  issue #45: no shadows, no frosted glass, no mist behind the window and
+  no bright edge on what is chosen. He disliked the 3D look of the chosen
+  page in the sidebar. A pane, a list, a panel and a control lie on the
+  page in a solid `--surface` or `--side`, set apart by colour and a line.
+  A layer over the page, a list to pick from, a bubble, a dialog, a sheet,
+  a toast, has a `--line-strong` edge instead of a shadow. Where a line
+  must take no room it is an inset box-shadow one pixel wide with no blur,
+  which the walk counts as a line. The light of work in hand, the beam,
+  glows on purpose and is the one exception. `walks/look.mjs` checks every
+  screen for a shadow, a blur or a filter.
+- **Every control takes its states from the same tokens.** Under the
+  pointer `--hover`, pressed `--press`, both a little of the ink over what
+  is there, or `--surface-hover` and `--surface-press` for a control with
+  a ground of its own, so the two look alike side by side. The primary
+  button moves toward the ink, `--accent-hover` and `--accent-press`,
+  darker in light and lighter in dark. A button that cannot be pressed is
+  `--disabled` with `--disabled-ink`, the same grey in every kind, never
+  a paler copy of itself, except one with the beam, which works at full
+  strength. A new control uses these tokens and never a number of its own.
+- **What is chosen is one flat tint.** The page in the sidebar, the
+  filter shown, the theme chosen, a pressed chip and the open person all
+  wear `--chosen`, deeper under the pointer and pressed, with their words
+  in `--chosen-ink`, the accent a shade toward the ink so they read at
+  4.5 to 1 in every state.
 - **Focus is never a ring.** Tim found the outlines round focused
   controls loud and wrong. A field in use shows the accent on its edge.
   Anything else reached with the keyboard shows it too, 2 px inside its
@@ -136,7 +148,7 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   like the open person's row, shows nothing more.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
-  frosted rows, each a name over one line of what is known, with what is
+  rows, each a name over one line of what is known, with what is
   connected in green at its start. Tim asked for one look for all lists
   on 14 November 2026.
 - **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
@@ -157,7 +169,10 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   container query on a pane that another pane squeezes brings the shuffle
   back. `web/walks/person.mjs` checks it.
 - **Every colour has a light and a dark value.** Check both, and check that
-  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
+  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--surface`,
+  in every state. `walks/look.mjs` measures the words of the controls at
+  rest, under the pointer and pressed, and that a run's fill and the
+  light on it stand out from the track by 3 to 1.
 
 ## What to report
 

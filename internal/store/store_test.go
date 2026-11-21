@@ -263,16 +263,20 @@ func TestListPeople(t *testing.T) {
 			}
 		}
 	}
-	same("young first", list(PeopleQuery{}), dana, young, old, unknown)
-	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, young, old)
-	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, young, dana)
-	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, dana, young)
-	same("under 30", list(PeopleQuery{Filter: "young"}), dana, young)
+	// Someone Tim connected with is only under Connected, so All and
+	// Under 30 hold whom he can still reach out to.
+	same("young first", list(PeopleQuery{}), dana, old, unknown)
+	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, old)
+	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, dana)
+	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, dana)
+	same("under 30", list(PeopleQuery{Filter: "young"}), dana)
 	same("connected", list(PeopleQuery{Filter: "connected"}), young)
 	same("words", list(PeopleQuery{Q: "dana"}), dana)
+	same("words of someone connected", list(PeopleQuery{Q: "cem"}))
+	same("words of someone connected, under Connected", list(PeopleQuery{Q: "cem", Filter: "connected"}), young)
 
 	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: t0})
-	if counts["all"] != 4 || counts["young"] != 2 || counts["connected"] != 1 {
+	if counts["all"] != 3 || counts["young"] != 1 || counts["connected"] != 1 {
 		t.Errorf("counts = %v", counts)
 	}
 	for _, f := range []string{"founder", "kept", "skipped"} {
@@ -289,18 +293,19 @@ func TestListPeople(t *testing.T) {
 	if err != nil || x.Phrase != "online marketing" {
 		t.Fatalf("added %+v, %v", x, err)
 	}
-	same("with an exclusion", list(PeopleQuery{}), young, old, unknown)
+	same("with an exclusion", list(PeopleQuery{}), old, unknown)
+	same("with an exclusion, connected", list(PeopleQuery{Filter: "connected"}), young)
 	if h := d.Hidden(); len(h) != 1 || h[dana.ID] != "online marketing" {
 		t.Errorf("hidden = %v", h)
 	}
 	_, counts, _ = d.ListPeople(PeopleQuery{Now: t0})
-	if counts["all"] != 3 || counts["young"] != 1 {
+	if counts["all"] != 2 || counts["young"] != 0 || counts["connected"] != 1 {
 		t.Errorf("counts with an exclusion = %v", counts)
 	}
 	if !d.DeleteExclusion(x.ID) || d.DeleteExclusion(x.ID) {
 		t.Error("an exclusion should be removed once")
 	}
-	same("without it", list(PeopleQuery{}), dana, young, old, unknown)
+	same("without it", list(PeopleQuery{}), dana, old, unknown)
 }
 
 func TestExclusions(t *testing.T) {

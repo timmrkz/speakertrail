@@ -21,6 +21,10 @@ types.
 `young` or `connected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
+Someone Tim connected with is only under `connected`. `all` and `young`
+hold the people he has not connected with yet, so they shrink as he
+connects.
+
 People whom one of Tim's exclusions leaves out are not in the list or the
 counts, unless Tim connected with them, see [Exclusions](#exclusions).
 

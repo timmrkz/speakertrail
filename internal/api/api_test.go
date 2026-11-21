@@ -132,6 +132,15 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if !detail.Connected || detail.Notes != "Ask about the studio" || len(detail.Sightings) != 1 || detail.Sightings[0].Source != "Gründerin Köln" {
 		t.Errorf("detail = %+v", detail)
 	}
+	// Connected, she leaves All for Connected.
+	call(t, a, "GET", "/api/people?filter=all", "", &people)
+	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["young"] != 0 || people.Counts["connected"] != 1 {
+		t.Errorf("people once connected = %+v", people)
+	}
+	call(t, a, "GET", "/api/people?filter=connected", "", &people)
+	if len(people.People) != 1 || people.People[0].ID != p.ID {
+		t.Errorf("connected = %+v", people)
+	}
 	if code := call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":"maybe"}`, nil); code != http.StatusBadRequest {
 		t.Errorf("connected that is no yes or no: %d", code)
 	}

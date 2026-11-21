@@ -111,8 +111,8 @@ half and the part changes no order.
 
 ### 5. Like your picks
 
-What the people Tim connected with have in common, against everyone
-else found. Each person is described by a few plain **traits**, all
+What the people Tim connected with have in common, against the people
+he rejected. Each person is described by a few plain **traits**, all
 read from what the file already holds:
 
 - each rubric signal they show
@@ -126,13 +126,16 @@ read from what the file already holds:
 - how many follow them: under 500, 500 to 5000, more
 - whether the profile has an About
 
-For each trait the app counts how often Tim connected with people who
-have it, against how often he connected with anyone. A trait twice as
-common among his connections counts for, one half as common counts
-against. A trait fewer than 3 people have counts nothing. Every count
-starts with 5 people's worth of doubt, so a trait seen once or twice
-moves little. The 5 strongest traits of a person add up to the part,
-from none to all of it. With no connections yet every person gets half.
+Only people Tim decided on teach it, those he connected with and those
+he rejected. Open people are his to-do, not a no, so they teach nothing.
+For each trait the app counts how often Tim connected, rather than
+rejected, people who have it, against how often he connected overall. A
+trait twice as common among his connections counts for, one half as
+common counts against. A trait fewer than 3 decided people have counts
+nothing. Every count starts with 5 people's worth of doubt, so a trait
+seen once or twice moves little. The 5 strongest traits of a person add
+up to the part, from none to all of it. Until Tim has both connected
+with and rejected someone, every person gets half.
 
 **It grows with Tim's choices.** The part's share of the 100 points
 starts at nothing and grows with the number of people Tim connected
@@ -189,9 +192,11 @@ Rejected, and Undo brings them back. A profile search finds a person by
 their own profile, so the profile cannot be someone else's, and in
 practice a rejection is Tim saying no to the person.
 
-So the fit learns from it, with no new mark. For Like your picks a
-rejected person counts as three open people, because an open person may
-simply not have been looked at yet. Undo takes the no back.
+So the fit learns from it, with no new mark and no reason to give.
+Tim, 21 November 2026: he either connects or rejects, and everyone else
+is still his to do. A reason is not needed, because the traits of the
+people he rejected, set against those he connected with, show what they
+have in common. Undo takes the no back.
 
 ## How the fit steers the searches
 
@@ -224,6 +229,13 @@ never adds one itself, because an exclusion hides people.
 its index finds people like a person Tim connected with this way, with
 `livecrawl` never and only LinkedIn profiles in the answer, is checked
 on Tim's Mac before anything is built on it.
+
+**Later, in words.** The local language model that writes drafts could
+read the headlines of the people Tim connected with and those he
+rejected, and say in a sentence what sets them apart, as a suggestion
+for new searches and exclusions. It adds nothing to the counting, which
+already finds those traits, and a draft already takes a while on the
+Mac. It waits until the counting has been tried.
 
 ## How we know it works
 

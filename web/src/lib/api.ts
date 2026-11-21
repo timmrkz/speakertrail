@@ -789,7 +789,8 @@ export const api = {
   // Puts Tim's first template back, and putTemplate the one before.
   resetTemplate: () => request<FirstMessageTemplate>('DELETE', '/api/template', {}),
   putTemplate: (parts: TemplatePart[]) => request<FirstMessageTemplate>('PUT', '/api/template', { parts }),
-  templateExample: () => request<{ text: string }>('GET', '/api/template/example').then((r) => r.text),
+  // The same seed makes the same picks.
+  templateExample: (seed: number) => request<{ text: string }>('GET', `/api/template/example?seed=${seed}`).then((r) => r.text),
   startDraft: (id: number) => request<DraftJob>('POST', `/api/people/${id}/draft`, {}),
   cancelDraft: (id: number) => request<void>('POST', `/api/people/${id}/draft/cancel`, {}),
   updates: () => request<UpdateState>('GET', '/api/updates'),

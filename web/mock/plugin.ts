@@ -548,7 +548,11 @@ const ROUTES: [string, RegExp, Handler][] = [
   // The template a first message is put together from, like
   // internal/api/template.go, with the app's checks that a walk meets.
   ['GET', /^\/api\/template$/, () => ok(templateJSON())],
-  ['GET', /^\/api\/template\/example$/, () => ok({ text: expand(Object.fromEntries(TEMPLATE_FIELDS.map((f) => [f.name, f.name === 'reaction_part' ? ' [reaction]' : `[${f.name}]`]))) })],
+  ['GET', /^\/api\/template\/example$/, (_s, _m, q) => {
+    const seed = q.get('seed')
+    const fields = Object.fromEntries(TEMPLATE_FIELDS.map((f) => [f.name, f.name === 'reaction_part' ? ' [reaction]' : `[${f.name}]`]))
+    return ok({ text: expand(fields, 'origin', 0, seed ? seeded(Number(seed)) : Math.random) })
+  }],
   ['DELETE', /^\/api\/template$/, () => {
     template = startTemplate()
     return ok(templateJSON())
@@ -1019,12 +1023,24 @@ function checkTemplate(parts: TemplatePart[]): string {
   if (!parts.some((p) => p.variations.some((v) => v.includes('#reason#')))) return 'The template needs #reason#, where the language model\'s reason goes.'
   return ''
 }
-function expand(fields: Record<string, string>, name = 'origin', depth = 0): string {
+function expand(fields: Record<string, string>, name = 'origin', depth = 0, random = Math.random): string {
   if (name in fields) return fields[name]
   const p = template.find((x) => x.name === name)
   if (!p || depth > 20) return ''
-  const v = p.variations[Math.floor(Math.random() * p.variations.length)]
-  return v.replace(/#([a-z][a-z0-9_]*)#/g, (_, ref: string) => expand(fields, ref, depth + 1))
+  const v = p.variations[Math.floor(random() * p.variations.length)]
+  return v.replace(/#([a-z][a-z0-9_]*)#/g, (_, ref: string) => expand(fields, ref, depth + 1, random))
+}
+
+// The same picks for the same seed, as the app makes them for the example.
+function seeded(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
 }
 
 // A first message being drafted, worked out from the clock.

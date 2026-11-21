@@ -371,7 +371,7 @@ Tim's first template is `internal/store/first_message_template.json`.
 | `DELETE /api/template/parts/{name}` | takes the part out. 404 for a part that is not there |
 | `DELETE /api/template` | puts Tim's first template back |
 | `PUT /api/template` | `{"parts": [...]}` puts a whole template in place, the one before a reset when it is undone |
-| `GET /api/template/example` | `{"text": "Hallo [first_name], ..."}`, one message put together at random, with what the app and the model fill in shown by name |
+| `GET /api/template/example?seed=7` | `{"text": "Hallo [first_name], ..."}`, one message put together at random, with what the app and the model fill in shown by name. The same seed makes the same picks, so Settings keeps its example while a variation changes. Without a seed the picks are new each time |
 
 Each change answers with the template:
 

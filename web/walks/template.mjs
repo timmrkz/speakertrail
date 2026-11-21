@@ -33,7 +33,7 @@ async function settings(page) {
   await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.includes('[reason]'))
 }
 
-const walks = [
+const walks0 = [
   {
     name: 'The template shows every part, origin open, and an example of how they fit',
     async run(page) {
@@ -65,6 +65,38 @@ const walks = [
       await toastUndo(page).click()
       await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Hallo [first_name]'))
       if ((await box.inputValue()) !== 'Hallo') return `after Undo the box reads ${await box.inputValue()}`
+      return ''
+    },
+  },
+  {
+    name: 'A change shows in the same example, so the example keeps its shape',
+    async run(page) {
+      await settings(page)
+      const before = await example(page).innerText()
+      await part(page, 'greeting').locator('summary').click()
+      const box = part(page, 'greeting').locator('textarea').first()
+      await box.fill('Servus')
+      await box.blur()
+      await page.locator('.toast').filter({ hasText: 'Saved greeting' }).waitFor()
+      await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Servus'))
+      const after = await example(page).innerText()
+      if (after !== before.replace(/^Hallo/, 'Servus')) return `the example became\n${after}\nnot\n${before.replace(/^Hallo/, 'Servus')}`
+      return ''
+    },
+  },
+  {
+    name: 'One part is open at a time, and every × and + sits in one column of one size',
+    async run(page) {
+      await settings(page)
+      await part(page, 'greeting').locator('summary').click()
+      await page.waitForFunction(() => document.querySelectorAll('section.template details.part[open]').length === 1)
+      const open = await tpl(page).locator('details.part[open] summary .name').innerText()
+      if (open !== 'greeting') return `${open} is open, not greeting`
+      const icons = await tpl(page).locator('summary button.remove-part, .variation .btn, .add-part .btn').evaluateAll((bs) =>
+        bs.filter((b) => b.offsetParent).map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.right), Math.round(r.width), Math.round(r.height)].join(' ') }))
+      const kinds = [...new Set(icons)]
+      if (icons.length < 15 || kinds.length !== 1) return `the icons end at, are wide and high: ${kinds.join(', ')}`
+      if (await tpl(page).locator('button', { hasText: 'Remove greeting' }).count()) return 'a second button still removes greeting'
       return ''
     },
   },
@@ -117,7 +149,7 @@ const walks = [
       await part(page, 'intensity').locator('summary').click()
       const p = part(page, 'intensity')
       await p.locator('form.add input').fill('richtig gern')
-      await p.locator('form.add button').click()
+      await p.locator('button[aria-label="Add a variation to intensity"]').click()
       await page.locator('.toast').filter({ hasText: 'Added a variation to intensity' }).waitFor()
       await p.locator('textarea').nth(2).waitFor()
       if ((await p.locator('.count').innerText()) !== '3 variations') return `it says ${await p.locator('.count').innerText()}`
@@ -141,22 +173,28 @@ const walks = [
       await tpl(page).locator('#new-part').press('Enter')
       await part(page, 'wave').waitFor()
       if (!(await part(page, 'wave').evaluate((d) => d.open))) return 'the new part is not open'
-      // Origin stays, and the button says why the app keeps it.
+      // Origin stays, and its × says why the app keeps it when pressed,
+      // without closing the part.
       const keepOrigin = part(page, 'origin').locator('button.remove-part')
-      if (!(await keepOrigin.isDisabled()) || (await keepOrigin.getAttribute('title')) !== 'Origin is where the message starts, so it stays.') return 'origin can be removed'
+      if ((await keepOrigin.getAttribute('aria-disabled')) !== 'true' || (await keepOrigin.getAttribute('title')) !== 'Origin is where the message starts, so it stays.') return 'origin can be removed'
+      await part(page, 'origin').locator('summary').click()
+      // Playwright holds aria-disabled for not enabled, a person does not.
+      await keepOrigin.click({ force: true })
+      await part(page, 'origin').locator('.field-error').filter({ hasText: 'Origin is where the message starts, so it stays.' }).waitFor()
+      if (!(await part(page, 'origin').evaluate((d) => d.open))) return 'the × of origin closed it'
+      if (!(await part(page, 'origin').count())) return 'origin went'
       // In use by origin, wave cannot go either, and says so.
       const origin = part(page, 'origin').locator('textarea').first()
       await origin.fill((await origin.inputValue()) + ' #wave#')
       await origin.blur()
       await page.locator('.toast').filter({ hasText: 'Saved origin' }).waitFor()
       const removeWave = part(page, 'wave').locator('button.remove-part')
-      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.title === 'Origin still uses #wave#. Take it out there first.' && b.disabled))
-      if (!(await removeWave.isDisabled())) return 'wave can be removed while origin uses it'
+      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.title === 'Origin still uses #wave#. Take it out there first.' && b.getAttribute('aria-disabled') === 'true'))
       // Unused, it goes, and Undo brings it back where it was.
       await origin.fill((await origin.inputValue()).replace(' #wave#', ''))
       await origin.blur()
       await page.waitForFunction(() => !document.querySelector('section.template details.part textarea')?.value.includes('#wave#'))
-      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.textContent.includes('wave') && !b.disabled))
+      await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.getAttribute('aria-label') === 'Remove wave' && !b.hasAttribute('aria-disabled')))
       await removeWave.click()
       await page.locator('.toast').filter({ hasText: 'Removed wave' }).waitFor()
       if (await part(page, 'wave').count()) return 'wave is still there'
@@ -207,6 +245,7 @@ const walks = [
   },
 ]
 
+const walks = walks0.filter((w) => !process.env.ONLY || w.name.includes(process.env.ONLY))
 const browser = await chromium.launch()
 let failed = 0
 for (const w of walks) {

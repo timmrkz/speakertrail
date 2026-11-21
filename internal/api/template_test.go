@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -80,5 +81,21 @@ func TestTimEditsTheTemplate(t *testing.T) {
 	if code := call(t, a, "GET", "/api/template/example", "", &ex); code != http.StatusOK ||
 		!strings.Contains(ex["text"], "weil [reason]") || !strings.Contains(ex["text"], " [first_name],\n\n") {
 		t.Errorf("example: %d %q", code, ex["text"])
+	}
+	// One seed makes one message, so the example keeps its shape while
+	// Tim edits, and other seeds make others.
+	seen := map[string]bool{}
+	for seed := range 40 {
+		var one, again map[string]string
+		path := "/api/template/example?seed=" + strconv.Itoa(seed)
+		call(t, a, "GET", path, "", &one)
+		call(t, a, "GET", path, "", &again)
+		if one["text"] != again["text"] {
+			t.Fatalf("seed %d made two messages:\n%s\n%s", seed, one["text"], again["text"])
+		}
+		seen[one["text"]] = true
+	}
+	if len(seen) < 5 {
+		t.Errorf("40 seeds made only %d messages", len(seen))
 	}
 }

@@ -16,14 +16,20 @@
   tpl.run(api.template)
 
   // One message put together by the app, with what the app and the model
-  // fill in shown by name, so Tim sees how the parts fit.
+  // fill in shown by name, so Tim sees how the parts fit. It keeps its
+  // seed, so a change shows in the same message, which keeps its shape
+  // and moves nothing on the page. New example picks another seed.
   let example = $state('')
   let exampleError = $state('')
   let rolling = $state(false)
-  async function another() {
+  let seed = newSeed()
+  function newSeed() {
+    return Math.floor(Math.random() * 2 ** 31)
+  }
+  async function showExample() {
     rolling = true
     try {
-      example = await api.templateExample()
+      example = await api.templateExample(seed)
       exampleError = ''
     } catch (e) {
       exampleError = errorText(e)
@@ -31,7 +37,11 @@
       rolling = false
     }
   }
-  another()
+  function newExample() {
+    seed = newSeed()
+    showExample()
+  }
+  showExample()
 
   // The part whose change is on its way, and what the app said was wrong
   // with a change, by part.
@@ -49,7 +59,7 @@
       try {
         tpl.data = await asked
         errors = { ...errors, [name]: '' }
-        another()
+        showExample()
         return true
       } catch (e) {
         errors = { ...errors, [name]: errorText(e) }
@@ -105,7 +115,14 @@
     if (!errors[name]) adding = { ...adding, [name]: '' }
   }
 
-  async function removePart(part: TemplatePart, at: number) {
+  // The × of a part the app keeps says why instead.
+  async function removePart(part: TemplatePart, at: number, e: MouseEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (part.kept) {
+      errors = { ...errors, [part.name]: part.kept }
+      return
+    }
     if (await change(part.name, () => api.deleteTemplatePart(part.name))) {
       toast.show(`Removed ${part.name}`, 'plain', {
         label: 'Undo',
@@ -128,7 +145,7 @@
     try {
       tpl.data = await api.putTemplatePart(name, [''])
       newPart = newPartError = ''
-      open = { ...open, [name]: true }
+      openPart = name
       toast.show(`Added ${name}. Use it as #${name}# in another part`)
     } catch (err) {
       newPartError = errorText(err)
@@ -144,8 +161,13 @@
     }
   }
 
-  // Which parts are open. Origin is, because the message starts there.
-  let open = $state<Record<string, boolean>>({ origin: true })
+  // The part that is open, one at a time, so the list stays short enough
+  // to see whole. Origin is first, because the message starts there.
+  let openPart = $state<string | null>('origin')
+  function toggled(name: string, v: boolean) {
+    if (v) openPart = name
+    else if (openPart === name) openPart = null
+  }
 
   // A variation's box is as tall as its text, whatever the width, so it
   // shows whole and never scrolls inside.
@@ -190,8 +212,9 @@
     <div class="example">
       <div class="row between">
         <span class="label">Example</span>
-        <button class="btn sm" type="button" onclick={another} disabled={rolling} title="Put another message together">
-          <Icon name="refresh" />Another
+        <button class="btn sm" type="button" onclick={newExample} disabled={rolling}
+          title="Put another example together, with a variation of each part picked at random">
+          <Icon name="refresh" />New example
         </button>
       </div>
       {#if exampleError}
@@ -203,11 +226,17 @@
 
     <div class="list parts">
       {#each tpl.data.parts as part, at (part.name)}
-        <details class="part" bind:open={() => !!open[part.name], (v) => (open = { ...open, [part.name]: v })}>
+        <details class="part" bind:open={() => openPart === part.name, (v) => toggled(part.name, v)}>
           <summary>
+            <span class="turn" aria-hidden="true"><Icon name="chevron" size={14} /></span>
             <span class="name num">{part.name}</span>
             <span class="faint small count">{plural(part.variations.length, 'variation', 'variations')}</span>
-            <span class="turn" aria-hidden="true"><Icon name="chevron" size={14} /></span>
+            <!-- The app says why a part stays. Its × says it when pressed. -->
+            <button class="btn icon quiet remove-part" type="button" aria-label="Remove {part.name}"
+              aria-disabled={part.kept ? 'true' : undefined} disabled={working === part.name}
+              title={part.kept ?? 'Take the part out. Undo brings it back'} onclick={(e) => removePart(part, at, e)}>
+              <Icon name="x" />
+            </button>
           </summary>
           <div class="body">
             <ul class="variations">
@@ -224,31 +253,34 @@
                   </button>
                 </li>
               {/each}
+              <!-- A new variation is one more row of the same shape, its +
+                   where the × of the others is. -->
+              <li>
+                <form class="variation add" onsubmit={(e) => addVariation(part.name, e)} novalidate>
+                  <input class="input text" type="text" placeholder="A new variation" aria-label="New variation of {part.name}"
+                    spellcheck="false" bind:value={() => adding[part.name] ?? '', (v) => (adding = { ...adding, [part.name]: v })} />
+                  <button class="btn icon quiet" type="submit" disabled={working === part.name} aria-label="Add a variation to {part.name}"
+                    title="Add it. Left empty, it leaves {part.name} out now and then">
+                    <Icon name="plus" />
+                  </button>
+                </form>
+              </li>
             </ul>
-            <form class="add" onsubmit={(e) => addVariation(part.name, e)} novalidate>
-              <input class="input" type="text" placeholder="A new variation" aria-label="New variation of {part.name}"
-                spellcheck="false" bind:value={() => adding[part.name] ?? '', (v) => (adding = { ...adding, [part.name]: v })} />
-              <button class="btn" type="submit" disabled={working === part.name} title="Add it. Left empty, it leaves {part.name} out now and then">
-                <Icon name="plus" /><span>Add</span>
-              </button>
-            </form>
             {#if errors[part.name]}<p class="field-error" role="alert">{errors[part.name]}</p>{/if}
-            <!-- The app says why a part stays, and the button says it. -->
-            <button class="btn sm quiet danger remove-part" type="button" disabled={working === part.name || !!part.kept}
-              onclick={() => removePart(part, at)} title={part.kept ?? 'Take the part out. Undo brings it back'}>
-              <Icon name="trash" />Remove {part.name}
-            </button>
           </div>
         </details>
       {/each}
+      <form class="add-part" onsubmit={addPart} novalidate>
+        <label class="sr-only" for="new-part">New part</label>
+        <input id="new-part" class="input" type="text" placeholder="A new part, like wave" autocomplete="off" spellcheck="false"
+          bind:value={newPart} aria-invalid={newPartError ? 'true' : undefined} />
+        <button class="btn icon quiet" type="submit" disabled={addingPart} aria-label="Add part"
+          title="Add the part. Then use it as #name# in another part">
+          <Icon name="plus" />
+        </button>
+      </form>
     </div>
 
-    <form class="add" onsubmit={addPart} novalidate>
-      <label class="sr-only" for="new-part">New part</label>
-      <input id="new-part" class="input" type="text" placeholder="A new part, like wave" autocomplete="off" spellcheck="false"
-        bind:value={newPart} aria-invalid={newPartError ? 'true' : undefined} />
-      <button class="btn" type="submit" disabled={addingPart}><Icon name="plus" /><span>Add part</span></button>
-    </form>
     {#if newPartError}<p class="field-error" role="alert">{newPartError}</p>{/if}
     {#if errors['']}<p class="field-error" role="alert">{errors['']}</p>{/if}
 
@@ -268,11 +300,15 @@
   .example { display: grid; gap: 8px; min-width: 0; }
   /* The message as Tim would send it, line breaks and all, and text only. */
   .example-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; color: var(--ink-2); margin: 0; }
-  .part summary { display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; cursor: pointer; list-style: none; min-width: 0; }
+  /* Every row of the list ends in one column of icons, the × of a part,
+     of its variations and the + that adds, all the same size. */
+  .part summary { display: flex; align-items: center; gap: 8px; padding: 6px 12px; cursor: pointer; list-style: none; min-width: 0; }
   .part summary::-webkit-details-marker { display: none; }
-  /* Whether a part opens, at its far end, turned while it is open. */
-  .turn { margin-left: auto; align-self: center; display: inline-grid; color: var(--ink-3); transition: transform .15s; }
+  /* Whether a part is open, before its name, turned while it is. */
+  .turn { display: inline-grid; color: var(--ink-3); transition: transform .15s; }
   .part[open] .turn { transform: rotate(90deg); }
+  .remove-part { margin-left: auto; flex: none; }
+  .remove-part[aria-disabled='true'] { opacity: .55; cursor: default; }
   .name { font-weight: 600; font-size: 14px; }
   .count { font-variant-numeric: tabular-nums; }
   .body { display: grid; gap: 8px; padding: 0 12px 12px; min-width: 0; }
@@ -282,8 +318,9 @@
      size of box. */
   .variation .text { flex: 1; min-width: 0; height: auto; min-height: var(--control-h); padding-top: 8px; padding-bottom: 8px;
     resize: none; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .add { display: flex; gap: 8px; min-width: 0; }
-  .add .input { flex: 1; min-width: 0; }
-  .add .btn { flex: none; min-width: 7.4em; justify-content: center; }
-  .remove-part, .reset { justify-self: start; }
+  .variation .btn { flex: none; }
+  .add-part { display: flex; gap: 6px; padding: 6px 12px; min-width: 0; }
+  .add-part .input { flex: 1; min-width: 0; }
+  .add-part .btn { flex: none; }
+  .reset { justify-self: start; }
 </style>

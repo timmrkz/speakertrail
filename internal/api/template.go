@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math/rand/v2"
 	"net/http"
+	"strconv"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
 	"github.com/timmrkz/speakertrail/internal/store"
@@ -113,8 +114,14 @@ func (a *API) resetTemplate(w http.ResponseWriter, r *http.Request) {
 }
 
 // templateExample puts one message together at random, with what the app
-// and the model fill in shown by name, so Tim sees how the parts fit.
+// and the model fill in shown by name, so Tim sees how the parts fit. The
+// same seed makes the same picks, so the example keeps its shape while a
+// variation is changed, and only New example rolls the dice again.
 func (a *API) templateExample(w http.ResponseWriter, r *http.Request) {
+	seed, err := strconv.ParseUint(r.URL.Query().Get("seed"), 10, 64)
+	if err != nil {
+		seed = rand.Uint64()
+	}
 	var t store.Template
 	a.Store.Read(func(d *store.Data) { t = d.FirstMessageTemplate() })
 	if err := t.Check(); err != nil {
@@ -126,5 +133,5 @@ func (a *API) templateExample(w http.ResponseWriter, r *http.Request) {
 		fields[f.Name] = "[" + f.Name + "]"
 	}
 	fields[store.ReactionField] = " [reaction]"
-	send(w, http.StatusOK, map[string]string{"text": t.Expand(fields, rand.IntN)})
+	send(w, http.StatusOK, map[string]string{"text": t.Expand(fields, rand.New(rand.NewPCG(seed, 0)).IntN)})
 }

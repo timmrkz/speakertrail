@@ -163,7 +163,7 @@
                 GitHub.
               </Info>
             </span>
-            <Pick label="Channel" id="channel" value={following} {options} fit align="right" placeholder="Choose a channel"
+            <Pick label="Channel" id="channel" value={following} {options} align="right" placeholder="Choose a channel"
               tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
               title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
               onpick={(v) => follow(v)} />
@@ -240,9 +240,8 @@
      still at the right. */
   .build { flex-wrap: wrap; row-gap: 8px; }
   .build .words { flex: 0 1 auto; }
-  /* The list is as wide as the channel it names and no wider, see fit in
-     Pick. It hangs from its right edge and grows into the row as far as
-     its longest name needs. */
+  /* The list is as wide as the channel it names and no wider, up to
+     --pick-max, see Pick. It hangs from its right edge. */
   .channel { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
   .link { border: 0; padding: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-variant-numeric: tabular-nums; }
   .link:hover { text-decoration: underline; }
@@ -253,8 +252,8 @@
   .mark.ok { color: var(--good); }
   .mark.warn { color: var(--warn); }
   .mark.err { color: var(--bad); }
-  /* Room for the longest word, so the button keeps its width. */
-  .act { flex: none; min-width: 7.6em; }
+  /* As wide as what it says now, as in FrameFairy. */
+  .act { flex: none; }
 
   /* A row that says what the system said wraps: the mark and the words on
      its first line, as in every other row, and under them the field and

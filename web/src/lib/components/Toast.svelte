@@ -39,7 +39,7 @@
   }
   .toast {
     background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 600;
-    box-shadow: var(--shadow-lg); max-width: 480px; animation: pop .18s ease-out;
+    max-width: 480px; animation: pop .18s ease-out;
     display: flex; align-items: center; gap: 14px;
   }
   /* The action can be pressed, the rest of the region lets clicks through. */
@@ -47,7 +47,11 @@
     pointer-events: auto; background: none; border: 0; padding: 0; font: inherit; color: inherit;
     cursor: pointer; text-decoration: underline; text-underline-offset: 3px; flex: none;
   }
-  .act:disabled { opacity: .55; cursor: default; }
+  /* The toast is the ink with the page's colour for words, the other way
+     round from everything else, so the grey of a button that cannot be
+     pressed would not read on it. Its action greys out as its own words
+     at less strength instead. */
+  .act:disabled { color: color-mix(in srgb, currentColor 60%, transparent); cursor: default; }
   .toast.bad { background: var(--bad-soft); color: var(--bad); border: 1px solid var(--bad); }
   @media (min-width: 761px) { .toast-region { bottom: 28px; } }
   @keyframes pop { from { transform: translateY(8px); opacity: 0; } }

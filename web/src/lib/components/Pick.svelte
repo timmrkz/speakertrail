@@ -58,9 +58,6 @@
     // What the trigger says while nothing is picked. It is a state, not a
     // row: a list never offers nothing as a choice.
     placeholder = '',
-    // A trigger as wide as what it says now, rather than as wide as the
-    // longest thing it could say, for a list alone at the end of a row.
-    fit = false,
     // Lets the caller reach the trigger, to bring it into view and focus it.
     trigger: button = $bindable(),
   }: {
@@ -78,7 +75,6 @@
     tone?: 'warn' | 'err'
     refuse?: () => boolean
     placeholder?: string
-    fit?: boolean
     trigger?: HTMLButtonElement
   } = $props()
 
@@ -93,10 +89,6 @@
   const shown = $derived(picked?.label ?? (value || placeholder))
   const unpicked = $derived(!value && !!placeholder)
 
-  // The longest thing the list can say. The trigger keeps room for it, so
-  // the row does not change width as it is used. The stylesheet measures
-  // it: the longest label is drawn and hidden.
-  const longest = $derived(options.reduce((most, o) => (o.label.length > most.length ? o.label : most), placeholder))
 
   // A list whose rows say something beside their names reads from the
   // left, the way a pop-up menu on the Mac puts names down the left.
@@ -151,7 +143,6 @@
     {id}
   >
     <span class="said">
-      {#if !fit}<span class="room" aria-hidden="true">{longest}</span>{/if}
       <span class:unpicked>{shown}</span>
     </span>
     <span class="updown"><Icon name="pick" size={12} /></span>
@@ -225,28 +216,31 @@
      every field in the app, with what is picked and the mark that says it
      is a list. */
   .pick {
-    display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
-    height: var(--control-h); padding: 0 8px 0 12px;
+    display: flex; align-items: center; gap: 8px; width: max-content; min-width: 0;
+    height: var(--control-h); padding: 0 8px 0 12px; max-width: min(100%, var(--pick-max));
     border: var(--line-w) solid var(--line-strong); border-radius: 8px; background: var(--surface);
     color: var(--ink); text-align: left; cursor: pointer;
   }
-  .pick:hover:not(:disabled) { background: var(--surface-2); }
-  .pick:disabled { opacity: .55; cursor: default; }
+  .pick:hover:not(:disabled) { background: var(--surface-hover); }
+  .pick:active:not(:disabled) { background: var(--surface-press); }
+  .pick:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; cursor: default; }
   .pick.warn { border-color: var(--warn); }
   .pick.err { border-color: var(--bad); }
 
   /* No edge while the list is open: the lit row in the list already says
      where the keyboard is. */
   .pick[aria-expanded='true']:focus-visible { outline: none; background-image: none; }
+  /* FrameFairy's ring, inside the edge so it lines up with the fields
+     beside it, in the colour of its words like every button's. */
+  .pick:focus-visible { outline: 2px solid currentColor; outline-offset: -1px; background-image: none; }
 
-  /* The two lie on top of each other, so the box is as wide as the longest
-     thing the list can say and what is picked is drawn in it. */
+  /* The trigger is as wide as what is picked, up to --pick-max, and a
+     longer name ends in dots (Tim, testing #46). */
   .said { display: grid; flex: 1; min-width: 0; }
   .said > span {
     grid-area: 1 / 1; align-self: center; min-width: 0;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
-  .room { visibility: hidden; }
   .unpicked { color: var(--ink-3); }
   .pick.right .said { text-align: right; }
 
@@ -264,7 +258,7 @@
     max-width: calc(var(--bits-floating-available-width, 100vw) - 8px);
     max-height: 320px; overflow-y: auto;
     background: var(--surface); border: var(--line-w) solid var(--line-strong); border-radius: 8px;
-    box-shadow: var(--shadow-lg); color: var(--ink); font-size: 14px;
+    color: var(--ink); font-size: 14px;
     /* Over the rail and an open sheet, under a toast and an info bubble.
        bits-ui lifts its wrapper to the list's own z-index. */
     position: relative; z-index: 50;
@@ -278,15 +272,19 @@
 
   /* The row under the pointer and the row the keyboard is on are one
      thing, so bits-ui marks both the same. */
-  .pick-row[data-highlighted] { background: var(--surface-2); }
+  .pick-row[data-highlighted] { background: var(--hover); }
+  .pick-row[data-highlighted]:active { background: var(--press); }
 
-  /* What is chosen is in the accent. */
-  .pick-row[data-chosen] { color: var(--accent); }
+  /* What is chosen is in the words every chosen thing wears, with the
+     tick before it, the way a menu on the Mac marks it. The tint is for
+     a choice that stays on screen. In a menu it would read as the row
+     under the pointer. */
+  .pick-row[data-chosen] { color: var(--chosen-ink); }
   .pick-row[data-disabled] { color: var(--ink-3); cursor: default; }
 
   /* The tick keeps its place whether or not it is there, so no row moves
      sideways as the chosen one changes. */
-  .tick { display: flex; align-items: center; justify-content: center; flex: none; width: 12px; color: var(--accent); }
+  .tick { display: flex; align-items: center; justify-content: center; flex: none; width: 12px; color: var(--chosen-ink); }
   .tick.marked { color: inherit; }
   .tick.faint { color: var(--ink-3); }
 

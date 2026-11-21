@@ -33,7 +33,6 @@
      keeps the token. */
   .titlebar {
     flex: none; position: relative; height: var(--bar-h); background: var(--side);
-    backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
     box-shadow: inset 0 -1px var(--line); --wails-draggable: drag;
   }
 

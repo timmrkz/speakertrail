@@ -86,7 +86,7 @@
       <label class="sr-only" for="new-exclusion">New exclusion</label>
       <input bind:this={field} bind:value={phrase} id="new-exclusion" class="input" type="text" placeholder="Online Marketing"
         autocomplete="off" maxlength="60" aria-invalid={error ? 'true' : undefined} aria-describedby={error ? 'exclusion-err' : undefined} />
-      <button class="btn" type="submit" disabled={busy}><Icon name="plus" /><span>{busy ? 'Adding' : 'Add'}</span></button>
+      <button class="btn" type="submit" disabled={busy}><Icon name="plus" />{busy ? 'Adding' : 'Add'}</button>
     </form>
     {#if error}<p id="exclusion-err" class="field-error" role="alert">{error}</p>{/if}
   {/if}
@@ -109,8 +109,9 @@
     width: 28px; height: 28px; border-radius: 50%; border: 0; background: none; color: var(--ink-3); cursor: pointer;
     display: inline-grid; place-items: center; flex: none;
   }
-  .remove:hover { background: var(--surface-2); color: var(--ink); }
+  .remove:hover { background: var(--hover); color: var(--ink); }
+  .remove:active { background: var(--press); }
   .add { display: flex; gap: 8px; }
   .add .input { flex: 1; min-width: 0; }
-  .add .btn { flex: none; min-width: 6.4em; justify-content: center; }
+  .add .btn { flex: none; }
 </style>

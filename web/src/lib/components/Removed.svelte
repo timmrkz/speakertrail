@@ -36,5 +36,6 @@
     border: 0; background: none; padding: 2px 6px; border-radius: 6px; font: inherit; font-size: 13px;
     color: var(--ink); cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
   }
-  .back:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .back:hover { background: var(--hover); }
+  .back:active { background: var(--press); }
 </style>

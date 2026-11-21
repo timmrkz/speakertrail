@@ -131,15 +131,15 @@ const walks = [
     },
   },
   {
-    // Report says Making while it makes the report, in the room it had,
-    // and then the field is empty for the next one.
-    name: 'Report keeps its width while it makes the report',
+    // Report says Making while it makes the report, as wide as those
+    // words, and then the field is empty for the next one. A button is as
+    // wide as what it says now, Tim asked testing #46.
+    name: 'Report says Making while it makes the report',
     async run(page) {
       await openReport(page)
       await page.locator('textarea.telling').click()
       await page.keyboard.type('It froze.')
       const button = page.locator('button.make')
-      const before = (await button.boundingBox()).width
       const [made, make] = later()
       await page.route('**/api/report/send', async (route) => {
         await made
@@ -147,11 +147,84 @@ const walks = [
       })
       await button.click()
       await page.locator('button.make .beam').waitFor()
-      const during = (await button.boundingBox()).width
+      const during = (await button.textContent()).trim()
       make()
       await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
       await page.waitForFunction(() => document.querySelector('textarea.telling').value === '')
-      if (during !== before) return `Report is ${before} px wide and ${during} px while making`
+      if (during !== 'Making…') return `Report says ${JSON.stringify(during)} while making`
+      return ''
+    },
+  },
+  {
+    // Tab takes the same way whatever is in the field: from the field to
+    // Report, so Enter, Tab, Enter still reports after dictating, then
+    // the buttons from right to left, greyed out or not, past the info
+    // mark, which is help and not a control, then the pictures, and back
+    // round to the field. Tim set this order testing
+    // #46, and found it changed with an empty field, because greyed out
+    // buttons dropped out of it.
+    name: 'Tab takes the same way through Report a Problem, empty, filled and after dictating',
+    async run(page) {
+      const where = () => page.evaluate(() => {
+        const e = document.activeElement
+        if (e?.matches('textarea.telling')) return 'the field'
+        if (e?.matches('figure')) return 'a picture'
+        return e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'nothing'
+      })
+      const walk = async (key, n) => {
+        const went = []
+        for (let i = 0; i < n; i++) {
+          await page.keyboard.press(key)
+          went.push(await where())
+        }
+        return went.join(', ')
+      }
+      const row = ['Report', 'Clear', 'Attach screenshots', 'Dictate']
+      await openReport(page)
+      const field = page.locator('textarea.telling')
+      await field.click()
+      let want = [...row, 'the field'].join(', ')
+      let went = await walk('Tab', row.length + 1)
+      if (went !== want) return `with an empty field Tab went ${went}, want ${want}`
+      // The way back is the same way.
+      want = [...row].reverse().concat('the field').join(', ')
+      went = await walk('Shift+Tab', row.length + 1)
+      if (went !== want) return `with an empty field Shift+Tab went ${went}, want ${want}`
+      await field.click()
+      await page.keyboard.type('It froze.')
+      await page.locator('button.attach').click()
+      await page.locator('.pictures figure').waitFor()
+      await field.click()
+      want = [...row, 'a picture', 'the field'].join(', ')
+      went = await walk('Tab', row.length + 2)
+      if (went !== want) return `with words and a picture Tab went ${went}, want ${want}`
+      // Dictate, Enter keeps what was said, Tab goes to Report.
+      const listening = page.waitForResponse((r) => r.url().endsWith('/api/listen'))
+      await page.locator('button.dictate').click()
+      await listening
+      await page.keyboard.press('Enter')
+      await page.waitForResponse((r) => r.url().endsWith('/api/listen/stop'))
+      await page.waitForFunction(() => document.querySelector('button.dictate')?.getAttribute('aria-label') === 'Dictate')
+      await page.keyboard.press('Tab')
+      if ((await where()) !== 'Report') return `after dictating Tab went to ${await where()}, want Report`
+      return ''
+    },
+  },
+  {
+    // Report and Clear stay greyed out and do nothing with nothing to
+    // report, though Tab reaches them.
+    name: 'Report and Clear do nothing with nothing to report, though Tab reaches them',
+    async run(page) {
+      let made = false
+      await openReport(page)
+      page.on('request', (r) => { if (r.url().endsWith('/api/report/send')) made = true })
+      await page.locator('button.make').click({ force: true })
+      await page.locator('button.clear').click({ force: true })
+      await page.waitForTimeout(100)
+      if (made) return 'Report made a report of nothing'
+      if (await page.locator('dialog[open]').count()) return 'Clear asked to clear nothing'
+      const greyed = await page.locator('button.make').evaluate((b) => getComputedStyle(b).backgroundColor === getComputedStyle(document.querySelector('button.clear')).backgroundColor)
+      if (!greyed) return 'Report and Clear are not the same grey'
       return ''
     },
   },

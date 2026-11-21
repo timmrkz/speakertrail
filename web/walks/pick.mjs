@@ -2,8 +2,8 @@
 // the mock, in Chromium, the way walks/draft.mjs does. The list is the
 // app's own, Pick.svelte, ported from FrameFairy's, so what it promises is
 // walked here: the models largest first with whether each is downloaded,
-// a pick that names the model at once, here or not, a trigger that keeps
-// its width, a list that lets go of the keyboard as it closes, and a row
+// a pick that names the model at once, here or not, a trigger as wide as
+// what is picked, a list that lets go of the keyboard as it closes, and a row
 // that still fits a window 390 px wide. `make walks` runs it.
 import { chromium } from 'playwright'
 import { createServer } from 'vite'
@@ -77,8 +77,10 @@ await walk('A model picked is named at once, and Download fetches it', async (br
   expect(`the line said "${line}"`, line === 'Not downloaded yet. 9.0 GB.')
   expect('Download is not there to fetch it', await page.locator('#language button.act', { hasText: 'Download' }).isVisible())
   expect('the list does not warn that it cannot draft yet', await trigger(page).evaluate((b) => b.classList.contains('warn')))
+  // As wide as what is picked, so the shorter name makes it narrower,
+  // as Tim asked testing #46.
   const after = (await trigger(page).boundingBox()).width
-  expect(`the list changed width from ${before} to ${after}`, Math.abs(before - after) < 0.5)
+  expect(`the list kept ${before} px for a shorter name, ${after} px now`, after < before - 0.5)
   // Picked again, it is the one Settings shows after a reload, because the
   // app keeps it.
   await page.reload()

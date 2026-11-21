@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte'
   import { api, onDictation, onLoudness, onReportDraft, onUndo, pictureUrl, type Dictation, type ReportDraft, type ReportPicture } from '../lib/api'
-  import { asking, keyFocus, typing } from '../lib/keys'
+  import { asking, moveTab, typing } from '../lib/keys'
   import Removed from '../lib/components/Removed.svelte'
   import { chime, wake } from '../lib/chime'
   import Busy from '../lib/components/Busy.svelte'
@@ -48,7 +48,6 @@
   // text is worked out in lib/dictating.ts, in letters and numbers, and
   // written into the field where it changed.
   let field: HTMLTextAreaElement
-  let report: HTMLButtonElement
   let listening = $state(false)
   let hearing = $state(false)
   // The last words of a dictation being written down, which Report
@@ -128,6 +127,12 @@
   // dictation may be on their way, so Report waits for them rather than
   // being off.
   const nothing = $derived(!what.trim() && pictures.length === 0 && !hearing)
+  // When each button of the row can do nothing. They stay in the Tab
+  // order then, see the row.
+  const reportOff = $derived(nothing || making || listening || attaching)
+  const clearOff = $derived(nothing || making || listening || hearing || attaching)
+  const dictateOff = $derived(hearing || making)
+  const attachOff = $derived(attaching || making)
 
   // Clear empties the report, the words and every picture, once the box
   // over the page has asked.
@@ -266,7 +271,7 @@
   }
 
   async function attach() {
-    if (attaching) return
+    if (attachOff) return
     unclear()
     attaching = true
     try {
@@ -585,7 +590,7 @@
   )
 
   async function dictate() {
-    if (hearing) return
+    if (dictateOff) return
     if (listening) return keep()
     unclear()
     note = ''
@@ -663,26 +668,21 @@
     }
   }
 
-  // Tab goes from the field to Report, then through the pictures and
-  // back to the field, and Shift+Tab the other way. macOS only tabs
-  // between buttons when full keyboard access is on, so WebKit passed
-  // over Report. The page moves the focus itself, as Confirm.svelte does.
-  // While dictating Tab does nothing: only Enter, Escape and the button
-  // end a dictation.
-  const stops = () => [field, report, ...document.querySelectorAll<HTMLElement>('.pictures figure, .pictures button.back')]
-  const named = (e: Element | null) => (e === field ? 'the field' : e === report ? 'Report' : e?.matches('figure') ? 'a picture' : 'Put it back')
+  // Tab walks the window in the order it is written, see moveTab and
+  // the row of buttons. While dictating Tab does nothing: only Enter,
+  // Escape and the button end a dictation.
+  let page: HTMLElement
+  const named = (e: Element | null) =>
+    e === field ? 'the field' : e?.matches('figure') ? 'a picture' : (e?.getAttribute('aria-label') ?? e?.textContent?.trim() ?? 'a button')
   function tab(e: KeyboardEvent) {
-    const here = document.activeElement as HTMLElement | null
     if (listening) {
       e.preventDefault()
       return
     }
-    if (!here || !stops().includes(here)) return
-    e.preventDefault()
-    const open = stops().filter((s) => s === here || !(s as HTMLButtonElement).disabled)
-    const next = open[(open.indexOf(here) + (e.shiftKey ? -1 : 1) + open.length) % open.length]
-    keyFocus(next)
-    if (next !== here) log(`report: ${e.shiftKey ? 'Shift+Tab' : 'Tab'} moved the focus from ${named(here)} to ${named(next)}`)
+    const here = document.activeElement
+    if (!page || asking() || (here && here !== document.body && !page.contains(here))) return
+    const next = moveTab(page, e)
+    if (next && next !== here) log(`report: ${e.shiftKey ? 'Shift+Tab' : 'Tab'} moved the focus from ${named(here)} to ${named(next)}`)
   }
 
   // A recording is not left running behind another page.
@@ -715,7 +715,7 @@
   })
 
   async function make() {
-    if (making) return
+    if (reportOff) return
     making = true
     note = ''
     // Pressed while the last words of a dictation are written down, it
@@ -756,7 +756,7 @@
 
 <!-- What Tim writes may name people, so the log names nothing in here
      but the buttons, see control in lib/said.ts. -->
-<section class="report" data-personal>
+<section class="report" data-personal bind:this={page}>
   <div class="card">
     <!-- A plain textarea: the browser draws the cursor, moves it and
          scrolls, and lib/dictating.ts says what a dictation does to the
@@ -774,37 +774,40 @@
       oncompositionstart={() => (composing = true)}
       oncompositionend={composed}
       onpaste={pasted}></textarea>
+    <!-- The row is written in the order Tab takes, Report first, so Enter,
+         Tab, Enter ends a dictation and makes the report, and drawn from
+         right to left, Dictate and Attach on the left as a toolbar has
+         them. Tim set this order testing #46. A button that cannot be
+         pressed now says so with aria-disabled rather than disabled, so
+         it keeps its place in the order whatever is in the field. -->
     <div class="actions">
-      <!-- Square, the microphone alone, the way a toolbar shows it: what
-           it does is in its title. Its name says what a press does now,
-           Dictate, Stop or Writing, for the keyboard and a screen reader. -->
       <button
-        class="btn icon dictate"
+        class="btn primary make"
         type="button"
-        onmousedown={stay}
-        class:listening
-        onclick={dictate}
-        disabled={hearing || making}
-        aria-label={listening ? 'Stop' : hearing ? 'Writing' : 'Dictate'}
-        title={listening
-          ? 'Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z undoes it'
-          : hearing
-            ? 'Writing down what you said'
-            : 'Dictate. Say what happened. The speech model on this Mac writes it into the field as you talk, and you can correct it while it does'}>
-        {#if listening || hearing}<Busy />{/if}
-        <span class="grows" bind:this={mic}><Icon name="mic" size={28} line={1.5 * (28 / 16)} /></span>
+        onclick={make}
+        aria-disabled={reportOff}
+        title="Saves the report on the Desktop, shows it in Finder and closes this window">
+        {#if making}<Busy />{/if}
+        {making ? 'Making…' : 'Report'}
       </button>
+      <!-- Clear asks first and Cmd+Z undoes it, so a slip of the hand
+           costs nothing. -->
       <button
-        class="btn icon attach"
+        class="btn danger clear"
         type="button"
-        onmousedown={stay}
-        onclick={attach}
-        disabled={attaching || making}
-        aria-label="Attach screenshots"
-        title="Attach screenshots. You can also drop them on this window or paste them">
-        {#if attaching}<Busy />{/if}
-        <Icon name="attach" />
+        onclick={() => { if (!clearOff) clearing = true }}
+        aria-disabled={clearOff}
+        title="Empties this report, what you wrote and everything attached, after asking">
+        Clear
       </button>
+      <Info label="How a report works" side="right">
+        Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach screenshots
+        with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
+        here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
+        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
+        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. Never the people, the
+        searches or your keys, and your home folder is written as ~. You can look inside before you send it.
+      </Info>
       <!-- Only what the microphone hears, and why a recording stopped by
            itself. What the buttons are doing shows on the buttons, how the
            page works is in the info mark, and what went wrong is a toast. -->
@@ -815,34 +818,35 @@
           <span>{note}</span>
         {/if}
       </div>
-      <Info label="How a report works" side="right">
-        Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach screenshots
-        with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
-        here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
-        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
-        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. Never the people, the
-        searches or your keys, and your home folder is written as ~. You can look inside before you send it.
-      </Info>
-      <!-- Clear and then Report, the buttons of words on the right as the
-           buttons of icons are on the left. Clear asks first and Cmd+Z
-           undoes it, so a slip of the hand costs nothing. -->
       <button
-        class="btn danger clear"
+        class="btn icon attach"
         type="button"
-        onclick={() => (clearing = true)}
-        disabled={nothing || making || listening || hearing || attaching}
-        title="Empties this report, what you wrote and everything attached, after asking">
-        Clear
+        onmousedown={stay}
+        onclick={attach}
+        aria-disabled={attachOff}
+        aria-label="Attach screenshots"
+        title="Attach screenshots. You can also drop them on this window or paste them">
+        {#if attaching}<Busy />{/if}
+        <Icon name="attach" />
       </button>
+      <!-- Square, the microphone alone, the way a toolbar shows it: what
+           it does is in its title. Its name says what a press does now,
+           Dictate, Stop or Writing, for the keyboard and a screen reader. -->
       <button
-        bind:this={report}
-        class="btn primary make"
+        class="btn icon dictate"
         type="button"
-        onclick={make}
-        disabled={nothing || making || listening || attaching}
-        title="Saves the report on the Desktop, shows it in Finder and closes this window">
-        {#if making}<Busy />{/if}
-        <span class="label-room"><span class:hidden={making}>Report</span><span class:hidden={!making}>Making…</span></span>
+        onmousedown={stay}
+        class:listening
+        onclick={dictate}
+        aria-disabled={dictateOff}
+        aria-label={listening ? 'Stop' : hearing ? 'Writing' : 'Dictate'}
+        title={listening
+          ? 'Stop. Keeps what you said, and Enter or Escape does the same. Cmd+Z undoes it'
+          : hearing
+            ? 'Writing down what you said'
+            : 'Dictate. Say what happened. The speech model on this Mac writes it into the field as you talk, and you can correct it while it does'}>
+        {#if listening || hearing}<Busy />{/if}
+        <span class="grows" bind:this={mic}><Icon name="mic" size={28} line={1.5 * (28 / 16)} /></span>
       </button>
     </div>
   </div>
@@ -861,7 +865,7 @@
               <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
                 <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
               </figure>
-              <button class="btn icon quiet bin" type="button" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
+              <button class="btn icon quiet bin" type="button" tabindex="-1" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
                 <Icon name="trash" />
               </button>
             {/if}
@@ -893,9 +897,7 @@
 
   .card {
     display: grid; gap: var(--gap); padding: var(--gap);
-    background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
-    box-shadow: inset 0 1px var(--glass-hi), var(--shadow);
-    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   }
 
   /* A field of ten whole lines of 19 px, with the padding of a control
@@ -910,7 +912,7 @@
 
   /* One row of controls of one height: the icons on the left, what the
      microphone hears in the middle, the words on the right. */
-  .actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .actions { display: flex; flex-direction: row-reverse; align-items: center; gap: 8px; min-width: 0; }
   .words { flex: 1; min-width: 0; font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .words .error { color: var(--bad); }
 
@@ -926,12 +928,6 @@
   }
   .btn.icon :global(svg) { width: auto; height: auto; }
   .dictate.listening { color: var(--accent); }
-
-  /* Report keeps the room of its longer word, so the row never moves
-     when it says Making. */
-  .label-room { display: inline-grid; }
-  .label-room > span { grid-area: 1 / 1; text-align: center; }
-  .label-room > .hidden { visibility: hidden; }
 
   /* The pictures under the card, in tiles of one size with a space
      between them: three across, four once the page is wide enough. Every

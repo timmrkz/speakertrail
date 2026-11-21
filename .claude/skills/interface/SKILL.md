@@ -72,7 +72,7 @@ Fairy's rules, without its styling:
 
 - **Say what happens now.** "Checking Startplatz events", "Reading the
   page of Pitch Abend Köln". Not "Working".
-- **Show how far.** The `.progress` fill in `app.css`, with its light
+- **Show how far.** The `.progress` fill in `app.css`, with a band
   travelling over what is done. Work that cannot say how far it is uses
   `.progress.unknown`, the shuttle, never a bar stuck at a number it does
   not have. The fill never jumps back: count what the work will add, like
@@ -113,33 +113,92 @@ the time left only shrinks.
 Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
 mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
 
-- **The mist lies behind the window.** `--mist` in `app.css` draws the
-  soft fog, once, on the shell. Nothing else draws a background picture.
-  No lines or patterns in it: Tim found the contour lines of the mockup
-  distracting and had them taken out.
-- **Panes over it are frosted.** The sidebar, the title bar, the person's
-  pane, panels and lists use `--glass` or `--side` with
-  `backdrop-filter: var(--frost)`. Controls and sheets stay on the solid
-  `--surface`, so text over moving content is always readable.
-- **What is chosen lies on its pane like glass.** A pressed filter, the
-  page in the sidebar and the open person all take `--chosen`: the bright
-  top edge every pane has and a soft shadow. No blur of their own, since
-  what lies under them is a plain fill or a pane that blurs already, and
-  a second blur there changed no pixel a person could see.
-- **Focus is never a ring.** Tim found the outlines round focused
-  controls loud and wrong. A field in use shows the accent on its edge.
-  Anything else reached with the keyboard shows it too, 2 px inside its
-  own edge, with a faint wash of the accent over its own colour: the
-  page's colour on a primary control, its red on one that removes. The
-  wash alone was too faint to find, Tim said on 17 November 2026, and
-  `walks/focus.mjs` measures that the edge changes by 3 to 1 in both
-  themes, see `:focus-visible` in `app.css`. What is selected already,
-  like the open person's row, shows nothing more.
+- **Flat, in solid colours.** Tim asked for it on 21 November 2026,
+  issue #45: no shadows, no frosted glass, no mist behind the window and
+  no bright edge on what is chosen. He disliked the 3D look of the chosen
+  page in the sidebar. A pane, a list, a panel and a control lie on the
+  page in a solid `--surface` or `--side`, set apart by colour and a line.
+  A layer over the page, a list to pick from, a bubble, a dialog, a sheet,
+  has a `--line-strong` edge instead of a shadow. A toast needs none: it
+  is the ink with the page's colour for words, the other way round from
+  the page under it. Where a line must take no room it is an inset
+  box-shadow one pixel wide with no blur in `--line` or `--line-strong`,
+  which the walk counts as a line. The light of work in hand, the beam,
+  glows on purpose and is the one exception. `walks/look.mjs` looks for a
+  shadow, a blur or a filter on People, Searches, Settings, Updates and
+  Report, with a person open, in a sheet, a list open, a toast, an info
+  bubble, the question before removing and a download running.
+- **Every control takes its states from the same tokens.** Under the
+  pointer `--hover`, pressed `--press`, both a little of the ink over what
+  is there, `--hover-mix` and `--press-mix` of it, or `--surface-hover`
+  and `--surface-press` for a control on `--surface`, so the two look
+  alike side by side. A control on another ground mixes the same two
+  shares into it. The primary button moves toward the ink, `--accent-hover`
+  and `--accent-press`, darker in light and lighter in dark. A control in
+  the colour of what it says, a toggle that is on or a button that
+  removes, takes `--tone-hover` and `--tone-press`, a wash of its own
+  words. A field's edge under the pointer is `--line-hover`. A button that
+  cannot be pressed is `--disabled` with `--disabled-ink`, the same grey
+  in every kind, never a paler copy of itself, except one with the beam,
+  which works at full strength. A new control uses these tokens and never
+  a number of its own. The one exception is the action on a toast, which
+  greys out as its own words at less strength, since the grey would not
+  read on the toast's dark ground.
+- **What is chosen is one flat tint.** The page in the sidebar, the
+  filter shown, the theme chosen, a pressed chip and the open person all
+  wear `--chosen`, deeper under the pointer and pressed, with their words
+  in `--chosen-ink`, the accent a shade toward the ink so they read at
+  4.5 to 1 in every state. A list to pick from marks its choice the way
+  a Mac menu does, with a tick and the words in `--chosen-ink`, since a
+  tint there would read as the row under the pointer.
+- **A button in focus wears a ring, a field its edge.** A button, a
+  chip or a switch reached with the keyboard wears FrameFairy's ring,
+  2 px wide and 1 px out from its edge, in the button's own colour,
+  never one colour for all: `currentColor`, the colour of its words, so
+  a plain button's ring is its ink, one that removes is red and a toggle
+  that is on is green. A primary button and a switch that is on set
+  `--ring` to the accent they are filled with, and a button greyed out
+  with `aria-disabled` wears its grey. Tim asked for it testing #46 on
+  21 November 2026, twice: Clear and the plain buttons beside Report
+  wore Report's accent. A list to pick from wears the same ring 1 px
+  inside its edge, as in FrameFairy, and none while it is open. A field
+  in use shows the accent on its own edge and nothing more. A row, a
+  page in the sidebar and a segment of a choice show their own colour
+  2 px inside their edge with a faint wash, since a ring would be cut
+  off by the list or pane round them. The wash alone was too faint to
+  find, Tim said on 17 November 2026. `walks/look.mjs` checks every
+  ring's colour against its button's, and `walks/focus.mjs` measures
+  that the ring or the edge changes by 3 to 1 in both themes, see
+  `:focus-visible` in `app.css`.
+  What is selected already, like the open person's row, shows nothing
+  more.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
-  frosted rows, each a name over one line of what is known, with what is
+  rows, each a name over one line of what is known, with what is
   connected in green at its start. Tim asked for one look for all lists
   on 14 November 2026.
+- **A control is as wide as what it shows now.** A button fits what it
+  says this moment, never a width guessed in `em` and never room kept
+  for words it may say later: Check grows to Checking while it checks,
+  as in FrameFairy. A list to pick from is as wide as what is picked, up
+  to `--pick-max`, and cuts the rest with an ellipsis. At 390 px the
+  controls that share a line stay as wide as their words too. Tim found
+  Run, Add, Check and the LinkedIn profile list too wide twice testing
+  #46, and `walks/look.mjs` adds up what each button and list on every
+  page shows, at 1280 and 390 px, and fails one that is wider.
+- **Tab goes the way the page is written.** macOS only tabs between
+  buttons when full keyboard access is on, so a window, a sheet and a
+  question move the focus themselves, all through `moveTab` in
+  `lib/keys.ts`, never through a list of their own. Where Tab should
+  take another way than the eye, the page is written in Tab's order and
+  drawn in the other with CSS: Report a Problem's row is written Report,
+  Clear, the info mark, Attach, Dictate and drawn with `row-reverse`, so
+  Enter, Tab, Enter ends a dictation and makes the report (Tim, testing
+  #46). An info mark is help, not a control, and Tab passes it by with
+  `tabindex="-1"`, as Tim asked. A button that cannot be pressed now, in a row Tab walks, is
+  greyed out with `aria-disabled` and keeps its place, and its handler
+  does nothing. One with `disabled` drops out of the order, and Tim
+  found the order changing with an empty field.
 - **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
   built on bits-ui, so a list looks the same in the window on a Mac as it
   does in the harness, and a row can say more than a name: a size, a
@@ -158,7 +217,11 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   container query on a pane that another pane squeezes brings the shuffle
   back. `web/walks/person.mjs` checks it.
 - **Every colour has a light and a dark value.** Check both, and check that
-  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--glass`.
+  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--surface`,
+  in every state. `walks/look.mjs` measures the words of the controls at
+  rest, under the pointer and pressed, that a run's fill stands out from
+  its track by 3 to 1, and that the band travelling over it, `--sheen`,
+  shows on the fill by 1.5 to 1 and stays on it.
 
 ## What to report
 

@@ -231,9 +231,10 @@
   .first-message { display: grid; gap: 10px; }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .actions { display: flex; flex-wrap: wrap; gap: 10px; }
-  /* Draft, Draft again and Cancel take the same place, as wide as the
-     longest of them, so nothing moves when one turns into another. */
-  .act { position: relative; min-width: 9.5em; }
+  /* Draft, Draft again and Cancel take the same place, each with room
+     for the longest of them, see .room in app.css, so nothing moves when
+     one turns into another. */
+  .act { position: relative; }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

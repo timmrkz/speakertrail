@@ -3,6 +3,7 @@
   // a click that throws work away has to be a click you meant. Ported from
   // FrameFairy's Confirm.svelte.
   import type { Snippet } from 'svelte'
+  import { moveTab } from '../keys'
 
   let {
     title,
@@ -27,17 +28,12 @@
     panel.querySelector('button')?.focus()
   })
 
-  // macOS only tabs between buttons when full keyboard access is on, so the
-  // box moves the focus itself. The arrow keys do the same, because the
-  // buttons sit in a row and that is what a row of buttons looks like.
+  // Tab goes round the buttons through moveTab, as every window of the
+  // app does. The arrow keys move along them too, because the buttons sit
+  // in a row and that is what a row of buttons looks like.
   function move(event: KeyboardEvent) {
-    const steps: Record<string, number> = {
-      ArrowLeft: -1,
-      ArrowUp: -1,
-      ArrowRight: 1,
-      ArrowDown: 1,
-      Tab: event.shiftKey ? -1 : 1,
-    }
+    if (event.key === 'Tab') return void moveTab(panel, event)
+    const steps: Record<string, number> = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }
     const step = steps[event.key]
     if (!step) return
     const buttons = [...panel.querySelectorAll('button')]
@@ -60,11 +56,10 @@
   dialog {
     width: min(440px, calc(100vw - 32px));
     padding: 18px 20px 16px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     border-radius: var(--radius);
     background: var(--surface);
     color: var(--ink);
-    box-shadow: var(--shadow-lg);
   }
   dialog::backdrop { background: var(--scrim); }
   h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }

@@ -28,13 +28,13 @@ const account = "speakertrail"
 // vault is where keys are kept: the keychain on a Mac, memory in tests.
 // get gives the secret and the keychain's status, 0 when it was found.
 // open says whether the saved key is kept the way set keeps it, so that a
-// new build of the app reading it is asked one question, not two. See
-// keys_darwin.go.
+// new build of the app reading it is asked one question, not two, and set
+// says whether it kept it that way. See keys_darwin.go.
 type vault interface {
 	has() bool
 	get() (string, int)
 	open() bool
-	set(secret string) error
+	set(secret string) (bool, error)
 	remove()
 }
 
@@ -78,17 +78,39 @@ func (e *Exa) Get() string {
 		e.logger().Info("the Exa key was read from the keychain", "ms", time.Since(start).Milliseconds(),
 			"found", status == 0, "status", status)
 		if secret != "" && !e.v.open() {
-			if err := e.v.set(secret); err != nil {
-				e.logger().Warn("the Exa key could not be saved again, so a new build still asks twice", "error", err)
-			} else {
-				e.logger().Info("the Exa key was saved again, so a new build asks once")
-			}
+			e.saveAgain(secret)
 		}
 	}
 	if e.cached != "" {
 		return e.cached
 	}
 	return e.env("EXA_API_KEY")
+}
+
+// saveAgain saves a key kept the old way the new way, and says in the log
+// how it went. Saving deletes the old item first, so a save that fails may
+// leave no key in the keychain. It is then tried once more with the key
+// this start still holds.
+func (e *Exa) saveAgain(secret string) {
+	for try := 1; ; try++ {
+		open, err := e.v.set(secret)
+		switch {
+		case err == nil && open:
+			e.logger().Info("the Exa key was saved again, so a new build asks once")
+			return
+		case err == nil:
+			e.logger().Warn("the Exa key was saved again the old way, so a new build still asks twice")
+			return
+		case try < 2:
+			e.logger().Warn("the Exa key could not be saved again, so it is tried once more", "error", err)
+		case e.v.has():
+			e.logger().Warn("the Exa key could not be saved again, so a new build still asks twice", "error", err)
+			return
+		default:
+			e.logger().Error("the Exa key is no longer in the keychain. Save it again in Settings", "error", err)
+			return
+		}
+	}
 }
 
 // errItemNotFound is the keychain's errSecItemNotFound, the status of a
@@ -106,13 +128,20 @@ func (e *Exa) Set(key string) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	open := true
 	if key == "" {
 		e.v.remove()
-	} else if err := e.v.set(key); err != nil {
+	} else if kept, err := e.v.set(key); err != nil {
 		return err
+	} else {
+		open = kept
 	}
 	e.cached, e.read = key, true
-	e.logger().Info("the Exa key was saved in the keychain", "removed", key == "")
+	if open {
+		e.logger().Info("the Exa key was saved in the keychain", "removed", key == "")
+	} else {
+		e.logger().Warn("the Exa key was saved in the keychain the old way, so a new build asks twice")
+	}
 	return nil
 }
 
@@ -126,8 +155,8 @@ func (e *Exa) logger() *slog.Logger {
 // nowhere is a machine without a keychain.
 type nowhere struct{}
 
-func (nowhere) has() bool          { return false }
-func (nowhere) get() (string, int) { return "", errItemNotFound }
-func (nowhere) open() bool         { return true }
-func (nowhere) set(string) error   { return ErrNoKeychain }
-func (nowhere) remove()            {}
+func (nowhere) has() bool                { return false }
+func (nowhere) get() (string, int)       { return "", errItemNotFound }
+func (nowhere) open() bool               { return true }
+func (nowhere) set(string) (bool, error) { return false, ErrNoKeychain }
+func (nowhere) remove()                  {}

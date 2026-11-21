@@ -14,8 +14,9 @@ package keys
 #include <Security/Security.h>
 
 // The item the key is kept in: a generic password, found by its service
-// and its account.
-static CFMutableDictionaryRef st_item(const char *service, const char *account) {
+// and its account. kc is the keychain to look in, NULL for the person's
+// own, a keychain of its own in the tests.
+static CFMutableDictionaryRef st_item(SecKeychainRef kc, const char *service, const char *account) {
 	CFMutableDictionaryRef q = CFDictionaryCreateMutable(NULL, 0,
 		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
 	CFStringRef s = CFStringCreateWithCString(NULL, service, kCFStringEncodingUTF8);
@@ -23,6 +24,11 @@ static CFMutableDictionaryRef st_item(const char *service, const char *account) 
 	CFDictionarySetValue(q, kSecClass, kSecClassGenericPassword);
 	CFDictionarySetValue(q, kSecAttrService, s);
 	CFDictionarySetValue(q, kSecAttrAccount, a);
+	if (kc != NULL) {
+		CFArrayRef list = CFArrayCreate(NULL, (const void **)&kc, 1, &kCFTypeArrayCallBacks);
+		CFDictionarySetValue(q, kSecMatchSearchList, list);
+		CFRelease(list);
+	}
 	CFRelease(s);
 	CFRelease(a);
 	return q;
@@ -30,8 +36,8 @@ static CFMutableDictionaryRef st_item(const char *service, const char *account) 
 
 // Whether the item is there. Only its attributes are asked for, never the
 // secret, so nothing is put on screen.
-static int st_has(const char *service, const char *account) {
-	CFMutableDictionaryRef q = st_item(service, account);
+static int st_has(SecKeychainRef kc, const char *service, const char *account) {
+	CFMutableDictionaryRef q = st_item(kc, service, account);
 	CFDictionarySetValue(q, kSecReturnAttributes, kCFBooleanTrue);
 	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
 	CFTypeRef found = NULL;
@@ -42,8 +48,8 @@ static int st_has(const char *service, const char *account) {
 }
 
 // The secret, copied into memory the caller frees.
-static int st_get(const char *service, const char *account, char **out, long *length) {
-	CFMutableDictionaryRef q = st_item(service, account);
+static int st_get(SecKeychainRef kc, const char *service, const char *account, char **out, long *length) {
+	CFMutableDictionaryRef q = st_item(kc, service, account);
 	CFDictionarySetValue(q, kSecReturnData, kCFBooleanTrue);
 	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
 	CFTypeRef found = NULL;
@@ -129,8 +135,8 @@ static OSStatus st_access(const char *service, SecAccessRef *out) {
 // Whether the item is kept with that access: 1 when it is, 0 when it is
 // not, a status below 0 when it cannot be told. Only the item's access
 // list is read, never the secret, so nothing is put on screen.
-static int st_open(const char *service, const char *account) {
-	CFMutableDictionaryRef q = st_item(service, account);
+static int st_open(SecKeychainRef kc, const char *service, const char *account) {
+	CFMutableDictionaryRef q = st_item(kc, service, account);
 	CFDictionarySetValue(q, kSecReturnRef, kCFBooleanTrue);
 	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
 	CFTypeRef item = NULL;
@@ -155,40 +161,74 @@ static int st_access_is_open(const char *service) {
 	return open;
 }
 
+// What st_set did: the key is kept the new way, the old way, or, with
+// a status below 0, not kept at all.
+enum { st_kept_open = 0, st_kept_closed = 1 };
+
 // Keeps the secret, always as a new item with the access above. Updating
 // an item in place keeps its old access, so one that is there is deleted
 // first, which macOS does without asking. Should the new item not be
-// taken with that access, it is added as before, so the key is never
-// lost.
-static int st_set(const char *service, const char *account, const char *secret, long length) {
-	CFMutableDictionaryRef q = st_item(service, account);
+// taken with that access, it is added the old way, and the caller hears
+// which. Should neither be taken, the old item is gone, and the status
+// says why, so the caller can try again with the key it still holds.
+static int st_set(SecKeychainRef kc, const char *service, const char *account, const char *secret, long length) {
+	CFMutableDictionaryRef q = st_item(kc, service, account);
 	OSStatus status = SecItemDelete(q);
-	if (status != errSecSuccess && status != errSecItemNotFound) {
-		CFRelease(q);
-		return (int)status;
-	}
+	CFRelease(q);
+	if (status != errSecSuccess && status != errSecItemNotFound) return (int)status;
+	CFMutableDictionaryRef add = st_item(NULL, service, account);
+	if (kc != NULL) CFDictionarySetValue(add, kSecUseKeychain, kc);
 	CFDataRef data = CFDataCreate(NULL, (const UInt8 *)secret, length);
-	CFDictionarySetValue(q, kSecValueData, data);
+	CFDictionarySetValue(add, kSecValueData, data);
+	CFRelease(data);
+	int kept = st_kept_open;
 	SecAccessRef access = NULL;
 	status = st_access(service, &access);
 	if (status == errSecSuccess) {
-		CFDictionarySetValue(q, kSecAttrAccess, access);
-		status = SecItemAdd(q, NULL);
+		CFDictionarySetValue(add, kSecAttrAccess, access);
+		status = SecItemAdd(add, NULL);
 		CFRelease(access);
 	}
 	if (status != errSecSuccess) {
-		CFDictionaryRemoveValue(q, kSecAttrAccess);
-		status = SecItemAdd(q, NULL);
+		CFDictionaryRemoveValue(add, kSecAttrAccess);
+		status = SecItemAdd(add, NULL);
+		kept = st_kept_closed;
 	}
-	CFRelease(data);
+	CFRelease(add);
+	if (status == errSecSuccess) return kept;
+	return status < 0 ? (int)status : -(int)status;
+}
+
+static int st_remove(SecKeychainRef kc, const char *service, const char *account) {
+	CFMutableDictionaryRef q = st_item(kc, service, account);
+	OSStatus status = SecItemDelete(q);
 	CFRelease(q);
 	return (int)status;
 }
 
-static int st_remove(const char *service, const char *account) {
-	CFMutableDictionaryRef q = st_item(service, account);
-	OSStatus status = SecItemDelete(q);
-	CFRelease(q);
+// For the tests: a keychain of its own at path, unlocked, with every box
+// of macOS turned off, so a read that would ask fails at once instead.
+static OSStatus st_test_keychain(const char *path, SecKeychainRef *out) {
+	SecKeychainSetUserInteractionAllowed(false);
+	return SecKeychainCreate(path, 4, "test", false, NULL, out);
+}
+
+static void st_test_keychain_drop(SecKeychainRef kc) {
+	SecKeychainDelete(kc);
+	CFRelease(kc);
+	SecKeychainSetUserInteractionAllowed(true);
+}
+
+// For the tests: keeps the secret the way builds before this one did,
+// with the access macOS gives an item by default.
+static int st_test_set_old(SecKeychainRef kc, const char *service, const char *account, const char *secret, long length) {
+	CFMutableDictionaryRef add = st_item(NULL, service, account);
+	CFDictionarySetValue(add, kSecUseKeychain, kc);
+	CFDataRef data = CFDataCreate(NULL, (const UInt8 *)secret, length);
+	CFDictionarySetValue(add, kSecValueData, data);
+	OSStatus status = SecItemAdd(add, NULL);
+	CFRelease(data);
+	CFRelease(add);
 	return (int)status;
 }
 
@@ -207,8 +247,9 @@ import (
 
 func system() vault { return keychain{} }
 
-// keychain keeps the key through the Security framework.
-type keychain struct{}
+// keychain keeps the key through the Security framework, in the person's
+// own keychain, or in kc when the tests give one.
+type keychain struct{ kc C.SecKeychainRef }
 
 func names(do func(service, account *C.char)) {
 	service, acct := C.CString(Service), C.CString(account)
@@ -217,18 +258,18 @@ func names(do func(service, account *C.char)) {
 	do(service, acct)
 }
 
-func (keychain) has() bool {
+func (k keychain) has() bool {
 	found := false
-	names(func(service, account *C.char) { found = C.st_has(service, account) == 0 })
+	names(func(service, account *C.char) { found = C.st_has(k.kc, service, account) == 0 })
 	return found
 }
 
-func (keychain) get() (string, int) {
+func (k keychain) get() (string, int) {
 	secret, status := "", 0
 	names(func(service, account *C.char) {
 		var out *C.char
 		var length C.long
-		if status = int(C.st_get(service, account, &out, &length)); status != 0 {
+		if status = int(C.st_get(k.kc, service, account, &out, &length)); status != 0 {
 			return
 		}
 		defer C.st_forget(out, length)
@@ -239,9 +280,9 @@ func (keychain) get() (string, int) {
 
 // open is false only when the item is there and kept the old way. When
 // it cannot be told, it is left as it is.
-func (keychain) open() bool {
+func (k keychain) open() bool {
 	result := C.int(1)
-	names(func(service, account *C.char) { result = C.st_open(service, account) })
+	names(func(service, account *C.char) { result = C.st_open(k.kc, service, account) })
 	return result != 0
 }
 
@@ -253,19 +294,45 @@ func accessIsOpen() bool {
 	return C.st_access_is_open(service) == 1
 }
 
-func (keychain) set(secret string) error {
-	var status C.int
+func (k keychain) set(secret string) (bool, error) {
+	var result C.int
 	names(func(service, account *C.char) {
 		value := C.CString(secret)
 		defer C.st_forget(value, C.long(len(secret)))
-		status = C.st_set(service, account, value, C.long(len(secret)))
+		result = C.st_set(k.kc, service, account, value, C.long(len(secret)))
+	})
+	if result < 0 {
+		return false, fmt.Errorf("the keychain did not keep the key, status %d", int(result))
+	}
+	return result == C.st_kept_open, nil
+}
+
+// testKeychain is a keychain of its own at path, for the tests, with
+// every box of macOS turned off until drop.
+func testKeychain(path string) (k keychain, drop func(), err error) {
+	p := C.CString(path)
+	defer C.free(unsafe.Pointer(p))
+	if status := C.st_test_keychain(p, &k.kc); status != 0 {
+		return k, nil, fmt.Errorf("no keychain for the test, status %d", int(status))
+	}
+	return k, func() { C.st_test_keychain_drop(k.kc) }, nil
+}
+
+// setOld keeps the secret the way builds before this one did, for the
+// tests.
+func (k keychain) setOld(secret string) error {
+	var status C.int
+	names(func(service, account *C.char) {
+		value := C.CString(secret)
+		defer C.free(unsafe.Pointer(value))
+		status = C.st_test_set_old(k.kc, service, account, value, C.long(len(secret)))
 	})
 	if status != 0 {
-		return fmt.Errorf("the keychain did not keep the key, status %d", int(status))
+		return fmt.Errorf("status %d", int(status))
 	}
 	return nil
 }
 
-func (keychain) remove() {
-	names(func(service, account *C.char) { C.st_remove(service, account) })
+func (k keychain) remove() {
+	names(func(service, account *C.char) { C.st_remove(k.kc, service, account) })
 }

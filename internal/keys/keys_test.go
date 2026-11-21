@@ -11,14 +11,17 @@ import (
 )
 
 // memory is a keychain in memory. closed is a key saved the old way, and
-// saves counts the saves.
+// saves counts the saves. Like the keychain, a save deletes the key first,
+// then refuses the next refuse saves, or keeps it the old way when old is
+// set.
 type memory struct {
 	mu     sync.Mutex
 	secret string
 	reads  int
 	closed bool
 	saves  int
-	refuse error
+	refuse int
+	old    bool
 }
 
 func (m *memory) has() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.secret != "" }
@@ -32,15 +35,17 @@ func (m *memory) get() (string, int) {
 	return m.secret, 0
 }
 func (m *memory) open() bool { m.mu.Lock(); defer m.mu.Unlock(); return !m.closed }
-func (m *memory) set(s string) error {
+func (m *memory) set(s string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.refuse != nil {
-		return m.refuse
+	m.secret = ""
+	if m.refuse > 0 {
+		m.refuse--
+		return false, errors.New("the keychain did not keep the key, status -25293")
 	}
-	m.secret, m.closed = s, false
+	m.secret, m.closed = s, m.old
 	m.saves++
-	return nil
+	return !m.old, nil
 }
 func (m *memory) remove() { m.mu.Lock(); defer m.mu.Unlock(); m.secret = "" }
 
@@ -153,16 +158,44 @@ func TestAKeySavedTheNewWayIsLeftAsItIs(t *testing.T) {
 	}
 }
 
-// When the keychain does not take the key again, the app still has it
-// for this start, and the log says why the next build will ask twice.
-func TestAKeyThatCannotBeSavedAgainIsStillUsed(t *testing.T) {
-	m := &memory{secret: "kept", closed: true, refuse: errors.New("status -25293")}
+// A save deletes the old key before it adds the new one. When the add is
+// refused once, it is tried again, and the key is kept.
+func TestAKeyRefusedOnceIsSavedOnTheSecondTry(t *testing.T) {
+	m := &memory{secret: "kept", closed: true, refuse: 1}
 	var logged safeBuffer
 	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
-	if e.Get() != "kept" || m.secret != "kept" {
-		t.Errorf("get %q, kept %q", e.Get(), m.secret)
+	if e.Get() != "kept" || m.secret != "kept" || m.closed {
+		t.Errorf("get %q, kept %q, closed %v", e.Get(), m.secret, m.closed)
 	}
-	if !strings.Contains(logged.String(), `"level":"WARN"`) || !strings.Contains(logged.String(), "status -25293") {
+	if !strings.Contains(logged.String(), "tried once more") || !strings.Contains(logged.String(), "so a new build asks once") {
+		t.Errorf("log %s", logged.String())
+	}
+}
+
+// When the keychain refuses the key twice, it is gone from the keychain.
+// This start still has it, and the log says to save it again, as an error.
+func TestAKeyRefusedTwiceIsStillUsedAndTheLogSaysItIsGone(t *testing.T) {
+	m := &memory{secret: "kept", closed: true, refuse: 2}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	if e.Get() != "kept" {
+		t.Errorf("get %q", e.Get())
+	}
+	if !strings.Contains(logged.String(), `"level":"ERROR"`) || !strings.Contains(logged.String(), "no longer in the keychain") {
+		t.Errorf("log %s", logged.String())
+	}
+}
+
+// A key the keychain kept only the old way is not said to be kept the
+// new way.
+func TestAKeyKeptTheOldWayIsLoggedAsSuch(t *testing.T) {
+	m := &memory{secret: "kept", closed: true, old: true}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	if e.Get() != "kept" {
+		t.Errorf("get %q", e.Get())
+	}
+	if !strings.Contains(logged.String(), "saved again the old way") || strings.Contains(logged.String(), "asks once") {
 		t.Errorf("log %s", logged.String())
 	}
 }

@@ -155,7 +155,7 @@
         {#if facts}<p class="facts" title={p.linkedin?.age_reason ? `The age is a guess from the LinkedIn profile: ${p.linkedin.age_reason}` : undefined}>{facts}</p>{/if}
       </div>
       <div class="actions">
-        <button class="btn wide connect" class:primary={!p.connected} class:done={p.connected} type="button"
+        <button class="btn wide connect good" class:primary={!p.connected} type="button"
           aria-pressed={p.connected} disabled={deciding} onclick={toggleConnected}
           title={p.connected ? 'Connected on LinkedIn. Click again to take it back' : 'Mark as connected once you connected on LinkedIn. It counts for the search that found them'}>
           <Icon name={p.connected ? 'check' : 'connect'} />{p.connected ? 'Connected' : 'Connect'}
@@ -238,7 +238,6 @@
   /* Both buttons are as wide as the longer word, Connected, so neither
      moves when Connect turns into it. */
   .btn.wide { min-width: 9.5em; }
-  .btn.done { background: var(--good-soft); border-color: transparent; color: var(--good); }
   .why { display: grid; gap: 10px; }
   .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
   .why .mark {

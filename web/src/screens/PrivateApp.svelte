@@ -165,12 +165,8 @@
 </div>
 
 <style>
-  /* The mist lies behind the whole window, and every pane over it is
-     frosted, see --mist and --frost in app.css. */
-  .shell {
-    display: flex; flex-direction: column; height: 100dvh;
-    background: var(--mist), var(--bg); background-size: 100% 100%;
-  }
+  /* The page's solid ground behind the whole window, see app.css. */
+  .shell { display: flex; flex-direction: column; height: 100dvh; background: var(--bg); }
 
   /* The rail keeps its own column, so nothing of the page ever hides under
      it. The sidebar grows over the page from there. Kept open, it takes
@@ -184,20 +180,14 @@
   aside {
     position: absolute; top: 0; bottom: 0; left: 0; z-index: 20; width: var(--rail);
     display: flex; flex-direction: column; background: var(--side);
-    backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
     /* The line at the edge is drawn inside rather than as a border, so the
        rail is 44 px of room for the icons and not 43, and an icon sits on
        whole pixels in the middle of it. */
     box-shadow: inset -1px 0 var(--line); overflow: hidden; transition: width .14s ease;
   }
-  aside.open {
-    width: var(--side-w);
-    box-shadow: inset -1px 0 var(--line), 8px 0 24px rgba(20, 27, 38, .16);
-    /* The shadow falls on the page to the right and nowhere else, not up
-       over the title bar. */
-    clip-path: inset(0 -40px 0 0);
-  }
-  .kept aside.open { box-shadow: inset -1px 0 var(--line); }
+  /* Open over the page it casts no shadow: its solid ground and the line
+     at its edge set it apart, the look is flat, issue #45. */
+  aside.open { width: var(--side-w); }
 
   /* What there is no room for on the rail waits until the sidebar opens.
      An icon on the rail is exactly where its row is when the sidebar
@@ -214,7 +204,8 @@
     display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
     border: 0; border-radius: 8px; background: none; color: var(--ink-3); cursor: pointer;
   }
-  .glyph:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .glyph:hover { color: var(--ink); background: var(--hover); }
+  .glyph:active { background: var(--press); }
   .rows { display: grid; gap: 2px; padding: 0 4px; flex: 1; min-height: 0; align-content: start; }
   .foot { border-top: 1px solid var(--line); padding: 8px 4px; display: grid; gap: 2px; }
 
@@ -224,13 +215,16 @@
     display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 10px; border-radius: 8px;
     color: var(--ink-2); font-size: 14px; font-weight: 500; text-decoration: none;
   }
-  .nav:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); text-decoration: none; }
-  .nav[aria-current="page"], .nav[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: var(--chosen); }
   /* Bugs is a button, since it opens a window rather than a page, and
      looks like the links beside it. */
   button.nav { width: 100%; border: 0; background: none; font-family: inherit; text-align: left; cursor: pointer; }
-  button.nav:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
-  button.nav[aria-pressed="true"] { background: var(--accent-soft); }
+  .nav:hover { background: var(--hover); color: var(--ink); text-decoration: none; }
+  .nav:active { background: var(--press); }
+  /* The page open, and Bugs while its window is, lie flat in the tint
+     every chosen thing wears. Its weight stays, so the word never moves. */
+  .nav[aria-current="page"], .nav[aria-pressed="true"] { background: var(--chosen); color: var(--chosen-ink); }
+  .nav[aria-current="page"]:hover, .nav[aria-pressed="true"]:hover { background: var(--chosen-hover); color: var(--chosen-ink); }
+  .nav[aria-current="page"]:active, .nav[aria-pressed="true"]:active { background: var(--chosen-press); }
   .nav .word { flex: 1; }
   /* The build stands at the far end of its row, whole, since it names
      what is being tested. */

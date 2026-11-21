@@ -41,7 +41,7 @@
 <style>
   .shell {
     display: flex; flex-direction: column; height: 100dvh;
-    background: var(--mist), var(--bg); background-size: 100% 100%;
+    background: var(--bg);
   }
   .main { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; }
 </style>

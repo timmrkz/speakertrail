@@ -237,7 +237,7 @@ interface: web/node_modules/.package-lock.json
 # The walks drive the interface with invented data in Chromium, the way
 # FrameFairy's walks drive its own, see web/walks/.
 walks: web/node_modules/.package-lock.json
-	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/draft.mjs && node walks/focus.mjs && node walks/beam.mjs && node walks/pick.mjs
+	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/draft.mjs && node walks/focus.mjs && node walks/beam.mjs && node walks/pick.mjs && node walks/look.mjs
 
 check:
 	@sh scripts/check.sh || true

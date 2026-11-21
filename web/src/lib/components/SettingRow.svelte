@@ -171,9 +171,14 @@
   }
   .switch .knob {
     position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s;
+    border: 1px solid var(--line-strong); transition: transform .15s;
   }
+  .switch:hover:enabled { border-color: var(--line-hover); background: var(--surface-hover); }
+  .switch:active:enabled { background: var(--surface-press); }
   .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+  .switch[aria-checked="true"]:hover:enabled { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .switch[aria-checked="true"]:active:enabled { background: var(--accent-press); border-color: var(--accent-press); }
+  .switch:disabled { background: var(--disabled); border-color: transparent; cursor: default; }
   .switch[aria-checked="true"] .knob { transform: translateX(16px); }
   @media (max-width: 760px) {
     .setting { grid-template-columns: minmax(0, 1fr); }

@@ -312,7 +312,8 @@
      the chevron at its end turns, the way a row in the Mac's own settings
      leads on. */
   .disclose { width: 100%; border: none; border-radius: 0; background: transparent; text-align: left; color: inherit; font: inherit; cursor: pointer; }
-  .disclose:hover { background: var(--surface-2); }
+  .disclose:hover { background: var(--hover); }
+  .disclose:active { background: var(--press); }
   .chevron { display: flex; color: var(--ink-3); transition: transform .12s ease; }
   .chevron.open { transform: rotate(90deg); }
   @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }

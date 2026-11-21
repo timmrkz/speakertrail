@@ -76,7 +76,7 @@
   .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 40; animation: fade .18s ease-out; }
   .sheet {
     position: fixed; top: 0; right: 0; bottom: 0; width: min(560px, 100%); z-index: 41; background: var(--surface);
-    border-left: 1px solid var(--line); box-shadow: var(--shadow-lg); overflow-y: auto; overscroll-behavior: contain;
+    border-left: 1px solid var(--line-strong); overflow-y: auto; overscroll-behavior: contain;
     display: flex; flex-direction: column; outline: none;
     animation: slide-in .26s cubic-bezier(.2, .8, .2, 1);
   }

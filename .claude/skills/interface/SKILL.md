@@ -162,7 +162,11 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   21 November 2026, twice: Clear and the plain buttons beside Report
   wore Report's accent. A list to pick from wears the same ring 1 px
   inside its edge, as in FrameFairy, and none while it is open. A field
-  in use shows the accent on its own edge and nothing more. A row, a
+  in use keeps the grey edge it has under the pointer, `--line-hover`,
+  and nothing more, since the caret says where typing goes. Tim found
+  the accent edge lighting up only once the pointer left a field he
+  was typing in, and asked for it gone from every field on 21 November
+  2026. A row, a
   page in the sidebar and a segment of a choice show their own colour
   2 px inside their edge with a faint wash, since a ring would be cut
   off by the list or pane round them. The wash alone was too faint to

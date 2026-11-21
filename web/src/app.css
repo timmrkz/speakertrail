@@ -215,8 +215,10 @@ button { -webkit-tap-highlight-color: transparent; }
    #46 on 21 November 2026, twice: Clear and the plain buttons beside
    Report wore Report's colour.
    A list to pick from wears the same ring inside its edge, as in
-   FrameFairy. A field shows focus by its edge alone, in the accent (Tim,
-   the same day). A row, a page in the sidebar and a segment of a choice
+   FrameFairy. A field in use keeps the edge it has under the pointer,
+   --line-hover, and nothing more: the caret says where typing goes. The
+   accent there lit up only once the pointer left it (Tim, 21 November
+   2026). A row, a page in the sidebar and a segment of a choice
    keep the edge inside them, 2 px in their own colour over their own
    border with a faint wash of it, since a ring would be cut off by the
    list or the pane round them. The wash alone was too faint to find, Tim
@@ -331,7 +333,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
 .input:hover:enabled:not([aria-disabled="true"]), .textarea:hover:enabled:not([aria-disabled="true"]) { border-color: var(--line-hover); }
-.input:focus, .textarea:focus { border-color: var(--accent); }
+.input:focus, .textarea:focus { border-color: var(--line-hover); }
 .input:disabled, .textarea:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }

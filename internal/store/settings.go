@@ -24,30 +24,66 @@ var Defaults = []Default{
 	{"exa_monthly_searches", "1000", "Exa searches per month. Its free $10 a month covers about 1,400"},
 	{"probation_weeks", "3", "Weeks a new search may find nobody before runs leave it out"},
 	{"retire_after_empty_checks", "4", "Runs in a row without anyone new before a search is left out"},
-	{FirstMessagePrompt, mustJSON(DefaultFirstMessagePrompt), "What the language model is asked to write a first message from. {{profile}} is where the profile goes"},
+	{FirstMessagePrompt, mustJSON(DefaultFirstMessagePrompt), "What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them"},
 }
 
-// FirstMessagePrompt is the setting that holds the prompt a first message
-// is drafted from, see internal/draft. Its fields are written
-// {{profile}}, {{name}}, {{first_name}} and {{notes}}.
-const FirstMessagePrompt = "first_message_prompt"
+// FirstMessagePrompt is the setting that holds the prompt the language
+// model writes the hook of a first message from, see internal/draft. Its
+// fields are written {{profile}}, {{name}}, {{first_name}} and {{notes}}.
+// It was first_message_prompt while the model wrote the whole message,
+// and a prompt kept under that name is left alone, since it asks for
+// something else.
+const FirstMessagePrompt = "hook_prompt"
 
 // ProfileField is the field of the prompt where the profile goes. A prompt
 // without it would have the model write to nobody in particular.
 const ProfileField = "{{profile}}"
 
-// DefaultFirstMessagePrompt is the prompt until Tim puts his own in.
-const DefaultFirstMessagePrompt = `You write the first LinkedIn message from Tim to {{name}}, a new connection he just made.
+// DefaultFirstMessagePrompt is the prompt until Tim puts his own in, the
+// one he wrote on 21 November 2026, with the portrait he asked for the
+// same day.
+const DefaultFirstMessagePrompt = `You write one short German line for a LinkedIn message from Tim.
+It finishes this sentence: "Du bist mir in meinem LinkedIn Feed aufgefallen, weil …"
 
-Tim hosts the podcast "My First Memory". Each guest tells the story of their earliest memory and what it says about who they became. Tim looks for people in North Rhine-Westphalia who run their own business.
+Tim makes the podcast "My First Memory" and coaches kids in Brazilian Jiu-Jitsu. He likes real products, sport, people who just start things and people who bring others together.
 
-Write the message in the language of the profile, German when in doubt, and use "du" in German. Three to five short sentences. Thank them for connecting, name one specific thing from their profile that caught Tim's interest, and ask whether they would like to hear more about being a guest. No subject line, no hashtags, no emojis, no flattery. Address them by first name, {{first_name}}. Sign with "Tim". Write only the message.
+Return JSON with three fields:
+- reason: the part after "weil". Verb at the end. End with "." or "!".
+- reaction: an optional short sentence. Usually "".
+- portrait: what they are, in one or two German words, the way they show themselves in their profile, like "Coach", "Lehrerin", "Macher" or "Unternehmerin". It finishes "um deine Geschichte als … zu erzählen".
+Reason and reaction together, under 150 characters.
 
-Tim's notes about them:
-{{notes}}
+Rules:
+- If Tim wrote a note, use his words.
+- Use their main work only. Say what it means, not what it is.
+- Never repeat their headline, numbers, product description or mission.
+- Only claim what the profile shows.
+- Keep it plain, warm and casual. No wordplay. No jokes about the person.
+- Never mention family, health, private life or their employer.
+- No semicolons. No dashes. Never use the word "Erinnerung". Use du.
+- Add an emoji only after a light line ending in "!".
 
-Their LinkedIn profile:
-{{profile}}`
+Examples:
+Neurologin, war Chefärztin, jetzt selbstständig
+{"reason":"du als Neurologin den Schritt in die Selbstständigkeit gewagt hast.","reaction":"","portrait":"Neurologin"}
+
+CEO eines Herstellers von Babytragen. Note: hardware is tough, we need more of that
+{"reason":"du ein Unternehmen mit echten Produkten zum Anfassen führst.","reaction":"Das ist richtig schwer. Und das ist richtig toll!","portrait":"Unternehmerin"}
+
+Eisbaden-Coach, vorher 24 Jahre TV-Produktion
+{"reason":"du mehr kaltes Wasser unter die Menschen bringst! 😄","reaction":"","portrait":"Coach"}
+
+Geschäftsführer einer Sportstiftung
+{"reason":"du dich für Sport und Menschen einsetzt.","reaction":"Das sind auch für mich Herzens-Themen.","portrait":"Macher"}
+
+Mitgründerin eines Klimarechners für die Landwirtschaft
+{"reason":"ich digitale Landwirtschaft richtig mega finde!","reaction":"","portrait":"Gründerin"}
+
+Profile:
+{{profile}}
+
+Tim's note:
+{{notes}}`
 
 func mustJSON(v any) string {
 	b, err := json.Marshal(v)

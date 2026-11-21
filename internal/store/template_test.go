@@ -68,7 +68,7 @@ func TestATemplateThatCannotWorkIsRefused(t *testing.T) {
 		"reason not reached": {`{"origin":["Hallo"],"hook":["#reason#"]}`, "#reason#"},
 		"unknown part":       {`{"origin":["#reason# #nope#"]}`, "#nope#"},
 		"empty part":         {`{"origin":["#reason# #a#"],"a":[]}`, "at least one variation"},
-		"a field's name":     {`{"origin":["#reason#"],"portrait":["x"]}`, "filled in by the app"},
+		"a field's name":     {`{"origin":["#reason#"],"first_name":["x"]}`, "filled in by the app"},
 		"a model's field":    {`{"origin":["#reason#"],"reason":["x"]}`, "language model"},
 		"bad name":           {`{"origin":["#reason#"],"Opener":["x"]}`, "cannot name a part"},
 		"itself":             {`{"origin":["#reason# #a#"],"a":["#b#"],"b":["#a#"]}`, "holds itself"},

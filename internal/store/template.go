@@ -17,7 +17,7 @@ import (
 // Tracery (https://github.com/galaxykate/tracery): each part has its
 // variations, a draft picks one of them at random, and every #part#
 // inside it is put together the same way, starting from origin. The app
-// fills first_name and portrait, and the language model the reason and
+// fills first_name, and the language model the portrait, the reason and
 // the reaction, see internal/draft. Tim edits every part in Settings.
 
 // Template is the parts of a first message, in the order Tim keeps them.
@@ -54,9 +54,9 @@ const (
 // No part of the template takes their names.
 var TemplateFields = []Field{
 	{FirstNameField, "app", "Their first name"},
-	{PortraitField, "app", "What they are, the title of the first role they hold now, like Inhaberin"},
-	{ReasonField, "model", "Why they caught Tim's eye, the part after \"weil\", written by the language model"},
-	{ReactionField, "model", "Nothing, or a space and the short reaction the language model wrote"},
+	{PortraitField, "model", "What they are, the way they show themselves, like Coach or Gründerin"},
+	{ReasonField, "model", "Why they caught Tim's eye, the part after \"weil\""},
+	{ReactionField, "model", "Nothing, or a space and a short reaction"},
 }
 
 // Limits of a template, so a slip never makes a file or a draft without

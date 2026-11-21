@@ -2,7 +2,7 @@
   "_about": [
     "Tracery-style grammar for My First Memory LinkedIn first messages.",
     "Each key is a slot. Pick one entry at random and expand every #slot# inside it.",
-    "The app sets first_name and portrait. reason and reaction_part come from the model.",
+    "The app sets first_name. portrait, reason and reaction_part come from the model.",
     "reaction_part is empty, or a space followed by the model's reaction.",
     "Keys starting with an underscore are ignored. An empty string makes a slot optional. Repeat an entry to make it more likely."
   ],

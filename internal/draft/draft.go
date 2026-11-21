@@ -13,9 +13,11 @@ package draft
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
 	"strconv"
 	"strings"
@@ -48,6 +50,10 @@ type Job struct {
 	Fraction    float64  `json:"fraction"`
 	SecondsLeft *float64 `json:"seconds_left"`
 	Error       string   `json:"error,omitempty"`
+	// Problem says why a draft that is done lacks the model's part: its
+	// answer did not fit the schema, so the message has … there for Tim
+	// to write.
+	Problem string `json:"problem,omitempty"`
 	// Seq is higher for every change than for the one before it, of any
 	// draft, so the window keeps the newer of an answer and an event.
 	Seq int64 `json:"seq"`
@@ -82,8 +88,12 @@ type Drafter struct {
 	Check func(m language.Model) error
 	// Finder reads a profile from Exa, nil while there is no key.
 	Finder func() Finder
-	// Ask asks the model, language.Ask when nil. A test puts its own.
-	Ask func(ctx context.Context, s *language.Server, messages []language.Message, heard func(string)) (language.Answer, error)
+	// Ask asks the model for JSON that fits schema, language.AskFor when
+	// nil. A test puts its own.
+	Ask func(ctx context.Context, s *language.Server, messages []language.Message, schema json.RawMessage, heard func(string)) (language.Answer, error)
+	// Pick picks one of n variations of the template, from 0 to n-1, at
+	// random when nil. A test picks its own.
+	Pick func(n int) int
 	// Told hears every job whenever it changes, and about once a second
 	// while one runs. The app sends it to the window as the event draft.
 	Told func(Job)
@@ -341,16 +351,24 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	var name, notes, link, text string
 	var earlier []store.DraftTime
 	var prompt string
+	var template store.Template
 	d.Store.Read(func(data *store.Data) {
 		if p := data.Person(id); p != nil {
 			name, notes, link, text = p.Name, p.Notes, p.LinkedIn.URL, p.LinkedIn.Text
 		}
 		earlier = slices.Clone(data.DraftTimes)
 		prompt = data.Text(store.FirstMessagePrompt)
+		template = data.FirstMessageTemplate()
 	})
 	if link == "" && text == "" {
 		return errors.New("this person has no LinkedIn profile to write from")
 	}
+	if err := template.Check(); err != nil {
+		return fmt.Errorf("the first message template in Settings cannot be used: %w", err)
+	}
+	// The message is put together before the model writes, so it is on
+	// screen at once, with … where the model's part goes.
+	message := d.put(template, name)
 	m, path, err := d.Model()
 	if err != nil {
 		return err
@@ -413,35 +431,47 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		took.LoadMS = d.now().Sub(loadStart).Milliseconds()
 	}
 	writeStart := d.now()
-	d.update(id, func(j *Job) { j.State = "writing"; progress(j) })
+	d.update(id, func(j *Job) { j.State = "writing"; j.Text = message.with(Hook{}); progress(j) })
 	ask := d.Ask
 	if ask == nil {
-		ask = func(ctx context.Context, s *language.Server, messages []language.Message, heard func(string)) (language.Answer, error) {
-			return language.Ask(ctx, d.Host.Client, s, messages, heard)
+		ask = func(ctx context.Context, s *language.Server, messages []language.Message, schema json.RawMessage, heard func(string)) (language.Answer, error) {
+			return language.AskFor(ctx, d.Host.Client, s, messages, schema, heard)
 		}
 	}
-	answer, err := ask(ctx, s, []language.Message{{Role: "user", Content: Fill(prompt, name, notes, text)}}, func(so string) {
-		d.update(id, func(j *Job) { j.Text = so; progress(j) })
+	// What the model writes so far is JSON, which is nothing to read, so
+	// the window sees only that it grows.
+	answer, err := ask(ctx, s, []language.Message{{Role: "user", Content: Fill(prompt, name, notes, text)}}, json.RawMessage(HookSchema), func(string) {
+		d.update(id, progress)
 	})
 	if err != nil {
 		stalled = errors.Is(err, language.ErrStalled)
 		return err
 	}
 	took.WriteMS = d.now().Sub(writeStart).Milliseconds()
-	message := strings.TrimSpace(answer.Text)
+	// An answer that does not fit the schema still makes a draft, with …
+	// in its place, and the window says why. Never the answer itself: it
+	// is untrusted and may name the person.
+	var problem string
+	hook, err := ParseHook(answer.Text)
+	if err != nil {
+		problem = Sentence("the language model's answer did not fit, so … marks what it should have written: " + err.Error())
+		d.log().Warn("the language model's answer did not fit the schema", "person", id, "model", m.Name, "error", err)
+		hook = Hook{}
+	}
+	written := message.with(hook)
 	err = d.Store.Update(func(data *store.Data) error {
 		p := data.Person(id)
 		if p == nil {
 			return errors.New("they were removed while the message was written")
 		}
-		p.Draft, p.DraftedAt, p.UpdatedAt = message, d.now(), d.now()
+		p.Draft, p.DraftedAt, p.UpdatedAt = written, d.now(), d.now()
 		data.Drafted(took)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	d.update(id, func(j *Job) { j.Text = message })
+	d.update(id, func(j *Job) { j.Text, j.Problem = written, problem })
 	// By ids and counts, never by whom or what, which is personal data.
 	d.log().Info("a first message was drafted", "person", id, "model", m.Name,
 		"load_ms", took.LoadMS, "write_ms", took.WriteMS, "read", answer.PromptTokens, "wrote", answer.Written)
@@ -512,6 +542,51 @@ func middle(ns []int64) int64 {
 	s := slices.Clone(ns)
 	slices.Sort(s)
 	return s[len(s)/2]
+}
+
+// marks stand where the model's parts go in a message put together before
+// the model wrote them. No template holds them, because Check refuses
+// characters that cannot be written.
+const (
+	portraitMark = "\x00portrait\x00"
+	reasonMark   = "\x00reason\x00"
+	reactionMark = "\x00reaction\x00"
+)
+
+// message is a first message put together from the template, waiting for
+// the model's part.
+type message string
+
+// put puts a message together from the template, with the variations
+// picked at random, and marks where the model's part goes.
+func (d *Drafter) put(t store.Template, name string) message {
+	pick := d.Pick
+	if pick == nil {
+		pick = rand.IntN
+	}
+	first, _, _ := strings.Cut(oneLine(name), " ")
+	return message(t.Expand(map[string]string{
+		store.FirstNameField: first,
+		store.PortraitField:  portraitMark,
+		store.ReasonField:    reasonMark,
+		store.ReactionField:  reactionMark,
+	}, pick))
+}
+
+// with puts the model's part in. Where it has none, … stands for Tim to
+// write, and the reaction is left out.
+func (m message) with(h Hook) string {
+	or := func(s string) string {
+		if s == "" {
+			return Missing
+		}
+		return s
+	}
+	reaction := ""
+	if h.Reaction != "" {
+		reaction = " " + h.Reaction
+	}
+	return strings.NewReplacer(portraitMark, or(h.Portrait), reasonMark, or(h.Reason), reactionMark, reaction).Replace(string(m))
 }
 
 // Fill puts a person into the prompt: {{profile}}, {{name}},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -620,5 +621,38 @@ func TestWarmWaitsForTheDraftBeforeIt(t *testing.T) {
 	go release(Keep)
 	if err := <-errs; err != nil || !h.Loaded("/models/b.gguf") {
 		t.Errorf("%v, b loaded %v", err, h.Loaded("/models/b.gguf"))
+	}
+}
+
+// An ask for JSON hands llama-server the schema, which it makes into a
+// grammar the model cannot write outside of. A plain ask hands it none.
+func TestAskForJSONSendsTheSchema(t *testing.T) {
+	var got []map[string]any
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		got = append(got, body)
+		mu.Unlock()
+		stream(w, `{"reason":"x"}`)
+	}))
+	defer srv.Close()
+	s := &Server{URL: srv.URL, Key: "k"}
+	schema := json.RawMessage(`{"type":"object","required":["reason"]}`)
+	if _, err := AskFor(t.Context(), nil, s, []Message{{Role: "user", Content: "?"}}, schema, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Ask(t.Context(), nil, s, []Message{{Role: "user", Content: "?"}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	format, _ := got[0]["response_format"].(map[string]any)
+	inner, _ := format["json_schema"].(map[string]any)
+	sent, _ := json.Marshal(inner["schema"])
+	if format["type"] != "json_schema" || string(sent) != `{"required":["reason"],"type":"object"}` {
+		t.Errorf("the ask for JSON sent %v", got[0]["response_format"])
+	}
+	if _, ok := got[1]["response_format"]; ok {
+		t.Errorf("a plain ask sent %v", got[1]["response_format"])
 	}
 }

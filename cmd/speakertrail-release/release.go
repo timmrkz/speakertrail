@@ -131,7 +131,19 @@ func (r dev) bases() []string {
 // is not one of bases, and every piece and patch that no parts in parts
 // name. parts holds the parts of bases that could be read. When one could
 // not, every piece and patch stays, since nothing then says which may go.
+// When the release's files cannot be the whole of them, because a zip the
+// list points at is not among them or a file has no time, nothing goes.
 func (r dev) unreachable(parts map[string]updates.Parts, now time.Time) []string {
+	for _, zip := range r.zips() {
+		if !r.holds(zip) {
+			return nil
+		}
+	}
+	for _, a := range r.assets {
+		if a.CreatedAt.IsZero() {
+			return nil
+		}
+	}
 	kept := map[string]bool{}
 	for _, zip := range r.zips() {
 		kept[zip], kept[updates.PackedName(zip)] = true, true
@@ -213,6 +225,7 @@ func unreachableCommand(args []string) error {
 	}
 	b := bases{from: *from, client: &http.Client{}}
 	for _, name := range r.unreachable(b.readParts(r.bases(), os.Stderr), time.Now()) {
+		fmt.Fprintln(os.Stderr, "removing", name)
 		fmt.Println(name)
 	}
 	return nil

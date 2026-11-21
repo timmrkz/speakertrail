@@ -107,9 +107,14 @@ func TestWhatNoBuildReachesGoesAfterAnHour(t *testing.T) {
 		// Named by nothing.
 		{"piece-" + sha("c") + ".zst", old},
 		{"patch-" + sha("c") + "-" + sha("a") + ".bsdiff", old},
-		// Named by nothing, and only just uploaded by a publish beside this.
+		// Named by nothing, and only just uploaded by a publish beside this,
+		// or exactly an hour ago.
 		{"piece-" + sha("d") + ".zst", now.Add(-time.Minute)},
 		{"app-pr-9.zip", now.Add(-time.Minute)},
+		{"piece-" + sha("e") + ".zst", now.Add(-keptFor)},
+		// Not the app's at all.
+		{"pictures.zip", old},
+		{"pr-notes.txt", old},
 	}
 	// Builds that left the list later than pr-7, all but one of the
 	// newest, so the oldest of them is no longer patched against.
@@ -163,6 +168,23 @@ func TestPartsThatCannotBeReadKeepEveryPieceAndPatch(t *testing.T) {
 	got := r.unreachable(map[string]updates.Parts{}, now)
 	if want := []string{"app-pr-7.zip"}; !slices.Equal(got, want) {
 		t.Errorf("what goes is %v, want %v", got, want)
+	}
+}
+
+// A list of the release's files that cannot be the whole of them, one
+// without a zip the channel list points at or with a file of no time,
+// names nothing, rather than files a build still needs.
+func TestAListOfFilesThatCannotBeWholeRemovesNothing(t *testing.T) {
+	old := now.Add(-2 * time.Hour)
+	for name, assets := range map[string][]asset{
+		"the listed zip missing": {{"app-pr-7.zip", old}},
+		"a file of no time":      {{"app-main.zip", old}, {"app-pr-7.zip", old}, {"app-pr-8.zip", time.Time{}}},
+	} {
+		r := onDev(t, []string{"main"}, assets)
+		r.assets = assets
+		if got := r.unreachable(map[string]updates.Parts{}, now); got != nil {
+			t.Errorf("with %s, %v goes, want nothing", name, got)
+		}
 	}
 }
 

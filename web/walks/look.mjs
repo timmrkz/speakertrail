@@ -244,6 +244,8 @@ for (const theme of ['light', 'dark']) {
         ['the one who is not a fit', page.locator('.detail-pane button.btn:not(.primary)').last()],
       ])))
       // A toggle that is on, the one connected, in the colour it says.
+      // Someone connected is only under Connected.
+      await page.locator('main .filters button', { hasText: 'Connected' }).click()
       await page.locator('.prow', { hasText: 'Connected' }).first().click()
       await page.locator('.detail-pane button.connect[aria-pressed="true"]').waitFor()
       wrong.push(...(await states(page, 'Connected', page.locator('.detail-pane button.connect'))))

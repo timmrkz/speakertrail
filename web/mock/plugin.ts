@@ -389,16 +389,19 @@ const ROUTES: [string, RegExp, Handler][] = [
     const year = new Date().getFullYear()
     const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
     if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
+    // Like the app: someone Tim connected with is only under Connected.
+    const open = (p: Person) => !p.connected
     const counts = {
-      all: list.length,
-      young: list.filter(young).length,
+      all: list.filter(open).length,
+      young: list.filter((p) => open(p) && young(p)).length,
       connected: list.filter((p) => p.connected).length,
       fits: list.filter((p) => p.fit_score > 0).length,
       founder: list.filter((p) => p.fit === 'founder').length,
       upcoming: list.filter((p) => p.next_appearance).length,
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
     }
-    if (filter === 'young') list = list.filter(young)
+    if (filter === 'all') list = list.filter(open)
+    if (filter === 'young') list = list.filter((p) => open(p) && young(p))
     if (filter === 'connected') list = list.filter((p) => p.connected)
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
     if (filter === 'profile') list = list.filter((p) => p.profiles.some((x) => x.review !== 'rejected'))

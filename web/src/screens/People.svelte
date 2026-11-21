@@ -148,13 +148,18 @@
     if (!list?.length) return
     e.preventDefault()
     const at = list.findIndex((p) => p.id === openId)
-    const next = at < 0 ? 0 : Math.max(0, Math.min(list.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))
-    navigate(`/app/people/${list[next].id}`, { replace: at >= 0 })
+    // The person open may have just left the list, connected. Down goes
+    // to whom took their place, up to whom stood above them.
+    const left = at < 0 && gone?.id === openId ? gone.at : -1
+    const step = e.key === 'ArrowDown' ? 1 : -1
+    const next = at >= 0 ? at + step : left >= 0 ? (step > 0 ? left : left - 1) : 0
+    const to = Math.max(0, Math.min(list.length - 1, next))
+    navigate(`/app/people/${list[to].id}`, { replace: at >= 0 || left >= 0 })
     // The keyboard goes with the person, so a row the pointer clicked
     // does not stay marked as the one in hand.
     const inList = !!t?.closest('.prow')
     requestAnimationFrame(() => {
-      const row = document.getElementById(`person-row-${list[next].id}`)
+      const row = document.getElementById(`person-row-${list[to].id}`)
       row?.scrollIntoView({ block: 'nearest' })
       if (inList) row?.focus({ preventScroll: true })
     })
@@ -236,12 +241,36 @@
     setShare(to)
   }
 
-  let others = $derived(counts ? counts.all : 0)
+  // Everyone found, open or connected, for an empty filter to point to.
+  let others = $derived(counts ? counts.all + counts.connected : 0)
+
+  // What an empty list says: why nobody is here, and whom the other
+  // filters hold.
+  let empty = $derived.by(() => {
+    const found = `${plural(others, 'person', 'people')} found so far`
+    if (query && !others) return { title: 'Nobody here yet', text: 'Nobody matches this search.' }
+    if (others && filter === 'connected') return { title: 'Nobody connected yet', text: `${found}, none of them connected yet.` }
+    if (others && filter === 'young') return { title: 'Nobody under 30 yet', text: `${found}, none of them likely under 30 and still open.` }
+    if (others) return { title: 'Everyone is connected', text: `${found}, all of them connected. Press Run to find more.` }
+    const title = { all: 'Nobody here yet', young: 'Nobody under 30 yet', connected: 'Nobody connected yet' }[filter as string] ?? 'Nobody here yet'
+    return { title, text: 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.' }
+  })
 
   // Keep the list in step with changes made in the sheet.
   function updated(p: Detail) {
     if (!people.data) return
     people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))
+  }
+
+  // Someone connected is only under Connected, so once the app took it
+  // the list reads again: they leave All and Under 30, or come back when
+  // taken back, and the counts follow. Where they stood is kept, so the
+  // arrow keys go on from there.
+  let gone = $state<{ id: number; at: number; name: string } | null>(null)
+  function connected() {
+    const at = people.data?.findIndex((x) => x.id === openId) ?? -1
+    if (openId !== null && at >= 0) gone = { id: openId, at, name: people.data![at].name }
+    people.run(fetchPeople({ q: query, sort, filter }), { quiet: true })
   }
 </script>
 
@@ -291,10 +320,8 @@
       {:else if !people.data.length}
         <EmptyState
           icon="people"
-          title={filter === 'young' && !query ? 'Nobody under 30 yet' : filter === 'connected' && !query ? 'Nobody connected yet' : 'Nobody here yet'}
-          text={filter !== 'all' && others > 0
-            ? `${plural(others, 'person', 'people')} found so far, none of them ${filter === 'young' ? 'likely under 30 yet' : filter === 'connected' ? 'connected yet' : 'in this filter'}.`
-            : query ? 'Nobody matches this search.' : 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'}>
+          title={empty.title}
+          text={empty.text}>
           {#if query || filter !== 'all'}
             <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
           {/if}
@@ -333,7 +360,7 @@
       </div>
       <div class="detail-body">
         {#key openId}
-          <PersonDetail id={openId} onupdate={updated} />
+          <PersonDetail id={openId} onupdate={updated} onconnected={connected} />
         {/key}
       </div>
     </section>
@@ -342,7 +369,7 @@
 
 {#if openId !== null && !wide}
   {#key openId}
-    <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name} onclose={() => navigate('/app/people')} onupdate={updated} />
+    <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name ?? (gone?.id === openId ? gone.name : undefined)} onclose={() => navigate('/app/people')} onupdate={updated} onconnected={connected} />
   {/key}
 {:else if runOpen !== null}
   {#key runOpen}

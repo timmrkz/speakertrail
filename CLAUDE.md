@@ -109,6 +109,9 @@ that, the skills listed last show their name without what they are for.
   personal data, or side effects he would not expect.
 - **Ask at most one question at a time**, and only when the answer changes
   what gets built.
+- **A port copies FrameFairy as it is.** Change only what Speaker Trail
+  makes necessary and name every difference, never redesign it (Tim, 13
+  and 21 November 2026).
 - **Report plainly.** What changed, what to test and how, what is still open.
   Name bugs you found on the way, including your own.
 - **Watch a pull request, quietly.** Subscribe to its events and act on

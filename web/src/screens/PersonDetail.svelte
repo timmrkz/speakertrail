@@ -234,7 +234,7 @@
   .facts { font-size: 14px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .avatar.xl { width: 64px; height: 64px; font-size: 20px; font-weight: 650; }
   .avatar.connected { background: var(--good-soft); color: var(--good); }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .why { display: grid; gap: 10px; }
   .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
   .why .mark {

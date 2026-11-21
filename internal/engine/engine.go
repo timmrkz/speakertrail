@@ -48,8 +48,10 @@ var (
 // Engine runs profile searches against a store.
 type Engine struct {
 	Store *store.Store
-	// Finder is the search provider, nil while there is no key.
-	Finder func() Finder
+	// Finder is the search provider. It fails with ErrNoKey while no key
+	// is saved, and with why when the key could not be read, like a
+	// password box closed on the Mac. Each ask tries again.
+	Finder func() (Finder, error)
 	Log    *slog.Logger
 	// Act is what the person did last, the id the app's log ties lines
 	// to, or nil. A run keeps the act that started it on every line it
@@ -134,8 +136,11 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	if e.closed > 0 {
 		return 0, false, ErrClosed
 	}
-	if e.Finder == nil || e.Finder() == nil {
+	if e.Finder == nil {
 		return 0, false, ErrNoKey
+	}
+	if _, err := e.Finder(); err != nil {
+		return 0, false, err
 	}
 	now := e.Store.Now()
 	var run *store.Run
@@ -297,11 +302,9 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 		e.mu.Unlock()
 	}()
 
-	finder := e.Finder()
 	var profiles []search.Profile
-	if finder == nil {
-		err = ErrNoKey
-	} else {
+	finder, err := e.Finder()
+	if err == nil {
 		profiles, err = finder.People(ctx, query, results)
 	}
 	if ctx.Err() != nil {

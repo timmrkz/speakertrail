@@ -88,8 +88,9 @@ type Drafter struct {
 	// Check says whether the model's file may be loaded, language.Check
 	// in the app. Nil checks nothing.
 	Check func(m language.Model) error
-	// Finder reads a profile from Exa, nil while there is no key.
-	Finder func() Finder
+	// Finder reads a profile from Exa. It fails with engine.ErrNoKey
+	// while no key is saved, and with why when the key could not be read.
+	Finder func() (Finder, error)
 	// Ask asks the model for JSON that fits schema, language.AskFor when
 	// nil. A test puts its own.
 	Ask func(ctx context.Context, s *language.Server, messages []language.Message, schema json.RawMessage, heard func(string)) (language.Answer, error)
@@ -484,14 +485,17 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 // them. It is one call to Exa, counted against the month's budget like a
 // check.
 func (d *Drafter) read(ctx context.Context, id int64, link string) (string, error) {
-	var finder Finder
+	finder, err := Finder(nil), engine.ErrNoKey
 	if d.Finder != nil {
-		finder = d.Finder()
+		finder, err = d.Finder()
 	}
-	if finder == nil {
+	switch {
+	case errors.Is(err, engine.ErrNoKey):
 		return "", errors.New("the app has no profile text for them yet, and reading it needs the Exa key. Add it in Settings")
+	case err != nil:
+		return "", fmt.Errorf("the app reads their profile text from Exa first, and %w", err)
 	}
-	err := d.Store.Update(func(data *store.Data) error {
+	err = d.Store.Update(func(data *store.Data) error {
 		if !data.Reserve(engine.Provider, d.now()) {
 			return engine.ErrNoBudget
 		}

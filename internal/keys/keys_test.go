@@ -22,6 +22,9 @@ type memory struct {
 	saves  int
 	refuse int
 	old    bool
+	// keptBack is how many reads macOS keeps the key back, with
+	// errUserCanceled, as when the password box is closed.
+	keptBack int
 }
 
 func (m *memory) has() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.secret != "" }
@@ -29,6 +32,10 @@ func (m *memory) get() (string, int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reads++
+	if m.keptBack > 0 {
+		m.keptBack--
+		return "", errUserCanceled
+	}
 	if m.secret == "" {
 		return "", errItemNotFound
 	}
@@ -53,20 +60,20 @@ func TestTheSavedKeyComesBeforeTheEnvironment(t *testing.T) {
 	env := map[string]string{"EXA_API_KEY": "from-the-terminal"}
 	m := &memory{}
 	e := &Exa{v: m, env: func(k string) string { return env[k] }}
-	if !e.Has() || e.Get() != "from-the-terminal" {
-		t.Errorf("without a saved key: has %v, get %q", e.Has(), e.Get())
+	if !e.Has() || key(e) != "from-the-terminal" {
+		t.Errorf("without a saved key: has %v, get %q", e.Has(), key(e))
 	}
 	if err := e.Set("  saved-in-settings \n"); err != nil {
 		t.Fatal(err)
 	}
-	if e.Get() != "saved-in-settings" || m.secret != "saved-in-settings" {
-		t.Errorf("get %q, kept %q", e.Get(), m.secret)
+	if key(e) != "saved-in-settings" || m.secret != "saved-in-settings" {
+		t.Errorf("get %q, kept %q", key(e), m.secret)
 	}
 	if err := e.Set("two words"); err == nil {
 		t.Error("a key with a space was taken")
 	}
-	if err := e.Set(""); err != nil || m.secret != "" || e.Get() != "from-the-terminal" {
-		t.Errorf("removing: %v, kept %q, get %q", err, m.secret, e.Get())
+	if err := e.Set(""); err != nil || m.secret != "" || key(e) != "from-the-terminal" {
+		t.Errorf("removing: %v, kept %q, get %q", err, m.secret, key(e))
 	}
 	env = map[string]string{}
 	if e.Has() {
@@ -84,7 +91,7 @@ func TestTheKeyIsReadOnceFromSeveralGoroutines(t *testing.T) {
 	for range 8 {
 		wg.Go(func() {
 			for range 10 {
-				if e.Get() != "kept" {
+				if key(e) != "kept" {
 					t.Error("wrong key")
 				}
 				_ = e.Has()
@@ -113,8 +120,8 @@ func TestTheKeyIsReadOnceFromSeveralGoroutines(t *testing.T) {
 func TestAMissingKeyIsLoggedAsNotFound(t *testing.T) {
 	var logged safeBuffer
 	e := &Exa{v: &memory{}, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
-	if e.Get() != "" {
-		t.Fatal("a key from nowhere")
+	if k, err := e.Get(); k != "" || !errors.Is(err, ErrNoKey) {
+		t.Fatalf("a key from nowhere: %q, %v", k, err)
 	}
 	var l map[string]any
 	if err := json.Unmarshal(logged.Bytes(), &l); err != nil {
@@ -135,7 +142,7 @@ func TestAKeySavedTheOldWayIsSavedAgainOnce(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
-			if e.Get() != "kept" {
+			if key(e) != "kept" {
 				t.Error("wrong key")
 			}
 		})
@@ -153,7 +160,7 @@ func TestAKeySavedTheOldWayIsSavedAgainOnce(t *testing.T) {
 func TestAKeySavedTheNewWayIsLeftAsItIs(t *testing.T) {
 	m := &memory{secret: "kept"}
 	e := &Exa{v: m, env: func(string) string { return "" }}
-	if e.Get() != "kept" || m.saves != 0 {
+	if key(e) != "kept" || m.saves != 0 {
 		t.Errorf("saves %d", m.saves)
 	}
 }
@@ -164,8 +171,8 @@ func TestAKeyRefusedOnceIsSavedOnTheSecondTry(t *testing.T) {
 	m := &memory{secret: "kept", closed: true, refuse: 1}
 	var logged safeBuffer
 	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
-	if e.Get() != "kept" || m.secret != "kept" || m.closed {
-		t.Errorf("get %q, kept %q, closed %v", e.Get(), m.secret, m.closed)
+	if key(e) != "kept" || m.secret != "kept" || m.closed {
+		t.Errorf("get %q, kept %q, closed %v", key(e), m.secret, m.closed)
 	}
 	if !strings.Contains(logged.String(), "tried once more") || !strings.Contains(logged.String(), "so a new build asks once") {
 		t.Errorf("log %s", logged.String())
@@ -178,8 +185,8 @@ func TestAKeyRefusedTwiceIsStillUsedAndTheLogSaysItIsGone(t *testing.T) {
 	m := &memory{secret: "kept", closed: true, refuse: 2}
 	var logged safeBuffer
 	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
-	if e.Get() != "kept" {
-		t.Errorf("get %q", e.Get())
+	if key(e) != "kept" {
+		t.Errorf("get %q", key(e))
 	}
 	if !strings.Contains(logged.String(), `"level":"ERROR"`) || !strings.Contains(logged.String(), "no longer in the keychain") {
 		t.Errorf("log %s", logged.String())
@@ -192,12 +199,43 @@ func TestAKeyKeptTheOldWayIsLoggedAsSuch(t *testing.T) {
 	m := &memory{secret: "kept", closed: true, old: true}
 	var logged safeBuffer
 	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
-	if e.Get() != "kept" {
-		t.Errorf("get %q", e.Get())
+	if key(e) != "kept" {
+		t.Errorf("get %q", key(e))
 	}
 	if !strings.Contains(logged.String(), "saved again the old way") || strings.Contains(logged.String(), "asks once") {
 		t.Errorf("log %s", logged.String())
 	}
+}
+
+// The report of 21 November 2026: Tim closed the password box, and every
+// Draft after it said there was no key, without asking again, until the
+// app was started again. A key macOS keeps back is said to be kept back,
+// not missing, and the next ask puts the box up again.
+func TestAKeyKeptBackIsAskedForAgain(t *testing.T) {
+	m := &memory{secret: "kept", keptBack: 1}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	k, err := e.Get()
+	if k != "" || !errors.Is(err, ErrKeptBack) || errors.Is(err, ErrNoKey) {
+		t.Fatalf("the box closed: %q, %v", k, err)
+	}
+	if want := "the password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow"; err.Error() != want {
+		t.Errorf("said %q, want %q", err, want)
+	}
+	if !strings.Contains(logged.String(), `"found":false,"status":-128`) {
+		t.Errorf("log %s", logged.String())
+	}
+	if k, err := e.Get(); k != "kept" || err != nil {
+		t.Errorf("asked again: %q, %v", k, err)
+	}
+	if k, err := e.Get(); k != "kept" || err != nil || m.reads != 2 {
+		t.Errorf("a third time: %q, %v, %d reads, want 2", k, err, m.reads)
+	}
+}
+
+func key(e *Exa) string {
+	k, _ := e.Get()
+	return k
 }
 
 // safeBuffer is a log several goroutines write to.

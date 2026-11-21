@@ -695,7 +695,7 @@ func TestAServerIsNotedWhileItLoads(t *testing.T) {
 	os.WriteFile(broken, []byte("GGUF"), 0o644)
 	var whileLoading []serverNote
 	log := slog.New(onRecord(func(r slog.Record) {
-		if r.Message == "llama-server stopped while loading the model" {
+		if r.Message == saidStoppedLoading {
 			whileLoading = noted()
 		}
 	}))
@@ -708,9 +708,19 @@ func TestAServerIsNotedWhileItLoads(t *testing.T) {
 	if left := noted(); len(left) != 0 {
 		t.Errorf("the note of a server that stopped stayed: %+v", left)
 	}
-	// A server that loads stays written down until it is stopped.
+	// A load called off, by Cmd+Q or by a model removed while it loads,
+	// stops the server and takes its note away.
+	called, cancel := context.WithCancel(t.Context())
+	cancel()
 	model := filepath.Join(dir, "probe.gguf")
 	os.WriteFile(model, []byte("GGUF"), 0o644)
+	if _, err := Start(called, self, model, notes, nil, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("a load called off: %v", err)
+	}
+	if left := noted(); len(left) != 0 {
+		t.Errorf("the note of a load called off stayed: %+v", left)
+	}
+	// A server that loads stays written down until it is stopped.
 	s, err := Start(t.Context(), self, model, notes, nil, nil)
 	if err != nil {
 		t.Fatal(err)

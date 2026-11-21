@@ -143,8 +143,8 @@ build on `dev` had parts to patch against. See
   way. The engine refuses a new run while the app relaunches.
 - **Relaunch** starts the app's own program once more, as Wails'
   updater: it waits for the app to quit, puts the new build in place and
-  opens it. That is the first thing `main` does when it is started so,
-  before it opens the log or the app's file or loads the language model.
+  opens it. Started so, `main` does that step before anything of the
+  app: it opens no log and no app's file and loads no language model.
 - A pull request that closed shows as closed, and nothing downloads until
   another channel is picked.
 - What it picked is in `updates.json`, in the app's folder beside

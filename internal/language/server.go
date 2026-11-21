@@ -108,6 +108,10 @@ const loadLimit = 10 * time.Minute
 // is followed by a look at its health, which decides.
 var readyMarks = []string{"model loaded", "server is listening"}
 
+// saidStoppedLoading is the log's line for a server that stopped while it
+// loaded. A test reads the notes as it is said.
+const saidStoppedLoading = "llama-server stopped while loading the model"
+
 // Start runs llama-server with the model at path and waits until the model
 // is loaded. log hears the server's last lines when it fails, and how long
 // the load took when it does not. Nothing it says while it works is
@@ -185,7 +189,7 @@ func Start(ctx context.Context, server, model, notes string, client *http.Client
 			return nil, ctx.Err()
 		case <-exited:
 			if log != nil {
-				log.Warn("llama-server stopped while loading the model", "error", exitErr, "said", out.last())
+				log.Warn(saidStoppedLoading, "error", exitErr, "said", out.last())
 			}
 			stop()
 			return nil, stoppedLoading(exitErr, out.last())

@@ -175,7 +175,7 @@
   }
   .switch:hover:enabled { border-color: var(--line-hover); background: var(--surface-hover); }
   .switch:active:enabled { background: var(--surface-press); }
-  .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
+  .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); --ring: var(--accent); }
   .switch[aria-checked="true"]:hover:enabled { background: var(--accent-hover); border-color: var(--accent-hover); }
   .switch[aria-checked="true"]:active:enabled { background: var(--accent-press); border-color: var(--accent-press); }
   .switch:disabled { background: var(--disabled); border-color: transparent; cursor: default; }

@@ -231,8 +231,8 @@
      where the keyboard is. */
   .pick[aria-expanded='true']:focus-visible { outline: none; background-image: none; }
   /* FrameFairy's ring, inside the edge so it lines up with the fields
-     beside it. */
-  .pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; background-image: none; }
+     beside it, in the colour of its words like every button's. */
+  .pick:focus-visible { outline: 2px solid currentColor; outline-offset: -1px; background-image: none; }
 
   /* The trigger is as wide as what is picked, up to --pick-max, and a
      longer name ends in dots (Tim, testing #46). */

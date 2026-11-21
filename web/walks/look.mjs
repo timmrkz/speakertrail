@@ -370,6 +370,51 @@ for (const theme of ['light', 'dark']) {
   })
   walks.push({
     theme,
+    name: `In ${theme}, every button in focus wears a ring in its own colour`,
+    async run(page) {
+      // Tim found Clear, red, with the accent's ring of Report beside it,
+      // and plain buttons in the accent too, testing #46. A ring is the
+      // colour of the button's words, or of its fill when the words sit
+      // on the accent: a primary button and a switch that is on.
+      const wrong = []
+      const rings = () => [...document.querySelectorAll('main :is(.btn, .chip, .switch, .pick), .report :is(.btn, .pick)')]
+        .filter((e) => e.checkVisibility() && !e.disabled && !e.querySelector(':scope > .beam') && getComputedStyle(e).visibility !== 'hidden')
+        .map((e) => {
+          e.focus({ focusVisible: true })
+          const s = getComputedStyle(e)
+          const off = e.getAttribute('aria-disabled') === 'true'
+          const filled = !off && (e.matches('.btn.primary') || e.matches('.switch[aria-checked="true"]'))
+          const want = filled ? s.backgroundColor : s.color
+          const what = (e.getAttribute('aria-label') || e.textContent).trim().replace(/\s+/g, ' ')
+          const got = s.outlineStyle === 'none' ? 'no ring' : s.outlineColor
+          e.blur()
+          return got === want ? '' : `${what} wears ${got}, its own colour is ${want}`
+        })
+        .filter(Boolean)
+      for (const [where, ready] of [
+        ['/app/people', 'main button.start'],
+        ['/app/searches', 'main button.btn.primary'],
+        ['/app/settings', '#linkedin-profile:enabled'],
+        ['/app/updates', 'main button.act'],
+        ['/report', '.report button.make'],
+      ]) {
+        await page.goto(`${url}${where}`)
+        await page.locator(ready).first().waitFor()
+        if (where === '/app/people') {
+          await page.locator('.prow').first().click()
+          await page.locator('.person h2').first().waitFor()
+        }
+        for (const w of await page.evaluate(rings)) wrong.push(`on ${where}: ${w}`)
+        if (where === '/report') {
+          await page.locator('textarea.telling').fill('It froze.')
+          for (const w of await page.evaluate(rings)) wrong.push(`on ${where} with words: ${w}`)
+        }
+      }
+      return wrong.join('\n\t')
+    },
+  })
+  walks.push({
+    theme,
     name: `In ${theme}, the fill of a run stands out from its track, the band over it shows, and the band stays on the fill`,
     async run(page) {
       await page.goto(`${url}/app/people`)

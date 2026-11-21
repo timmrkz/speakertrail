@@ -207,26 +207,27 @@ a:hover { text-decoration: underline; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
 /* Focus. A button reached with the keyboard wears FrameFairy's ring: 2 px
-   wide, 1 px out from its edge, in the button's own colour, the accent
-   for a plain or a primary button, red for one that removes, green for a
-   toggle that is on. Tim asked for it testing #46 on 21 November 2026:
-   the edge cut inside a primary in the page's colour looked like a hole.
+   wide, 1 px out from its edge, in the button's own colour, never one
+   colour for all. That is the colour of its words, currentColor, so a
+   plain button's ring is its ink, one that removes is red, a toggle that
+   is on is green, and a primary one, whose words sit on the accent,
+   sets --ring to the accent it is filled with. Tim asked for it testing
+   #46 on 21 November 2026, twice: Clear and the plain buttons beside
+   Report wore Report's colour.
    A list to pick from wears the same ring inside its edge, as in
    FrameFairy. A field shows focus by its edge alone, in the accent (Tim,
    the same day). A row, a page in the sidebar and a segment of a choice
-   keep the edge inside them, 2 px of the accent over their own border
-   with a faint wash of it, since a ring would be cut off by the list or
-   the pane round them. The wash alone was too faint to find, Tim said
-   testing #24 on 17 November 2026. */
+   keep the edge inside them, 2 px in their own colour over their own
+   border with a faint wash of it, since a ring would be cut off by the
+   list or the pane round them. The wash alone was too faint to find, Tim
+   said testing #24 on 17 November 2026. */
 :focus, :focus-visible { outline: none; }
 :where(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid var(--accent); outline-offset: -2px;
-  background-image: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
+  outline: 2px solid var(--ring, currentColor); outline-offset: -2px;
+  background-image: linear-gradient(color-mix(in srgb, var(--ring, currentColor) 12%, transparent), color-mix(in srgb, var(--ring, currentColor) 12%, transparent));
 }
-:is(.btn, .chip, .switch):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background-image: none; }
-.btn.danger:focus-visible { outline-color: var(--bad); }
-.btn.good[aria-pressed="true"]:focus-visible { outline-color: var(--good); }
-.btn.bad[aria-pressed="true"]:focus-visible { outline-color: var(--bad); }
+:is(.btn, .chip, .switch):focus-visible { outline: 2px solid var(--ring, currentColor); outline-offset: 1px; background-image: none; }
+.btn.primary { --ring: var(--accent); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }
@@ -283,34 +284,37 @@ button { -webkit-tap-highlight-color: transparent; }
   border-radius: 8px; border: var(--line-w) solid var(--line-strong); background: var(--surface); cursor: pointer; color: var(--ink);
   font-weight: 600; font-size: 14px; white-space: nowrap; text-decoration: none; flex: none;
 }
-.btn:hover:enabled, a.btn:hover { background: var(--surface-hover); text-decoration: none; }
-.btn:active:enabled, a.btn:active { background: var(--surface-press); }
+.btn:hover:enabled:not([aria-disabled="true"]), a.btn:hover { background: var(--surface-hover); text-decoration: none; }
+.btn:active:enabled:not([aria-disabled="true"]), a.btn:active { background: var(--surface-press); }
 /* The one primary action of a place, in the accent. */
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.btn.primary:hover:enabled, a.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-.btn.primary:active:enabled, a.btn.primary:active { background: var(--accent-press); border-color: var(--accent-press); }
+.btn.primary:hover:enabled:not([aria-disabled="true"]), a.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.primary:active:enabled:not([aria-disabled="true"]), a.btn.primary:active { background: var(--accent-press); border-color: var(--accent-press); }
 /* A toggle that is on wears the colour of what it says. */
 .btn.good[aria-pressed="true"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .btn.bad[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
-:is(.btn.good, .btn.bad)[aria-pressed="true"]:hover:enabled { background: var(--tone-hover); }
-:is(.btn.good, .btn.bad)[aria-pressed="true"]:active:enabled { background: var(--tone-press); }
+:is(.btn.good, .btn.bad)[aria-pressed="true"]:hover:enabled:not([aria-disabled="true"]) { background: var(--tone-hover); }
+:is(.btn.good, .btn.bad)[aria-pressed="true"]:active:enabled:not([aria-disabled="true"]) { background: var(--tone-press); }
 /* A quiet button has no ground of its own until the pointer is on it. */
 .btn.quiet { border-color: transparent; background: none; color: var(--ink-2); }
-.btn.quiet:hover:enabled, a.btn.quiet:hover { background: var(--hover); color: var(--ink); }
-.btn.quiet:active:enabled, a.btn.quiet:active { background: var(--press); }
+.btn.quiet:hover:enabled:not([aria-disabled="true"]), a.btn.quiet:hover { background: var(--hover); color: var(--ink); }
+.btn.quiet:active:enabled:not([aria-disabled="true"]), a.btn.quiet:active { background: var(--press); }
 /* What cannot be taken back, in the colour of something going wrong. */
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.btn.danger:hover:enabled { background: var(--tone-hover); }
-.btn.danger:active:enabled { background: var(--tone-press); }
+.btn.danger:hover:enabled:not([aria-disabled="true"]) { background: var(--tone-hover); }
+.btn.danger:active:enabled:not([aria-disabled="true"]) { background: var(--tone-press); }
 .btn.quiet.danger { border-color: transparent; }
 /* A button that cannot be pressed is the same grey in every kind, so it
    never reads as one that can. One with work running in it is the
    exception: it is still seen working at full strength, and its words
    say what is happening. */
-.btn:disabled:not(:has(> .beam)) {
+.btn:is(:disabled, [aria-disabled="true"]):not(:has(> .beam)) {
   background: var(--disabled); border-color: transparent; color: var(--disabled-ink); cursor: default;
 }
-.btn.quiet:disabled:not(:has(> .beam)) { background: none; }
+.btn.quiet:is(:disabled, [aria-disabled="true"]):not(:has(> .beam)) { background: none; }
+/* One greyed out with aria-disabled can still be reached with Tab, and
+   its ring is its grey, see Focus. */
+.btn[aria-disabled="true"]:not(:has(> .beam)) { --ring: var(--disabled-ink); }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
@@ -326,7 +330,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea { padding: 9px 12px; resize: vertical; min-height: 76px; line-height: 1.45; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
-.input:hover:enabled, .textarea:hover:enabled { border-color: var(--line-hover); }
+.input:hover:enabled:not([aria-disabled="true"]), .textarea:hover:enabled:not([aria-disabled="true"]) { border-color: var(--line-hover); }
 .input:focus, .textarea:focus { border-color: var(--accent); }
 .input:disabled, .textarea:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }

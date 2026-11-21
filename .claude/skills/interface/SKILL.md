@@ -152,18 +152,23 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   tint there would read as the row under the pointer.
 - **A button in focus wears a ring, a field its edge.** A button, a
   chip or a switch reached with the keyboard wears FrameFairy's ring,
-  2 px wide and 1 px out from its edge, in the button's own colour: the
-  accent for a plain or a primary button, red for one that removes,
-  green for a toggle that is on. Tim asked for it testing #46 on 21
-  November 2026, after the edge cut inside a primary in the page's
-  colour looked like a hole. A list to pick from wears the same ring
-  1 px inside its edge, as in FrameFairy, and none while it is open. A
-  field in use shows the accent on its own edge and nothing more. A row, a page in the
-  sidebar and a segment of a choice show the accent 2 px inside their
-  edge with a faint wash, since a ring would be cut off by the list or
-  pane round them. The wash alone was too faint to find, Tim said on 17
-  November 2026. `walks/focus.mjs` measures that the ring or the edge
-  changes by 3 to 1 in both themes, see `:focus-visible` in `app.css`.
+  2 px wide and 1 px out from its edge, in the button's own colour,
+  never one colour for all: `currentColor`, the colour of its words, so
+  a plain button's ring is its ink, one that removes is red and a toggle
+  that is on is green. A primary button and a switch that is on set
+  `--ring` to the accent they are filled with, and a button greyed out
+  with `aria-disabled` wears its grey. Tim asked for it testing #46 on
+  21 November 2026, twice: Clear and the plain buttons beside Report
+  wore Report's accent. A list to pick from wears the same ring 1 px
+  inside its edge, as in FrameFairy, and none while it is open. A field
+  in use shows the accent on its own edge and nothing more. A row, a
+  page in the sidebar and a segment of a choice show their own colour
+  2 px inside their edge with a faint wash, since a ring would be cut
+  off by the list or pane round them. The wash alone was too faint to
+  find, Tim said on 17 November 2026. `walks/look.mjs` checks every
+  ring's colour against its button's, and `walks/focus.mjs` measures
+  that the ring or the edge changes by 3 to 1 in both themes, see
+  `:focus-visible` in `app.css`.
   What is selected already, like the open person's row, shows nothing
   more.
 - **Every list looks the same.** People, Searches and Settings read in
@@ -180,6 +185,18 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   Run, Add, Check and the LinkedIn profile list too wide twice testing
   #46, and `walks/look.mjs` adds up what each button and list on every
   page shows, at 1280 and 390 px, and fails one that is wider.
+- **Tab goes the way the page is written.** macOS only tabs between
+  buttons when full keyboard access is on, so a window, a sheet and a
+  question move the focus themselves, all through `moveTab` in
+  `lib/keys.ts`, never through a list of their own. Where Tab should
+  take another way than the eye, the page is written in Tab's order and
+  drawn in the other with CSS: Report a Problem's row is written Report,
+  Clear, the info mark, Attach, Dictate and drawn with `row-reverse`, so
+  Enter, Tab, Enter ends a dictation and makes the report (Tim, testing
+  #46). A button that cannot be pressed now, in a row Tab walks, is
+  greyed out with `aria-disabled` and keeps its place, and its handler
+  does nothing. One with `disabled` drops out of the order, and Tim
+  found the order changing with an empty field.
 - **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
   built on bits-ui, so a list looks the same in the window on a Mac as it
   does in the harness, and a row can say more than a name: a size, a

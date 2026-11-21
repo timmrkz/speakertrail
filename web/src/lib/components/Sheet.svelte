@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { moveTab } from '../keys'
   import type { Snippet } from 'svelte'
   import Icon from './Icon.svelte'
 
@@ -42,20 +43,11 @@
     }
   }
 
+  // Tab stays inside the sheet and reaches its buttons too, through
+  // moveTab, as every window of the app does.
   function keydown(e: KeyboardEvent) {
-    if (e.key !== 'Tab' || !panel) return
-    // Keep keyboard focus inside the sheet.
-    const items = [...panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])')]
-    if (!items.length) return
-    const first = items[0]
-    const last = items[items.length - 1]
-    if (e.shiftKey && (document.activeElement === first || document.activeElement === panel)) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault()
-      first.focus()
-    }
+    if (e.key !== 'Tab' || !panel || e.defaultPrevented) return
+    moveTab(panel, e)
   }
 </script>
 

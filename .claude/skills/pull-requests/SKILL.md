@@ -60,8 +60,9 @@ size alone.
   first is merged. The same commits are never pushed into two pull
   requests.
 - **After a squash merge the branch still holds the merged commits.**
-  New work starts from the latest main, never from that history merged
-  in again, or a small pull request shows every old commit.
+  New work starts from the latest main on a new branch, never from that
+  history merged in again, or a small pull request shows every old
+  commit. Where the session cannot make a new branch, it asks the user.
 - **One session, one pull request at a time.** A session opens the next
   only once its open one is merged or closed. Two at once split its
   attention, and the user cannot tell which a reply is about. Reading
@@ -104,8 +105,9 @@ in the proof.
   is a conflict, so is a review comment.
 - **Never poll, never set up a recurring check,** and never write a
   message that says nothing happened. The user comes back when they are
-  ready. But what an event starts, the session tells the user in one
-  line, and again when it is done. A checklist notifies no one.
+  ready. But a CI result, green or red, is news, and what an event
+  starts, the session tells the user in one line, and again when it is
+  done. A checklist notifies no one.
 
 ## 5. Main moving
 

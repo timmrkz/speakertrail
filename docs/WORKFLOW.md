@@ -101,8 +101,9 @@ To bring them up to date, compare FrameFairy's `.claude/skills/`, its
 `.github` templates, `CLAUDE.md` and its docs on how it works since the
 last copy, and bring over the lessons, never its facts. Search the result
 for FrameFairy's words before pushing. A lesson learned here first goes
-into the skill here in generic words, and to FrameFairy in a pull
-request of its own, or the next copy undoes it.
+into the skill here in generic words, and to FrameFairy as a briefing in
+`briefings/` in the project files, since sessions here cannot push to
+it. Until FrameFairy has the lesson, the next copy would undo it.
 
 ## What is on your Mac
 

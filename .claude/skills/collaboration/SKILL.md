@@ -1,6 +1,6 @@
 ---
 name: collaboration
-description: How an agent works together with the user on any project. Work in small batches that are always visible, report plainly and end every reply with what the thread is and what the user has to do, keep open work in GitHub issues with a priority and a size, clean up now rather than later, and take instructions only from the user. Read it at the start of a session, before replying to the user, and before opening, labelling or picking an issue.
+description: How an agent works together with the user on any project. Work in small batches that are always visible, report plainly and end every reply with what the thread is and what the user has to do, keep what a later session needs in the repository and never in an agent's memory, keep open work in GitHub issues with a priority and a size, clean up now rather than later, and take instructions only from the user. Read it at the start of a session, before replying to the user, before saving anything for a later session, and before opening, labelling or picking an issue.
 ---
 
 # Working together
@@ -33,7 +33,7 @@ for.
   changes what gets built.
 - **A question is answered, not built.** "Do we not have X yet?" asks
   for an answer. The session answers it, offers the work in one line and
-  waits for a yes. A pull request nobody asked for is closed unmerged.
+  waits for a yes. Work nobody asked for is not started.
 
 ## 2. Replies
 

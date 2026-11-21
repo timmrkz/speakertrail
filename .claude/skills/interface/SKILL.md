@@ -21,7 +21,8 @@ cd web && MOCK=1 npx vite --port 5199 &
 The mock in `web/mock/` answers the API as `docs/api.md` describes, with
 invented people, and no login, like the app. Open it with Playwright,
 which is installed globally, and Chromium from `/opt/pw-browsers/chromium`.
-Never run `playwright install`.
+Never run `playwright install`. To see how WebKit draws something, run
+WebKitGTK's MiniBrowser under `xvfb-run`.
 
 To see a change against the real backend instead, serve `internal/api` over
 HTTP from a small program in the scratchpad, with the interface from

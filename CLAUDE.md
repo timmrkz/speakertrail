@@ -55,7 +55,7 @@ come from in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 | [pull-requests](.claude/skills/pull-requests/SKILL.md) | how a pull request is opened, sized, described, watched and made ready |
 | [review](.claude/skills/review/SKILL.md) | how a pull request is reviewed by an agent that did none of the work |
 | [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
-| [collaboration](.claude/skills/collaboration/SKILL.md) | replies, issues with a priority and a size, writing rules |
+| [collaboration](.claude/skills/collaboration/SKILL.md) | replies, what goes in the repository instead of memory, issues with a priority and a size, writing rules |
 | [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
 
 Where the generic skills meet this repository:
@@ -71,6 +71,7 @@ Where the generic skills meet this repository:
 | how a pull request is described | [the pull request template](.github/pull_request_template.md) |
 | a path a person waits on | opening a screen of the app, a run, and an update |
 | a trade-off the user accepted | Tim's yes in the thread of the session |
+| a briefing for the source project's sessions | a file in `/mnt/project-files/briefings/`, since sessions here cannot push to FrameFairy |
 
 `.claude/settings.json` raises the room Claude Code gives the list of
 skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below
@@ -114,14 +115,18 @@ that, the skills listed last show their name without what they are for.
   what gets built.
 - **A port copies FrameFairy as it is.** Change only what Speaker Trail
   makes necessary and name every difference, never redesign it (Tim, 13
-  and 21 November 2026).
+  and 21 November 2026). Copy from FrameFairy's main as it stands that
+  day. Tim's standing exceptions: requests over HTTP `/api` instead of
+  Wails bindings (14 November), the flat look (#45), and updates that
+  download only what changed (#40).
 - **Report plainly.** What changed, what to test and how, what is still open.
   Name bugs you found on the way, including your own.
 - **Watch a pull request, quietly.** Subscribe to its events and act on
   them: a failing CI run is still your work, so is a review comment. But
   never set up a recurring check, never poll, and never write a message that
-  says nothing happened. Tim comes back when he is ready. But what an
-  event starts, tell Tim in the thread, and again when it is done.
+  says nothing happened. Tim comes back when he is ready. But a CI
+  result, green or red, is news, and what an event starts, tell Tim in
+  the thread, and again when it is done.
 - **Merge main in for a conflict, and only then.** When a pull request no
   longer merges into main, merge main in, resolve it and push at once,
   without waiting for an answer. Tell Tim in one line which files
@@ -281,6 +286,15 @@ for the window.
 - There is no screen, and the window cannot open. Interface work goes
   through the skill in `.claude/skills/interface/`. Read it before changing
   anything in `web/`.
+- Hugging Face is not on the allowlist, so no real speech or language
+  model runs in a session. Tim tries those on his Mac.
+- A real build is read from the `dev` release, whose assets are public,
+  with Go's `debug/macho`.
+- A `macos` job cancelled at 15 minutes with `runner_id` 0 never got a
+  runner. That is not a broken build. Run it once more.
+- A session's branch is fixed, and force-push is refused. After its pull
+  request is squash-merged, or for a second pull request, ask for a new
+  thread with its own branch.
 
 ## Where guidance goes
 

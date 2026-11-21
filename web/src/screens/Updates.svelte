@@ -150,23 +150,24 @@
             {:else}Built on this Mac{/if}
           </span>
         </div>
-        <span class="grow"></span>
         <!-- How updates work is behind the mark beside the list, a word in
              front of it said nothing the list does not say. -->
         {#if !update.off}
-          <span class="ask">
-            <Info label="How updates work" side="right">
-              The list says where this app updates from: main, or one pull request. Every push to it makes a new build. The app looks
-              when it starts, when you choose a channel and every ten minutes, every twenty seconds while a newer commit is being built,
-              and downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on
-              the way out. A build made on this Mac follows nothing until you choose a channel. The commit under the version opens on
-              GitHub.
-            </Info>
+          <span class="channel">
+            <span class="ask">
+              <Info label="How updates work" side="right">
+                The list says where this app updates from: main, or one pull request. Every push to it makes a new build. The app looks
+                when it starts, when you choose a channel and every ten minutes, every twenty seconds while a newer commit is being built,
+                and downloads the newest build by itself. <b>Relaunch</b> restarts the app into it, and if you quit instead, it goes in on
+                the way out. A build made on this Mac follows nothing until you choose a channel. The commit under the version opens on
+                GitHub.
+              </Info>
+            </span>
+            <Pick label="Channel" id="channel" value={following} {options} fit align="right" placeholder="Choose a channel"
+              tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
+              title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
+              onpick={(v) => follow(v)} />
           </span>
-          <Pick label="Channel" id="channel" value={following} {options} fit align="right" placeholder="Choose a channel"
-            tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
-            title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
-            onpick={(v) => follow(v)} />
         {/if}
       </div>
 
@@ -233,8 +234,15 @@
   .words { display: grid; gap: 3px; min-width: 0; flex: 1; }
   /* The build is the head of the page, so its version is set larger. */
   .version { font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  /* The words take the room they need. In a window too narrow for the
+     version and the list on one line, the mark and the list go under it,
+     still at the right. */
+  .build { flex-wrap: wrap; row-gap: 8px; }
   .build .words { flex: 0 1 auto; }
-  .grow { flex: 1; }
+  /* The list is as wide as the channel it names and no wider, see fit in
+     Pick. It hangs from its right edge and grows into the row as far as
+     its longest name needs. */
+  .channel { display: flex; align-items: center; gap: 12px; flex: none; margin-left: auto; }
   .link { border: 0; padding: 0; background: none; color: var(--accent); cursor: pointer; font: inherit; font-variant-numeric: tabular-nums; }
   .link:hover { text-decoration: underline; }
   .ask { display: flex; align-items: center; height: 20px; flex: none; }

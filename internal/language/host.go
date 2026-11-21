@@ -91,17 +91,7 @@ func (h *Host) launch(ctx context.Context, model string) (*Server, error) {
 	if err := roomFor(modelNeeds(model), FreeMemory(), runningServers()); err != nil {
 		return nil, err
 	}
-	s, err := Start(ctx, server, model, h.Client, h.Log)
-	if err != nil {
-		return nil, err
-	}
-	noteServer(h.Notes, serverNote{PID: s.PID, Port: s.Port, Model: model})
-	stop := s.stop
-	s.stop = func() {
-		stop()
-		forgetServer(h.Notes, s.PID)
-	}
-	return s, nil
+	return Start(ctx, server, model, h.Notes, h.Client, h.Log)
 }
 
 func (h *Host) idle(keep time.Duration, gone func()) func() bool {

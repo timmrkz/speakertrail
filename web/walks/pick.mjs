@@ -121,6 +121,23 @@ await walk('Checking FrameFairy’s copy says how far it is, on Cancel', async (
   expect('Settings in the sidebar does not pulse while the model comes', await page.locator('a.nav[href="/app/settings"] .dot.busy').count() === 1)
 })
 
+await walk('The model loading ahead, and one that could not, say so in Settings', async (browser) => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 800 } })
+  let how = { loaded: false, loading: true }
+  await page.route('**/api/language', async (route) => {
+    const st = await (await route.fetch()).json()
+    st.models = st.models.map((m) => (m.inUse ? { ...m, ...how } : m))
+    await route.fulfill({ json: st })
+  })
+  await page.goto(`${url}/app/settings#language`)
+  await page.waitForFunction(() => /^Loading into memory/.test(document.querySelector('#language .line')?.textContent ?? ''))
+  const busy = await page.locator('#language .mark.busy .dot.busy').count()
+  expect('the mark does not pulse while it loads', busy === 1)
+  how = { loaded: false, loading: false, notLoaded: 'Not enough free memory' }
+  await page.reload()
+  await page.waitForFunction(() => /^Not loaded yet: Not enough free memory\. Draft loads it\.$/.test(document.querySelector('#language .line')?.textContent ?? ''))
+})
+
 await walk('At 390 px the row fits, with the list under the words', async (browser) => {
   const page = await settings(browser, 390)
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)

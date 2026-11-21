@@ -927,7 +927,7 @@ function languageState() {
   }
   const using = languageChosen || LANGUAGE_MODELS.find((m) => languageHere.has(m.name))?.name
   return {
-    models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using, shared: false, loaded: m.name === using && languageHere.has(m.name) })),
+    models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using, shared: false, loaded: m.name === using && languageHere.has(m.name), loading: false })),
     folder: '~/Library/Application Support/Speaker Trail/models',
     server: true,
     // As standing in cmd/speakertrail-app/languagemodels.go judges it.

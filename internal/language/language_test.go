@@ -569,3 +569,56 @@ func TestAHostThatKeepsItsModel(t *testing.T) {
 		t.Errorf("a kept model could not be removed: %v, %d stopped", err, stopped.Load())
 	}
 }
+
+// A model removed while it loads is not left loaded once the load ends,
+// even by a server that came up anyway. With Always it would otherwise
+// hold its memory until the app quits, the file gone.
+func TestDroppingAModelWhileItLoads(t *testing.T) {
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	var stopped atomic.Int32
+	h := &Host{Always: true, Launch: func(ctx context.Context, model string) (*Server, error) {
+		close(started)
+		<-finish
+		return &Server{URL: model, stop: func() { stopped.Add(1) }}, nil
+	}}
+	defer h.Close()
+	errs := make(chan error)
+	go func() { errs <- h.Warm(context.Background(), "/models/a.gguf") }()
+	<-started
+	if !h.Drop("/models/a.gguf") {
+		t.Fatal("a model loading could not be dropped")
+	}
+	close(finish)
+	if err := <-errs; err == nil {
+		t.Error("the load said it worked after its model was dropped")
+	}
+	if h.Loaded("/models/a.gguf") || stopped.Load() != 1 {
+		t.Errorf("loaded %v, %d stopped", h.Loaded("/models/a.gguf"), stopped.Load())
+	}
+}
+
+// A model picked while a draft writes with another is loaded once that
+// draft lets go, from another goroutine, rather than by the next draft.
+func TestWarmWaitsForTheDraftBeforeIt(t *testing.T) {
+	waiting := make(chan struct{})
+	h := &Host{Always: true, Launch: func(ctx context.Context, model string) (*Server, error) {
+		return &Server{URL: model, stop: func() {}}, nil
+	}, waits: func() { close(waiting) }}
+	defer h.Close()
+	_, release, err := h.Hold(t.Context(), "/models/a.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	errs := make(chan error, 1)
+	go func() { errs <- h.Warm(t.Context(), "/models/b.gguf") }()
+	select {
+	case err := <-errs:
+		t.Fatalf("Warm did not wait for the draft: %v", err)
+	case <-waiting:
+	}
+	go release(Keep)
+	if err := <-errs; err != nil || !h.Loaded("/models/b.gguf") {
+		t.Errorf("%v, b loaded %v", err, h.Loaded("/models/b.gguf"))
+	}
+}

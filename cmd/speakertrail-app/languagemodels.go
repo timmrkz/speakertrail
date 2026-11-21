@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"sync"
 
 	"github.com/rs/zerolog"
 
@@ -36,8 +37,12 @@ type LanguageModelView struct {
 	// Shared marks a model taken from FrameFairy's folder, one file on
 	// disk for both apps, see language.Model.Shared.
 	Shared bool `json:"shared"`
-	// Loaded marks a model in memory now, ready to draft at once.
-	Loaded bool `json:"loaded"`
+	// Loaded marks a model in memory now, ready to draft at once, Loading
+	// one being loaded ahead, and NotLoaded says why the last load ahead
+	// failed, see warm.
+	Loaded    bool   `json:"loaded"`
+	Loading   bool   `json:"loading"`
+	NotLoaded string `json:"notLoaded,omitempty"`
 }
 
 // LanguageState is what Settings shows: every model, largest first, the
@@ -80,6 +85,14 @@ type languageModels struct {
 	// server says whether this build carries llama-server, see
 	// language.FindServer.
 	server func() bool
+	// warmMu lets one load ahead run at a time, see warm. mu guards
+	// warming, the model loading ahead now, and failed and why, the model
+	// whose load ahead failed last and why it did.
+	warmMu  sync.Mutex
+	mu      sync.Mutex
+	warming string
+	failed  string
+	why     string
 }
 
 func newLanguageModels(dir string, host *language.Host, told func(LanguageState)) *languageModels {
@@ -99,7 +112,8 @@ func (s *languageModels) state() LanguageState {
 	st := LanguageState{Models: []LanguageModelView{}, Folder: tildePath(s.dir), Server: server, Standing: s.standing(using, server)}
 	offered, _ := language.Recommended(models, s.memory)
 	for _, m := range models {
-		st.Models = append(st.Models, LanguageModelView{Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name,
+		loading, notLoaded := s.warmingOf(m)
+		st.Models = append(st.Models, LanguageModelView{Loading: loading, NotLoaded: notLoaded, Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name,
 			Recommended: m.Name == offered.Name, Fit: m.FitsIn(s.memory), Shared: m.Shared(s.dir),
 			Loaded: s.host != nil && s.host.Loaded(filepath.Join(s.dir, m.Name))})
 	}
@@ -178,14 +192,15 @@ func (s *languageModels) use(name string) error {
 // first draft writes at once rather than waiting for the load. Tim chose
 // to have it loaded from the app's start until it quits, 21 November
 // 2026, see language.Host.Always. It runs as the app starts, after a
-// download and after a pick, and tells the window once the model is in.
-// A model another draft still holds is loaded by the next draft instead.
+// download and after a pick, one at a time, so the latest pick is the
+// one loaded. Settings is told while it loads and why it did not.
 func (s *languageModels) warm() {
 	if s.host == nil {
 		return
 	}
-	models := s.models()
-	m := s.using(models)
+	s.warmMu.Lock()
+	defer s.warmMu.Unlock()
+	m := s.using(s.models())
 	if s.standing(m, s.server()).Mark != "ok" {
 		return
 	}
@@ -193,16 +208,44 @@ func (s *languageModels) warm() {
 	if s.host.Loaded(path) {
 		return
 	}
+	s.setWarming(m.Name, "", "")
+	s.tell()
 	// Checked the way a draft checks it before a load, see draft.Drafter.
-	if err := language.Check(m, s.dir); err != nil {
-		theLog.line(zerolog.WarnLevel, "language").Str("model", m.Name).AnErr("error", err).Msg("the language model was not loaded ahead")
+	err := language.Check(m, s.dir)
+	if err == nil {
+		err = s.host.Warm(context.Background(), path)
+	}
+	switch {
+	case err == nil:
+		s.setWarming("", "", "")
+	case errors.Is(err, language.ErrClosed):
+		s.setWarming("", "", "")
 		return
-	}
-	s.tell()
-	if err := s.host.Warm(context.Background(), path); err != nil {
+	default:
 		theLog.line(zerolog.WarnLevel, "language").Str("model", m.Name).AnErr("error", err).Msg("the language model was not loaded ahead, the next draft loads it")
+		s.setWarming("", m.Name, sentence(err.Error()))
 	}
 	s.tell()
+}
+
+// setWarming says which model loads now, and which failed last and why,
+// for Settings.
+func (s *languageModels) setWarming(name, failed, why string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.warming, s.failed, s.why = name, failed, why
+}
+
+// warmingOf says whether m loads ahead now, and why its last load ahead
+// failed.
+func (s *languageModels) warmingOf(m language.Model) (bool, string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	why := ""
+	if s.failed == m.Name {
+		why = s.why
+	}
+	return s.warming == m.Name, why
 }
 
 // install starts fetching a model and gives the job at once, see

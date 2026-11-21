@@ -440,8 +440,11 @@ export interface LanguageModel {
   fit: 'fits' | 'tight' | 'too big' | 'unknown'
   // Taken from FrameFairy's folder, one file on disk for both apps.
   shared: boolean
-  // In memory now, ready to draft at once.
+  // In memory now, ready to draft at once, being loaded ahead now, and
+  // why the last load ahead failed.
   loaded: boolean
+  loading: boolean
+  notLoaded?: string
 }
 
 // Whether a draft can be written now, and what stands in the way when it

@@ -69,9 +69,9 @@ time, in the order asked, since one model fits in memory. The model
 stayed loaded for ten minutes after a draft, so the next started at once.
 The first still waited 7 s for the load on Tim's Mac, so on 21 November
 2026 he chose to load it as the app starts and keep it until it quits,
-about 16.6 GB for Gemma 4 26B, held by llama.cpp as a map of the file
-that macOS can take back. Loading it when a person opens, and keeping it
-as before, were the other choices.
+about 16.6 GB for Gemma 4 26B, which Metal keeps for llama-server and no
+other program can have while the app is open. Loading it when a person
+opens, and keeping it as before, were the other choices.
 
 ### What a test has to build
 

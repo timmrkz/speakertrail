@@ -150,8 +150,12 @@ func TestTheLanguageModelIsLoadedAhead(t *testing.T) {
 	sum := sha256.Sum256(data)
 	m := language.Model{Name: "probe.gguf", Title: "Probe", Download: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}
 	var launched []string
+	refuse := errors.New("not enough free memory")
 	host := &language.Host{Always: true, Launch: func(_ context.Context, path string) (*language.Server, error) {
 		launched = append(launched, path)
+		if refuse != nil {
+			return nil, refuse
+		}
 		return &language.Server{}, nil
 	}}
 	defer host.Close()
@@ -163,15 +167,29 @@ func TestTheLanguageModelIsLoadedAhead(t *testing.T) {
 	if len(launched) != 0 {
 		t.Fatal("a model that is not here was loaded")
 	}
-	os.WriteFile(filepath.Join(s.dir, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644)
+	if err := os.WriteFile(filepath.Join(s.dir, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	s.warm()
 	if len(launched) != 0 {
 		t.Fatal("a model that is not the file downloaded was loaded")
 	}
-	os.WriteFile(filepath.Join(s.dir, m.Name), data, 0o644)
+	if err := os.WriteFile(filepath.Join(s.dir, m.Name), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A load that fails says why in Settings, and the next one clears it.
+	s.warm()
+	if got := s.state().Models[0]; got.Loaded || got.NotLoaded != "Not enough free memory" {
+		t.Errorf("a failed load: %+v", got)
+	}
+	refuse = nil
+	told = nil
 	s.warm()
 	s.warm()
-	if len(launched) != 1 || !s.state().Models[0].Loaded || !told[len(told)-1].Models[0].Loaded {
+	if len(launched) != 2 || !s.state().Models[0].Loaded || s.state().Models[0].NotLoaded != "" || !told[len(told)-1].Models[0].Loaded {
 		t.Errorf("%d loads, loaded %v", len(launched), s.state().Models[0].Loaded)
+	}
+	if len(told) < 2 || !told[0].Models[0].Loading {
+		t.Errorf("Settings was not told the model loads: %+v", told)
 	}
 }

@@ -19,13 +19,16 @@ import (
 // FrameFairy's modelhost.go keeps its model between searches, with less to
 // it: no search reads ahead into it, and no warm-up waits for one.
 
-// Keep is how long a model nobody holds stays loaded. A model kept idle
-// costs less than its size: llama.cpp maps the weights from the file, and
-// the system can take the memory back for another program.
+// Keep is how long a model nobody holds stays loaded, unless the host
+// keeps it always. Metal keeps its memory for llama-server while it is
+// loaded, see freemem.go.
 const Keep = 10 * time.Minute
 
 // ErrClosed is a model asked for after the app began to quit.
 var ErrClosed = errors.New("the app is quitting")
+
+// errDropped is a model dropped while it loaded.
+var errDropped = errors.New("the language model was removed while it loaded")
 
 // errBusy is another model in use.
 var errBusy = errors.New("another language model is in use. Wait for its draft to finish")
@@ -54,15 +57,25 @@ type Host struct {
 	// server that stopped answering still goes at once.
 	Always bool
 
+	// waits is told when Warm waits for a draft to let go, for a test.
+	waits func()
+
 	mu      sync.Mutex
 	server  *Server
 	model   string
 	users   int
 	callOff func() bool
 	// loading is closed when the load under way ends, nil when none is.
-	loading chan struct{}
-	cancel  context.CancelFunc
-	closed  bool
+	// loadingModel is the model it loads, and dropped says it was dropped
+	// meanwhile, so it is stopped as soon as it is up.
+	loading      chan struct{}
+	loadingModel string
+	dropped      bool
+	cancel       context.CancelFunc
+	closed       bool
+	// free is closed when the last holder lets go, for Warm to wait on,
+	// nil while nobody waits.
+	free chan struct{}
 }
 
 func (h *Host) launch(ctx context.Context, model string) (*Server, error) {
@@ -145,18 +158,23 @@ func (h *Host) Hold(ctx context.Context, model string) (*Server, func(keep time.
 		// Nothing loaded, or another model nobody uses, which went above.
 		done := make(chan struct{})
 		loadCtx, cancel := context.WithCancel(ctx)
-		h.loading, h.cancel = done, cancel
+		h.loading, h.loadingModel, h.dropped, h.cancel = done, model, false, cancel
 		h.mu.Unlock()
 
 		s, err := h.launch(loadCtx, model)
 		cancel()
 
 		h.mu.Lock()
-		h.loading, h.cancel = nil, nil
+		dropped := h.dropped
+		h.loading, h.loadingModel, h.dropped, h.cancel = nil, "", false, nil
 		close(done)
 		if err == nil && h.closed {
 			s.Stop()
 			s, err = nil, ErrClosed
+		}
+		if err == nil && dropped {
+			s.Stop()
+			s, err = nil, errDropped
 		}
 		if err != nil {
 			h.mu.Unlock()
@@ -182,6 +200,10 @@ func (h *Host) releaser(s *Server) func(keep time.Duration) {
 			if h.users > 0 {
 				return
 			}
+			if h.free != nil {
+				close(h.free)
+				h.free = nil
+			}
 			if keep <= 0 {
 				h.shutLocked()
 				return
@@ -203,20 +225,61 @@ func (h *Host) releaser(s *Server) func(keep time.Duration) {
 // Warm loads the model at path, or finds it loaded, and lets go of it at
 // once, so a draft that comes later finds it loaded. With Always set it
 // then stays.
+//
+// Another model a draft still writes with is waited for, so a model
+// picked meanwhile is loaded once that draft lets go, not by the next.
 func (h *Host) Warm(ctx context.Context, model string) error {
-	_, release, err := h.Hold(ctx, model)
-	if err != nil {
-		return err
+	for {
+		_, release, err := h.Hold(ctx, model)
+		if errors.Is(err, errBusy) {
+			if err := h.waitFree(ctx); err != nil {
+				return err
+			}
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		release(Keep)
+		return nil
 	}
-	release(Keep)
-	return nil
+}
+
+// waitFree waits until nobody holds the model loaded now.
+func (h *Host) waitFree(ctx context.Context) error {
+	h.mu.Lock()
+	if h.users == 0 || h.server == nil {
+		h.mu.Unlock()
+		return nil
+	}
+	if h.free == nil {
+		h.free = make(chan struct{})
+	}
+	free := h.free
+	h.mu.Unlock()
+	if h.waits != nil {
+		h.waits()
+	}
+	select {
+	case <-free:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Drop stops the server with the model at path, unless somebody holds
 // it, so its file can be removed. It says false when it is held.
+//
+// A model still loading is called off, and stopped should it come up
+// anyway, so a model removed while it loads is never left loaded.
 func (h *Host) Drop(model string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if h.loading != nil && h.loadingModel == model {
+		h.dropped = true
+		h.cancel()
+	}
 	if h.server == nil || h.model != model {
 		return true
 	}
@@ -234,6 +297,12 @@ func (h *Host) Close() {
 	h.closed = true
 	if h.cancel != nil {
 		h.cancel()
+	}
+	// A Warm waiting for a draft to let go waits no more, and finds the
+	// host closed.
+	if h.free != nil {
+		close(h.free)
+		h.free = nil
 	}
 	wait := h.loading
 	if h.server != nil {

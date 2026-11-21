@@ -101,9 +101,11 @@ type PeopleQuery struct {
 
 // ListPeople lists the people a query asks for, and how many each filter
 // would show for the same words, so a filter that shows nobody never hides
-// that others were found. Whom an exclusion leaves out is in neither,
-// unless Tim connected with them. They stay in the file, so removing the
-// exclusion brings them back.
+// that others were found. Someone Tim connected with is only under
+// Connected, so All and Under 30 shrink to whom he can still reach out
+// to. Whom an exclusion leaves out is in neither, unless Tim connected
+// with them. They stay in the file, so removing the exclusion brings them
+// back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
 		q.Sort = "young"
@@ -129,8 +131,8 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 			continue
 		}
 		in := map[string]bool{
-			"all":       true,
-			"young":     p.Young(q.Now),
+			"all":       !p.Connected,
+			"young":     !p.Connected && p.Young(q.Now),
 			"connected": p.Connected,
 		}
 		for f, ok := range in {

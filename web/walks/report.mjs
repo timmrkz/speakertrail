@@ -158,8 +158,9 @@ const walks = [
   {
     // Tab takes the same way whatever is in the field: from the field to
     // Report, so Enter, Tab, Enter still reports after dictating, then
-    // the buttons from right to left, greyed out or not, then the
-    // pictures, and back round to the field. Tim set this order testing
+    // the buttons from right to left, greyed out or not, past the info
+    // mark, which is help and not a control, then the pictures, and back
+    // round to the field. Tim set this order testing
     // #46, and found it changed with an empty field, because greyed out
     // buttons dropped out of it.
     name: 'Tab takes the same way through Report a Problem, empty, filled and after dictating',
@@ -178,16 +179,16 @@ const walks = [
         }
         return went.join(', ')
       }
-      const row = ['Report', 'Clear', 'How a report works', 'Attach screenshots', 'Dictate']
+      const row = ['Report', 'Clear', 'Attach screenshots', 'Dictate']
       await openReport(page)
       const field = page.locator('textarea.telling')
       await field.click()
       let want = [...row, 'the field'].join(', ')
-      let went = await walk('Tab', 6)
+      let went = await walk('Tab', row.length + 1)
       if (went !== want) return `with an empty field Tab went ${went}, want ${want}`
       // The way back is the same way.
       want = [...row].reverse().concat('the field').join(', ')
-      went = await walk('Shift+Tab', 6)
+      went = await walk('Shift+Tab', row.length + 1)
       if (went !== want) return `with an empty field Shift+Tab went ${went}, want ${want}`
       await field.click()
       await page.keyboard.type('It froze.')
@@ -195,7 +196,7 @@ const walks = [
       await page.locator('.pictures figure').waitFor()
       await field.click()
       want = [...row, 'a picture', 'the field'].join(', ')
-      went = await walk('Tab', 7)
+      went = await walk('Tab', row.length + 2)
       if (went !== want) return `with words and a picture Tab went ${went}, want ${want}`
       // Dictate, Enter keeps what was said, Tab goes to Report.
       const listening = page.waitForResponse((r) => r.url().endsWith('/api/listen'))

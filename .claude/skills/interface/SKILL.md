@@ -193,7 +193,8 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   drawn in the other with CSS: Report a Problem's row is written Report,
   Clear, the info mark, Attach, Dictate and drawn with `row-reverse`, so
   Enter, Tab, Enter ends a dictation and makes the report (Tim, testing
-  #46). A button that cannot be pressed now, in a row Tab walks, is
+  #46). An info mark is help, not a control, and Tab passes it by with
+  `tabindex="-1"`, as Tim asked. A button that cannot be pressed now, in a row Tab walks, is
   greyed out with `aria-disabled` and keeps its place, and its handler
   does nothing. One with `disabled` drops out of the order, and Tim
   found the order changing with an empty field.

@@ -150,8 +150,8 @@
     --good-soft: rgba(127, 209, 168, .14);
     --warn: #e9c46a;
     --warn-soft: rgba(233, 196, 106, .14);
-    --bad: #f08a82;
-    --bad-soft: rgba(240, 138, 130, .14);
+    --bad: #ff6262;
+    --bad-soft: rgba(255, 98, 98, .14);
     --series-1: #f0a868;
     --series-2: #7fa8f0;
     --scrim: rgba(0, 0, 0, .55);
@@ -177,8 +177,8 @@
   --good-soft: rgba(127, 209, 168, .14);
   --warn: #e9c46a;
   --warn-soft: rgba(233, 196, 106, .14);
-  --bad: #f08a82;
-  --bad-soft: rgba(240, 138, 130, .14);
+  --bad: #ff6262;
+  --bad-soft: rgba(255, 98, 98, .14);
   --series-1: #f0a868;
   --series-2: #7fa8f0;
   --scrim: rgba(0, 0, 0, .55);

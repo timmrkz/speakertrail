@@ -92,7 +92,8 @@ practices, most of them between 30 and 50. A founder who writes
 **The workspace** has three screens now:
 
 - **People**, with the Run button. Only people a profile search found,
-  and whoever Tim connected with before, the likely youngest first. Each row says
+  and whoever Tim connected with before, the best fit first, see
+  [fit-score.md](fit-score.md). Each row says its fit and
   about how old the person is and when they were last active on
   LinkedIn. Filters: all, under 30, connected. Someone Tim connected
   with is only under connected, so all and under 30 shrink to whom he

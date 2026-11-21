@@ -193,6 +193,36 @@ const walks = [
       return wrong.join('\n\t')
     },
   },
+  {
+    // Tim, 21 November 2026: he picks the best fit from the top, and every
+    // point of the fit has a reason he can read, docs/fit-score.md.
+    name: 'People puts the best fit first, and a person says what their fit adds up to',
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      const set = (v) => page.evaluate((v) => fetch('/api/settings/home_city', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: v }) }).then((r) => r.status), v)
+      if ((await set('Cologne')) !== 200) return 'Where you are did not take Cologne'
+      try {
+        await page.reload()
+        await page.locator('.prow').first().waitFor()
+        const order = (await page.locator('.list-pane').innerText()).includes('Best fit')
+        if (!order) return 'the list is not in the order Best fit'
+        const fits = await page.$$eval('.prow .fit', (els) => els.map((e) => Number(e.textContent.replace(/\D/g, ''))))
+        if (fits.length < 3) return `only ${fits.length} rows show a fit`
+        if (fits.some((f, i) => i && f > fits[i - 1])) return `the fits are not best first: ${fits.join(' ')}`
+        await page.locator('.prow').first().click()
+        await page.locator('.fit li').first().waitFor()
+        const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace(/\D/g, ''))))
+        const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
+        if (parts.length !== 4) return `${parts.length} parts, want 4`
+        if (parts.reduce((a, b) => a + b, 0) !== head || head !== fits[0]) return `the parts ${parts.join(' + ')} are not the fit ${head}, the row says ${fits[0]}`
+        const near = await page.locator('.fit li').nth(3).innerText()
+        if (!/where you are|km/.test(near)) return `Near you says ${near}`
+        return ''
+      } finally {
+        await set('')
+      }
+    },
+  },
 ]
 
 const browser = await chromium.launch()

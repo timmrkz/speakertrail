@@ -3,8 +3,9 @@
 A spec for issue #68, written on 21 November 2026 before any code. It
 says how People is ordered, what a person's **fit** is made of, how it
 learns from whom Tim connects with, and how that steers the searches.
-Nothing here is built yet. What is built today is in
-[search-strategy.md](search-strategy.md).
+Tim agreed on it on 22 November 2026. The four fixed parts are built,
+with People sorted by the fit. Like your picks and the searches are not
+yet, see the Progress list of the issue.
 
 ## What Tim asked for
 
@@ -15,7 +16,7 @@ posted 5 months ago. A person near him comes before one far away. And
 whom he connects with, and whom not, teaches the measure and the
 searches, so the picks get better over time.
 
-## What there is today
+## What there was before the fit
 
 - **The rubric**, `internal/rubric`, finds signals for and against a
   fit, each with the passage that shows it. The **score** is the
@@ -79,12 +80,15 @@ halves every 30 days:
 | 60 days ago | 25 % |
 | 5 months ago | 3 % |
 
-Writing says more than a like. When the newest thing is a reaction and
-nothing newer is a post or a comment, the part is halved. The kind is
-read from the profile's activity lines, like "Gefällt mir" or
-"Kommentar". Which words Exa's index uses for a post is checked against
-real profiles on Tim's Mac before this is built, since a cloud session
-cannot reach Exa.
+Writing says more than a like. A reaction counts half as much as a post
+or a comment of the same day, so a comment a week ago can count for
+more than a like yesterday. The kind is read from the profile's
+activity lines, `rubric.Writing`: an entry like "Gefällt mir" or
+"Likes" is a reaction, anything else, like "Kommentar", is writing. So
+a word for a reaction the app does not know counts as writing, as all
+activity did before. Whom the app has no profile text of counts as
+writing too. The words Exa's index uses were seen only in the tests, a
+cloud session cannot reach Exa, so Tim's own people are the check.
 
 The date is what Exa's index last saw, which can be weeks old. It is
 refreshed whenever a search finds the person again.
@@ -159,7 +163,7 @@ person's Why lists the parts with the points each gave, for example:
 
 - Younger +20: Bachelor from 2019, so about 26
 - Active lately +18: comment on 16 November
-- Near you +11: Bonn, about 25 km
+- Near you +11: Bonn, about 24 km
 - Who they are +11: Works with people, Athlete
 - Like your picks +9: "BJJ", 4 of 6 such people you connected with
 
@@ -248,20 +252,22 @@ revisited with the counts per part.
 
 ## Where it lives
 
-- The fixed parts and the traits are plain Go functions in a new part,
-  `internal/fit`, which knows the rubric and the facts of a person and
-  nothing else. A decision record in `docs/decisions/` comes with its
-  first code, as the architecture skill says.
+- The fixed parts are plain Go functions in the rubric,
+  `internal/rubric/fit.go`, beside the signals they read, so no new part
+  is needed. The distances are `place.Km`, from the centres of the
+  cities the app knows, as GeoNames gives them. The store gives each
+  person's facts and Where you are, `Data.Fitter`. The traits of Like
+  your picks will sit beside them.
 - The fit is worked out when a list is asked for, never kept, because it
   depends on today's date, Where you are and every choice Tim made. The
   traits of everyone are counted once per list. On a file of 5000
   people that is about 150,000 counts, a few milliseconds, to be
   measured in the pull request. Nothing slow happens inside
   `Store.Update`.
-- New in the file: the setting Where you are, the fit and place at connecting, and three facts read from the
-  profile text when it arrives: the newest post or comment, how many
-  follow, and whether it has an About. For people found before, these
-  are read once from `profile-texts.json`.
+- New in the file: the setting Where you are, `home_city`, and later the
+  fit and place at connecting. What the profile text says, the newest
+  post or comment so far, is read from the text whenever it is set or
+  the file is read, never kept beside it.
 - No language model, no paid service, no request to LinkedIn. Only
   counting what the file holds.
 - The app's log never names a person or a word from their headline.

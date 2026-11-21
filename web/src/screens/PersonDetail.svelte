@@ -189,6 +189,23 @@
       <FirstMessage person={p} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />
     {/if}
 
+    {#if p.fit_parts?.length}
+      <!-- What the fit adds up, each part with its points and why, so
+           every point has a reason, docs/fit-score.md. -->
+      <section class="section" aria-labelledby="fit-{p.id}">
+        <h3 id="fit-{p.id}" class="label">Fit <span class="num">{p.fit_score}</span><span class="sr-only"> of 100</span></h3>
+        <ul class="why fit">
+          {#each p.fit_parts as f (f.key)}
+            <li>
+              <span class="pts num" aria-hidden="true">+{f.points}</span>
+              <span class="what"><b>{f.label}</b><span class="sr-only">, {f.points} points</span>
+                <span class="because">{f.why}</span></span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
+
     {#if reasons.length || doubts.length}
       <section class="section" aria-labelledby="why-{p.id}">
         <h3 id="why-{p.id}" class="label">Why</h3>
@@ -248,6 +265,9 @@
   .why .what { display: grid; gap: 2px; min-width: 0; }
   .why b { font-weight: 600; }
   .why q { color: var(--ink-2); overflow-wrap: anywhere; }
+  .fit li { grid-template-columns: 3ch minmax(0, 1fr); }
+  .fit .pts { color: var(--ink-2); text-align: end; }
+  .fit .because { color: var(--ink-2); overflow-wrap: anywhere; }
   .found { font-size: 13px; color: var(--ink-3); }
   .open-problem { color: var(--bad); margin-top: -6px; }
   .set-aside { color: var(--ink-3); }

@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, DraftJob, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Activity, Appearance, DraftJob, FitPart, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
   FirstMessageTemplate, TemplateField, TemplatePart,
 } from '../src/lib/api.ts'
@@ -261,14 +261,68 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   return out.sort((a, b) => Number(b.for) - Number(a.for))
 }
 
+// The centres of the invented people's cities, from internal/place, so
+// Near you answers the way the app does.
+const CENTRES: Record<string, [number, number]> = {
+  Köln: [50.9333, 6.95], Bonn: [50.7344, 7.0955], Düsseldorf: [51.2232, 6.7793], Essen: [51.4566, 7.0123],
+  Dortmund: [51.5149, 7.466], Duisburg: [51.4325, 6.7652], Bochum: [51.4817, 7.2165], Aachen: [50.7766, 6.0834],
+  Münster: [51.9624, 7.6257], Bielefeld: [52.0333, 8.5333], Neuss: [51.1981, 6.685], Hürth: [50.8708, 6.8676],
+  Siegburg: [50.8002, 7.2077],
+}
+const ALIASES: Record<string, string> = { cologne: 'Köln', koeln: 'Köln', dusseldorf: 'Düsseldorf', duesseldorf: 'Düsseldorf', muenster: 'Münster' }
+function cityOf(v: string): string | undefined {
+  const t = v.trim().toLowerCase()
+  return Object.keys(CENTRES).find((c) => c.toLowerCase() === t) ?? ALIASES[t]
+}
+function km(a: string, b: string): number | null {
+  const p = CENTRES[a], q = CENTRES[b]
+  if (!p || !q) return null
+  const r = Math.PI / 180
+  const h = Math.sin(((q[0] - p[0]) * r) / 2) ** 2 + Math.cos(p[0] * r) * Math.cos(q[0] * r) * Math.sin(((q[1] - p[1]) * r) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+
+// The fit's four parts, the way rubric.Fit gives them.
+const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed'])
+function fitParts(s: State, p: Person): FitPart[] {
+  const pts = (share: number) => Math.round(25 * Math.max(0, Math.min(1, share)))
+  const counted = p.signals.filter((x) => WHO.has(x.key))
+  const pro = counted.filter((x) => x.for).map((x) => x.label)
+  const contra = counted.filter((x) => !x.for).map((x) => x.label)
+  let why = pro.join(', ')
+  if (contra.length) why = (why ? why + ', against ' : 'Against ') + contra.join(', ')
+  const who = { key: 'who', label: 'Who they are', points: pts((pro.length - contra.length) / 3), why: why || 'Nothing beyond running their own business' }
+  const now = new Date()
+  const born = p.linkedin?.born_about
+  const age = born ? now.getFullYear() - born : 0
+  const younger = born
+    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(0, Math.min(25, (25 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
+    : { key: 'younger', label: 'Younger', points: pts(0.5), why: 'Age not known' }
+  const last = p.linkedin?.last_active
+  const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const active = last
+    ? { key: 'active', label: 'Active lately', points: pts(0.5 ** ((now.getTime() - new Date(last).getTime()) / (30 * 864e5))), why: `Last active on ${day(last)}` }
+    : { key: 'active', label: 'Active lately', points: 0, why: 'No activity on LinkedIn known' }
+  const home = String(setting(s, 'home_city') ?? '')
+  const d = home ? km(home, p.city) : null
+  const near = !home
+    ? { key: 'near', label: 'Near you', points: pts(0.5), why: 'Where you are is not set in Settings' }
+    : d === null
+      ? { key: 'near', label: 'Near you', points: pts(0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
+      : d < 1
+        ? { key: 'near', label: 'Near you', points: 25, why: `${p.city}, where you are` }
+        : { key: 'near', label: 'Near you', points: pts(0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
+  return [who, younger, active, near]
+}
+
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
   const now = new Date().toISOString()
   const next = apps.find((a) => a.event.starts_at >= now)
   const signals = signalsOf(p, apps)
-  return {
+  const out: Person = {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
-    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, connected: !!p.connected,
+    fit_score: 0, signals, connected: !!p.connected,
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -284,6 +338,8 @@ function personList(s: State, p: PersonRow): Person {
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
       : null,
   }
+  out.fit_score = fitParts(s, out).reduce((n, x) => n + x.points, 0)
+  return out
 }
 
 const MOCK_ACTIVITY: { state: Activity; since: string | null; note: string }[] = [
@@ -310,6 +366,7 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
   return {
     ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()],
     draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.linkedin ? hoursAgo(30) : null,
+    fit_parts: fitParts(s, personList(s, p)),
   }
 }
 
@@ -380,7 +437,7 @@ const err = (status: number, message: string) => ({ status, body: { error: messa
 const ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
-    const sort = q.get('sort') || 'next'
+    const sort = q.get('sort') || 'fit'
     const filter = q.get('filter') || 'all'
     // Like the app: whom profile searches found, and whoever Tim connected
     // with, less whom the exclusions hide.
@@ -842,6 +899,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
     if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
+    if (row.key === 'home_city' && String(b.value).trim() !== '') {
+      const c = cityOf(String(b.value))
+      if (!c) return err(400, `"${String(b.value).trim()}" is no city in NRW the app knows, like Köln, Bonn or Düsseldorf`)
+      b.value = c
+    }
     row.value = b.value as Json
     row.updated_at = new Date().toISOString()
     return ok(row)

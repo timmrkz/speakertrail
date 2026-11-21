@@ -44,7 +44,8 @@ Start with [README.md](README.md). In short:
 How we work is in the skills in `.claude/skills/`. Most are written for
 any project, so their rules name nothing of ours. Read the one for the
 work before starting it. Where a generic skill and this file differ, this
-file wins.
+file wins. They come from FrameFairy, made generic, see Where the skills
+come from in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 
 | Skill | For |
 | --- | --- |
@@ -94,6 +95,8 @@ that, the skills listed last show their name without what they are for.
 - He tests the app himself on his Mac. After each change say exactly what
   to look at and what should happen.
 - He answers in English or German. Reply in the language of his message.
+  He often dictates, so FrameFairy can arrive as "Frame variable" or
+  "FrameFerry".
 - Measurements are metric.
 
 ## How to work with him
@@ -295,7 +298,12 @@ place, in the same pull request.
 - **`docs/`** holds what a person reads: how to build, how to deploy, how
   the API answers. Claude reads it too, when the task touches it.
 - **Code comments** hold why a piece of code is the way it is.
+- **Open work** is a GitHub issue.
+- **Never the project memory at claude.ai.** Nobody reviews it and no
+  pull request changes it, so it drifts. It holds only a pointer to this
+  repository (Tim, 21 November 2026).
 
-A wish about how Tim works is a line here. A procedure is a skill. A fact
-about the system is a doc. When in doubt, a rule here and the details in a
-skill or a doc it names.
+A lesson about how to work goes into a skill, in words any project can
+use. A rule only Speaker Trail needs is a line here. A procedure is a
+skill. A fact about the system is a doc. When in doubt, a rule here and
+the details in a skill or a doc it names.

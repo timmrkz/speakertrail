@@ -120,6 +120,22 @@ AppleScript does not say which profile a window belongs to.
 - An error from `Open` shows beside the button in plain words, like "Chrome
   has no profile Profile 1 any more".
 
+## Why the app does not drive LinkedIn
+
+Tim asked on 12 November 2026 whether the app could read the LinkedIn tab
+and connect or send messages for him. It does not, and should not:
+
+- LinkedIn's User Agreement, section 8.2, forbids plugins that copy
+  profiles and bots that add contacts or send messages. LinkedIn looks for
+  thousands of Chrome extensions, so the account is at risk.
+- Chrome's "Allow JavaScript from Apple Events" opens every tab to any
+  app. Remote debugging is refused on the real profile since Chrome 136.
+- A language model that reads pages and can click is open to prompt
+  injection from any profile it reads.
+
+So the app drafts the first message from what Exa already gives, and Tim
+opens the profile, pastes it and sends it himself.
+
 ## Try it on the Mac
 
 ```sh

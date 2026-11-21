@@ -112,6 +112,17 @@ skill how it is judged. This one says how it is made.
   by hand: fix the build so the step is never needed.
 - **A rule a tool can check is checked by the tool,** in CI, on every
   pull request. A rule that is only written down slips.
+- **No shell scripts.** What a build or a workflow has to work out is a
+  program in the project's own language, with tests. A workflow step
+  only calls tools that are there. Logic in shell nobody reads or tests,
+  and it piles up.
+- **A port copies its source as it is.** Bringing a design over from
+  another project means copying it, changing only what the new project
+  makes necessary, and naming every difference before the user finds
+  it. Diff the port against its source before calling it done. A flaw a
+  review finds in ported code is checked in the source too, and the user
+  is told whether it was copied or came with the port. A copied flaw gets
+  a short briefing for the source project's sessions.
 
 ## 7. CI stays quick
 

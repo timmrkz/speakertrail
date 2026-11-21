@@ -59,6 +59,9 @@ size alone.
   base,** so its diff shows only its own change, or it waits until the
   first is merged. The same commits are never pushed into two pull
   requests.
+- **After a squash merge the branch still holds the merged commits.**
+  New work starts from the latest main, never from that history merged
+  in again, or a small pull request shows every old commit.
 - **One session, one pull request at a time.** A session opens the next
   only once its open one is merged or closed. Two at once split its
   attention, and the user cannot tell which a reply is about. Reading
@@ -130,7 +133,8 @@ in the proof.
 - **When all the work is done** and the tests of the change pass, the
   session asks a new agent to review the pull request, the way the review
   skill says. It comes once, not after every push. A review after later
-  rounds is the user's to ask for.
+  rounds is the user's to ask for. Every pull request gets one, however
+  small, a word-for-word copy too. Skipping it is not the session's call.
 - **Its brief carries sources, not conclusions:** the user's own
   messages, the issue, the product's goals, and the path of
   `docs/ARCHITECTURE.md`, never the session's summary of them. The

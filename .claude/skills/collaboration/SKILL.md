@@ -31,6 +31,9 @@ for.
   else is done, and said.
 - **Ask at most one question at a time,** and only when the answer
   changes what gets built.
+- **A question is answered, not built.** "Do we not have X yet?" asks
+  for an answer. The session answers it, offers the work in one line and
+  waits for a yes. A pull request nobody asked for is closed unmerged.
 
 ## 2. Replies
 
@@ -54,6 +57,12 @@ for.
      wrap inside the screen.
   2. Merge #14 when it looks right.
 
+- **Whatever the user was told is coming gets a note when it lands.** A
+  review that is back, with its file, its findings and what was done
+  about them. A CI run that passed or failed, even when another run is
+  on its way. A merge of main, with the files that conflicted. Every push
+  gets one line on what it waits for. Silence reads as lost work, and a
+  checklist notifies no one. Only "nothing happened" is never sent.
 - **Every reply about a pull request says how it stands:** whether CI
   passed on the last commit, and whether the review is back with how
   many findings are open.
@@ -73,7 +82,21 @@ for.
   there can read as the user's own instruction. A review is never posted
   there, see the review skill.
 
-## 4. Clean up now, not later
+## 4. What a later session needs is in the repository
+
+- **Sessions forget, the repository does not.** How the user wants
+  things done is a rule in the project's instructions file, a procedure
+  is a skill, a fact about the system is a doc, and open work is an
+  issue. Each goes in with the pull request in which it came up.
+- **Never in an agent's memory outside the repository.** A note there is
+  read by no reviewer, changed by no pull request, and drifts from the
+  code. Where a tool offers such a memory, it holds at most a pointer to
+  the repository.
+- **Generic first.** A lesson about how to work goes into a skill in
+  words any project can use. Only what is true of this one product goes
+  into its instructions file or its docs.
+
+## 5. Clean up now, not later
 
 - **What a pull request leaves behind is cleaned up before it is
   merged,** because a cleanup put off for later is mostly never done. A
@@ -86,7 +109,7 @@ for.
   `.github/ISSUE_TEMPLATE/issue.md` lays it out, linked in the reply and
   under Found along the way in the pull request.
 
-## 5. Open work is GitHub issues
+## 6. Open work is GitHub issues
 
 - **Never rows in a file.** Two pull requests that each add a row at the
   end of one table conflict, however they are numbered. An issue number
@@ -159,7 +182,7 @@ so it opens no pull request. It works in this order:
 The user's labels and the user's words are never changed. The look over
 ends with a reply that lists every change, each linked.
 
-## 6. Writing
+## 7. Writing
 
 These apply to everything written for the user: interface text, docs,
 commit messages, pull request text, code comments and replies.

@@ -88,6 +88,22 @@ and names the files when it does not merge. A pull request that still
 merges is left alone: merging `main` into it would only add a commit, a
 CI run and a build to take, and change nothing being tested.
 
+## Where the skills come from
+
+The skills in `.claude/skills/` are written for any project. They are
+developed in FrameFairy, at `timmrkz/framefairy`, and copied here made
+generic: no FrameFairy names, paths or product words. `interface-design`
+is FrameFairy's `interface` skill, renamed because `interface` here is
+Speaker Trail's own. The last copy was pull request #13, on 13 November
+2026.
+
+To bring them up to date, compare FrameFairy's `.claude/skills/`, its
+`.github` templates, `CLAUDE.md` and its docs on how it works since the
+last copy, and bring over the lessons, never its facts. Search the result
+for FrameFairy's words before pushing. A lesson learned here first goes
+into the skill here in generic words, and to FrameFairy in a pull
+request of its own, or the next copy undoes it.
+
 ## What is on your Mac
 
 Git, this folder, and what make installs with Homebrew the first time, Go

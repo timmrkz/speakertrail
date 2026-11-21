@@ -49,7 +49,15 @@ export GOTOOLCHAIN
 BUILD_VERSION ?=
 BUILD_CHANNEL ?=
 BUILD_COMMIT ?=
-APP_LDFLAGS := -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
+# What the app is built with. -s -w leaves out the symbol table and the
+# debug information, about 5 MB of what an update downloads. Nobody reads
+# them from a build: a panic still names every function and line, from the
+# table Go keeps to run. -buildvcs=false leaves out the commit Go stamps in
+# by itself, so a build whose code did not change has the same bytes as
+# the one before and an update can tell what it already has. A build still
+# says its commit, in buildCommit. See docs/UPDATES.md.
+SHIP_FLAGS := -trimpath -buildvcs=false
+APP_LDFLAGS := -s -w -X main.buildVersion=$(BUILD_VERSION) -X main.buildChannel=$(BUILD_CHANNEL) -X main.buildCommit=$(BUILD_COMMIT)
 # On a Mac every part of the app is built for the same oldest macOS, the
 # one the bundle's Info.plist names. Without it clang builds the window's
 # C for the macOS it runs on and Go links for 11.0, and the linker warns
@@ -58,7 +66,13 @@ MACOS_MIN := 13.0
 ifeq ($(UNAME),Darwin)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
-export CGO_LDFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
+# -headerpad_max_install_names leaves room in the program's header for the
+# paths carry-libs.sh adds, where it looks for the speech library. Go
+# leaves that room by itself only while it keeps the debug information,
+# which the app no longer has, see APP_LDFLAGS. Without it
+# install_name_tool has no room and the app cannot find its library, as
+# FrameFairy found.
+export CGO_LDFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN) -Wl,-headerpad_max_install_names
 APP_LDFLAGS += -extldflags=-mmacosx-version-min=$(MACOS_MIN)
 endif
 # The app's version, in its Info.plist. The build's own, with its channel
@@ -108,7 +122,7 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 # it. See scripts/carry-libs.sh and docs/BUILD.md.
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
-	@$(GO) build -trimpath -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
+	@$(GO) build $(SHIP_FLAGS) -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
 ifeq ($(UNAME),Darwin)
 	@sh scripts/carry-libs.sh $@ $(BIN)/lib
 endif

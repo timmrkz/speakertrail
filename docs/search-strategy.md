@@ -253,6 +253,10 @@ Scoring is kept simple and readable: a list of signals, each with its
 passage, for and against. The People screen sorts by it and shows why.
 There is no hidden number.
 
+A fit score from 0 to 100 that adds how lately a person was active, how
+near they are and what Tim's connections have in common is specified in
+[fit-score.md](fit-score.md), issue #68, not built yet.
+
 ## Where they are found in NRW
 
 ### Searches

@@ -86,9 +86,9 @@
   /* What is chosen, a page in the sidebar, a filter, the person open,
      a chip pressed, is one flat tint of the accent. Under the pointer the
      tint deepens, pressed a little more. */
-  --chosen: color-mix(in srgb, var(--accent) 15%, transparent);
-  --chosen-hover: color-mix(in srgb, var(--accent) 20%, transparent);
-  --chosen-press: color-mix(in srgb, var(--accent) 25%, transparent);
+  --chosen: color-mix(in srgb, var(--accent) 18%, transparent);
+  --chosen-hover: color-mix(in srgb, var(--accent) 22%, transparent);
+  --chosen-press: color-mix(in srgb, var(--accent) 26%, transparent);
   /* The words on it are the accent a shade toward the ink, so they read
      at 4.5 to 1 on the tint in every state, see walks/look.mjs. */
   --chosen-ink: color-mix(in srgb, var(--accent) 85%, var(--ink));

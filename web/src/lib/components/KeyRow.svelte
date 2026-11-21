@@ -85,7 +85,7 @@
   .info { display: grid; gap: 2px; min-width: 0; }
   .desc { font-weight: 600; font-size: 14px; }
   .key { color: var(--ink-3); }
-  .editor { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+  .editor { display: flex; gap: var(--gap-control); align-items: flex-start; min-width: 0; }
   .editor .input { flex: 1; min-width: 0; }
   .foot { grid-column: 2; min-height: 0; margin: 0; }
   @media (max-width: 760px) {

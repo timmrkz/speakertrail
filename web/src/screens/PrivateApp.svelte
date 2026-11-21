@@ -198,16 +198,19 @@
   .word { white-space: nowrap; min-width: 0; overflow: hidden; }
 
   /* 4 px each side of a 36 px box leaves the icon in the middle of the
-     rail, and the same box holds every row. */
-  .head { flex: none; padding: 8px 4px; }
+     rail, and the same box holds every row. The same 4 px, --gap-inset,
+     stands between two rows, so the page under the pointer never touches
+     the page chosen (Tim, 21 November 2026). Only the foot keeps 8 px
+     below its last row, clear of the window's round corner. */
+  .head { flex: none; padding: var(--gap-inset); }
   .glyph {
     display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
     border: 0; border-radius: 8px; background: none; color: var(--ink-3); cursor: pointer;
   }
   .glyph:hover { color: var(--ink); background: var(--hover); }
   .glyph:active { background: var(--press); }
-  .rows { display: grid; gap: 2px; padding: 0 4px; flex: 1; min-height: 0; align-content: start; }
-  .foot { border-top: 1px solid var(--line); padding: 8px 4px; display: grid; gap: 2px; }
+  .rows { display: grid; gap: var(--gap-inset); padding: 0 var(--gap-inset); flex: 1; min-height: 0; align-content: start; }
+  .foot { border-top: 1px solid var(--line); padding: var(--gap-inset) var(--gap-inset) 8px; display: grid; gap: var(--gap-inset); }
 
   /* 10 px in puts a 16 px icon in the middle of the 44 px rail, the same
      column as the button at the head. */

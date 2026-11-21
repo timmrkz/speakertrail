@@ -296,7 +296,7 @@
   .line { color: var(--ink-3); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .line.warn { color: var(--warn); }
   .line.error { color: var(--bad); }
-  .actions { display: flex; gap: 8px; min-width: 0; }
+  .actions { display: flex; gap: var(--gap-control); min-width: 0; }
   /* On a narrow window the controls go under the words, as LinkedinRow's
      list does, so the line under the name keeps its room. */
   @media (max-width: 760px) {

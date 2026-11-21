@@ -328,14 +328,14 @@
   .name { font-weight: 600; font-size: 14px; }
   .count { font-variant-numeric: tabular-nums; }
   .body { display: grid; gap: 8px; padding: 0 12px 12px; min-width: 0; }
-  .variations { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; min-width: 0; }
-  .variation { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+  .variations { display: grid; gap: var(--gap-control); margin: 0; padding: 0; list-style: none; min-width: 0; }
+  .variation { display: flex; align-items: flex-start; gap: var(--gap-control); min-width: 0; }
   /* A field of one line that grows with its variation, never a second
      size of box. */
   .variation .text { flex: 1; min-width: 0; height: auto; min-height: var(--control-h); padding-top: 8px; padding-bottom: 8px;
     resize: none; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
   .variation .btn { flex: none; }
-  .add-part { display: flex; gap: 6px; padding: 6px 12px; min-width: 0; }
+  .add-part { display: flex; gap: var(--gap-control); padding: 6px 12px; min-width: 0; }
   .add-part .input { flex: 1; min-width: 0; }
   .add-part .btn { flex: none; }
   .reset { justify-self: start; }

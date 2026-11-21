@@ -74,6 +74,15 @@
      the parts of one section, like a heading and its list. */
   --gap-page: 24px;
   --gap-group: 12px;
+  /* Two gaps and no others between controls. --gap-control stands between
+     two controls side by side or one over the other: the buttons of a
+     row, a field and its button, the search, the order and Run over a
+     list. --gap-inset stands between the items that share one ground and
+     round them, the segments of a choice and the pages in the sidebar, so
+     the one under the pointer never touches the one chosen. Tim asked for
+     one gap everywhere on 21 November 2026, see walks/look.mjs. */
+  --gap-control: 8px;
+  --gap-inset: 4px;
 
   /* The states of every control, mixed from the theme's own colours so
      the one rule holds in light and in dark.
@@ -318,7 +327,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
-.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.row { display: flex; align-items: center; gap: var(--gap-control); flex-wrap: wrap; min-width: 0; }
 .row.end { justify-content: flex-end; }
 .row.between { justify-content: space-between; }
 
@@ -344,14 +353,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .search .input { padding-left: 34px; }
 .search .input::-webkit-search-cancel-button { cursor: pointer; }
 
-.toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.toolbar { display: flex; gap: var(--gap-control); flex-wrap: wrap; align-items: center; min-width: 0; }
 @media (max-width: 760px) {
   .toolbar.tight { flex-wrap: nowrap; }
   .toolbar.tight .search { flex: 1 1 0; }
 }
 
 /* Chips and segmented choices */
-.chips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.chips { display: flex; gap: var(--gap-control); flex-wrap: wrap; min-width: 0; }
 .chip {
   height: 32px; padding: 0 12px; border-radius: 999px; border: var(--line-w) solid var(--line-strong); background: var(--surface);
   cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center;
@@ -375,8 +384,8 @@ button { -webkit-tap-highlight-color: transparent; }
 /* A choice of a few, in a field like every other control, the chosen
    one in the tint every chosen thing wears. */
 .segmented {
-  display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--control-h); padding: 3px;
-  border-radius: 9px; background: var(--surface); border: var(--line-w) solid var(--line-strong); min-width: 0;
+  display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--control-h); padding: var(--gap-inset);
+  gap: var(--gap-inset); border-radius: 9px; background: var(--surface); border: var(--line-w) solid var(--line-strong); min-width: 0;
 }
 .segmented button {
   border: 0; background: none; border-radius: 6px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--ink-2);
@@ -490,7 +499,7 @@ button { -webkit-tap-highlight-color: transparent; }
    --wails-draggable is drag, and the property is inherited, so whatever
    can be clicked inside a bar says no-drag again. */
 .bar {
-  flex: none; height: var(--bar-h); display: flex; align-items: center; gap: 10px;
+  flex: none; height: var(--bar-h); display: flex; align-items: center; gap: var(--gap-control);
   padding: 0 var(--pad); border-bottom: 1px solid var(--line); min-width: 0;
   --wails-draggable: drag;
 }

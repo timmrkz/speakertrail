@@ -262,7 +262,7 @@
   .item.told { flex-wrap: wrap; row-gap: 12px; }
   .told > .said,
   .told > .refused { flex-basis: calc(100% - 24px - 12px); margin-left: calc(24px + 12px); }
-  .said { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .said { display: flex; align-items: center; gap: var(--gap-control); min-width: 0; }
 
   /* What the system said: a field at the height of every control, its
      words at one width the way code is, on one line that scrolls, and the

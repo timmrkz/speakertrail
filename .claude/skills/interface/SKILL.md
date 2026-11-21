@@ -186,6 +186,20 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   Run, Add, Check and the LinkedIn profile list too wide twice testing
   #46, and `walks/look.mjs` adds up what each button and list on every
   page shows, at 1280 and 390 px, and fails one that is wider.
+- **Two gaps between controls, and no others.** Two controls side by
+  side or one over the other, the buttons of a row, a field and its
+  button, the search, the order and Run, stand `--gap-control` apart.
+  The items that share one ground, the segments of a choice and the
+  pages in the sidebar, stand `--gap-inset` apart and as far in from
+  their ground's edge, so the one under the pointer never touches the
+  one chosen. Tim found them touching, and buttons 6, 8 or 10 px apart,
+  testing #46, issue #63. Two rows of controls, like the search, the
+  order and Run over the filter on People, stand `--gap-control` apart
+  too. `walks/look.mjs` measures every two neighbouring controls and
+  rows of controls on People, Searches with its exclusions open,
+  Settings with the question before removing, Updates and Report, at
+  1280 and 390 px. A person open is not measured yet. The sidebar's
+  4 px differs from FrameFairy's 2 px on purpose.
 - **Tab goes the way the page is written.** macOS only tabs between
   buttons when full keyboard access is on, so a window, a sheet and a
   question move the focus themselves, all through `moveTab` in

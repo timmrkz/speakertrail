@@ -141,12 +141,16 @@ fails the run on main and on the commit, never quietly. To set it up once:
 3. In [Certificates](https://developer.apple.com/account/resources/certificates/add),
    choose **Developer ID Application**, upload that file, download the
    certificate and double-click it. It shows in Keychain Access under
-   **My Certificates**. Make it for Speaker Trail alone, and FrameFairy
+   **My Certificates**, with the private key made in step 2 under it.
+   Keychain Access may call it not trusted, since a Mac without Xcode
+   lacks Apple's certificate between it and Apple's root. That changes
+   nothing here, because `sign-macos.sh` fetches that one from Apple. Make it for Speaker Trail alone, and FrameFairy
    its own later, so either can be revoked without the other. Apple
    allows five.
 4. In Keychain Access, right-click the certificate, **Export**, and save
-   it as `developer-id.p12` on the Desktop with a new password. Put the
-   password in the password manager.
+   it as `developer-id.p12` on the Desktop with a new password. The file
+   holds the private key too, which Apple cannot give out again, so it is
+   the backup. Put it and its password in the password manager.
 5. In Terminal, `base64 -i ~/Desktop/developer-id.p12 | pbcopy` puts the
    certificate on the clipboard as text.
 6. On GitHub, in the environment `updates`, add two **environment
@@ -165,9 +169,12 @@ signed ad hoc, without the hardened runtime, or by another team.
 If a build signed this way does not open, the app cannot update away
 from it. `make install` in a checkout puts a build made on the Mac back
 in `/Applications`, and Updates works again from there. Removing
-`build/team-id.txt` on main sends builds out signed ad hoc again. The certificate stays good
-for five years, and every signature carries Apple's time stamp, so a
-build signed before it runs out stays good after.
+`build/team-id.txt` on main sends builds out signed ad hoc again.
+
+The certificate runs out on the date Keychain Access shows, Tim's first
+on 21 December 2027. A new one is made with steps 2 to 6. Every signature
+carries Apple's time stamp, so a build signed before then stays good
+after.
 
 The builds are not notarised. Notarising is what lets a downloaded app
 open past Gatekeeper on any Mac. The app downloads its updates itself,

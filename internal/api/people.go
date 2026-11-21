@@ -26,13 +26,14 @@ type linkedInJSON struct {
 
 // personJSON is a person in the list.
 type personJSON struct {
-	ID             int64          `json:"id"`
-	Name           string         `json:"name"`
-	KnownAs        string         `json:"known_as"`
-	Headline       string         `json:"headline"`
-	City           string         `json:"city"`
-	Fit            string         `json:"fit"`
-	FirstSeen      time.Time      `json:"first_seen"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	KnownAs   string    `json:"known_as"`
+	Headline  string    `json:"headline"`
+	City      string    `json:"city"`
+	Fit       string    `json:"fit"`
+	FirstSeen time.Time `json:"first_seen"`
+	// FitScore is the fit from 0 to 100, see store.Data.Fit.
 	FitScore       int            `json:"fit_score"`
 	Connected      bool           `json:"connected"`
 	Signals        []store.Signal `json:"signals"`
@@ -64,12 +65,22 @@ type personDetail struct {
 	// ProfileReadAt is when Exa's index gave the profile text a draft is
 	// written from, nil while the app has none and a draft reads it first.
 	ProfileReadAt *time.Time `json:"profile_read_at"`
+	// FitParts are what the fit adds up, each with its points and why.
+	FitParts []fitPartJSON `json:"fit_parts"`
 }
 
-func listPerson(p *store.Person) personJSON {
+type fitPartJSON struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Points int    `json:"points"`
+	Why    string `json:"why"`
+}
+
+// listPerson gives a person as the list shows them, with their fit.
+func listPerson(p *store.Person, fit int) personJSON {
 	out := personJSON{
 		ID: p.ID, Name: p.Name, Headline: p.Headline, City: p.City, Fit: "other", FirstSeen: p.FirstSeen,
-		FitScore: p.Score, Connected: p.Connected, Signals: p.Signals, Profiles: []profileJSON{},
+		FitScore: fit, Connected: p.Connected, Signals: p.Signals, Profiles: []profileJSON{},
 	}
 	if out.Signals == nil {
 		out.Signals = []store.Signal{}
@@ -89,12 +100,17 @@ func listPerson(p *store.Person) personJSON {
 	return out
 }
 
-func detailPerson(d *store.Data, p *store.Person) personDetail {
-	out := personDetail{personJSON: listPerson(p), Appearances: []any{}, Affiliations: []any{},
+func detailPerson(d *store.Data, p *store.Person, now time.Time) personDetail {
+	fit, parts := d.Fit(p, now)
+	out := personDetail{personJSON: listPerson(p, fit), Appearances: []any{}, Affiliations: []any{},
 		Notes: p.Notes, FitEvidence: p.Evidence, Sightings: []sightingJSON{},
 		Draft: p.Draft, DraftedAt: ptrTime(p.DraftedAt)}
 	if p.LinkedIn.Text != "" {
 		out.ProfileReadAt = ptrTime(p.LinkedIn.TextAt)
+	}
+	out.FitParts = make([]fitPartJSON, 0, len(parts))
+	for _, pt := range parts {
+		out.FitParts = append(out.FitParts, fitPartJSON{Key: pt.Key, Label: pt.Label, Points: pt.Points, Why: pt.Why})
 	}
 	for _, s := range p.FoundBy {
 		name := "a search since removed"
@@ -116,10 +132,13 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 	var err error
 	a.Store.Read(func(d *store.Data) {
 		var people []*store.Person
-		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: q.Get("q"), Sort: q.Get("sort"), Filter: q.Get("filter"), Now: a.Store.Now()})
+		now := a.Store.Now()
+		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: q.Get("q"), Sort: q.Get("sort"), Filter: q.Get("filter"), Now: now})
 		out.People = make([]personJSON, 0, len(people))
+		fitOf := d.Fitter(now)
 		for _, p := range people {
-			out.People = append(out.People, listPerson(p))
+			fit, _ := fitOf(p)
+			out.People = append(out.People, listPerson(p, fit))
 		}
 	})
 	if err != nil {
@@ -136,7 +155,7 @@ func (a *API) sendPerson(w http.ResponseWriter, id int64) {
 	var out *personDetail
 	a.Store.Read(func(d *store.Data) {
 		if p := d.Person(id); p != nil {
-			v := detailPerson(d, p)
+			v := detailPerson(d, p, a.Store.Now())
 			out = &v
 		}
 	})

@@ -15,9 +15,9 @@ types.
 
 ## People
 
-`GET /api/people?q=lea&sort=young&filter=all`
+`GET /api/people?q=lea&sort=fit&filter=all`
 
-`sort` is `young` (the default), `new`, `fit` or `name`. `filter` is `all`,
+`sort` is `fit` (the default, the best fit first), `young`, `new` or `name`. `filter` is `all`,
 `young` or `connected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
@@ -37,7 +37,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "headline": "Gründerin, Studio Beispiel",
       "city": "Köln",
       "first_seen": "2026-11-10T18:00:00Z",
-      "fit_score": 3,
+      "fit_score": 64,
       "connected": false,
       "signals": [{ "key": "founder", "label": "Founded something", "for": true, "passage": "Gründerin", "found_in": "LinkedIn" }],
       "profiles": [{ "id": 7, "platform": "linkedin", "url": "https://www.linkedin.com/in/lea-beispiel", "review": "" }],
@@ -49,6 +49,8 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 ```
 
 `connected` says whether Tim connected with the person on LinkedIn.
+`fit_score` is their fit from 0 to 100, worked out as of now and never
+kept, see [fit-score.md](fit-score.md).
 `linkedin` is null once the profile is rejected.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
@@ -58,6 +60,10 @@ the first message to them, empty before the first draft, and
 Exa's index first gave the profile text a draft is written from as it is
 now, null while the
 app has none and a draft reads it first. See [Drafts](#drafts).
+`fit_parts` are what `fit_score` adds up, in the order the person's Why
+shows them, each with its points and why, like
+`{"key": "near", "label": "Near you", "points": 16, "why": "Bonn, about 24 km"}`.
+The keys are `who`, `younger`, `active` and `near`.
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
 `{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`
@@ -114,7 +120,11 @@ the app was closed while it went.
 does. `hook_prompt` is the prompt the language model writes the hook of a
 first message from, see Drafts, and must keep `{{profile}}`. It was
 `first_message_prompt` while the model wrote the whole message, and a
-prompt kept under that name is dropped when the file is read. Where LinkedIn opens is not one of them, it has its own endpoints
+prompt kept under that name is dropped when the file is read. `home_city`
+is Where you are, the city in NRW the fit measures distances from, empty
+until Tim sets it. It takes a city the app knows in any spelling, like
+`"Cologne"`, and keeps its German name, `"Köln"`. Any other place gets
+400. Where LinkedIn opens is not one of them, it has its own endpoints
 below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
 value of the wrong kind gets 400, an unknown key 404.
 

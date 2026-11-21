@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/place"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 )
 
 // Found is a LinkedIn profile a profile search kept.
@@ -87,11 +90,39 @@ func (p *Person) Young(now time.Time) bool {
 }
 
 // Filters are the ways People can be narrowed, and Sorts the orders it
-// can be in.
+// can be in, the best fit first by default, which Tim asked for on 21
+// November 2026, so he picks the best from the top.
 var (
 	Filters = []string{"all", "young", "connected"}
-	Sorts   = []string{"young", "new", "fit", "name"}
+	Sorts   = []string{"fit", "young", "new", "name"}
 )
+
+// Fit is a person's fit from 0 to 100 as of now, with its parts, see
+// rubric.Fit. It is worked out whenever it is asked for and never kept,
+// because it changes with the date and with Where you are.
+func (d *Data) Fit(p *Person, now time.Time) (int, []rubric.Part) {
+	return d.Fitter(now)(p)
+}
+
+// Fitter gives the fit of one person after another as of now, reading
+// the settings it needs once.
+func (d *Data) Fitter(now time.Time) func(p *Person) (int, []rubric.Part) {
+	home := d.Text(HomeCity)
+	return func(p *Person) (int, []rubric.Part) { return fit(p, home, now) }
+}
+
+func fit(p *Person, home string, now time.Time) (int, []rubric.Part) {
+	in := rubric.FitPerson{
+		BornAbout: p.LinkedIn.BornAbout, AgeReason: p.LinkedIn.AgeReason,
+		LastActive: p.LinkedIn.LastActive, LastWrote: p.LinkedIn.LastWrote, Wrote: p.LinkedIn.Wrote,
+		City: p.City, Home: home, Now: now,
+	}
+	for _, s := range p.Signals {
+		in.Signals = append(in.Signals, rubric.Signal{Key: s.Key, For: s.For})
+	}
+	in.Km, in.Near = place.Km(home, p.City)
+	return rubric.Fit(in)
+}
 
 // PeopleQuery is what People asks for.
 type PeopleQuery struct {
@@ -108,7 +139,7 @@ type PeopleQuery struct {
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
-		q.Sort = "young"
+		q.Sort = "fit"
 	}
 	if q.Filter == "" {
 		q.Filter = "all"
@@ -144,6 +175,13 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 			out = append(out, p)
 		}
 	}
+	fits := map[int64]int{}
+	if q.Sort == "fit" {
+		fitOf := d.Fitter(q.Now)
+		for _, p := range out {
+			fits[p.ID], _ = fitOf(p)
+		}
+	}
 	newest := func(a, b *Person) int {
 		return cmp.Or(b.FirstSeen.Compare(a.FirstSeen), cmp.Compare(b.ID, a.ID))
 	}
@@ -154,7 +192,7 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		case "name":
 			return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
 		case "fit":
-			return cmp.Or(cmp.Compare(b.Score, a.Score), newest(a, b))
+			return cmp.Or(cmp.Compare(fits[b.ID], fits[a.ID]), newest(a, b))
 		}
 		// The likely youngest first, those without a guess after them.
 		return cmp.Or(cmpBool(a.LinkedIn.BornAbout == 0, b.LinkedIn.BornAbout == 0),

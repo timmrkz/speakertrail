@@ -265,10 +265,13 @@ func TestListPeople(t *testing.T) {
 	}
 	// Someone Tim connected with is only under Connected, so All and
 	// Under 30 hold whom he can still reach out to.
-	same("young first", list(PeopleQuery{}), dana, old, unknown)
+	// The best fit first: with nothing else known, the youngest, then
+	// whose age is not known.
+	same("best fit first", list(PeopleQuery{}), dana, unknown, old)
+	same("young", list(PeopleQuery{Sort: "young"}), dana, old, unknown)
 	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, old)
 	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, dana)
-	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, dana)
+	same("fit", list(PeopleQuery{Sort: "fit"}), dana, unknown, old)
 	same("under 30", list(PeopleQuery{Filter: "young"}), dana)
 	same("connected", list(PeopleQuery{Filter: "connected"}), young)
 	same("words", list(PeopleQuery{Q: "dana"}), dana)
@@ -293,7 +296,7 @@ func TestListPeople(t *testing.T) {
 	if err != nil || x.Phrase != "online marketing" {
 		t.Fatalf("added %+v, %v", x, err)
 	}
-	same("with an exclusion", list(PeopleQuery{}), old, unknown)
+	same("with an exclusion", list(PeopleQuery{}), unknown, old)
 	same("with an exclusion, connected", list(PeopleQuery{Filter: "connected"}), young)
 	if h := d.Hidden(); len(h) != 1 || h[dana.ID] != "online marketing" {
 		t.Errorf("hidden = %v", h)
@@ -305,7 +308,7 @@ func TestListPeople(t *testing.T) {
 	if !d.DeleteExclusion(x.ID) || d.DeleteExclusion(x.ID) {
 		t.Error("an exclusion should be removed once")
 	}
-	same("without it", list(PeopleQuery{}), dana, old, unknown)
+	same("without it", list(PeopleQuery{}), dana, unknown, old)
 }
 
 func TestExclusions(t *testing.T) {

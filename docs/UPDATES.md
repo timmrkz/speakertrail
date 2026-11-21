@@ -249,7 +249,7 @@ nothing in it:
   the run, marked so it cannot be exported again, and the keychain is
   deleted at the end, also when signing fails.
 - It takes Apple's certificate between the Developer ID and Apple's root
-  only when the Mac finds it issued by a root it trusts.
+  only when it is signed by the Apple Root CA that macOS itself ships.
 - It signs the app as `com.speakertrail.app`, whatever its `Info.plist`
   says. macOS gives an app of the team the microphone and the keychain
   items of the app it is signed as, so no build can be signed as

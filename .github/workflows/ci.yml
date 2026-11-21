@@ -150,7 +150,8 @@ jobs:
         run: >-
           SIGNED_APP="$RUNNER_TEMP/signing/Speaker Trail.app"
           ADHOC_APP="$PWD/bin/Speaker Trail.app"
-          go test -count=1 -run TestARealSignatureIsReadAsCodesignWroteIt -v ./cmd/speakertrail-release/
+          APPLE_CAS=1
+          go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/speakertrail-release/
       - name: Tests
         run: go test -count=1 ./...
 

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"math/big"
 	"os"
@@ -33,6 +34,9 @@ type fakeMac struct {
 	as string
 	// failOn makes the command whose last argument ends with it fail.
 	failOn string
+	// fetched is what apple.com sends, and roots what macOS ships as
+	// Apple Root CA, in PEM.
+	fetched, roots []byte
 }
 
 func (m *fakeMac) tools() tools {
@@ -41,6 +45,9 @@ func (m *fakeMac) tools() tools {
 			m.commands = append(m.commands, append([]string{name}, args...))
 			if m.failOn != "" && strings.HasSuffix(args[len(args)-1], m.failOn) {
 				return nil, errors.New(name + " failed")
+			}
+			if name == "security" && args[0] == "find-certificate" {
+				return m.roots, nil
 			}
 			if name == "security" && args[0] == "list-keychains" && len(args) == 3 {
 				return []byte("    \"/Users/runner/Library/Keychains/login.keychain-db\"\n    \"/Library/Keychains/System.keychain\"\n"), nil
@@ -69,7 +76,7 @@ func (m *fakeMac) tools() tools {
 			}
 			return nil, nil
 		},
-		fetch: func(url string) ([]byte, error) { return []byte("a certificate"), nil },
+		fetch: func(url string) ([]byte, error) { return m.fetched, nil },
 	}
 }
 
@@ -239,41 +246,77 @@ func TestHardenGoesByTheTeamFile(t *testing.T) {
 }
 
 // What comes back from apple.com goes into the keychain the Developer ID
-// signs from only when it is Apple's Developer ID authority, issued by a
-// root the Mac trusts. Something else, or one made to look like it, is
-// left out.
+// signs from only when it is Apple's Developer ID authority, signed by
+// the Apple Root CA macOS ships. Something else, or one made to look like
+// it, is left out.
+//
+// On the real disk: harden writes what it imports to a file.
 func TestOnlyApplesAuthorityGoesInTheKeychain(t *testing.T) {
+	root, rootKey := certificate(t, "Apple Root CA", nil, nil)
+	genuine, _ := certificate(t, "Developer ID Certification Authority", root, rootKey)
+	lookalike, _ := certificate(t, "Developer ID Certification Authority", nil, nil)
+	otherRoot, otherKey := certificate(t, "Apple Root CA", nil, nil)
+	signedByOther, _ := certificate(t, "Developer ID Certification Authority", otherRoot, otherKey)
+	cases := []struct {
+		name    string
+		fetched []byte
+		taken   bool
+	}{
+		{"Apple's authority", genuine.Raw, true},
+		{"no certificate", []byte("a certificate"), false},
+		{"a lookalike signed by itself", lookalike.Raw, false},
+		{"a lookalike signed by another Apple Root CA", signedByOther.Raw, false},
+		{"Apple's root itself", root.Raw, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			m := &fakeMac{flags: flagRuntime, microphone: true, fetched: c.fetched,
+				roots: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: root.Raw})}
+			if err := signer(m).signApp(bundle(t)); err != nil {
+				t.Fatal(err)
+			}
+			imported := 0
+			for _, cmd := range m.commands {
+				if cmd[0] == "security" && cmd[1] == "import" && strings.HasSuffix(cmd[2], ".cer") {
+					imported++
+				}
+			}
+			if want := map[bool]int{true: len(appleCAs), false: 0}[c.taken]; imported != want {
+				t.Errorf("imported %d of what apple.com sent, want %d", imported, want)
+			}
+		})
+	}
+}
+
+// certificate is a certificate authority named name, signed by parent, or
+// by itself when parent is nil.
+func certificate(t *testing.T, name string, parent *x509.Certificate, parentKey *ecdsa.PrivateKey) (*x509.Certificate, *ecdsa.PrivateKey) {
+	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "Developer ID Certification Authority"},
+		Subject:               pkix.Name{CommonName: name},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(time.Hour),
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign,
 	}
-	lookalike, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if parent == nil {
+		parent, parentKey = tmpl, key
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, parent, &key.PublicKey, parentKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, der := range map[string][]byte{"no certificate": []byte("a certificate"), "a lookalike": lookalike} {
-		if err := appleCA(der); err == nil {
-			t.Errorf("%s was taken for Apple's authority", name)
-		}
-	}
-	m := &fakeMac{flags: flagRuntime, microphone: true}
-	if err := signer(m).signApp(bundle(t)); err != nil {
+	c, err := x509.ParseCertificate(der)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range m.commands {
-		if c[0] == "security" && c[1] == "import" && strings.HasSuffix(c[2], ".cer") {
-			t.Errorf("what apple.com did not send was imported: %q", c)
-		}
-	}
+	return c, key
 }
 
 // harden runs only the Mac's own tools, by their full path, and the

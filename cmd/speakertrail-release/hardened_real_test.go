@@ -74,3 +74,29 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 		}
 	}
 }
+
+// Apple's real certificates between a Developer ID and its root are taken,
+// or codesign could not build the chain on main's first real signing.
+// CI's macos job sets APPLE_CAS, since only a Mac ships Apple's root, and
+// this asks apple.com. Anywhere else it is skipped.
+//
+// On the real network: apple.com, and the Mac's own roots.
+func TestApplesRealAuthorityIsTaken(t *testing.T) {
+	if os.Getenv("APPLE_CAS") == "" {
+		t.Skip("needs a Mac and apple.com, see the macos job in ci.yml")
+	}
+	d := devID{tools: macTools}
+	roots, err := d.appleRoots()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, url := range appleCAs {
+		cer, err := d.fetch(url)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := appleCA(cer, roots); err != nil {
+			t.Errorf("%s: %v", url, err)
+		}
+	}
+}

@@ -24,6 +24,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -257,10 +258,14 @@ func (d devID) signApp(app string) (err error) {
 			return err
 		}
 	}
+	roots, err := d.appleRoots()
+	if err != nil {
+		fmt.Printf("::warning::Apple's root: %v\n", err)
+	}
 	for i, url := range appleCAs {
 		cer, err := d.fetch(url)
 		if err == nil {
-			err = appleCA(cer)
+			err = appleCA(cer, roots)
 		}
 		if err != nil {
 			fmt.Printf("::warning::%s: %v\n", url, err)
@@ -387,10 +392,39 @@ func readBack(app string, inner []string) error {
 	return nil
 }
 
-// appleCA says whether a certificate fetched from apple.com is one of
-// Apple's Developer ID authorities, issued by a root the Mac trusts, so
-// nothing else is put in the keychain the Developer ID signs from.
-func appleCA(der []byte) error {
+// appleRoots are the certificates named Apple Root CA among the roots
+// macOS itself ships, each signed by itself.
+func (d devID) appleRoots() ([]*x509.Certificate, error) {
+	out, err := d.run("security", "find-certificate", "-a", "-p", "-c", "Apple Root CA",
+		"/System/Library/Keychains/SystemRootCertificates.keychain")
+	if err != nil {
+		return nil, err
+	}
+	var roots []*x509.Certificate
+	for rest := out; ; {
+		var b *pem.Block
+		b, rest = pem.Decode(rest)
+		if b == nil {
+			break
+		}
+		c, err := x509.ParseCertificate(b.Bytes)
+		if err != nil || c.Subject.CommonName != "Apple Root CA" || c.CheckSignatureFrom(c) != nil {
+			continue
+		}
+		roots = append(roots, c)
+	}
+	if len(roots) == 0 {
+		return nil, errors.New("macOS's own roots hold no Apple Root CA")
+	}
+	return roots, nil
+}
+
+// appleCA says whether a certificate fetched from apple.com is Apple's
+// Developer ID authority, signed by Apple's root as macOS ships it, so
+// nothing else is put in the keychain the Developer ID signs from. The
+// signature is checked here, not by the Mac's verifier, which judges a
+// certificate as one for a web site and refuses Apple's own.
+func appleCA(der []byte, roots []*x509.Certificate) error {
 	c, err := x509.ParseCertificate(der)
 	if err != nil {
 		return fmt.Errorf("it is no certificate: %w", err)
@@ -398,10 +432,12 @@ func appleCA(der []byte) error {
 	if c.Subject.CommonName != "Developer ID Certification Authority" || !c.IsCA {
 		return fmt.Errorf("it is %q, not Apple's Developer ID authority", c.Subject.CommonName)
 	}
-	if _, err := c.Verify(x509.VerifyOptions{KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageAny}}); err != nil {
-		return fmt.Errorf("it is not issued by a root the Mac trusts: %w", err)
+	for _, root := range roots {
+		if c.CheckSignatureFrom(root) == nil {
+			return nil
+		}
 	}
-	return nil
+	return errors.New("it is not signed by Apple's root")
 }
 
 // unpack writes the files of the build's zip into dir, refusing any entry

@@ -48,13 +48,15 @@ then on every build comes from GitHub.
    from GitHub's own record of the run, and refuses a commit that is not
    in the history of main or of the pull request it is for. It checks
    what the app links and asks for with `cmd/speakertrail-release check`,
-   in a step that has no key. `speakertrail-release pack` writes the
-   build again in parts, see What an update downloads below. `sign`
-   signs the zip and the stored zip with the key from the environment
-   `updates`. The pieces and patches the release does not hold yet go up
-   to the pre-release `dev`, then the zip, the stored zip packed, its
-   parts and its entry. The commit that was built gets the status
-   **Ready to update to** on the pull request.
+   in a step that has no key, and signs the app again with Tim's
+   Developer ID and the hardened runtime, see
+   [The Developer ID](#the-developer-id). `speakertrail-release pack`
+   writes the build again in parts, see What an update downloads below.
+   `sign` signs the zip and the stored zip with the key from the
+   environment `updates`. The pieces and patches the release does not
+   hold yet go up to the pre-release `dev`, then the zip, the stored zip
+   packed, its parts and its entry. The commit that was built gets the
+   status **Ready to update to** on the pull request.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. A newer commit whose build failed
@@ -176,6 +178,119 @@ Losing the private half costs a new pair and one `make install` by hand.
 `make update-key` refuses to replace a key that is there, because every
 build made with the old one trusts only the old one.
 
+## The Developer ID
+
+Every build Tim updates to is signed with his Developer ID and Apple's
+hardened runtime, by `speakertrail-release harden` in `publish.yml`,
+see `cmd/speakertrail-release/devid.go`. The
+hardened runtime keeps other programs from putting their own code into
+the app: macOS ignores the `DYLD_` settings it is started with, refuses
+debuggers, and loads only libraries signed by Apple or by the same
+developer. The app is signed as entitled to the microphone and nothing
+else, `build/entitlements.plist`, because under the hardened runtime an
+app without it hears only silence. macOS still asks Tim the first time.
+
+A Developer ID also makes every build the same app to macOS. A build
+signed ad hoc looks like a new app after each update, so macOS may ask
+for the microphone and the keychain again.
+
+Builds made on the Mac with `make run` stay signed ad hoc, without the
+hardened runtime, like Xcode's Sign to Run Locally. Under it an app signed
+ad hoc may load no library but Apple's, and Dictate's speech library is
+not Apple's.
+
+Until `build/team-id.txt` names Tim's team, builds go out signed ad hoc,
+as they are made, and the run says so. Once it does, a build is published
+only when it is signed with that team's Developer ID, and a missing secret
+fails the run on main and on the commit, never quietly. To set it up once:
+
+1. Join the [Apple Developer Program](https://developer.apple.com/programs/enroll/)
+   as an individual. It costs 99 € a year, and Apple may take a day or
+   two to confirm it.
+2. On the Mac, in **Keychain Access**, choose **Keychain Access,
+   Certificate Assistant, Request a Certificate From a Certificate
+   Authority**. Enter your email address, choose **Saved to disk**, and
+   save the file.
+3. In [Certificates](https://developer.apple.com/account/resources/certificates/add),
+   choose **Developer ID Application**, upload that file, download the
+   certificate and double-click it. It shows in Keychain Access under
+   **My Certificates**, with the private key made in step 2 under it.
+   Keychain Access may call it not trusted, since a Mac without Xcode
+   lacks Apple's certificate between it and Apple's root. That changes
+   nothing here, because `harden` fetches that one from Apple. Make it
+   for Speaker Trail alone, and FrameFairy its own later, so either can
+   be revoked without the other. Apple allows five. Both are still the
+   same team to macOS, which trusts code by its team and what it is
+   signed as, not by its certificate, see below.
+4. In Keychain Access, right-click the certificate, **Export**, and save
+   it as `developer-id.p12` on the Desktop with a new password. The file
+   holds the private key too, which Apple cannot give out again, so it is
+   the backup. Put it and its password in the password manager.
+5. In Terminal, `base64 -i ~/Desktop/developer-id.p12 | pbcopy` puts the
+   certificate on the clipboard as text.
+6. On GitHub, in the environment `updates`, add two **environment
+   secrets**: `SPEAKERTRAIL_DEVELOPER_ID` with the clipboard, and
+   `SPEAKERTRAIL_DEVELOPER_ID_PASSWORD` with the password. Then delete
+   `developer-id.p12` from the Desktop.
+7. Give Claude the team ID, ten letters and digits under **Membership
+   details** in the [account](https://developer.apple.com/account). Claude
+   commits it in `build/team-id.txt`. It is not a secret: every app the
+   team signs carries it.
+
+The next build after that is signed with it. From then on
+`speakertrail-release sign -team` refuses a build in which any program is
+signed ad hoc, without the hardened runtime, or by another team, or
+whose app is signed as anything but `com.speakertrail.app`, or any other
+program or library as anything but its part of it.
+
+Every build of a pull request is signed with the Developer ID too, so
+Tim can try it. Its zip comes from the pull request's branch and is
+unpacked on the Mac that holds the certificate, so `harden` trusts
+nothing in it:
+
+- It unpacks the zip itself, after `check` read it, and only files and
+  folders inside `Speaker Trail.app`. A link, or a name that leads out of
+  the .app, stops it before anything is written.
+- It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
+  never a program found through `PATH`.
+- It reads both secrets once and takes them out of its environment, so
+  no program it starts sees them. The release tool is built once, in a
+  step before, without them and without the Go cache, which builds of
+  third-party code write too. Every step that holds a key runs that one
+  program, so `go` and its compiler never see either key. The key goes
+  into a keychain made for the run, marked so it cannot be exported
+  again, and the keychain is deleted at the end, also when signing
+  fails.
+- It takes Apple's certificate between the Developer ID and Apple's root
+  only when it is signed by the Apple Root CA that macOS itself ships.
+- It signs the app as `com.speakertrail.app`, whatever its `Info.plist`
+  says, and each program and library in it as a part of it, by its
+  file name, like `com.speakertrail.app.llama-server`, whatever an
+  `Info.plist` built into it says. macOS gives code of the team the
+  microphone and the keychain items of the app it is signed as, so no
+  build, and nothing in one, can be signed as another of Tim's apps.
+- It refuses a build with a program anywhere but `Contents/MacOS` and
+  the libraries of `Contents/Frameworks`, which it signs itself. Such a
+  program would keep the signature the branch gave it.
+- Once signed, codesign checks every program and the app against
+  Apple's certificate of Tim's team, not only the team the signature
+  names, which is a string.
+
+If a build signed this way does not open, the app cannot update away
+from it. `make install` in a checkout puts a build made on the Mac back
+in `/Applications`, and Updates works again from there. Removing
+`build/team-id.txt` on main sends builds out signed ad hoc again.
+
+The certificate runs out on the date Keychain Access shows, Tim's first
+on 21 December 2027. A new one is made with steps 2 to 6. Every signature
+carries Apple's time stamp, so a build signed before then stays good
+after.
+
+The builds are not notarised. Notarising is what lets a downloaded app
+open past Gatekeeper on any Mac. The app downloads its updates itself,
+and macOS asks Gatekeeper only of files a browser or mail marks as
+downloaded, so nothing here needs it.
+
 ## Guarding main
 
 The key is only as safe as main, because whatever reaches main runs with
@@ -201,10 +316,14 @@ a program that sets where macOS's loader looks, or that looks for the
 libraries it links as `@rpath` anywhere but inside the .app, holds a
 link, has a file that names what taps keys, records the screen, opens
 the camera or asks for administrator rights, has a file that looks like
-a program and cannot be read as one, or unpacks to more than 1 GB. The
+a program and cannot be read as one, unpacks to more than 1 GB, has a
+file outside `Speaker Trail.app`, has an `Info.plist` that names
+another app than `com.speakertrail.app`, or has an `Info-macos.plist` or
+any other `Info-….plist`, which macOS would read in its place. The
 stored zip `pack` wrote is signed only when it holds the same files, byte
-for byte, as the zip `check` read. It may ask for the microphone, for Dictate on Report a
-Problem, and for nothing else, and it may carry sherpa-onnx's speech
-library in `Contents/Frameworks` and llama-server, which drafts a first
-message, in `Contents/MacOS`, each linking only what the list names. A
+for byte, as the zip `check` read. It may ask for the microphone, for
+Dictate on Report a Problem, and be entitled to it, and to nothing else,
+and it may carry sherpa-onnx's speech library in `Contents/Frameworks`
+and llama-server, which drafts a first message, in `Contents/MacOS`, each
+linking only what the list names. A
 refused build says why on the commit, as a failed **Ready to update to**.

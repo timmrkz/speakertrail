@@ -36,6 +36,12 @@ type program struct {
 	imports  []string
 	text     string
 	entitled string
+	// signed puts a code directory with flags and team in the signature.
+	signed bool
+	flags  uint32
+	team   string
+	// ident is what it is signed as, com.speakertrail.app when unsaid.
+	ident string
 }
 
 // bytes lays the program out: the header, its load commands, then its
@@ -88,7 +94,7 @@ func (p program) bytes() []byte {
 	// After the header and the commands: the symbols, the names, the
 	// text, the signature. The commands for them are 24, 80 and 16 bytes.
 	cmdsize := cmds.Len() + 24 + 80
-	if p.entitled != "" {
+	if p.entitled != "" || p.signed {
 		cmdsize += 16
 	}
 	symoff := 32 + cmdsize
@@ -110,18 +116,60 @@ func (p program) bytes() []byte {
 	add(0x2, 24, uint32(symoff), uint32(len(p.imports)), uint32(stroff), uint32(names.Len()))
 	add(0xb, 80, 0, 0, 0, 0, 0, uint32(len(p.imports)), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 	var sig []byte
-	if p.entitled != "" {
+	if p.entitled != "" || p.signed {
 		be := binary.BigEndian
-		blob := be.AppendUint32(nil, 0xfade7171)
-		blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
-		blob = append(blob, p.entitled...)
-		// A blob of blobs with one, the entitlements in slot 5.
+		type slot struct {
+			kind uint32
+			blob []byte
+		}
+		var slots []slot
+		if p.signed {
+			// A code directory of version 0x20400: its flags at 12, the
+			// offsets of its identifier at 20 and its team's name at 48,
+			// the names after the header.
+			ident := p.ident
+			if ident == "" {
+				ident = bundleID
+			}
+			cd := make([]byte, 52)
+			be.PutUint32(cd, 0xfade0c02)
+			be.PutUint32(cd[8:], 0x20400)
+			be.PutUint32(cd[12:], p.flags)
+			be.PutUint32(cd[20:], uint32(len(cd)))
+			cd = append(cd, ident...)
+			cd = append(cd, 0)
+			if p.team != "" {
+				be.PutUint32(cd[48:], uint32(len(cd)))
+				cd = append(cd, p.team...)
+				cd = append(cd, 0)
+			}
+			be.PutUint32(cd[4:], uint32(len(cd)))
+			slots = append(slots, slot{0, cd})
+		}
+		if p.entitled != "" {
+			blob := be.AppendUint32(nil, 0xfade7171)
+			blob = be.AppendUint32(blob, uint32(8+len(p.entitled)))
+			blob = append(blob, p.entitled...)
+			slots = append(slots, slot{5, blob})
+		}
+		// A blob of blobs: its header, an index of kind and offset per
+		// slot, then the slots.
+		at := 12 + 8*len(slots)
+		size := at
+		for _, sl := range slots {
+			size += len(sl.blob)
+		}
 		sig = be.AppendUint32(nil, 0xfade0cc0)
-		sig = be.AppendUint32(sig, uint32(20+len(blob)))
-		sig = be.AppendUint32(sig, 1)
-		sig = be.AppendUint32(sig, 5)
-		sig = be.AppendUint32(sig, 20)
-		sig = append(sig, blob...)
+		sig = be.AppendUint32(sig, uint32(size))
+		sig = be.AppendUint32(sig, uint32(len(slots)))
+		for _, sl := range slots {
+			sig = be.AppendUint32(sig, sl.kind)
+			sig = be.AppendUint32(sig, uint32(at))
+			at += len(sl.blob)
+		}
+		for _, sl := range slots {
+			sig = append(sig, sl.blob...)
+		}
 		add(0x1d, 16, uint32(sigoff), uint32(len(sig)))
 	}
 	cpu := p.cpu
@@ -217,6 +265,9 @@ var adhoc = func() program {
 	return p
 }()
 
+// identified is the line of Info.plist that names the app.
+const identified = "<key>CFBundleIdentifier</key><string>com.speakertrail.app</string>\n"
+
 const plistHead = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -257,7 +308,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.audio-input</key><true/>\n</dict>\n</plist>\n"
 			}),
-			[]string{"is entitled to com.apple.security.device.audio-input"}},
+			nil},
 		{"the camera, entitled", "speakertrail-app",
 			with(func(p *program) {
 				p.entitled = plistHead + "<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"
@@ -280,15 +331,47 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 				"<key>com.apple.security.device.camera</key><true/>\n</dict>\n</plist>\n"}),
 			[]string{"is entitled to com.apple.security.device.camera"}},
 		{"nothing asked for", "Speaker Trail.app/Contents/Info.plist",
-			[]byte(plistHead + "<key>CFBundleName</key><string>Speaker Trail</string>\n" +
+			[]byte(plistHead + identified + "<key>CFBundleName</key><string>Speaker Trail</string>\n" +
 				"<!-- <key>NSCameraUsageDescription</key> -->\n</dict>\n</plist>\n"), nil},
 		// The microphone is asked for, for Dictate, and nothing beside it.
 		{"the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
-			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"), nil},
+			[]byte(plistHead + identified + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"), nil},
 		{"the camera and the microphone asked for", "Speaker Trail.app/Contents/Info.plist",
-			[]byte(plistHead + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
+			[]byte(plistHead + identified + "<key>NSMicrophoneUsageDescription</key><string>x</string>\n" +
 				"<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
 			[]string{"asks for NSCameraUsageDescription"}},
+		// The app is com.speakertrail.app, which macOS trusts it as.
+		{"another identifier", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{`says it is "com.other.app", not com.speakertrail.app`}},
+		{"no identifier", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + "</dict>\n</plist>\n"),
+			[]string{`says it is "", not com.speakertrail.app`}},
+		// A Mac's disk does not tell capitals from small letters, so
+		// these are the app's Info.plist too, there and in the updater.
+		{"another identifier, in contents", "Speaker Trail.app/contents/Info.plist",
+			[]byte(plistHead + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{`says it is "com.other.app", not com.speakertrail.app`}},
+		{"the camera asked for, in info.plist", "Speaker Trail.app/Contents/info.plist",
+			[]byte(plistHead + identified + "<key>NSCameraUsageDescription</key><string>x</string>\n</dict>\n</plist>\n"),
+			[]string{"asks for NSCameraUsageDescription"}},
+		// On a Mac, CFBundle reads Info-macos.plist in place of
+		// Info.plist, so no other Info.plist than the one checked is
+		// taken.
+		{"an Info.plist for macOS alone", "Speaker Trail.app/Contents/Info-macos.plist",
+			[]byte(plistHead + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
+		{"an Info.plist for macOS alone, in capitals", "Speaker Trail.app/Contents/INFO-MACOS.PLIST", []byte("bplist00"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
+		// ſ, the long s, is an s to a Mac's disk, which folds case the
+		// way Unicode does, not only for A to Z.
+		{"an Info.plist for macOS alone, with a long s", "Speaker Trail.app/Contents/Info-macoſ.pliſt", []byte("bplist00"),
+			[]string{"is an Info.plist macOS would read in place of Info.plist"}},
+		// macOS reads the last of two keys of one name, the check would
+		// read the first.
+		{"the identifier twice", "Speaker Trail.app/Contents/Info.plist",
+			[]byte(plistHead + identified + "<key>CFBundleIdentifier</key><string>com.other.app</string>\n</dict>\n</plist>\n"),
+			[]string{"its identifier cannot be read: it holds CFBundleIdentifier twice"}},
 		// The speech library goes in Contents/Frameworks, and links what
 		// it is listed with.
 		{"the speech library", "Speaker Trail.app/Contents/Frameworks/libsherpa-onnx-c-api.dylib",
@@ -298,7 +381,7 @@ func TestWhatCouldWatchInputIsFound(t *testing.T) {
 			[]string{"links /System/Library/Frameworks/ScreenCaptureKit.framework/Versions/A/ScreenCaptureKit"}},
 		// A key deeper in the dictionary is no reason Info.plist gives.
 		{"a key inside another", "Speaker Trail.app/Contents/Info.plist",
-			[]byte(plistHead + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
+			[]byte(plistHead + identified + "<key>CFBundleURLTypes</key><array><dict><key>NSScreenCaptureUsageDescription</key><string>x</string></dict></array>\n</dict>\n</plist>\n"),
 			nil},
 		// Every file is read for the names, program or not: a script the
 		// app runs or a library it loads names them just the same.
@@ -611,6 +694,30 @@ func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	}
 }
 
+// What harden signs the app as entitled to is only what the lists
+// allow, so a pull request that adds an entitlement fails here, before its
+// build is refused.
+//
+// On the real disk: what this reads is the file the script signs with.
+func TestTheShippedEntitlementsAreAllowed(t *testing.T) {
+	data, err := os.ReadFile("../../build/entitlements.plist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := plistKeys(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(keys, "com.apple.security.device.audio-input") {
+		t.Errorf("read %q, without the microphone Dictate hears only silence", keys)
+	}
+	for _, k := range keys {
+		if !slices.Contains(entitled, k) {
+			t.Errorf("the app is signed as entitled to %s, which the list refuses", k)
+		}
+	}
+}
+
 // zipped is a zip of files, by name.
 func zipped(t *testing.T, files map[string][]byte) []byte {
 	t.Helper()
@@ -640,7 +747,7 @@ func zipped(t *testing.T, files map[string][]byte) []byte {
 func theApp(channel string) map[string][]byte {
 	return map[string][]byte{
 		"Speaker Trail.app/Contents/MacOS/speakertrail-app": bundled.bytes(),
-		"Speaker Trail.app/Contents/Info.plist": []byte(plistHead +
+		"Speaker Trail.app/Contents/Info.plist": []byte(plistHead + identified +
 			"<key>CFBundleName</key><string>Speaker Trail " + channel + "</string>\n</dict>\n</plist>\n"),
 	}
 }
@@ -711,4 +818,92 @@ func TestABuildTooBigToReadIsNotSigned(t *testing.T) {
 			t.Errorf("a file that holds more than the zip says said %v", err)
 		}
 	})
+}
+
+// The build's zip comes from a pull request's branch, and is unpacked on
+// the runner that holds the Developer ID. An entry whose name leads out
+// of the .app could write anywhere there, so check refuses the build and
+// harden writes nothing of it.
+//
+// On the real disk: the zip is a file, and harden unpacks it into a
+// folder.
+func TestABuildWithAFileOutsideTheAppIsNotSigned(t *testing.T) {
+	for _, name := range []string{
+		"../evil",
+		"/tmp/evil",
+		"Speaker Trail.app/../../evil",
+		`Speaker Trail.app\..\..\evil`,
+		"Other.app/Contents/MacOS/other",
+		"evil",
+	} {
+		t.Run(name, func(t *testing.T) {
+			files := theApp("main")
+			files[name] = []byte("anything")
+			zipPath := filepath.Join(t.TempDir(), "app.zip")
+			if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			want := name + ": lies outside Speaker Trail.app"
+			if err := checkInputs(zipPath); err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("check said %v, want %q", err, want)
+			}
+			root := t.TempDir()
+			dir := filepath.Join(root, "a", "b", "unpacked")
+			if err := unpack(zipPath, dir); err == nil || !strings.Contains(err.Error(), name+" lies outside") {
+				t.Errorf("unpacking it said %v", err)
+			}
+			for _, evil := range []string{filepath.Join(root, "a", "b", "evil"), filepath.Join(root, "a", "evil"), filepath.Join(root, "evil")} {
+				if _, err := os.Stat(evil); err == nil {
+					t.Errorf("%s was written", evil)
+				}
+			}
+		})
+	}
+}
+
+// harden unpacks the files of the .app as they were checked, and nothing
+// else: a link is refused, as check refuses it.
+//
+// On the real disk: harden unpacks the zip into a folder.
+func TestTheAppIsUnpackedAsChecked(t *testing.T) {
+	files := theApp("main")
+	zipPath := filepath.Join(t.TempDir(), "app.zip")
+	if err := os.WriteFile(zipPath, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "unpacked")
+	if err := unpack(zipPath, dir); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range files {
+		got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name)))
+		if err != nil || !bytes.Equal(got, data) {
+			t.Errorf("%s was unpacked as %d bytes, %v", name, len(got), err)
+		}
+	}
+
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	h := &zip.FileHeader{Name: "Speaker Trail.app/Contents/Frameworks"}
+	h.SetMode(0o755 | fs.ModeSymlink)
+	f, err := w.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.Write([]byte("/usr/lib")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(zipPath, b.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir = filepath.Join(t.TempDir(), "unpacked")
+	if err := unpack(zipPath, dir); err == nil || !strings.Contains(err.Error(), "is no file") {
+		t.Errorf("unpacking a link said %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "Speaker Trail.app", "Contents", "Frameworks")); err == nil {
+		t.Error("the link was written")
+	}
 }

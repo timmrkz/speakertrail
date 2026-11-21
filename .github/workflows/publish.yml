@@ -127,7 +127,9 @@ jobs:
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ubuntu-24.04
+    # On a Mac, for codesign and the keychain, see "Sign it with the
+    # Developer ID" below.
+    runs-on: macos-15
     timeout-minutes: 20
     environment: updates
     concurrency:
@@ -241,23 +243,57 @@ jobs:
             echo "::notice::The build left no app.zip, so there is nothing to sign."
           fi
 
+      # No cache. The Go cache of main is written by builds.yml and ci.yml
+      # too, while they run npm's install scripts, cgo and cmake on
+      # third-party code, and Go trusts what it compiled before. Restored
+      # here, it would build the tool that holds the Developer ID.
       - if: steps.zip.outputs.ready == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
+
+      # The release tool is built once, here, in a step without any
+      # secret, and every step after runs that program. So the secrets
+      # reach only the tool itself, never go, its compiler or what it
+      # downloads.
+      - id: tool
+        if: steps.zip.outputs.ready == 'true'
+        name: Build the release tool
+        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
 
       # What the zip holds is read here, in a step that has no key, and a
       # build that is refused never reaches the step that has one. sign
       # reads it again before it signs, so the tool never signs what it
       # has not read, whoever runs it.
       - id: check
-        if: steps.zip.outputs.ready == 'true'
+        if: steps.tool.outcome == 'success'
         name: Check what it could do
         env:
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! go run ./cmd/speakertrail-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+          if ! "$RUNNER_TEMP/speakertrail-release" check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+            cat "$RUNNER_TEMP/refused.txt" >&2
+            exit 1
+          fi
+
+      # Every build Tim gets is signed again with his Developer ID and the
+      # hardened runtime, so no other program can put its code into the
+      # app, and macOS knows the app again after an update and does not ask
+      # for the microphone or the keychain anew. Until build/team-id.txt
+      # names Tim's team, harden says so and the build stays signed ad hoc,
+      # the way it is made. Once it does, a build without the Developer ID
+      # is never published. See cmd/speakertrail-release/devid.go and
+      # docs/UPDATES.md, The Developer ID.
+      - id: harden
+        if: steps.check.outcome == 'success'
+        name: Sign it with the Developer ID
+        env:
+          SPEAKERTRAIL_DEVELOPER_ID: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID }}
+          SPEAKERTRAIL_DEVELOPER_ID_PASSWORD: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID_PASSWORD }}
+          ZIP: ${{ steps.which.outputs.zip }}
+        run: |
+          if ! "$RUNNER_TEMP/speakertrail-release" harden -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi
@@ -271,8 +307,9 @@ jobs:
       # which the release tool picks from the channel list and the
       # release's files. What of them cannot be read costs patches, never
       # the publish, and is a warning on the run. It runs after check, so
-      # it only reads a zip whose size check has held, and before the key,
-      # which it has no need of. See docs/UPDATES.md.
+      # it only reads a zip whose size check has held, after the signing
+      # with the Developer ID, so its parts are of the build Tim gets, and
+      # before the key, which it has no need of. See docs/UPDATES.md.
       - id: pack
         if: steps.check.outcome == 'success'
         name: Pack it in parts
@@ -281,7 +318,7 @@ jobs:
         run: |
           gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
           gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
-          if ! go run ./cmd/speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
+          if ! "$RUNNER_TEMP/speakertrail-release" pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
             -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
@@ -308,8 +345,12 @@ jobs:
           CHANNEL: ${{ steps.which.outputs.channel }}
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
+          TEAM: ${{ steps.harden.outputs.team }}
+        # With the Developer ID, sign refuses a build that is not signed
+        # with it and the hardened runtime throughout, so it is never lost
+        # on the way without anyone seeing.
         run: |
-          if ! go run ./cmd/speakertrail-release sign \
+          if ! "$RUNNER_TEMP/speakertrail-release" sign -team "$TEAM" \
             -zip "dist/$ZIP" -parts "$RUNNER_TEMP/packed/parts.json" \
             -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
@@ -325,7 +366,7 @@ jobs:
       # update to with no reason given. The refusal goes on the commit
       # that was built, where the pull request shows it.
       - name: Say on the commit why it is not signed
-        if: failure() && (steps.check.outcome == 'failure' || steps.pack.outcome == 'failure' || steps.sign.outcome == 'failure')
+        if: failure() && (steps.check.outcome == 'failure' || steps.harden.outcome == 'failure' || steps.pack.outcome == 'failure' || steps.sign.outcome == 'failure')
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |

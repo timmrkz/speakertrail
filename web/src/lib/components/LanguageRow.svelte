@@ -64,7 +64,9 @@
     const st = languageWatch.state.standing
     if (st.mark !== 'ok') return { text: `${st.why}.`, tone: st.mark, state: st.mark }
     const from = m.shared ? `By ${m.maker}, shared with FrameFairy on disk.` : `By ${m.maker}.`
-    return { text: `${from} Takes about ${size(m.needs)} of memory while it writes.`, tone: '', state: 'ok' }
+    // Loaded as the app starts and kept until it quits, Tim's choice.
+    const memory = m.loaded ? `Loaded, about ${size(m.needs)} of memory while the app is open.` : `Takes about ${size(m.needs)} of memory while it writes.`
+    return { text: `${from} ${memory}`, tone: '', state: 'ok' }
   }
 </script>
 

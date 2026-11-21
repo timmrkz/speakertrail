@@ -249,6 +249,9 @@ const walks = [
       await page.goto(`${url}/app/settings`)
       const line = page.locator('.language .line')
       await line.filter({ hasText: /^By Google\./ }).waitFor()
+      // Loaded as the app starts and kept, Tim's choice of 21 November 2026.
+      const said = await line.first().textContent()
+      if (!/Loaded, about 16\.6 GB of memory while the app is open\./.test(said)) return `the line says ${JSON.stringify(said)}`
       // The model is named in the list to pick it from, see walks/pick.mjs.
       const title = (await page.locator('.language button.pick .said > span:not(.room)').innerText()).trim()
       if (title !== 'Gemma 4 26B A4B') return `the model reads ${JSON.stringify(title)}`

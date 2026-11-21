@@ -521,3 +521,51 @@ func TestAWholeDownloadIsCheckedNotFetched(t *testing.T) {
 		t.Errorf("%v, installed %v, %d downloads, said it checked %v", err, m.Installed(dir), asked, checked)
 	}
 }
+
+// A host that keeps its model loads it before any draft asks, from
+// several goroutines at once as the app's start, a download and a pick
+// may, and keeps it after every draft, with no wait that runs out. Tim
+// chose this on 21 November 2026, so even the first draft writes at once.
+// A server that stopped answering still goes at once, and a model nobody
+// drafts with can still be removed.
+func TestAHostThatKeepsItsModel(t *testing.T) {
+	var launched, stopped atomic.Int32
+	waits := atomic.Int32{}
+	h := &Host{
+		Always: true,
+		Launch: func(ctx context.Context, model string) (*Server, error) {
+			launched.Add(1)
+			return &Server{URL: model, stop: func() { stopped.Add(1) }}, nil
+		},
+		Idle: func(time.Duration, func()) func() bool { waits.Add(1); return func() bool { return true } },
+	}
+	defer h.Close()
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if err := h.Warm(t.Context(), "/models/a.gguf"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if launched.Load() != 1 || !h.Loaded("/models/a.gguf") {
+		t.Fatalf("%d launched, loaded %v", launched.Load(), h.Loaded("/models/a.gguf"))
+	}
+	_, release, err := h.Hold(t.Context(), "/models/a.gguf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	release(Keep)
+	if waits.Load() != 0 || !h.Loaded("/models/a.gguf") || launched.Load() != 1 {
+		t.Errorf("after a draft: %d waits started, loaded %v, %d launched", waits.Load(), h.Loaded("/models/a.gguf"), launched.Load())
+	}
+	_, release, _ = h.Hold(t.Context(), "/models/a.gguf")
+	release(0)
+	if stopped.Load() != 1 || h.Loaded("/models/a.gguf") {
+		t.Errorf("a stalled server stayed: %d stopped", stopped.Load())
+	}
+	if err := h.Warm(t.Context(), "/models/a.gguf"); err != nil || !h.Drop("/models/a.gguf") || stopped.Load() != 2 {
+		t.Errorf("a kept model could not be removed: %v, %d stopped", err, stopped.Load())
+	}
+}

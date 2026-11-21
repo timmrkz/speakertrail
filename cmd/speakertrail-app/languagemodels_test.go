@@ -140,3 +140,38 @@ func TestWhatStandsInTheWayOfADraft(t *testing.T) {
 		}
 	}
 }
+
+// The model that drafts is loaded ahead once it is here and can run, as
+// the app starts, after a download and after a pick, and Settings is told
+// it is loaded. Tim chose this on 21 November 2026. A model that is not
+// the file it was downloaded as is not loaded.
+func TestTheLanguageModelIsLoadedAhead(t *testing.T) {
+	data := []byte("GGUF" + strings.Repeat("weights", 100))
+	sum := sha256.Sum256(data)
+	m := language.Model{Name: "probe.gguf", Title: "Probe", Download: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}
+	var launched []string
+	host := &language.Host{Always: true, Launch: func(_ context.Context, path string) (*language.Server, error) {
+		launched = append(launched, path)
+		return &language.Server{}, nil
+	}}
+	defer host.Close()
+	var told []LanguageState
+	s := newLanguageModels(t.TempDir(), host, func(st LanguageState) { told = append(told, st) })
+	s.server = func() bool { return true }
+	s.models = func() []language.Model { return []language.Model{m} }
+	s.warm()
+	if len(launched) != 0 {
+		t.Fatal("a model that is not here was loaded")
+	}
+	os.WriteFile(filepath.Join(s.dir, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644)
+	s.warm()
+	if len(launched) != 0 {
+		t.Fatal("a model that is not the file downloaded was loaded")
+	}
+	os.WriteFile(filepath.Join(s.dir, m.Name), data, 0o644)
+	s.warm()
+	s.warm()
+	if len(launched) != 1 || !s.state().Models[0].Loaded || !told[len(told)-1].Models[0].Loaded {
+		t.Errorf("%d loads, loaded %v", len(launched), s.state().Models[0].Loaded)
+	}
+}

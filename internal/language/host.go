@@ -11,9 +11,10 @@ import (
 
 // The model kept running between the drafts that want it.
 //
-// Loading the model takes llama-server 9 to 24 seconds on an M2 Max. Tim
+// Loading the model takes llama-server 7 to 24 seconds on an M2 Max. Tim
 // drafts one message after another, so the server is kept for a while
-// after a draft, and the next draft finds the model loaded. One model runs
+// after a draft, and the next draft finds the model loaded. The app keeps
+// it from its start until it quits, see Always and Warm. One model runs
 // at a time, because two of them do not fit in the memory of a Mac. As
 // FrameFairy's modelhost.go keeps its model between searches, with less to
 // it: no search reads ahead into it, and no warm-up waits for one.
@@ -46,6 +47,12 @@ type Host struct {
 	// Notes is the folder a server the app starts is written down in
 	// while it runs, see leftover.go. Empty writes nothing.
 	Notes string
+	// Always keeps a model loaded once it is, after every draft, until it
+	// is dropped, another takes its place or the app quits, rather than
+	// for Keep. Tim chose it on 21 November 2026, with the model loaded as
+	// the app starts, see Warm, so the first draft writes at once. A
+	// server that stopped answering still goes at once.
+	Always bool
 
 	mu      sync.Mutex
 	server  *Server
@@ -179,6 +186,9 @@ func (h *Host) releaser(s *Server) func(keep time.Duration) {
 				h.shutLocked()
 				return
 			}
+			if h.Always {
+				return
+			}
 			h.callOff = h.idle(keep, func() {
 				h.mu.Lock()
 				defer h.mu.Unlock()
@@ -188,6 +198,18 @@ func (h *Host) releaser(s *Server) func(keep time.Duration) {
 			})
 		})
 	}
+}
+
+// Warm loads the model at path, or finds it loaded, and lets go of it at
+// once, so a draft that comes later finds it loaded. With Always set it
+// then stays.
+func (h *Host) Warm(ctx context.Context, model string) error {
+	_, release, err := h.Hold(ctx, model)
+	if err != nil {
+		return err
+	}
+	release(Keep)
+	return nil
 }
 
 // Drop stops the server with the model at path, unless somebody holds

@@ -92,14 +92,9 @@ func main() {
 	// in Settings, see languagemodels.go, and kept loaded between drafts.
 	// Where a download stands is the event language, where a draft
 	// stands the event draft.
-	writer := &language.Host{Log: theLog.slog("language", zerolog.TraceLevel), Notes: language.NotesDir(dir)}
-	// A llama-server this app left running when it crashed holds the
-	// model's memory until it is stopped, see leftover.go.
-	go func() {
-		for _, pid := range language.StopLeftoverServers(writer.Notes) {
-			theLog.line(zerolog.WarnLevel, "language").Int("pid", pid).Msg("a llama-server left running was stopped")
-		}
-	}()
+	// The model is loaded as the app starts and kept until it quits, so
+	// every draft writes at once, Tim's choice on 21 November 2026.
+	writer := &language.Host{Log: theLog.slog("language", zerolog.TraceLevel), Notes: language.NotesDir(dir), Always: true}
 	writers := newLanguageModels(language.Dir(dir), writer, func(st LanguageState) {
 		if app != nil {
 			app.Event.Emit("language", st)
@@ -119,6 +114,15 @@ func main() {
 			return nil
 		})
 	}
+	// A llama-server this app left running when it crashed holds the
+	// model's memory until it is stopped, see leftover.go. Then the model
+	// is loaded, once that memory is free.
+	go func() {
+		for _, pid := range language.StopLeftoverServers(writer.Notes) {
+			theLog.line(zerolog.WarnLevel, "language").Int("pid", pid).Msg("a llama-server left running was stopped")
+		}
+		writers.warm()
+	}()
 	api.Handle("/api/language", languageAPI{s: writers})
 	api.Handle("/api/language/", languageAPI{s: writers})
 	answers.Drafts = &draft.Drafter{Store: e.Store, Host: writer, Model: writers.inUse,

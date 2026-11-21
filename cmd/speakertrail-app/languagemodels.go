@@ -36,6 +36,8 @@ type LanguageModelView struct {
 	// Shared marks a model taken from FrameFairy's folder, one file on
 	// disk for both apps, see language.Model.Shared.
 	Shared bool `json:"shared"`
+	// Loaded marks a model in memory now, ready to draft at once.
+	Loaded bool `json:"loaded"`
 }
 
 // LanguageState is what Settings shows: every model, largest first, the
@@ -98,7 +100,8 @@ func (s *languageModels) state() LanguageState {
 	offered, _ := language.Recommended(models, s.memory)
 	for _, m := range models {
 		st.Models = append(st.Models, LanguageModelView{Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name,
-			Recommended: m.Name == offered.Name, Fit: m.FitsIn(s.memory), Shared: m.Shared(s.dir)})
+			Recommended: m.Name == offered.Name, Fit: m.FitsIn(s.memory), Shared: m.Shared(s.dir),
+			Loaded: s.host != nil && s.host.Loaded(filepath.Join(s.dir, m.Name))})
 	}
 	st.Job = s.get.latest()
 	return st
@@ -167,7 +170,39 @@ func (s *languageModels) use(name string) error {
 	}
 	theLog.line(zerolog.InfoLevel, "language").Str("model", m.Name).Msg("a language model was picked")
 	s.tell()
+	go s.warm()
 	return nil
+}
+
+// warm loads the model that drafts, when it is here and can run, so the
+// first draft writes at once rather than waiting for the load. Tim chose
+// to have it loaded from the app's start until it quits, 21 November
+// 2026, see language.Host.Always. It runs as the app starts, after a
+// download and after a pick, and tells the window once the model is in.
+// A model another draft still holds is loaded by the next draft instead.
+func (s *languageModels) warm() {
+	if s.host == nil {
+		return
+	}
+	models := s.models()
+	m := s.using(models)
+	if s.standing(m, s.server()).Mark != "ok" {
+		return
+	}
+	path := filepath.Join(s.dir, m.Name)
+	if s.host.Loaded(path) {
+		return
+	}
+	// Checked the way a draft checks it before a load, see draft.Drafter.
+	if err := language.Check(m, s.dir); err != nil {
+		theLog.line(zerolog.WarnLevel, "language").Str("model", m.Name).AnErr("error", err).Msg("the language model was not loaded ahead")
+		return
+	}
+	s.tell()
+	if err := s.host.Warm(context.Background(), path); err != nil {
+		theLog.line(zerolog.WarnLevel, "language").Str("model", m.Name).AnErr("error", err).Msg("the language model was not loaded ahead, the next draft loads it")
+	}
+	s.tell()
 }
 
 // install starts fetching a model and gives the job at once, see
@@ -186,6 +221,7 @@ func (s *languageModels) install(name string) ModelJob {
 		if m.Shared(dir) {
 			theLog.line(zerolog.InfoLevel, "language").Str("model", m.Name).Msg("the language model is FrameFairy's copy, checked and shared on disk")
 		}
+		go s.warm()
 		return nil
 	})
 }

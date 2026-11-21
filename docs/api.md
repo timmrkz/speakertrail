@@ -278,6 +278,11 @@ arrived whole before it was stopped is read through again the same way,
 with `progress.text` `checking`, rather than fetched again. The speech
 models do the same.
 
+`loaded` marks the model in memory now. The model that drafts is loaded
+as the app starts, after it is downloaded and after it is picked, and
+stays until the app quits, so every draft writes at once. The event
+`language` says when it is in.
+
 `standing` is whether a draft can be written now, `{"mark": "ok", "why": ""}`,
 and what stands in the way when it cannot: `warn` when the model that
 drafts is not downloaded, `err` when this build has no llama-server or

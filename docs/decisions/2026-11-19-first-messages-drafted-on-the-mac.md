@@ -66,7 +66,12 @@ Drafts in the run's queue, beside the checks, or a worker of their own.
 A run is short and started by hand, and a draft is asked for one person
 at a time while Tim reads. A worker of its own writes one draft at a
 time, in the order asked, since one model fits in memory. The model
-stays loaded for ten minutes after a draft, so the next starts at once.
+stayed loaded for ten minutes after a draft, so the next started at once.
+The first still waited 7 s for the load on Tim's Mac, so on 21 November
+2026 he chose to load it as the app starts and keep it until it quits,
+about 16.6 GB for Gemma 4 26B, held by llama.cpp as a map of the file
+that macOS can take back. Loading it when a person opens, and keeping it
+as before, were the other choices.
 
 ### What a test has to build
 

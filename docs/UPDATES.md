@@ -2,8 +2,10 @@
 
 Speaker Trail lives in `/Applications` and updates itself. Every push to
 main and to an open pull request builds the app on GitHub. The app's
-Updates page lists main and the open pull requests. Pick one, and the app
-downloads its newest build by itself. **Relaunch** restarts the app into
+Updates page lists main and the open pull requests, by what they are,
+Branch main and PR #44, as FrameFairy's does. Pick one, and the app
+downloads its newest build by itself. How updates work is behind the
+info mark beside the list. **Relaunch** restarts the app into
 it, and if the app is quit instead, the build goes in on the way out. No
 terminal, no `git pull`, no `make run`.
 

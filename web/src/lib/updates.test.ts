@@ -1,0 +1,143 @@
+import { afterEach, describe, expect, test, vi } from 'vitest'
+
+import type { UpdateState } from './api'
+import { railDot, standing, Updates } from './updates.svelte'
+
+// Ported from FrameFairy's updates.test.ts, with Speaker Trail's version
+// numbers, its run as the work Relaunch waits for, and its sizes.
+
+const at = (u: Partial<UpdateState>): UpdateState => ({
+  version: '0.1.0-pr400.102dc91',
+  commit: '102dc91',
+  channel: 'pr-400',
+  off: '',
+  channels: [{ id: 'main' }, { id: 'pr-400' }] as UpdateState['channels'],
+  picked: '',
+  follows: '',
+  gone: '',
+  building: '',
+  phase: 'current',
+  next: '',
+  nextName: '',
+  nextCommit: '',
+  checked: '',
+  written: 0,
+  total: 0,
+  problem: '',
+  detail: '',
+  ...u,
+})
+
+const inConflict = [{ id: 'main' }, { id: 'pr-400', conflict: true }] as UpdateState['channels']
+
+// In FrameFairy Tim followed a pull request that closed, and the Updates
+// page wore the warning while the sidebar showed nothing. Every mark the page shows
+// gives the sidebar a dot in the page's colour, and only all well gives
+// none.
+describe('the dot on Updates in the sidebar', () => {
+  const cases: [string, Partial<UpdateState>, string, string][] = [
+    ['a pull request followed that closed', { phase: 'gone', gone: 'pr-400', channels: [{ id: 'main' }] as UpdateState['channels'] }, 'warn', 'warn'],
+    ['up to date on a pull request in conflict', { channels: inConflict }, 'warn', 'warn'],
+    ['a check that did not get through', { phase: 'failed', problem: 'No network.' }, 'err', 'err'],
+    ['a newer build ready', { phase: 'ready', next: '0.1.0-pr400.abcdef0' }, 'new', 'ready'],
+    ['a newer build ready on a pull request in conflict', { phase: 'ready', channels: inConflict }, 'new', 'ready warn'],
+    ['looking for a newer build', { phase: 'checking' }, 'look', 'busy'],
+    ['a newer build downloading', { phase: 'downloading', total: 100, written: 50 }, 'look', 'busy'],
+    ['a newer commit being built', { building: 'abcdef0123' }, 'look', 'busy'],
+    ['downloading on a pull request in conflict', { phase: 'downloading', channels: inConflict }, 'look', 'busy warn'],
+    ['up to date', {}, 'ok', ''],
+    ['built on this Mac', { channel: '', phase: '' }, 'idle', ''],
+    ['not checked yet', { phase: '' }, 'idle', ''],
+    ['a build that does not update itself', { off: 'Made by make.' }, 'off', ''],
+  ]
+  for (const [name, u, mark, dot] of cases) {
+    test(`${name}: the page marks ${mark}, the sidebar ${dot || 'nothing'}`, () => {
+      expect(standing(at(u)).mark).toBe(mark)
+      expect(railDot(at(u))).toBe(dot)
+    })
+  }
+
+  test('is no dot before anything is known', () => {
+    expect(railDot(null)).toBe('')
+  })
+})
+
+// A check that finds nothing is over in a tenth of a second, so looking
+// is shown for at least 1.4 s, and the answer after it. On the page's
+// fake clock, so the test spends none of it.
+describe('a check', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test('is shown looking for 1.4 s, then what it found', () => {
+    vi.useFakeTimers()
+    const u = new Updates()
+    u.heard(at({ phase: 'checking' }))
+    vi.advanceTimersByTime(100)
+    u.heard(at({ phase: 'current', checked: 'now' }))
+    expect(u.shown?.phase).toBe('checking')
+    // What the answer brings besides is shown at once.
+    expect(u.shown?.checked).toBe('now')
+    vi.advanceTimersByTime(1299)
+    expect(u.shown?.phase).toBe('checking')
+    vi.advanceTimersByTime(1)
+    expect(u.shown?.phase).toBe('current')
+  })
+
+  test('that took longer than 1.4 s shows what it found at once', () => {
+    vi.useFakeTimers()
+    const u = new Updates()
+    u.heard(at({ phase: 'checking' }))
+    vi.advanceTimersByTime(2000)
+    u.heard(at({ phase: 'current' }))
+    expect(u.shown?.phase).toBe('current')
+  })
+
+  test('asked again while it looks keeps the time of the first look', () => {
+    vi.useFakeTimers()
+    const u = new Updates()
+    u.heard(at({ phase: 'checking' }))
+    vi.advanceTimersByTime(1000)
+    u.heard(at({ phase: 'checking' }))
+    vi.advanceTimersByTime(100)
+    u.heard(at({ phase: 'current' }))
+    expect(u.shown?.phase).toBe('checking')
+    vi.advanceTimersByTime(300)
+    expect(u.shown?.phase).toBe('current')
+  })
+})
+
+// The words of the line under the build, one case for each way things
+// stand, so a walk of the Updates page reads them once and does not hold
+// every wording itself. The time a check was made is given, never read
+// from the clock.
+describe('the line under the build', () => {
+  const now = Date.UTC(2026, 10, 13, 9, 30)
+  const justNow = new Date(now - 10_000).toISOString()
+  const cases: [string, Partial<UpdateState>, { working?: string }, string, string][] = [
+    ['looking', { phase: 'checking' }, {}, 'Looking for a newer build', 'Of PR #400.'],
+    ['downloading half', { phase: 'downloading', next: '0.1.0-pr400.abcdef0', total: 2 << 20, written: 1 << 20 }, {}, 'A newer build is downloading', '0.1.0-pr400.abcdef0. 50 % of 2.0 MB.'],
+    ['ready', { phase: 'ready', next: '0.1.0-pr400.abcdef0' }, {}, 'A newer build is ready', '0.1.0-pr400.abcdef0. Relaunch to finish updating, or it goes in when you quit.'],
+    ['ready while a run goes', { phase: 'ready', next: '0.1.0-pr400.abcdef0' }, { working: 'the run' }, 'A newer build is ready', '0.1.0-pr400.abcdef0. Relaunch once the run is done, or it goes in when you quit.'],
+    ['ready with a newer commit building', { phase: 'ready', next: '0.1.0-pr400.abcdef0', building: '0123456789' }, {}, 'A newer build is ready', '0.1.0-pr400.abcdef0. Relaunch to finish updating, or it goes in when you quit. 0123456 is being built.'],
+    ['failed', { phase: 'failed', problem: 'No network.', checked: justNow }, {}, 'The check did not get through', 'No network. Checked just now.'],
+    ['a newer commit building', { building: '0123456789', checked: justNow }, {}, 'A newer commit is being built', '0123456. This is the build before it, the newest of PR #400 so far. Checked just now.'],
+    ['up to date in conflict', { channels: inConflict }, {}, 'Up to date', 'This is the newest build of PR #400. It conflicts with main, so CI has not tested it.'],
+    ['up to date', { follows: 'main', channel: 'main' }, {}, 'Up to date', 'This is the newest build of Branch main.'],
+    ['closed', { phase: 'gone', gone: 'pr-400' }, {}, 'PR #400 is closed', 'Nothing downloads until you choose what to follow next.'],
+    ['built on this Mac', { channel: '', phase: '' }, {}, 'Built on this Mac', 'It stays as it is until you choose a channel to follow.'],
+    ['not checked yet', { phase: '' }, {}, 'Not checked yet', 'It looks when the app starts and every ten minutes.'],
+    ['off', { off: 'Made by make.' }, {}, 'This build does not update itself', 'Made by make.'],
+  ]
+  for (const [name, u, how, head, more] of cases) {
+    test(`${name}: ${head}`, () => {
+      expect(standing(at(u), { ...how, now })).toEqual(expect.objectContaining({ head, more }))
+    })
+  }
+
+  test('says when it last checked, by the hour and minute', () => {
+    const earlier = new Date(2026, 10, 13, 7, 5).toISOString()
+    expect(standing(at({ checked: earlier }), { now: Date.parse(earlier) + 3_600_000 }).more).toBe('This is the newest build of PR #400. Checked at 07:05.')
+  })
+})

@@ -1,8 +1,9 @@
 // Package keys keeps the search provider's API key the way macOS keeps
-// secrets, in the keychain, never in a file. The item belongs to the app:
-// another program that asks for it gets a box from macOS first, and the
-// key never passes through a command line. FrameFairy keeps its keys the
-// same way.
+// secrets, in the keychain, never in a file. Each read by a build of the
+// app that macOS does not know yet asks for the password once, and Always
+// Allow keeps that build from being asked again. Another program that
+// asks for it gets a box from macOS first, and the key never passes
+// through a command line. See keys_darwin.go for how macOS checks a read.
 //
 // EXA_API_KEY in the environment stands in while no key is saved, which
 // is how a terminal or a test hands one over. Elsewhere than on a Mac
@@ -26,9 +27,13 @@ const account = "speakertrail"
 
 // vault is where keys are kept: the keychain on a Mac, memory in tests.
 // get gives the secret and the keychain's status, 0 when it was found.
+// open says whether the saved key is kept the way set keeps it, so that a
+// new build of the app reading it is asked one question, not two. See
+// keys_darwin.go.
 type vault interface {
 	has() bool
 	get() (string, int)
+	open() bool
 	set(secret string) error
 	remove()
 }
@@ -59,7 +64,10 @@ func (e *Exa) Has() bool {
 	return e.v.has() || e.env("EXA_API_KEY") != ""
 }
 
-// Get reads the key, the saved one first.
+// Get reads the key, the saved one first. A key saved by an older build
+// of the app, which asked twice on each read by a new build, is saved
+// again right after the read the person has just answered, so the next
+// build asks once.
 func (e *Exa) Get() string {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -69,6 +77,13 @@ func (e *Exa) Get() string {
 		e.cached, e.read = secret, true
 		e.logger().Info("the Exa key was read from the keychain", "ms", time.Since(start).Milliseconds(),
 			"found", status == 0, "status", status)
+		if secret != "" && !e.v.open() {
+			if err := e.v.set(secret); err != nil {
+				e.logger().Warn("the Exa key could not be saved again, so a new build still asks twice", "error", err)
+			} else {
+				e.logger().Info("the Exa key was saved again, so a new build asks once")
+			}
+		}
 	}
 	if e.cached != "" {
 		return e.cached
@@ -113,5 +128,6 @@ type nowhere struct{}
 
 func (nowhere) has() bool          { return false }
 func (nowhere) get() (string, int) { return "", errItemNotFound }
+func (nowhere) open() bool         { return true }
 func (nowhere) set(string) error   { return ErrNoKeychain }
 func (nowhere) remove()            {}

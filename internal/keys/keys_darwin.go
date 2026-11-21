@@ -4,6 +4,10 @@ package keys
 
 /*
 #cgo LDFLAGS: -framework Security -framework CoreFoundation
+// SecAccess and SecACL are the only way to set who may read an item of
+// the login keychain, and Apple marks them deprecated without a
+// replacement for it.
+#cgo CFLAGS: -Wno-deprecated-declarations
 #include <stdlib.h>
 #include <string.h>
 #include <CoreFoundation/CoreFoundation.h>
@@ -58,21 +62,124 @@ static int st_get(const char *service, const char *account, char **out, long *le
 	return 0;
 }
 
-// Keeps the secret. An item that is there has its secret replaced, and
-// one that is not is added, with the access list macOS gives an item an
-// app makes: that app, and nothing else without asking.
+// Whether every entry of access that allows reading the secret allows it
+// to any app, so that macOS asks only through the item's partition list.
+// 1 when it does, 0 when an entry names apps.
+static int st_decrypt_open(SecAccessRef access) {
+	CFArrayRef acls = SecAccessCopyMatchingACLList(access, kSecACLAuthorizationDecrypt);
+	if (acls == NULL) return 0;
+	int open = CFArrayGetCount(acls) > 0;
+	for (CFIndex i = 0; i < CFArrayGetCount(acls); i++) {
+		CFArrayRef apps = NULL;
+		CFStringRef description = NULL;
+		SecKeychainPromptSelector selector = 0;
+		if (SecACLCopyContents((SecACLRef)CFArrayGetValueAtIndex(acls, i), &apps, &description, &selector) != errSecSuccess
+			|| apps != NULL) {
+			open = 0;
+		}
+		if (apps != NULL) CFRelease(apps);
+		if (description != NULL) CFRelease(description);
+	}
+	CFRelease(acls);
+	return open;
+}
+
+// The access a new item gets. macOS checks a read twice, and each check
+// that fails asks for the password in a box of its own, one after the
+// other. The first is the item's list of trusted apps, the second its
+// partition list. An ad hoc signed build is never on either until the
+// person picks Always Allow, so a new build was asked twice. Here the
+// entry that allows reading the secret allows it to any app, keeping its
+// prompt, so the first check passes and only the partition list asks:
+// one box, with Always Allow for that build. Another program reading it
+// is still asked, by the partition list, which holds only the builds the
+// person allowed. See securityd's acls.cpp, validatePartition.
+static OSStatus st_access(const char *service, SecAccessRef *out) {
+	CFStringRef name = CFStringCreateWithCString(NULL, service, kCFStringEncodingUTF8);
+	SecAccessRef access = NULL;
+	OSStatus status = SecAccessCreate(name, NULL, &access);
+	if (status != errSecSuccess) {
+		CFRelease(name);
+		return status;
+	}
+	CFArrayRef acls = SecAccessCopyMatchingACLList(access, kSecACLAuthorizationDecrypt);
+	if (acls == NULL || CFArrayGetCount(acls) == 0) status = errSecInternalComponent;
+	for (CFIndex i = 0; acls != NULL && status == errSecSuccess && i < CFArrayGetCount(acls); i++) {
+		SecACLRef acl = (SecACLRef)CFArrayGetValueAtIndex(acls, i);
+		CFArrayRef apps = NULL;
+		CFStringRef description = NULL;
+		SecKeychainPromptSelector selector = 0;
+		status = SecACLCopyContents(acl, &apps, &description, &selector);
+		if (status == errSecSuccess) {
+			status = SecACLSetContents(acl, NULL, description != NULL ? description : name, selector);
+		}
+		if (apps != NULL) CFRelease(apps);
+		if (description != NULL) CFRelease(description);
+	}
+	if (acls != NULL) CFRelease(acls);
+	CFRelease(name);
+	if (status != errSecSuccess) {
+		CFRelease(access);
+		return status;
+	}
+	*out = access;
+	return errSecSuccess;
+}
+
+// Whether the item is kept with that access: 1 when it is, 0 when it is
+// not, a status below 0 when it cannot be told. Only the item's access
+// list is read, never the secret, so nothing is put on screen.
+static int st_open(const char *service, const char *account) {
+	CFMutableDictionaryRef q = st_item(service, account);
+	CFDictionarySetValue(q, kSecReturnRef, kCFBooleanTrue);
+	CFDictionarySetValue(q, kSecMatchLimit, kSecMatchLimitOne);
+	CFTypeRef item = NULL;
+	OSStatus status = SecItemCopyMatching(q, &item);
+	CFRelease(q);
+	if (status != errSecSuccess) return (int)status;
+	SecAccessRef access = NULL;
+	status = SecKeychainItemCopyAccess((SecKeychainItemRef)item, &access);
+	CFRelease(item);
+	if (status != errSecSuccess) return (int)status;
+	int open = st_decrypt_open(access);
+	CFRelease(access);
+	return open;
+}
+
+// Whether st_access makes what st_open looks for, for the tests.
+static int st_access_is_open(const char *service) {
+	SecAccessRef access = NULL;
+	if (st_access(service, &access) != errSecSuccess) return 0;
+	int open = st_decrypt_open(access);
+	CFRelease(access);
+	return open;
+}
+
+// Keeps the secret, always as a new item with the access above. Updating
+// an item in place keeps its old access, so one that is there is deleted
+// first, which macOS does without asking. Should the new item not be
+// taken with that access, it is added as before, so the key is never
+// lost.
 static int st_set(const char *service, const char *account, const char *secret, long length) {
 	CFMutableDictionaryRef q = st_item(service, account);
+	OSStatus status = SecItemDelete(q);
+	if (status != errSecSuccess && status != errSecItemNotFound) {
+		CFRelease(q);
+		return (int)status;
+	}
 	CFDataRef data = CFDataCreate(NULL, (const UInt8 *)secret, length);
-	CFMutableDictionaryRef change = CFDictionaryCreateMutable(NULL, 0,
-		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
-	CFDictionarySetValue(change, kSecValueData, data);
-	OSStatus status = SecItemUpdate(q, change);
-	if (status == errSecItemNotFound) {
-		CFDictionarySetValue(q, kSecValueData, data);
+	CFDictionarySetValue(q, kSecValueData, data);
+	SecAccessRef access = NULL;
+	status = st_access(service, &access);
+	if (status == errSecSuccess) {
+		CFDictionarySetValue(q, kSecAttrAccess, access);
+		status = SecItemAdd(q, NULL);
+		CFRelease(access);
+	}
+	if (status != errSecSuccess) {
+		CFDictionaryRemoveValue(q, kSecAttrAccess);
 		status = SecItemAdd(q, NULL);
 	}
-	CFRelease(change);
 	CFRelease(data);
 	CFRelease(q);
 	return (int)status;
@@ -128,6 +235,22 @@ func (keychain) get() (string, int) {
 		secret = C.GoStringN(out, C.int(length))
 	})
 	return secret, status
+}
+
+// open is false only when the item is there and kept the old way. When
+// it cannot be told, it is left as it is.
+func (keychain) open() bool {
+	result := C.int(1)
+	names(func(service, account *C.char) { result = C.st_open(service, account) })
+	return result != 0
+}
+
+// accessIsOpen says whether the access a new item gets lets the first
+// check pass, without a keychain.
+func accessIsOpen() bool {
+	service := C.CString(Service)
+	defer C.free(unsafe.Pointer(service))
+	return C.st_access_is_open(service) == 1
 }
 
 func (keychain) set(secret string) error {

@@ -3,16 +3,22 @@ package keys
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
 	"testing"
 )
 
+// memory is a keychain in memory. closed is a key saved the old way, and
+// saves counts the saves.
 type memory struct {
 	mu     sync.Mutex
 	secret string
 	reads  int
+	closed bool
+	saves  int
+	refuse error
 }
 
 func (m *memory) has() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.secret != "" }
@@ -25,8 +31,18 @@ func (m *memory) get() (string, int) {
 	}
 	return m.secret, 0
 }
-func (m *memory) set(s string) error { m.mu.Lock(); defer m.mu.Unlock(); m.secret = s; return nil }
-func (m *memory) remove()            { m.mu.Lock(); defer m.mu.Unlock(); m.secret = "" }
+func (m *memory) open() bool { m.mu.Lock(); defer m.mu.Unlock(); return !m.closed }
+func (m *memory) set(s string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.refuse != nil {
+		return m.refuse
+	}
+	m.secret, m.closed = s, false
+	m.saves++
+	return nil
+}
+func (m *memory) remove() { m.mu.Lock(); defer m.mu.Unlock(); m.secret = "" }
 
 func TestTheSavedKeyComesBeforeTheEnvironment(t *testing.T) {
 	env := map[string]string{"EXA_API_KEY": "from-the-terminal"}
@@ -101,6 +117,53 @@ func TestAMissingKeyIsLoggedAsNotFound(t *testing.T) {
 	}
 	if l["found"] != false || l["status"] != float64(errItemNotFound) {
 		t.Errorf("line %v", l)
+	}
+}
+
+// A key an older build saved asked a new build twice. It is saved again
+// once, right after the read, from however many searches ask at once,
+// and the log says so.
+func TestAKeySavedTheOldWayIsSavedAgainOnce(t *testing.T) {
+	m := &memory{secret: "kept", closed: true}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if e.Get() != "kept" {
+				t.Error("wrong key")
+			}
+		})
+	}
+	wg.Wait()
+	if m.reads != 1 || m.saves != 1 || m.closed || m.secret != "kept" {
+		t.Errorf("reads %d, saves %d, closed %v, kept %q", m.reads, m.saves, m.closed, m.secret)
+	}
+	if !strings.Contains(logged.String(), "the Exa key was saved again, so a new build asks once") {
+		t.Errorf("log %s", logged.String())
+	}
+}
+
+// A key saved the new way is never saved again.
+func TestAKeySavedTheNewWayIsLeftAsItIs(t *testing.T) {
+	m := &memory{secret: "kept"}
+	e := &Exa{v: m, env: func(string) string { return "" }}
+	if e.Get() != "kept" || m.saves != 0 {
+		t.Errorf("saves %d", m.saves)
+	}
+}
+
+// When the keychain does not take the key again, the app still has it
+// for this start, and the log says why the next build will ask twice.
+func TestAKeyThatCannotBeSavedAgainIsStillUsed(t *testing.T) {
+	m := &memory{secret: "kept", closed: true, refuse: errors.New("status -25293")}
+	var logged safeBuffer
+	e := &Exa{v: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	if e.Get() != "kept" || m.secret != "kept" {
+		t.Errorf("get %q, kept %q", e.Get(), m.secret)
+	}
+	if !strings.Contains(logged.String(), `"level":"WARN"`) || !strings.Contains(logged.String(), "status -25293") {
+		t.Errorf("log %s", logged.String())
 	}
 }
 

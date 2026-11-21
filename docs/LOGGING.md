@@ -202,6 +202,7 @@ and shows it in Finder. In it:
 | `what-happened.txt` | what Tim wrote, when he wrote anything |
 | `about.json` | when it was made, the build, `start`, macOS, the chip and the memory |
 | `settings.json` | the settings Settings shows. Never the people, the searches, the notes or a key |
+| `first-message-template.json` | the first message template as Settings has it, in the shape of `internal/store/first_message_template.json` |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
 | `pictures/` | the screenshots, as PNG |
 

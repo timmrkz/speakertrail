@@ -56,6 +56,9 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.Update(func(d *store.Data) error {
+		if err := d.SetTemplatePart("greeting", []string{"Servus", ""}, -1); err != nil {
+			return err
+		}
 		return d.SetSetting("profile_searches_per_run", json.RawMessage("7"), time.Now())
 	}); err != nil {
 		t.Fatal(err)
@@ -83,7 +86,7 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	want := []string{"about.json", "logs/app-2026-10-09-10-00-00.000.log", "logs/app.log", "logs/recent.log", "settings.json", "what-happened.txt"}
+	want := []string{"about.json", "first-message-template.json", "logs/app-2026-10-09-10-00-00.000.log", "logs/app.log", "logs/recent.log", "settings.json", "what-happened.txt"}
 	sort.Strings(want)
 	if strings.Join(names, ",") != strings.Join(want, ",") {
 		t.Errorf("the report holds %v, want %v", names, want)
@@ -111,6 +114,17 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 	}
 	if !strings.Contains(files["settings.json"], `"key": "profile_searches_per_run",`+"\n    \"value\": 7") {
 		t.Errorf("the settings in the report do not hold the changed setting:\n%s", files["settings.json"])
+	}
+	// The template as Tim changed it, in the shape of the one in the code.
+	var tpl store.Template
+	if err := json.Unmarshal([]byte(files["first-message-template.json"]), &tpl); err != nil {
+		t.Fatalf("the template in the report cannot be read: %v", err)
+	}
+	if g, _ := tpl.Part("greeting"); strings.Join(g.Variations, "|") != "Servus|" || len(tpl.Parts) != len(store.DefaultTemplate().Parts) {
+		t.Errorf("the template in the report:\n%s", files["first-message-template.json"])
+	}
+	if !strings.Contains(files["first-message-template.json"], "\n  \"origin\": [\n") {
+		t.Errorf("the template is not written one part to a line:\n%s", files["first-message-template.json"])
 	}
 	if !strings.Contains(files["about.json"], `"start": "`+theLog.start+`"`) {
 		t.Errorf("about.json does not name the start of the app:\n%s", files["about.json"])

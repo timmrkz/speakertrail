@@ -125,11 +125,22 @@ func (m reportMaker) ReportProblem(what string) (string, error) {
 	// The settings Settings shows, their keys, values and what they are
 	// for. Never the people, the searches or the notes, and never a key,
 	// which lives in the keychain.
+	// The first message template as Settings has it, written the way
+	// internal/store/first_message_template.json is, so Tim's changes
+	// can be taken into the code as they are.
 	if m.st != nil {
 		var settings []store.Setting
-		m.st.Read(func(d *store.Data) { settings = d.AllSettings() })
+		var template store.Template
+		m.st.Read(func(d *store.Data) { settings, template = d.AllSettings(), d.FirstMessageTemplate() })
 		body, _ := json.MarshalIndent(settings, "", "  ")
 		if err := add("settings.json", body); err != nil {
+			return "", err
+		}
+		body, err := json.MarshalIndent(template, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		if err := add("first-message-template.json", append(body, '\n')); err != nil {
 			return "", err
 		}
 	}

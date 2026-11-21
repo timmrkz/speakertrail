@@ -29,6 +29,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -160,6 +161,39 @@ type List struct {
 	// list it is untrusted: a copy that claims to be newer can only offer
 	// builds that are signed, as any list can.
 	Written time.Time `json:"written,omitzero"`
+	// Merged and Closed are the pull requests that are not open any more,
+	// by their channels, the ones merged and the ones closed without a
+	// merge. A pull request leaves Channels when it stops being open, and
+	// the app says which of the two became of the one it followed. A pull
+	// request on neither, one that ended long ago or a list from before
+	// they were written, is said to have ended. Untrusted like the rest,
+	// and only ever shown.
+	Merged []string `json:"merged,omitempty"`
+	Closed []string `json:"closed,omitempty"`
+}
+
+// Ended says what became of a pull request that is not open any more:
+// merged, closed, or empty when the list does not say.
+func (l List) Ended(channel string) string {
+	switch {
+	case slices.Contains(l.Merged, channel):
+		return "merged"
+	case slices.Contains(l.Closed, channel):
+		return "closed"
+	}
+	return ""
+}
+
+// pullRequests is the channels of pull requests among names, each once,
+// in order. Anything else a list says there is left out.
+func pullRequests(names []string) []string {
+	var out []string
+	for _, n := range names {
+		if ValidChannel(n) && n != "main" && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 var (
@@ -242,7 +276,7 @@ func Parse(data []byte) (List, error) {
 		return List{}, fmt.Errorf("the channel list is not readable: %w", err)
 	}
 	seen := map[string]int{}
-	out := List{Written: raw.Written}
+	out := List{Written: raw.Written, Merged: pullRequests(raw.Merged), Closed: pullRequests(raw.Closed)}
 	for _, b := range raw.Channels {
 		if b.Check() != nil {
 			continue

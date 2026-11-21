@@ -185,6 +185,29 @@ func TestFollowNeverFallsBackToMain(t *testing.T) {
 	}
 }
 
+// A pull request that is not open any more is said to be merged or closed,
+// as the list has it. PR #46 was merged and the page called it closed,
+// because the list only ever said that it had gone. What is not a pull
+// request is left out, and one the list says nothing about has ended.
+func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
+	t.Parallel()
+	list, err := Parse([]byte(`{"channels": [], "merged": ["pr-46", "main", "../pr-9", "pr-46"], "closed": ["pr-12", "pr-x"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(list.Merged, " "); got != "pr-46" {
+		t.Errorf("merged %q, want pr-46 alone", got)
+	}
+	if got := strings.Join(list.Closed, " "); got != "pr-12" {
+		t.Errorf("closed %q, want pr-12 alone", got)
+	}
+	for channel, want := range map[string]string{"pr-46": "merged", "pr-12": "closed", "pr-7": "", "main": ""} {
+		if got := list.Ended(channel); got != want {
+			t.Errorf("%s ended %q, want %q", channel, got, want)
+		}
+	}
+}
+
 func TestSignAndVerify(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)

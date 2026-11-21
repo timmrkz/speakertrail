@@ -206,24 +206,24 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, input, textarea, select { font: inherit; color: inherit; }
 button { -webkit-tap-highlight-color: transparent; }
-/* Focus. A button reached with the keyboard wears a ring round it, 2 px
-   out from its edge and 2 px wide, in its own colour: the accent for a
-   plain or a primary button, red for one that removes, green for a
+/* Focus. A button reached with the keyboard wears FrameFairy's ring: 2 px
+   wide, 1 px out from its edge, in the button's own colour, the accent
+   for a plain or a primary button, red for one that removes, green for a
    toggle that is on. Tim asked for it testing #46 on 21 November 2026:
-   the edge cut inside a primary in the page's colour looked like a hole,
-   and FrameFairy rings its buttons too.
-   A field shows focus by its edge alone, in the accent, and a list to
-   pick from is a field. A row, a page in the sidebar and a segment of a
-   choice keep the edge inside them, 2 px of the accent over their own
-   border with a faint wash of it, since a ring would be cut off by the
-   list or the pane round them. The wash alone was too faint to find, Tim
-   said testing #24 on 17 November 2026. */
+   the edge cut inside a primary in the page's colour looked like a hole.
+   A list to pick from wears the same ring inside its edge, as in
+   FrameFairy. A field shows focus by its edge alone, in the accent (Tim,
+   the same day). A row, a page in the sidebar and a segment of a choice
+   keep the edge inside them, 2 px of the accent over their own border
+   with a faint wash of it, since a ring would be cut off by the list or
+   the pane round them. The wash alone was too faint to find, Tim said
+   testing #24 on 17 November 2026. */
 :focus, :focus-visible { outline: none; }
 :where(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--accent); outline-offset: -2px;
   background-image: linear-gradient(color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--accent) 12%, transparent));
 }
-:is(.btn, .chip, .switch):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; background-image: none; }
+:is(.btn, .chip, .switch):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; background-image: none; }
 .btn.danger:focus-visible { outline-color: var(--bad); }
 .btn.good[aria-pressed="true"]:focus-visible { outline-color: var(--good); }
 .btn.bad[aria-pressed="true"]:focus-visible { outline-color: var(--bad); }

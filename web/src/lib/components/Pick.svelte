@@ -239,9 +239,9 @@
   /* No edge while the list is open: the lit row in the list already says
      where the keyboard is. */
   .pick[aria-expanded='true']:focus-visible { outline: none; background-image: none; }
-  /* A list to pick from is a field, and shows focus the way a field does,
-     by its edge in the accent. */
-  .pick:focus-visible { outline: none; background-image: none; border-color: var(--accent); }
+  /* FrameFairy's ring, inside the edge so it lines up with the fields
+     beside it. */
+  .pick:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; background-image: none; }
 
   /* The two lie on top of each other, so the box is as wide as the longest
      thing the list can say and what is picked is drawn in it. */

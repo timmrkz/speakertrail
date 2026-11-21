@@ -151,14 +151,14 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   a Mac menu does, with a tick and the words in `--chosen-ink`, since a
   tint there would read as the row under the pointer.
 - **A button in focus wears a ring, a field its edge.** A button, a
-  chip or a switch reached with the keyboard wears a ring 2 px out from
-  its edge and 2 px wide, in its own colour: the accent for a plain or a
-  primary button, red for one that removes, green for a toggle that is
-  on. Tim asked for it testing #46 on 21 November 2026, after the edge
-  cut inside a primary in the page's colour looked like a hole. Three
-  variations of it are in `screenshots/issue-45/focus/` in the project's
-  shared folder. A field in use, and a list to pick from, show
-  the accent on their own edge and nothing more. A row, a page in the
+  chip or a switch reached with the keyboard wears FrameFairy's ring,
+  2 px wide and 1 px out from its edge, in the button's own colour: the
+  accent for a plain or a primary button, red for one that removes,
+  green for a toggle that is on. Tim asked for it testing #46 on 21
+  November 2026, after the edge cut inside a primary in the page's
+  colour looked like a hole. A list to pick from wears the same ring
+  1 px inside its edge, as in FrameFairy, and none while it is open. A
+  field in use shows the accent on its own edge and nothing more. A row, a page in the
   sidebar and a segment of a choice show the accent 2 px inside their
   edge with a faint wash, since a ring would be cut off by the list or
   pane round them. The wash alone was too faint to find, Tim said on 17

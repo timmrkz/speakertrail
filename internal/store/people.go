@@ -86,10 +86,16 @@ func (p *Person) Young(now time.Time) bool {
 	return p.LinkedIn.BornAbout > now.Year()-YoungUntil
 }
 
+// Rejected says whether Tim said the LinkedIn profile a search found is
+// not this person's.
+func (p *Person) Rejected() bool {
+	return p.LinkedIn.Review == "rejected"
+}
+
 // Filters are the ways People can be narrowed, and Sorts the orders it
 // can be in.
 var (
-	Filters = []string{"all", "young", "connected"}
+	Filters = []string{"all", "young", "connected", "rejected"}
 	Sorts   = []string{"young", "new", "fit", "name"}
 )
 
@@ -102,9 +108,11 @@ type PeopleQuery struct {
 // ListPeople lists the people a query asks for, and how many each filter
 // would show for the same words, so a filter that shows nobody never hides
 // that others were found. Someone Tim connected with is only under
-// Connected, so All and Under 30 shrink to whom he can still reach out
-// to. Whom an exclusion leaves out is in neither, unless Tim connected
-// with them. They stay in the file, so removing the exclusion brings them
+// Connected, and someone whose profile he rejected only under Rejected,
+// so All and Under 30 shrink to whom he can still reach out to.
+// Connected comes first, since a person he connected with is real
+// whatever the profile. Whom an exclusion leaves out is in no list,
+// unless Tim connected with them. They stay in the file, so removing the exclusion brings them
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
@@ -130,10 +138,12 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		if words != "" && !strings.Contains(strings.ToLower(p.Name+"\n"+p.Headline+"\n"+p.City), words) {
 			continue
 		}
+		open := !p.Connected && !p.Rejected()
 		in := map[string]bool{
-			"all":       !p.Connected,
-			"young":     !p.Connected && p.Young(q.Now),
+			"all":       open,
+			"young":     open && p.Young(q.Now),
 			"connected": p.Connected,
+			"rejected":  !p.Connected && p.Rejected(),
 		}
 		for f, ok := range in {
 			if ok {

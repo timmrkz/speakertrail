@@ -147,6 +147,17 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if code := call(t, a, "PATCH", "/api/people/999", `{"connected":true}`, nil); code != http.StatusNotFound {
 		t.Errorf("nobody: %d", code)
 	}
+	// Not connected and her profile rejected, she is only under Rejected.
+	call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":false}`, nil)
+	if code := call(t, a, "PATCH", "/api/profiles/"+itoa(p.ID), `{"review":"rejected"}`, nil); code != http.StatusNoContent {
+		t.Fatalf("reject: %d", code)
+	}
+	call(t, a, "GET", "/api/people?filter=rejected", "", &people)
+	if len(people.People) != 1 || people.People[0].ID != p.ID || people.Counts["all"] != 0 || people.Counts["connected"] != 0 || people.Counts["rejected"] != 1 {
+		t.Errorf("people once rejected = %+v", people)
+	}
+	call(t, a, "PATCH", "/api/profiles/"+itoa(p.ID), `{"review":"confirmed"}`, nil)
+	call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":true}`, nil)
 
 	var searches struct{ Sources []searchJSON }
 	call(t, a, "GET", "/api/sources?kind=profile_search", "", &searches)

@@ -101,6 +101,7 @@
       { value: 'all', label: 'All' },
       { value: 'young', label: 'Under 30' },
       { value: 'connected', label: 'Connected' },
+      { value: 'rejected', label: 'Rejected' },
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
   )
 
@@ -148,8 +149,9 @@
     if (!list?.length) return
     e.preventDefault()
     const at = list.findIndex((p) => p.id === openId)
-    // The person open may have just left the list, connected. Down goes
-    // to whom took their place, up to whom stood above them.
+    // The person open may have just left the list, connected or
+    // rejected. Down goes to whom took their place, up to whom stood
+    // above them.
     const left = at < 0 && gone?.id === openId ? gone.at : -1
     const step = e.key === 'ArrowDown' ? 1 : -1
     const next = at >= 0 ? at + step : left >= 0 ? (step > 0 ? left : left - 1) : 0
@@ -242,19 +244,27 @@
   }
 
   // What an empty list says: why nobody is here, and whom the other
-  // filters hold. Under All and Under 30 that may be someone connected,
-  // whom a search by name finds only under Connected.
+  // filters hold. Under All and Under 30 that may be someone connected or
+  // rejected, whom a search by name finds only under Connected or
+  // Rejected. show is the filter its button leads to.
   const PRESS_RUN = 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'
-  let empty = $derived.by(() => {
+  let empty = $derived.by((): { title: string; text: string; show?: PeopleFilter } => {
     const open = counts?.all ?? 0
     const connected = counts?.connected ?? 0
+    const rejected = counts?.rejected ?? 0
     const found = query ? 'match this search' : 'found so far'
     if (filter === 'connected') {
       return { title: 'Nobody connected yet', text: open ? `${plural(open, 'person', 'people')} ${found}, none of them connected yet.` : query ? 'Nobody matches this search.' : PRESS_RUN }
     }
+    if (filter === 'rejected') {
+      return { title: 'Nobody rejected', text: query ? 'Nobody whose profile you rejected matches this search.' : 'People whose LinkedIn profile you said is not them show here.' }
+    }
     if (open) return { title: 'Nobody under 30 yet', text: `${plural(open, 'person', 'people')} ${found}, none of them likely under 30.` }
-    if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${connected === 1 ? 'matches' : 'match'} this search.`, connected: true }
-    if (connected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, connected: true }
+    const matches = (n: number) => (n === 1 ? 'matches' : 'match')
+    if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${matches(connected)} this search.`, show: 'connected' }
+    if (rejected && query) return { title: 'Only under Rejected', text: `${plural(rejected, 'person', 'people')} whose profile you rejected ${matches(rejected)} this search.`, show: 'rejected' }
+    if (connected && !rejected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, show: 'connected' }
+    if (connected || rejected) return { title: 'Nobody left to go through', text: `${plural(connected + rejected, 'person', 'people')} found so far, ${connected} connected and ${rejected} rejected. Press Run to find more.`, show: connected ? 'connected' : 'rejected' }
     return { title: filter === 'young' ? 'Nobody under 30 yet' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
   })
 
@@ -264,12 +274,13 @@
     people.data = people.data.map((x) => (x.id === p.id ? { ...x, profiles: p.profiles, headline: p.headline, connected: p.connected } : x))
   }
 
-  // Someone connected is only under Connected, so once the app took it
-  // the list reads again: they leave All and Under 30, or come back when
-  // taken back, and the counts follow. Where they stood is kept, so the
-  // arrow keys go on from there.
+  // Someone connected is only under Connected, and someone whose profile
+  // was rejected only under Rejected, so once the app took it the list
+  // reads again: they leave All and Under 30, or come back when taken
+  // back, and the counts follow. Where they stood is kept, so the arrow
+  // keys go on from there.
   let gone = $state<{ id: number; at: number; name: string } | null>(null)
-  function connected() {
+  function moved() {
     const at = people.data?.findIndex((x) => x.id === openId) ?? -1
     if (openId !== null && at >= 0) gone = { id: openId, at, name: people.data![at].name }
     people.run(fetchPeople({ q: query, sort, filter }), { quiet: true })
@@ -324,8 +335,9 @@
           icon="people"
           title={empty.title}
           text={empty.text}>
-          {#if empty.connected}
-            <button class="btn" type="button" onclick={() => (filter = 'connected')}>Show under Connected</button>
+          {#if empty.show}
+            {@const show = empty.show}
+            <button class="btn" type="button" onclick={() => (filter = show)}>Show under {show === 'connected' ? 'Connected' : 'Rejected'}</button>
           {:else if query || filter !== 'all'}
             <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
           {/if}
@@ -364,7 +376,7 @@
       </div>
       <div class="detail-body">
         {#key openId}
-          <PersonDetail id={openId} onupdate={updated} onconnected={connected} />
+          <PersonDetail id={openId} onupdate={updated} onmoved={moved} />
         {/key}
       </div>
     </section>
@@ -373,7 +385,7 @@
 
 {#if openId !== null && !wide}
   {#key openId}
-    <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name ?? (gone?.id === openId ? gone.name : undefined)} onclose={() => navigate('/app/people')} onupdate={updated} onconnected={connected} />
+    <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name ?? (gone?.id === openId ? gone.name : undefined)} onclose={() => navigate('/app/people')} onupdate={updated} onmoved={moved} />
   {/key}
 {:else if runOpen !== null}
   {#key runOpen}
@@ -417,7 +429,17 @@
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
   .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x) var(--gap-group); }
-  .filters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
+  /* Four filters with their counts need about 370 px, and a narrow
+     window has 306 at 390. There they stand two by two, each segment as
+     tall as in one row. The list keeps 480 px when a person is open, so
+     opening one never changes this. */
+  @media (max-width: 519px) {
+    .filters {
+      grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto;
+      grid-auto-rows: calc(var(--control-h) - 2 * var(--gap-inset) - 2 * var(--line-w));
+    }
+  }
   .filters .n { margin-left: 6px; color: var(--ink-3); font-weight: 500; font-variant-numeric: tabular-nums; }
   .sort { flex: none; }
   .controls .toolbar { flex-wrap: nowrap; }

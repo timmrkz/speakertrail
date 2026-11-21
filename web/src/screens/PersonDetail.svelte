@@ -13,9 +13,10 @@
   import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
 
-  // onconnected follows once the app took a change of connected, or
-  // turned it down, so a list can read again what it shows.
-  let { id, onupdate, onconnected }: { id: number; onupdate?: (p: PersonDetail) => void; onconnected?: () => void } = $props()
+  // onmoved follows once the app took a change that moves the person to
+  // another list, connected or the profile rejected, or turned it down,
+  // so a list can read again what it shows.
+  let { id, onupdate, onmoved }: { id: number; onupdate?: (p: PersonDetail) => void; onmoved?: () => void } = $props()
 
   const person = new Load<PersonDetail>()
   let notes = $state('')
@@ -44,15 +45,17 @@
   let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin'))
   let linkedin = $derived(person.data?.linkedin?.url ?? '')
 
-  // A search can find the wrong person's profile. Not this person sets it
-  // aside, so LinkedIn no longer opens it. Undo in the toast, or in the
-  // line that stays while it is set aside, brings it back.
+  // A search can find the wrong person's profile. Not this person rejects
+  // it, so LinkedIn no longer opens it and the person moves to Rejected.
+  // Undo in the toast, or in the line that stays while it is rejected,
+  // brings it back.
   let settingAside = $state(false)
   async function review(of: Profile, next: Review) {
     await api.patchProfile(of.id, next)
     // The app says what follows from it, the link and the facts.
     person.data = await api.person(id)
     onupdate?.(person.data)
+    onmoved?.()
   }
   async function takeBack() {
     if (!profile || settingAside) return
@@ -71,7 +74,7 @@
     settingAside = true
     try {
       await review(of, 'rejected')
-      toast.show('LinkedIn profile set aside as not this person', 'plain', {
+      toast.show('LinkedIn profile rejected as not this person', 'plain', {
         label: 'Undo',
         run: () => review(of, of.review).catch((e) => fault(e)),
       })
@@ -138,7 +141,7 @@
       fault(e)
     } finally {
       deciding = false
-      onconnected?.()
+      onmoved?.()
     }
   }
 </script>
@@ -175,7 +178,7 @@
         {/if}
       </div>
       {#if profile?.review === 'rejected'}
-        <p class="set-aside small">LinkedIn profile set aside as not this person.
+        <p class="set-aside small">LinkedIn profile rejected as not this person.
           <button class="link" type="button" disabled={settingAside} onclick={takeBack}>Undo</button></p>
       {/if}
       {#if openProblem}

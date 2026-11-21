@@ -193,6 +193,50 @@ const walks = [
       return wrong.join('\n\t')
     },
   },
+  {
+    // Tim, 21 November 2026, issue #66: people whose profile he rejected
+    // stayed among those he still has to go through. Rejected, a person
+    // leaves All for Rejected, the counts follow and the person stays
+    // open. A search by name under All leads there, and Undo brings them
+    // back where they stood.
+    name: 'Not this person moves a person from All to Rejected, and Undo brings them back',
+    async run(page) {
+      const count = (label) => page.locator('main .filters button', { hasText: label }).locator('.n').innerText().then(Number)
+      const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      await page.waitForLoadState('networkidle')
+      const before = await rows()
+      const all = await count('All')
+      const rejected = await count('Rejected')
+      const row = page.locator('.prow').nth(1)
+      const id = await row.getAttribute('id')
+      const name = await row.locator('b').innerText()
+      await row.click()
+      await page.locator('.detail-pane').getByRole('button', { name: 'Not this person' }).click()
+      await page.locator(`#${id}`).waitFor({ state: 'detached' })
+      const wrong = []
+      if ((await count('All')) !== all - 1) wrong.push(`All counts ${await count('All')}, want ${all - 1}`)
+      if ((await count('Rejected')) !== rejected + 1) wrong.push(`Rejected counts ${await count('Rejected')}, want ${rejected + 1}`)
+      if (!(await page.locator('.detail-pane').isVisible())) wrong.push('the person closed')
+      await page.keyboard.press('Escape')
+      await page.getByLabel('Search people').first().fill(name)
+      const empty = page.locator('.rows-wrap', { hasText: 'Only under Rejected' })
+      await empty.waitFor()
+      await empty.getByRole('button', { name: 'Show under Rejected' }).click()
+      await page.locator(`#${id}`).click()
+      await page.locator('.set-aside').getByRole('button', { name: 'Undo' }).click()
+      await page.locator(`#${id}`).waitFor({ state: 'detached' })
+      await page.keyboard.press('Escape')
+      await page.getByLabel('Search people').first().fill('')
+      await page.locator('main .filters button', { hasText: 'All' }).click()
+      await page.locator(`#${id}`).waitFor()
+      await page.waitForLoadState('networkidle')
+      if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`undone, the list is ${await rows()}, was ${before}`)
+      if ((await count('Rejected')) !== rejected) wrong.push(`undone, Rejected counts ${await count('Rejected')}, want ${rejected}`)
+      return wrong.join('\n\t')
+    },
+  },
 ]
 
 const browser = await chromium.launch()

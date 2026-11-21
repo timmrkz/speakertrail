@@ -187,6 +187,9 @@ messages, pull request text, code comments and chat replies.
   `--pick-max`. Never a width kept for other words or guessed in `em`
   (Tim, testing #46 on 21 November 2026).
 - **Controls in one row have the same size.** No one-off sizes.
+- **Two gaps between controls.** `--gap-control` between two controls,
+  `--gap-inset` between items on one ground, like the segments of a
+  choice and the pages in the sidebar (Tim, 21 November 2026, #63).
 - **What cannot be taken back asks first.** Everything else saves at once
   and is undone with a click. No save buttons, except a form that adds
   something new.

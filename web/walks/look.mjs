@@ -514,13 +514,19 @@ walks.push({
       const shown = (e) => e.checkVisibility({ visibilityProperty: true }) && getComputedStyle(e).position !== 'absolute'
       const name = (e) => (e.getAttribute('aria-label') || e.textContent || e.getAttribute('placeholder') || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 30)
       const wrong = []
-      for (const box of document.querySelectorAll('main *, aside *, .report *')) {
+      for (const box of document.querySelectorAll('main *, aside *, .report *, dialog[open] *')) {
         const d = getComputedStyle(box).display
         if (!/flex|grid/.test(d) || !shown(box)) continue
         // Only two controls with nothing between them are neighbours. The
         // words between Clear and Attach in Report take the room there.
         const kids = [...box.children].filter(shown)
-        const ctl = (k) => k.matches(is) || (k.children.length === 1 && k.firstElementChild.matches(is))
+        // A row of controls counts as one too, like the search, the order
+        // and Run over the filter on People, so two rows of controls stand
+        // apart as two controls do. The sidebar's parts are measured below.
+        const one = (k) => k.matches(is) || (k.children.length === 1 && k.firstElementChild.matches(is))
+        const row = (k) => !k.closest('aside') && /flex|grid/.test(getComputedStyle(k).display)
+          && [...k.children].filter(shown).length > 1 && [...k.children].filter(shown).every(one)
+        const ctl = (k) => one(k) || row(k)
         const want = box.matches('.segmented') || box.closest('aside') ? inset : control
         for (let i = 0; i + 1 < kids.length; i++) {
           if (!ctl(kids[i]) || !ctl(kids[i + 1])) continue
@@ -557,6 +563,18 @@ walks.push({
         // part open.
         if (where === '/app/settings') await page.locator('.variation').first().waitFor()
         for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where}: ${w}`)
+        // What opens on a page has rows of controls too: the exclusions
+        // on Searches, and the question before removing the log.
+        if (where === '/app/searches') {
+          await page.locator('main summary', { hasText: 'Exclusions' }).click()
+          await page.locator('main .exclusions .add').waitFor()
+          for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where} with the exclusions open: ${w}`)
+        }
+        if (where === '/app/settings') {
+          await page.locator('main button[aria-label="Remove the app\'s log"]').click()
+          await page.locator('dialog[open]').waitFor()
+          for (const w of await page.evaluate(gaps)) wrong.push(`at ${size.width} px on ${where} asking before removing: ${w}`)
+        }
       }
     }
     return wrong.join('\n\t')

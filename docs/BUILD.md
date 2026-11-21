@@ -36,6 +36,12 @@ Settings. It goes into the macOS keychain, as **Speaker Trail: Exa API
 key**, and never into a file. `EXA_API_KEY` in the environment stands in
 while no key is saved.
 
+Each new build asks for the keychain password once, the first time it
+reads the key. Always Allow keeps that build from asking again. Keychain
+Access shows the item as open to all applications, because the list of
+trusted apps would ask a second time. Another program is still asked, by
+the item's partition list, which holds only the builds you allowed.
+
 ## Where things are kept
 
 | What | Where |

@@ -11,7 +11,7 @@
 # Nothing here signs with a Developer ID. The ad hoc signature is enough to
 # run on the Mac that built it. A build Tim updates to is signed again by
 # publish.yml, with his Developer ID and the hardened runtime, see
-# scripts/sign-macos.sh. Not here, because under the hardened runtime an
+# cmd/speakertrail-release/devid.go. Not here, because under the hardened runtime an
 # app signed ad hoc may load no library but Apple's, and Dictate's speech
 # library is not Apple's. Xcode's Sign to Run Locally leaves it off too.
 set -e

@@ -175,7 +175,8 @@ build made with the old one trusts only the old one.
 ## The Developer ID
 
 Every build Tim updates to is signed with his Developer ID and Apple's
-hardened runtime, by `scripts/sign-macos.sh` in `publish.yml`. The
+hardened runtime, by `speakertrail-release harden` in `publish.yml`,
+see `cmd/speakertrail-release/devid.go`. The
 hardened runtime keeps other programs from putting their own code into
 the app: macOS ignores the `DYLD_` settings it is started with, refuses
 debuggers, and loads only libraries signed by Apple or by the same
@@ -210,9 +211,9 @@ fails the run on main and on the commit, never quietly. To set it up once:
    **My Certificates**, with the private key made in step 2 under it.
    Keychain Access may call it not trusted, since a Mac without Xcode
    lacks Apple's certificate between it and Apple's root. That changes
-   nothing here, because `sign-macos.sh` fetches that one from Apple. Make it for Speaker Trail alone, and FrameFairy
-   its own later, so either can be revoked without the other. Apple
-   allows five.
+   nothing here, because `harden` fetches that one from Apple. Make it
+   for Speaker Trail alone, and FrameFairy its own later, so either can
+   be revoked without the other. Apple allows five.
 4. In Keychain Access, right-click the certificate, **Export**, and save
    it as `developer-id.p12` on the Desktop with a new password. The file
    holds the private key too, which Apple cannot give out again, so it is

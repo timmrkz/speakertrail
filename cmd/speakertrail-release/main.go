@@ -16,12 +16,17 @@
 //	    file that changed against the builds an app may run, read from the
 //	    release, and the zip packed with zstd, see pack.go, patches.go and
 //	    release.go
+//	speakertrail-release harden -zip F [-team-file F] | -app A -p12 F
+//	    sign the app again with Tim's Developer ID and the hardened
+//	    runtime, on a Mac, see devid.go
 //	speakertrail-release sign -zip F -channel C -name N -version V -commit X -url U -out F [-parts F]
 //	    sign a build with the private half, read from SPEAKERTRAIL_UPDATE_KEY,
 //	    and write its entry for the channel list, unless the build could
 //	    read input meant for other apps, watch the screen or the camera,
 //	    or ask for administrator rights, see inputs.go. With the parts
-//	    pack wrote, it signs the stored zip beside them too.
+//	    pack wrote, it signs the stored zip beside them too. With -team,
+//	    it refuses a build not signed by that team with the hardened
+//	    runtime, see hardened.go.
 //	speakertrail-release list -out F [-newest CHANNEL=COMMIT]... [-conflict CHANNEL]... ENTRY...
 //	    write the channel list from the entries of every channel, with the
 //	    newest commit of each channel that has one still to be built, and
@@ -74,6 +79,8 @@ func main() {
 		err = check(os.Args[2:])
 	case "sign":
 		err = sign(os.Args[2:])
+	case "harden":
+		err = harden(os.Args[2:])
 	case "list":
 		err = list(os.Args[2:])
 	case "unreachable":
@@ -88,7 +95,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | harden -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE")
 	os.Exit(2)
 }
 

@@ -124,15 +124,13 @@ jobs:
         run: make app
       # What publish.yml does to every build before Tim gets it: signed
       # again with the hardened runtime and the microphone, by the same
-      # script, scripts/sign-macos.sh. Here with a certificate made for the
+      # code, speakertrail-release harden. Here with a certificate made for the
       # test, since the Developer ID is a secret only main's publish.yml
       # reads. It proves the signing, and that the release tool reads
       # what codesign wrote, not that the app opens: under the hardened
       # runtime a certificate that is not Apple's has no team, and macOS
       # would load no library of its own.
       - name: Sign it the way publish.yml does
-        env:
-          TIMESTAMP: none
         run: |
           dir="$RUNNER_TEMP/signing"
           mkdir -p "$dir"
@@ -143,10 +141,11 @@ jobs:
             > "$dir/test.cnf"
           /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 1 -config "$dir/test.cnf" \
             -keyout "$dir/test.key" -out "$dir/test.crt"
-          export SIGN_PASSWORD=$(/usr/bin/openssl rand -hex 16)
+          export SPEAKERTRAIL_DEVELOPER_ID_PASSWORD=$(/usr/bin/openssl rand -hex 16)
           /usr/bin/openssl pkcs12 -export -inkey "$dir/test.key" -in "$dir/test.crt" \
-            -out "$dir/test.p12" -passout "pass:$SIGN_PASSWORD"
-          sh scripts/sign-macos.sh "$dir/Speaker Trail.app" "$dir/test.p12" "Speaker Trail Test Signing"
+            -out "$dir/test.p12" -passout "pass:$SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"
+          go run ./cmd/speakertrail-release harden -app "$dir/Speaker Trail.app" -p12 "$dir/test.p12" \
+            -identity "Speaker Trail Test Signing" -timestamp=false
       - name: The release tool reads what codesign wrote
         run: >-
           SIGNED_APP="$RUNNER_TEMP/signing/Speaker Trail.app"

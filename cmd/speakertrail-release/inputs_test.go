@@ -649,7 +649,7 @@ func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
 	}
 }
 
-// What sign-macos.sh signs the app as entitled to is only what the lists
+// What harden signs the app as entitled to is only what the lists
 // allow, so a pull request that adds an entitlement fails here, before its
 // build is refused.
 //

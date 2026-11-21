@@ -1,7 +1,7 @@
 package main
 
 // A build Tim updates to is signed with his Developer ID and the hardened
-// runtime, see scripts/sign-macos.sh and docs/UPDATES.md. Once
+// runtime, see devid.go and docs/UPDATES.md. Once
 // build/team-id.txt names his team, publish.yml tells sign -team, and sign
 // refuses a build that lost it on the way: a program signed ad hoc,
 // without the hardened runtime, or by another team. Under the hardened
@@ -110,7 +110,7 @@ func checkHardened(zipPath, team string) error {
 		found = append(found, "it holds no program")
 	}
 	if found = tidy(found); len(found) > 0 {
-		return fmt.Errorf("the build is not signed with the Developer ID of team %s and the hardened runtime, so it is not signed for updates. See scripts/sign-macos.sh:\n  %s", team, strings.Join(found, "\n  "))
+		return fmt.Errorf("the build is not signed with the Developer ID of team %s and the hardened runtime, so it is not signed for updates. See devid.go:\n  %s", team, strings.Join(found, "\n  "))
 	}
 	return nil
 }

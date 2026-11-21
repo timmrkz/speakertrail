@@ -9,7 +9,7 @@ import (
 
 // The code directory and the entitlements are read the way codesign
 // really writes them, not only the way these tests write them. CI's macos
-// job signs the app with scripts/sign-macos.sh and a certificate made for
+// job signs the app with harden and a certificate made for
 // the test, then names that bundle SIGNED_APP and the one make signed ad
 // hoc ADHOC_APP. Anywhere else there is no codesign, and this is skipped.
 //
@@ -57,11 +57,11 @@ func TestARealSignatureIsReadAsCodesignWroteIt(t *testing.T) {
 	for _, file := range programs(t, signedApp) {
 		s, _ := read(t, file)
 		if !s.signed || s.flags&flagRuntime == 0 || s.flags&flagAdhoc != 0 {
-			t.Errorf("%s signed by sign-macos.sh reads as signed %v with flags %#x", file, s.signed, s.flags)
+			t.Errorf("%s signed by harden reads as signed %v with flags %#x", file, s.signed, s.flags)
 		}
 	}
 	if _, keys := read(t, programs(t, signedApp)[0]); !slices.Contains(keys, "com.apple.security.device.audio-input") {
-		t.Errorf("the app signed by sign-macos.sh reads as entitled to %q", keys)
+		t.Errorf("the app signed by harden reads as entitled to %q", keys)
 	}
 	for _, file := range programs(t, adhocApp) {
 		s, _ := read(t, file)

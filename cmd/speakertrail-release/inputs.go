@@ -139,7 +139,7 @@ var asks = []string{"NSMicrophoneUsageDescription"}
 // Apple events, or what lets other code into the app, library validation
 // turned off, the dyld environment or get-task-allow. The microphone is
 // one because publish.yml signs every build with the hardened runtime,
-// see scripts/sign-macos.sh, and under it macOS hands an app that opens
+// see devid.go, and under it macOS hands an app that opens
 // the microphone without it nothing but silence. It grants nothing:
 // macOS still asks the person, in the words of
 // NSMicrophoneUsageDescription. The list is FrameFairy's.

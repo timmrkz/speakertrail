@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
 What the app is signed as entitled to, under the hardened runtime, by
-scripts/sign-macos.sh. Only the microphone, for Dictate on Report a
+speakertrail-release harden. Only the microphone, for Dictate on Report a
 Problem: under the hardened runtime macOS hands an app that opens the
 microphone without it nothing but silence. It grants nothing, macOS still
 asks. cmd/speakertrail-release refuses a build entitled to anything else.

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// devid is a program signed the way scripts/sign-macos.sh signs it: with
+// devid is a program signed the way harden signs it: with
 // a Developer ID of the team given, and the hardened runtime.
 func devid(p program, team string) program {
 	p.signed, p.flags, p.team = true, flagRuntime, team

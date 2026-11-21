@@ -187,15 +187,16 @@
         {/if}
       {/snippet}
       <div class="item status" class:told={!!detail} aria-live="polite">
-        <!-- A dot is work, running or waiting to be picked up. Something
-             that needs a look is the triangle. Work on a pull request in
-             conflict keeps its dot, in the colour of a warning. -->
+        <!-- A dot is work, running or waiting to be picked up, and grey
+             while nothing happens. Something that needs a look is the
+             triangle. Work on a pull request in conflict keeps its dot, in
+             the colour of a warning. -->
         <span class="mark {standing.mark}" aria-hidden="true">
           {#if standing.mark === 'ok'}
             <Icon name="check" />
           {:else if standing.mark === 'warn' || standing.mark === 'err'}
             <Icon name="alert" />
-          {:else if standing.mark !== 'off' && standing.mark !== 'idle'}
+          {:else}
             <span class="dot" class:busy={standing.mark === 'look'} class:ready={standing.mark === 'new'}
               class:warn={conflicted && (standing.mark === 'look' || standing.mark === 'new')}></span>
           {/if}
@@ -269,11 +270,11 @@
      button that copies them at its end. */
   .detail {
     display: flex; align-items: center; flex: 1; height: var(--control-h); min-width: 0; box-sizing: border-box;
-    border: var(--line-w) solid var(--line); border-radius: var(--radius-m); background: var(--surface-2);
+    border: var(--line-w) solid var(--line-strong); border-radius: var(--radius-m); background: var(--surface);
   }
   .detail code {
     flex: 1; min-width: 0; overflow-x: auto; white-space: pre; padding: 0 12px; user-select: text;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; line-height: calc(var(--control-h) - 2px); color: var(--ink-2);
+    font-family: var(--mono); font-size: 12px; line-height: calc(var(--control-h) - 2px); color: var(--ink-2);
     /* No scroll bar: WebKit draws one inside the line and pushes the words
        up. It scrolls with the trackpad, and Copy takes the whole of it. */
     scrollbar-width: none;

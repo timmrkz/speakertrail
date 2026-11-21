@@ -57,6 +57,9 @@ type channelServer struct {
 	newest map[string]string
 	// conflict is a pull request the list says no longer merges into main.
 	conflict map[string]bool
+	// merged and closed are the pull requests the list says are not open
+	// any more.
+	merged, closed []string
 	// status is what the list answers with instead of itself, when set.
 	status int
 	// client is what the app reaches the server with, when it is not the
@@ -127,6 +130,7 @@ func (cs *channelServer) publish(t *testing.T, builds ...[3]string) {
 		entry.Claim = updates.SignClaim(cs.key, entry)
 		l.Channels = append(l.Channels, entry)
 	}
+	l.Merged, l.Closed = cs.merged, cs.closed
 	data, _ := json.Marshal(l)
 	cs.mu.Lock()
 	cs.list = data
@@ -337,21 +341,42 @@ func TestPickingAChannelFetchesItsBuild(t *testing.T) {
 // it downloads nothing: not main, not anything, until another channel is
 // picked. Tim followed pull request 25, it was merged, and the app went on
 // to download main by itself.
+//
+// It says it was merged, as the list has it. Tim followed PR #46 after it
+// was merged and the page called it closed.
 func TestAMergedPullRequestDownloadsNothing(t *testing.T) {
 	cs := newChannelServer(t)
+	cs.merged = []string{"pr-18"}
 	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
 	c, _ := newTestUpdating(t, cs, false)
 	cleanStaged(t, c)
 	_ = c.Follow("pr-18")
 	s := waitFor(t, c, "gone", func(s UpdateState) bool { return s.Phase == "gone" })
-	if s.Gone != "pr-18" || s.Follows != "" || s.Next != "" || c.staged() != "" {
+	if s.Gone != "pr-18" || s.Ended != "merged" || s.Follows != "" || s.Next != "" || c.staged() != "" {
 		t.Errorf("%+v, staged %q", s, c.staged())
 	}
 	// Picking main is how it goes on.
 	_ = c.Follow("main")
 	s = waitFor(t, c, "ready with main", func(s UpdateState) bool { return s.Phase == "ready" })
-	if s.Follows != "main" || s.Gone != "" || s.Next != "0.3.0-main.5" {
+	if s.Follows != "main" || s.Gone != "" || s.Ended != "" || s.Next != "0.3.0-main.5" {
 		t.Errorf("%+v", s)
+	}
+}
+
+// A pull request closed without a merge is said to be closed, and one the
+// list says nothing about has only ended.
+func TestAClosedPullRequestIsSaidToBeClosed(t *testing.T) {
+	cs := newChannelServer(t)
+	cs.closed = []string{"pr-12"}
+	cs.publish(t, [3]string{"main", "0.3.0-main.5", "main"})
+	c, _ := newTestUpdating(t, cs, false)
+	cleanStaged(t, c)
+	for channel, want := range map[string]string{"pr-12": "closed", "pr-7": ""} {
+		_ = c.Follow(channel)
+		s := waitFor(t, c, channel+" gone", func(s UpdateState) bool { return s.Phase == "gone" && s.Gone == channel })
+		if s.Ended != want || c.staged() != "" {
+			t.Errorf("%s ended %q, want %q, staged %q", channel, s.Ended, want, c.staged())
+		}
 	}
 }
 

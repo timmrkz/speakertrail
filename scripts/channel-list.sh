@@ -92,12 +92,23 @@ if [ -e "$entries/channel-main.json" ] &&
 	esac
 fi
 
+# The newest pull requests that are not open any more, merged and closed,
+# so the app can say which became of the one it followed. gh lists merged
+# ones under closed as well, and the release tool sorts them by the state
+# GitHub gives each. One that cannot be read leaves the list as it was
+# before, saying only that the pull request has ended.
+ended=$(mktemp -d)
+trap 'rm -rf "$entries" "$ended"' EXIT
+gh pr list --state merged --limit 100 --json number,state > "$ended/merged.json" || true
+gh pr list --state closed --limit 100 --json number,state > "$ended/closed.json" || true
+
 set -- "$entries"/*.json
 [ -e "$1" ] || set --
 # $newest and $conflict are words the loop above made, of a flag and a
 # channel, so they are split on purpose.
 # shellcheck disable=SC2086
-go run ./cmd/speakertrail-release list -out channels.json $newest $conflict "$@"
+go run ./cmd/speakertrail-release list -out channels.json $newest $conflict \
+	-ended "$ended/merged.json" -ended "$ended/closed.json" "$@"
 cat channels.json
 
 # The new list goes up under a name of its own and is then renamed into

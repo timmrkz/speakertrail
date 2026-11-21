@@ -83,6 +83,9 @@ type UpdateState struct {
 	// nothing else is either until another channel is picked. Whenever it
 	// is set, Phase is gone, see settle.
 	Gone string `json:"gone"`
+	// Ended is what became of the pull request in Gone, as the list says:
+	// merged, closed, or empty when the list does not say.
+	Ended string `json:"ended"`
 	// Building is the newest commit of the channel followed when its build
 	// has not come yet, so the page does not offer the build there is as
 	// the newest. Empty when the build is the newest.
@@ -408,12 +411,13 @@ func (c *updating) seen(l updates.List) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.state.Channels = chans
-	c.state.Follows, c.state.Gone, c.state.Building = "", "", ""
+	c.state.Follows, c.state.Gone, c.state.Ended, c.state.Building = "", "", "", ""
 	if b, ok := l.Follow(c.state.Picked, c.own); ok {
 		c.state.Follows = b.Channel
 		c.state.Building = b.Newest
 	} else {
 		c.state.Gone = updates.Followed(c.state.Picked, c.own)
+		c.state.Ended = l.Ended(c.state.Gone)
 	}
 	c.state.settle()
 	c.changed.WakeLocked()
@@ -535,7 +539,7 @@ func (c *updating) Follow(channel string) error {
 		s.Picked = channel
 		s.Phase, s.Problem, s.Detail = "checking", "", ""
 		s.Next, s.NextName, s.NextCommit, s.Written, s.Total = "", "", "", 0, 0
-		s.Follows, s.Gone = "", ""
+		s.Follows, s.Gone, s.Ended = "", "", ""
 		for _, ch := range s.Channels {
 			if ch.ID == updates.Followed(channel, c.own) {
 				s.Follows = ch.ID

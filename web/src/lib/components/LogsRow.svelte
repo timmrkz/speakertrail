@@ -131,7 +131,6 @@
      the way every button is while a report is being written. */
   .logged .report { opacity: 0; }
   .logged:hover .report, .logged .report:focus-visible { opacity: 1; }
-  .logged:hover .report:disabled { opacity: .55; }
   .mark { color: var(--bad); padding-top: 2px; }
   .text { font-size: 14px; overflow-wrap: anywhere; user-select: text; }
 </style>

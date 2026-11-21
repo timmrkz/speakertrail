@@ -109,7 +109,8 @@
     width: 28px; height: 28px; border-radius: 50%; border: 0; background: none; color: var(--ink-3); cursor: pointer;
     display: inline-grid; place-items: center; flex: none;
   }
-  .remove:hover { background: var(--surface-2); color: var(--ink); }
+  .remove:hover { background: var(--hover); color: var(--ink); }
+  .remove:active { background: var(--press); }
   .add { display: flex; gap: 8px; }
   .add .input { flex: 1; min-width: 0; }
   .add .btn { flex: none; min-width: 6.4em; justify-content: center; }

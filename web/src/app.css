@@ -1,19 +1,20 @@
-/* Speaker Trail. One set of tokens and components for every screen. */
+/* Speaker Trail. One set of tokens and components for every screen.
+
+   The look is flat, Tim asked on 21 November 2026, issue #45: solid
+   colours, no shadows, no frosted glass, no bright edge on what is
+   chosen. Depth is said by colour and a line, never by a shadow. Every
+   control takes its states from the same few tokens below, so a hover,
+   a press, a choice and a control that cannot be pressed look the same
+   wherever they are. */
 
 :root {
   color-scheme: light;
-  /* Morning Mist: fog over a cool morning, frosted panes over it. */
+  /* Morning Mist: a cool morning, in solid colours. */
   --bg: #e9eef2;
+  /* The sidebar and the title bar, a shade lighter than the page. */
+  --side: #f1f4f6;
   --surface: #f7f9fa;
   --surface-2: #e6ecf0;
-  /* A pane over the mist is frosted glass: it lets the mist through,
-     blurred, and has a bright edge on top. */
-  --glass: rgba(255, 255, 255, .55);
-  --glass-hi: rgba(255, 255, 255, .9);
-  --frost: blur(24px) saturate(140%);
-  --mist: radial-gradient(50% 55% at 12% 78%, #CFDDE6, transparent 70%),
-    radial-gradient(45% 50% at 62% 4%, #DCE6EC, transparent 70%),
-    radial-gradient(45% 50% at 90% 92%, #C9D9DF, transparent 70%);
   --ink: #1e2a33;
   --ink-2: #4a5864;
   --ink-3: #56636f;
@@ -31,8 +32,6 @@
   --series-1: #326674;
   --series-2: #d9824a;
   --scrim: rgba(20, 32, 42, .35);
-  --shadow: 0 1px 2px rgba(30, 42, 51, .05), 0 10px 30px rgba(52, 72, 90, .1);
-  --shadow-lg: 0 8px 40px rgba(30, 42, 51, .18);
   --radius: 10px;
   /* FrameFairy's, for the one layer that came over from it, the question
      Cmd+Q asks, see App.svelte, with FrameFairy's names and values. Its
@@ -48,7 +47,6 @@
      two rows of a list. The beam of work in hand runs on it, see Busy, so
      the two are the one number. */
   --line-w: 1px;
-  --seg-on: rgba(255, 255, 255, .95);
   --gutter: 32px;
   /* The window's grid. Every pane starts with a bar --bar-h tall. The
      title bar starts at it too, and on macOS takes the height macOS lays
@@ -73,12 +71,35 @@
      the parts of one section, like a heading and its list. */
   --gap-page: 24px;
   --gap-group: 12px;
-  /* What is chosen, a filter, a page in the sidebar, the person open,
-     lies on what it sits on like a piece of glass: the bright edge on top
-     that every pane has, and a soft shadow under it. No blur, since what
-     lies under it is a plain fill or a pane that blurs already. */
-  --chosen: inset 0 1px var(--glass-hi), 0 1px 3px rgba(20, 27, 38, .12);
-  --side: rgba(255, 255, 255, .45);
+
+  /* The states of every control, mixed from the theme's own colours so
+     the one rule holds in light and in dark.
+     Under the pointer a control darkens by a little of the ink, pressed
+     by a little more. A control with no ground of its own, a row, a page
+     in the sidebar, a quiet button, takes the mix as its ground. One on
+     --surface takes the same mix laid on it, so the two look alike side
+     by side. */
+  --hover: color-mix(in srgb, var(--ink) 6%, transparent);
+  --press: color-mix(in srgb, var(--ink) 11%, transparent);
+  --surface-hover: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  --surface-press: color-mix(in srgb, var(--ink) 11%, var(--surface));
+  /* What is chosen, a page in the sidebar, a filter, the person open,
+     a chip pressed, is one flat tint of the accent with its words in the
+     accent. Under the pointer the tint deepens. */
+  --chosen: color-mix(in srgb, var(--accent) 15%, transparent);
+  --chosen-hover: color-mix(in srgb, var(--accent) 22%, transparent);
+  --chosen-ink: var(--accent);
+  /* The accent under the pointer and pressed moves toward the ink: darker
+     in light, lighter in dark, so it reads as a change in both. */
+  --accent-hover: color-mix(in srgb, var(--accent) 86%, var(--ink));
+  --accent-press: color-mix(in srgb, var(--accent) 74%, var(--ink));
+  /* A control that cannot be pressed is grey, flat, and its words are
+     still readable. */
+  --disabled: var(--surface-2);
+  --disabled-ink: var(--ink-3);
+  /* The ground a progress fill runs on, dark enough that the fill and
+     what is still to do are told apart at a glance. */
+  --track: color-mix(in srgb, var(--ink) 12%, var(--surface));
   /* The lights work is drawn in, all mixed from the one accent: a lighter
      shade, the brightest point at the head of a fill or the beam, and the
      two ends of the wash a fill lays over what is done. */
@@ -92,18 +113,11 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    /* Dusk Fog: night fog in deep blue, smoked glass, a warm amber for what
-       matters. */
+    /* Dusk Fog: deep night blue, a warm amber for what matters. */
     --bg: #12141f;
+    --side: #171a28;
     --surface: #1c2030;
     --surface-2: #252a3d;
-    --glass: rgba(30, 34, 52, .6);
-    --glass-hi: rgba(255, 255, 255, .07);
-    --frost: blur(28px) saturate(130%);
-    --mist: radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
-      radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
-      radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
-      radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
     --ink: #eef0f6;
     --ink-2: #b4b9cc;
     --ink-3: #8c92a8;
@@ -121,26 +135,15 @@
     --series-1: #f0a868;
     --series-2: #7fa8f0;
     --scrim: rgba(0, 0, 0, .55);
-    --seg-on: rgba(255, 255, 255, .12);
-    --side: rgba(22, 25, 38, .7);
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 36px rgba(0, 0, 0, .35);
-    --shadow-lg: 0 8px 40px rgba(0, 0, 0, .55);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  /* Dusk Fog: night fog in deep blue, smoked glass, a warm amber for what
-     matters. */
+  /* Dusk Fog: deep night blue, a warm amber for what matters. */
   --bg: #12141f;
+  --side: #171a28;
   --surface: #1c2030;
   --surface-2: #252a3d;
-  --glass: rgba(30, 34, 52, .6);
-  --glass-hi: rgba(255, 255, 255, .07);
-  --frost: blur(28px) saturate(130%);
-  --mist: radial-gradient(55% 60% at 10% 85%, rgba(40,56,110,.55), transparent 70%),
-    radial-gradient(50% 50% at 55% 0%, rgba(52,40,96,.5), transparent 70%),
-    radial-gradient(45% 55% at 92% 90%, rgba(28,62,84,.55), transparent 70%),
-    radial-gradient(25% 30% at 95% 12%, rgba(240,168,104,.07), transparent 70%);
   --ink: #eef0f6;
   --ink-2: #b4b9cc;
   --ink-3: #8c92a8;
@@ -158,10 +161,6 @@
   --series-1: #f0a868;
   --series-2: #7fa8f0;
   --scrim: rgba(0, 0, 0, .55);
-  --seg-on: rgba(255, 255, 255, .12);
-  --side: rgba(22, 25, 38, .7);
-  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 12px 36px rgba(0, 0, 0, .35);
-  --shadow-lg: 0 8px 40px rgba(0, 0, 0, .55);
 }
 
 * { box-sizing: border-box; }
@@ -191,8 +190,8 @@ button { -webkit-tap-highlight-color: transparent; }
    over its own colour. The wash alone was too faint to find, Tim said
    testing #24 on 17 November 2026.
    The edge is an outline 2 px wide drawn inside the control, over its
-   own border where it has one, so it follows its corners, lays nothing
-   out again and leaves its shadow alone. */
+   own border where it has one, so it follows its corners and lays
+   nothing out again. */
 :focus, :focus-visible { outline: none; }
 :is(button, a, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid var(--accent); outline-offset: -2px;
@@ -204,9 +203,6 @@ button { -webkit-tap-highlight-color: transparent; }
 /* A control that removes something wears its own red, which is about as
    bright as the accent in dark, so its edge turns that red in full. */
 .btn.danger:focus-visible { outline-color: var(--bad); }
-/* A pressed chip is filled with the ink, which the accent hardly stands
-   out from, so its edge is cut in the page's colour like a primary's. */
-.chip[aria-pressed="true"]:focus-visible { outline-color: var(--bg); }
 [hidden] { display: none !important; }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .muted { color: var(--ink-2); }
@@ -233,47 +229,63 @@ button { -webkit-tap-highlight-color: transparent; }
 .stack { display: grid; gap: 10px; min-width: 0; }
 
 /* Panels and lists */
-/* A panel is frosted glass over the mist, with a bright edge on top. */
+/* A panel and a list lie on the page in the solid --surface, set off by
+   their line alone. */
 .panel {
-  background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
-  box-shadow: inset 0 1px var(--glass-hi), var(--shadow);
+  background: var(--surface);
   border: var(--line-w) solid var(--line); border-radius: var(--radius); padding: 18px;
   display: grid; gap: 14px; min-width: 0; align-content: start;
 }
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 960px) { .grid-2 { grid-template-columns: 1fr; } }
-.list { background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); border: var(--line-w) solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.list { background: var(--surface); border: var(--line-w) solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .list > * + * { border-top: var(--line-w) solid var(--line); }
 .row-btn {
   display: grid; width: 100%; padding: 12px 16px; border: 0; background: none; text-align: left; cursor: pointer;
   gap: 12px; align-items: center; color: inherit; font: inherit; text-decoration: none;
 }
-.row-btn:hover { background: var(--surface-2); text-decoration: none; }
+.row-btn:hover { background: var(--hover); text-decoration: none; }
+.row-btn:active { background: var(--press); }
 .row-btn:hover .avatar, .row-btn[aria-current="true"] .avatar { background: var(--surface); }
-.row-btn[aria-current="true"] { background: var(--accent-soft); }
+.row-btn[aria-current="true"] { background: var(--chosen); }
 
-/* Controls. Everything in one row shares --control-h. */
+/* Controls. Everything in one row shares --control-h.
+   A button has four kinds and the same states in each: at rest, under
+   the pointer a shade darker, pressed a shade darker again, and grey
+   when it cannot be pressed. No shadow, no glow, no change of size. */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--control-h); padding: 0 14px;
-  border-radius: 8px; border: var(--line-w) solid var(--line); background: var(--surface); cursor: pointer; color: var(--ink);
+  border-radius: 8px; border: var(--line-w) solid var(--line-strong); background: var(--surface); cursor: pointer; color: var(--ink);
   font-weight: 600; font-size: 14px; white-space: nowrap; text-decoration: none; flex: none;
 }
-.btn:hover { background: var(--surface-2); text-decoration: none; }
-.btn:disabled { opacity: .55; cursor: default; }
-.btn.primary {
-  background: var(--accent); border-color: var(--accent); color: var(--accent-ink);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 28%, transparent);
-}
-.btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
+.btn:hover:enabled, a.btn:hover { background: var(--surface-hover); text-decoration: none; }
+.btn:active:enabled, a.btn:active { background: var(--surface-press); }
+/* The one primary action of a place, in the accent. */
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.primary:hover:enabled, a.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.primary:active:enabled, a.btn.primary:active { background: var(--accent-press); border-color: var(--accent-press); }
+/* A toggle that is on wears the colour of what it says. */
 .btn.good[aria-pressed="true"] { background: var(--good-soft); border-color: var(--good); color: var(--good); }
 .btn.bad[aria-pressed="true"] { background: var(--bad-soft); border-color: var(--bad); color: var(--bad); }
+.btn.good[aria-pressed="true"]:hover:enabled { background: color-mix(in srgb, var(--good) 22%, transparent); }
+.btn.bad[aria-pressed="true"]:hover:enabled { background: color-mix(in srgb, var(--bad) 22%, transparent); }
+/* A quiet button has no ground of its own until the pointer is on it. */
 .btn.quiet { border-color: transparent; background: none; color: var(--ink-2); }
+.btn.quiet:hover:enabled, a.btn.quiet:hover { background: var(--hover); color: var(--ink); }
+.btn.quiet:active:enabled, a.btn.quiet:active { background: var(--press); }
 /* What cannot be taken back, in the colour of something going wrong. */
 .btn.danger { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
-.btn.danger:hover:not(:disabled) { background: var(--bad-soft); }
+.btn.danger:hover:enabled { background: var(--bad-soft); }
+.btn.danger:active:enabled { background: color-mix(in srgb, var(--bad) 24%, transparent); }
 .btn.quiet.danger { border-color: transparent; }
-.btn.quiet:hover { background: var(--surface-2); color: var(--ink); }
+/* A button that cannot be pressed is the same grey in every kind, so it
+   never reads as one that can. One with work running in it is the
+   exception, see the beam below. */
+.btn:disabled:not(:has(> .beam)) {
+  background: var(--disabled); border-color: transparent; color: var(--disabled-ink); cursor: default;
+}
+.btn.quiet:disabled:not(:has(> .beam)) { background: none; }
 .btn.sm { height: 30px; padding: 0 10px; font-size: 13px; }
 .btn.icon { width: var(--control-h); padding: 0; }
 .btn svg { width: 16px; height: 16px; flex: none; }
@@ -289,7 +301,9 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea { padding: 9px 12px; resize: vertical; min-height: 76px; line-height: 1.45; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
+.input:hover:enabled, .textarea:hover:enabled { border-color: color-mix(in srgb, var(--ink) 32%, transparent); }
 .input:focus, .textarea:focus { border-color: var(--accent); }
+.input:disabled, .textarea:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
 .field > label, .field > .field-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
@@ -310,12 +324,14 @@ button { -webkit-tap-highlight-color: transparent; }
 /* Chips and segmented choices */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .chip {
-  height: 32px; padding: 0 12px; border-radius: 999px; border: var(--line-w) solid var(--line); background: var(--surface);
+  height: 32px; padding: 0 12px; border-radius: 999px; border: var(--line-w) solid var(--line-strong); background: var(--surface);
   cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center;
   gap: 6px; white-space: nowrap; flex: none;
 }
-.chip:hover { border-color: var(--line-strong); color: var(--ink); }
-.chip[aria-pressed="true"] { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.chip:hover { background: var(--surface-hover); color: var(--ink); }
+.chip:active { background: var(--surface-press); }
+.chip[aria-pressed="true"] { background: var(--chosen); border-color: transparent; color: var(--chosen-ink); }
+.chip[aria-pressed="true"]:hover { background: var(--chosen-hover); }
 .chip .num { font-size: 12px; opacity: .7; }
 @media (max-width: 760px) {
   .chips.scroll {
@@ -326,16 +342,20 @@ button { -webkit-tap-highlight-color: transparent; }
   .chips.scroll::-webkit-scrollbar { display: none; }
 }
 
+/* A choice of a few, in a field like every other control, the chosen
+   one in the tint every chosen thing wears. */
 .segmented {
   display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; height: var(--control-h); padding: 3px;
-  border-radius: 9px; background: var(--surface-2); border: var(--line-w) solid var(--line); min-width: 0;
+  border-radius: 9px; background: var(--surface); border: var(--line-w) solid var(--line-strong); min-width: 0;
 }
 .segmented button {
   border: 0; background: none; border-radius: 6px; padding: 0 12px; font-size: 13px; font-weight: 600; color: var(--ink-2);
   cursor: pointer; white-space: nowrap;
 }
-.segmented button:hover { color: var(--ink); }
-.segmented button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); box-shadow: var(--chosen); }
+.segmented button:hover { background: var(--hover); color: var(--ink); }
+.segmented button:active { background: var(--press); }
+.segmented button[aria-pressed="true"] { background: var(--chosen); color: var(--chosen-ink); }
+.segmented button[aria-pressed="true"]:hover { background: var(--chosen-hover); }
 
 /* Pills */
 .pill {
@@ -386,8 +406,7 @@ button { -webkit-tap-highlight-color: transparent; }
    for work running out of sight. Taken from Frame Fairy, without its
    magic. With reduced motion nothing moves, the fill still says how far. */
 .progress {
-  position: relative; height: 8px; border-radius: 4px; overflow: hidden;
-  background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line);
+  position: relative; height: 8px; border-radius: 4px; overflow: hidden; background: var(--track);
 }
 .progress > i {
   display: block; position: relative; height: 100%; border-radius: 4px; background: var(--accent);
@@ -397,7 +416,7 @@ button { -webkit-tap-highlight-color: transparent; }
    stands still. */
 .progress > i::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--surface) 45%, transparent), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent-lit) 40%, transparent), transparent);
   animation: sheen 2.2s cubic-bezier(.45, 0, .2, 1) infinite;
 }
 @keyframes sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }

@@ -893,9 +893,7 @@
 
   .card {
     display: grid; gap: var(--gap); padding: var(--gap);
-    background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost);
-    box-shadow: inset 0 1px var(--glass-hi), var(--shadow);
-    border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   }
 
   /* A field of ten whole lines of 19 px, with the padding of a control

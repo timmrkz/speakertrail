@@ -171,7 +171,7 @@
   }
   .switch .knob {
     position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--surface);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, .25); transition: transform .15s;
+    border: 1px solid var(--line-strong); transition: transform .15s;
   }
   .switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent); }
   .switch[aria-checked="true"] .knob { transform: translateX(16px); }

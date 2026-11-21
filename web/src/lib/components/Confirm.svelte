@@ -60,11 +60,10 @@
   dialog {
     width: min(440px, calc(100vw - 32px));
     padding: 18px 20px 16px;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     border-radius: var(--radius);
     background: var(--surface);
     color: var(--ink);
-    box-shadow: var(--shadow-lg);
   }
   dialog::backdrop { background: var(--scrim); }
   h2 { font-size: 15px; font-weight: 600; margin: 0 0 8px; }

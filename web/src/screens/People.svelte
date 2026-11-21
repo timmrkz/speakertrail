@@ -360,7 +360,7 @@
      Closed, it is not there at all. */
   /* Its body scrolls, not the pane, so the edge can reach out over the
      list a little and still be caught. */
-  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--glass); backdrop-filter: var(--frost); -webkit-backdrop-filter: var(--frost); box-shadow: inset 0 1px var(--glass-hi); }
+  .detail-pane { flex: 0 0 var(--detail-w); position: relative; overflow: visible; border-left: 1px solid var(--line); background: var(--surface); }
   .detail-body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
   .detail-top, .detail-body { min-width: var(--pane-w, 0); }
   .dragging, .dragging * { cursor: col-resize !important; user-select: none; }
@@ -381,7 +381,7 @@
     background: var(--accent); color: var(--accent-ink); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums;
   }
   /* People reads like Searches and Settings: the same centred column,
-     the controls over a list of frosted rows, each a name over one line
+     the controls over a list of rows, each a name over one line
      of what is known. The column is the same with a person open or not,
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
@@ -404,13 +404,16 @@
     display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;
     background: var(--surface-2); border: 0; border-radius: var(--radius);
   }
-  .run-now:hover { background: color-mix(in srgb, var(--ink) 8%, var(--surface-2)); }
+  .run-now:hover { background: color-mix(in srgb, var(--ink) 6%, var(--surface-2)); }
+  .run-now:active { background: color-mix(in srgb, var(--ink) 11%, var(--surface-2)); }
   .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
-  .prow:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); text-decoration: none; }
-  .prow[aria-current="true"] { background: var(--accent-soft); box-shadow: var(--chosen); }
+  .prow:hover { background: var(--hover); text-decoration: none; }
+  .prow:active { background: var(--press); }
+  .prow[aria-current="true"] { background: var(--chosen); }
+  .prow[aria-current="true"]:hover { background: var(--chosen-hover); }
   /* The person open is marked already, the keyboard on it adds nothing. */
   .prow[aria-current="true"]:focus-visible { background-image: none; outline: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }

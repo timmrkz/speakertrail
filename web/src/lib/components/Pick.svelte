@@ -230,8 +230,9 @@
     border: var(--line-w) solid var(--line-strong); border-radius: 8px; background: var(--surface);
     color: var(--ink); text-align: left; cursor: pointer;
   }
-  .pick:hover:not(:disabled) { background: var(--surface-2); }
-  .pick:disabled { opacity: .55; cursor: default; }
+  .pick:hover:not(:disabled) { background: var(--surface-hover); }
+  .pick:active:not(:disabled) { background: var(--surface-press); }
+  .pick:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; cursor: default; }
   .pick.warn { border-color: var(--warn); }
   .pick.err { border-color: var(--bad); }
 
@@ -264,7 +265,7 @@
     max-width: calc(var(--bits-floating-available-width, 100vw) - 8px);
     max-height: 320px; overflow-y: auto;
     background: var(--surface); border: var(--line-w) solid var(--line-strong); border-radius: 8px;
-    box-shadow: var(--shadow-lg); color: var(--ink); font-size: 14px;
+    color: var(--ink); font-size: 14px;
     /* Over the rail and an open sheet, under a toast and an info bubble.
        bits-ui lifts its wrapper to the list's own z-index. */
     position: relative; z-index: 50;
@@ -278,7 +279,7 @@
 
   /* The row under the pointer and the row the keyboard is on are one
      thing, so bits-ui marks both the same. */
-  .pick-row[data-highlighted] { background: var(--surface-2); }
+  .pick-row[data-highlighted] { background: var(--hover); }
 
   /* What is chosen is in the accent. */
   .pick-row[data-chosen] { color: var(--accent); }

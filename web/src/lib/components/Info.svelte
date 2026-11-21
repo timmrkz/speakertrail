@@ -117,8 +117,8 @@
      The gap between the mark and the bubble belongs to the bubble, so
      moving the pointer into it does not lose the hover. */
   .bubble {
-    position: fixed; z-index: 200; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius); box-shadow: var(--shadow-lg); color: var(--ink); font-size: 13px; line-height: 1.5;
+    position: fixed; z-index: 200; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line-strong);
+    border-radius: var(--radius); color: var(--ink); font-size: 13px; line-height: 1.5;
     text-align: left; white-space: normal; cursor: text; user-select: text; visibility: hidden;
   }
   .bubble.scroll { max-height: calc(100vh - 16px); overflow: auto; }

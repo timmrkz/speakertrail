@@ -241,19 +241,21 @@
     setShare(to)
   }
 
-  // Everyone found, open or connected, for an empty filter to point to.
-  let others = $derived(counts ? counts.all + counts.connected : 0)
-
   // What an empty list says: why nobody is here, and whom the other
-  // filters hold.
+  // filters hold. Under All and Under 30 that may be someone connected,
+  // whom a search by name finds only under Connected.
+  const PRESS_RUN = 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'
   let empty = $derived.by(() => {
-    const found = `${plural(others, 'person', 'people')} found so far`
-    if (query && !others) return { title: 'Nobody here yet', text: 'Nobody matches this search.' }
-    if (others && filter === 'connected') return { title: 'Nobody connected yet', text: `${found}, none of them connected yet.` }
-    if (others && filter === 'young') return { title: 'Nobody under 30 yet', text: `${found}, none of them likely under 30 and still open.` }
-    if (others) return { title: 'Everyone is connected', text: `${found}, all of them connected. Press Run to find more.` }
-    const title = { all: 'Nobody here yet', young: 'Nobody under 30 yet', connected: 'Nobody connected yet' }[filter as string] ?? 'Nobody here yet'
-    return { title, text: 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.' }
+    const open = counts?.all ?? 0
+    const connected = counts?.connected ?? 0
+    const found = query ? 'match this search' : 'found so far'
+    if (filter === 'connected') {
+      return { title: 'Nobody connected yet', text: open ? `${plural(open, 'person', 'people')} ${found}, none of them connected yet.` : query ? 'Nobody matches this search.' : PRESS_RUN }
+    }
+    if (open) return { title: 'Nobody under 30 yet', text: `${plural(open, 'person', 'people')} ${found}, none of them likely under 30.` }
+    if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${connected === 1 ? 'matches' : 'match'} this search.`, connected: true }
+    if (connected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, connected: true }
+    return { title: filter === 'young' ? 'Nobody under 30 yet' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
   })
 
   // Keep the list in step with changes made in the sheet.
@@ -322,7 +324,9 @@
           icon="people"
           title={empty.title}
           text={empty.text}>
-          {#if query || filter !== 'all'}
+          {#if empty.connected}
+            <button class="btn" type="button" onclick={() => (filter = 'connected')}>Show under Connected</button>
+          {:else if query || filter !== 'all'}
             <button class="btn" type="button" onclick={() => ((q = ''), (query = ''), (filter = 'all'))}>Show everyone</button>
           {/if}
         </EmptyState>

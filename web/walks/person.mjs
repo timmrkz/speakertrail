@@ -133,6 +133,26 @@ const walks = [
     },
   },
   {
+    // Someone connected is only under Connected, so a search for their
+    // name under All finds nobody there. The empty list says where they
+    // are and leads there with the search kept.
+    name: 'Searching All for someone connected leads to them under Connected',
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      await page.locator('main .filters button', { hasText: 'Connected' }).click()
+      const name = await page.locator('.prow b').first().innerText()
+      await page.locator('main .filters button', { hasText: 'All' }).click()
+      await page.getByRole('searchbox', { name: 'Search people' }).or(page.getByLabel('Search people')).first().fill(name)
+      const empty = page.locator('.rows-wrap', { hasText: 'Only under Connected' })
+      await empty.waitFor()
+      await empty.getByRole('button', { name: 'Show under Connected' }).click()
+      await page.locator('.prow', { hasText: name }).waitFor()
+      const pressed = await page.locator('main .filters button[aria-pressed="true"]').innerText()
+      if (!pressed.startsWith('Connected')) return `the filter shown is ${pressed}`
+      return ''
+    },
+  },
+  {
     // Tim, 21 November 2026: people he connected with stayed in All and
     // Under 30, so he scrolled past them to find someone open. Connected,
     // a person leaves both for Connected, the counts follow, the person

@@ -271,7 +271,9 @@ Language model. The models live in the same folder.
 
 A model FrameFairy has whole in `~/.framefairy/models`, by its size and
 checksum, is linked from there rather than downloaded, so the two apps
-share it on disk. While it is checked, `progress.text` is `copying`.
+share it on disk. While it is checked, `progress.text` is `copying`, with
+the share read so far and the seconds left as a download has them, and
+Cancel stops it. Such a model is `shared` from then on.
 
 `needs` is the memory the model takes while it writes, in bytes, and
 `fit` what this Mac can do with it: `fits`, `tight`, `too big` or

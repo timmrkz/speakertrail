@@ -18,6 +18,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/fetch"
 )
 
 // The test program is the stand-in llama-server too: started with
@@ -424,8 +426,8 @@ func TestInstallTakesFrameFairysCopy(t *testing.T) {
 	if err := (Installer{Elsewhere: []string{theirs}}).Install(t.Context(), m, dir); err != nil {
 		t.Fatal(err)
 	}
-	if asked != 0 || !m.Installed(dir) || Check(m, dir) != nil {
-		t.Errorf("%d downloads, installed %v", asked, m.Installed(dir))
+	if asked != 0 || !m.Installed(dir) || Check(m, dir) != nil || !m.Shared(dir) {
+		t.Errorf("%d downloads, installed %v, shared %v", asked, m.Installed(dir), m.Shared(dir))
 	}
 	if err := Remove(m, dir); err != nil {
 		t.Fatal(err)
@@ -437,5 +439,50 @@ func TestInstallTakesFrameFairysCopy(t *testing.T) {
 	os.WriteFile(filepath.Join(theirs, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644)
 	if err := (Installer{Elsewhere: []string{theirs}}).Install(t.Context(), m, dir); err != nil || asked != 1 || Check(m, dir) != nil {
 		t.Errorf("a wrong copy: %v, %d downloads", err, asked)
+	}
+}
+
+// Checking FrameFairy's copy reads all of it, 14.4 GB for Gemma 4 26B, so
+// it says how far it is and about how long is left, the way a download
+// does, and Cancel stops it. Tim saw only a beam for a few seconds and
+// doubted anything had come, 21 November 2026.
+func TestCheckingFrameFairysCopySaysHowFar(t *testing.T) {
+	m, data := fakeModel(strings.Repeat("weights", 300_000))
+	m.URL = "http://127.0.0.1:1/never"
+	theirs := t.TempDir()
+	os.WriteFile(filepath.Join(theirs, m.Name), data, 0o644)
+	clock := time.Unix(0, 0)
+	var said []fetch.Progress
+	in := Installer{Elsewhere: []string{theirs},
+		Now: func() time.Time { clock = clock.Add(time.Second); return clock },
+		Report: func(p *fetch.Progress) {
+			if p != nil {
+				said = append(said, *p)
+			}
+		}}
+	dir := t.TempDir()
+	if err := in.Install(t.Context(), m, dir); err != nil || !m.Installed(dir) {
+		t.Fatalf("not taken: %v", err)
+	}
+	var far []fetch.Progress
+	for _, p := range said {
+		if p.Text == "copying" && p.Fraction > 0 && p.Fraction < 1 && p.Remaining > 0 {
+			far = append(far, p)
+		}
+	}
+	if len(far) < 2 || far[0].Fraction >= far[len(far)-1].Fraction {
+		t.Errorf("the check did not say how far it was: %+v", said)
+	}
+
+	// Cancelled while it checks: nothing is taken and nothing downloads.
+	ctx, cancel := context.WithCancel(t.Context())
+	dir = t.TempDir()
+	in.Report = func(p *fetch.Progress) {
+		if p != nil && p.Fraction > 0 {
+			cancel()
+		}
+	}
+	if err := in.Install(ctx, m, dir); !errors.Is(err, fetch.ErrCancelled) || m.Installed(dir) {
+		t.Errorf("Cancel during the check: %v, installed %v", err, m.Installed(dir))
 	}
 }

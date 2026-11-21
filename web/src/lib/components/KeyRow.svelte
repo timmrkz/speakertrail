@@ -1,17 +1,18 @@
 <script lang="ts">
-  import { api, type SearchUse } from '../api'
+  import { api } from '../api'
+  import { keyWatch } from '../keys.svelte'
   import { errorText, toast } from '../toast.svelte'
 
   // The Exa key, which every run needs. It goes into the macOS keychain
   // and never comes back to the window: the row only learns whether it is
   // saved.
-  let use = $state<SearchUse | null>(null)
+  const use = $derived(keyWatch.exa)
   let key = $state('')
   let status = $state<'idle' | 'saving' | 'removing'>('idle')
   let error = $state('')
 
   function load() {
-    api.keys().then((k) => (use = k.find((x) => x.provider === 'exa') ?? null)).catch((e) => (error = errorText(e)))
+    keyWatch.read().catch((e) => (error = errorText(e)))
   }
   load()
 

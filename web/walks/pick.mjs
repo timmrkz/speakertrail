@@ -103,6 +103,22 @@ await walk('The list lets go of the keyboard as Escape closes it', async (browse
   expect('Escape picked something', (await shown(page)) === 'Gemma 4 26B A4B')
 })
 
+await walk('Checking FrameFairy’s copy says how far it is, on Cancel', async (browser) => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 800 } })
+  await page.route('**/api/language', async (route) => {
+    const st = await (await route.fetch()).json()
+    st.models = st.models.map((m) => ({ ...m, installed: false }))
+    st.job = { id: 'language-9', kind: 'model', title: 'Gemma 4 26B A4B', state: 'running', progress: { text: 'copying', fraction: 0.4, remaining: 4 } }
+    await route.fulfill({ json: st })
+  })
+  await page.goto(`${url}/app/settings#language`)
+  await page.waitForFunction(() => /^Checking FrameFairy/.test(document.querySelector('#language .line')?.textContent ?? ''))
+  const line = await page.locator('#language .line').first().textContent()
+  expect(`the line said "${line}"`, /^Checking FrameFairy’s copy, 5\.8 GB of 14\.4 GB, .+/.test(line))
+  const fill = await page.locator('#language button.act .fill i').evaluate((i) => getComputedStyle(i).transform)
+  expect(`Cancel is not filled to 40 %: ${fill}`, fill !== 'none')
+})
+
 await walk('At 390 px the row fits, with the list under the words', async (browser) => {
   const page = await settings(browser, 390)
   const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)

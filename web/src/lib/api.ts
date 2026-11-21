@@ -438,6 +438,8 @@ export interface LanguageModel {
   inUse: boolean
   // What this Mac can do with it.
   fit: 'fits' | 'tight' | 'too big' | 'unknown'
+  // Taken from FrameFairy's folder, one file on disk for both apps.
+  shared: boolean
 }
 
 export interface LanguageState {

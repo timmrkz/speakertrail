@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Model is one model that can draft a first message.
@@ -166,6 +167,18 @@ func ByName(models []Model, name string) (Model, bool) {
 // not reach into each other's folders.
 func Dir(appFolder string) string {
 	return filepath.Join(appFolder, "models")
+}
+
+// Shared says whether the model in dir is the same file on disk as
+// another app's, FrameFairy's, linked rather than downloaded, see take. It
+// then takes no room twice.
+func (m Model) Shared(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, m.Name))
+	if err != nil {
+		return false
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	return ok && uint64(st.Nlink) > 1
 }
 
 // Installed says whether this model is in dir and is a model. A file of

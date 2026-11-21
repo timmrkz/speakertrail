@@ -33,6 +33,9 @@ type LanguageModelView struct {
 	// Fit is what this Mac can do with it: fits, tight, too big or
 	// unknown.
 	Fit language.Fit `json:"fit"`
+	// Shared marks a model taken from FrameFairy's folder, one file on
+	// disk for both apps, see language.Model.Shared.
+	Shared bool `json:"shared"`
 }
 
 // LanguageState is what Settings shows: every model, largest first, the
@@ -76,7 +79,7 @@ func (s *languageModels) state() LanguageState {
 	offered, _ := language.Recommended(models, s.memory)
 	for _, m := range models {
 		st.Models = append(st.Models, LanguageModelView{Model: m, Installed: m.Installed(s.dir), InUse: m.Name == using.Name,
-			Recommended: m.Name == offered.Name, Fit: m.FitsIn(s.memory)})
+			Recommended: m.Name == offered.Name, Fit: m.FitsIn(s.memory), Shared: m.Shared(s.dir)})
 	}
 	st.Job = s.get.latest()
 	return st
@@ -141,7 +144,13 @@ func (s *languageModels) install(name string) ModelJob {
 	in, dir := s.in, s.dir
 	return s.get.start(m.Name, m.Title, m.Download, func(ctx context.Context, report func(*fetch.Progress)) error {
 		in.Report = report
-		return in.Install(ctx, m, dir)
+		if err := in.Install(ctx, m, dir); err != nil {
+			return err
+		}
+		if m.Shared(dir) {
+			theLog.line(zerolog.InfoLevel, "language").Str("model", m.Name).Msg("the language model is FrameFairy's copy, checked and shared on disk")
+		}
+		return nil
 	})
 }
 

@@ -927,7 +927,7 @@ function languageState() {
   }
   const using = languageChosen || LANGUAGE_MODELS.find((m) => languageHere.has(m.name))?.name
   return {
-    models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using })),
+    models: LANGUAGE_MODELS.map((m) => ({ ...m, installed: languageHere.has(m.name), inUse: m.name === using, shared: false })),
     folder: '~/Library/Application Support/Speaker Trail/models',
     server: true,
     job,

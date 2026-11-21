@@ -9,6 +9,8 @@
   import { runWatch } from '../lib/run.svelte'
   import { sidebar } from '../lib/sidebar.svelte'
   import { titleBar } from '../lib/chrome.svelte'
+  import { keyWatch } from '../lib/keys.svelte'
+  import { languageWatch } from '../lib/language.svelte'
   import { railDot, standing, updates } from '../lib/updates.svelte'
   import { reporting } from '../lib/reporting.svelte'
   import { api, onUndo } from '../lib/api'
@@ -31,6 +33,24 @@
   // every screen uses.
   $effect(() => runWatch.watch())
   let going = $derived(runWatch.run !== null)
+
+  // Settings wears a dot when something there stands in the way, the way
+  // Updates does: the Exa key every run needs, and the language model
+  // every draft needs, Tim asked on 21 November 2026. A model coming
+  // pulses, as work in hand does everywhere. Draft without a model sends
+  // here, so the way there is marked too.
+  $effect(() => languageWatch.watch())
+  $effect(() => {
+    keyWatch.read().catch(() => {})
+  })
+  let settingsNeed = $derived.by((): { dot: string; why: string } => {
+    const job = languageWatch.state.job
+    if (job && (job.state === 'running' || job.state === 'queued')) return { dot: 'busy', why: 'The language model is downloading' }
+    if (keyWatch.loaded && !keyWatch.exa?.set) return { dot: 'err', why: 'Runs need the Exa key' }
+    if (languageWatch.loaded && !languageWatch.state.server) return { dot: 'err', why: 'This build has no llama-server to draft with' }
+    if (languageWatch.loaded && !languageWatch.inUse?.installed) return { dot: 'warn', why: 'Drafts need the language model downloaded' }
+    return { dot: '', why: '' }
+  })
 
   // Where the app's updates stand, from the start, so Updates wears a dot
   // when a newer build is coming or ready, or something needs a look.
@@ -104,8 +124,9 @@
         {/each}
       </nav>
       <div class="foot">
-        <a class="nav" href="/app/settings" aria-current={current('/app/settings') ? 'page' : undefined} title="Settings">
-          <span class="mark"><Icon name="settings" /></span>
+        <a class="nav" href="/app/settings" aria-current={current('/app/settings') ? 'page' : undefined}
+          title={settingsNeed.why ? `Settings. ${settingsNeed.why}` : 'Settings'}>
+          <span class="mark"><Icon name="settings" />{#if settingsNeed.dot}<span class="dot {settingsNeed.dot}"></span>{/if}</span>
           <span class="word">Settings</span>
         </a>
         <!-- Report a Problem, in a window of its own, one at a time, so a

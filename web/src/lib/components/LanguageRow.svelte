@@ -15,7 +15,13 @@
   // and it needs llama-server in the app and the memory to run it.
 
   function downloading(m: LanguageModel, p: ModelProgress | undefined): string {
-    if (p?.text === 'copying') return 'Taking FrameFairy’s copy, checking it first'
+    // FrameFairy's copy is read whole to check it before it is shared,
+    // which takes seconds for a model of gigabytes.
+    if (p?.text === 'copying') {
+      const far = p.fraction > 0 ? `, ${size(p.fraction * m.download)} of ${size(m.download)}` : ''
+      const left = p.remaining > 0 ? `, ${fmtLeft(p.remaining)}` : ''
+      return `Checking FrameFairy’s copy${far}${left}`
+    }
     const done = p && p.fraction > 0 ? `${size(p.fraction * m.download)} of ${size(m.download)}` : size(m.download)
     const left = p && p.remaining > 0 ? `, ${fmtLeft(p.remaining)}` : ''
     return `Downloading, ${done}${left}`
@@ -54,7 +60,8 @@
   function ready(m: LanguageModel): Line {
     if (!languageWatch.state.server) return { text: 'This build of the app has no llama-server to run it.', tone: 'err', state: 'err' }
     if (m.fit === 'too big') return { text: `It needs ${size(m.needs)} of memory, more than this Mac has.`, tone: 'err', state: 'err' }
-    return { text: `By ${m.maker}. Takes about ${size(m.needs)} of memory while it writes.`, tone: '', state: 'ok' }
+    const from = m.shared ? `By ${m.maker}, shared with FrameFairy on disk.` : `By ${m.maker}.`
+    return { text: `${from} Takes about ${size(m.needs)} of memory while it writes.`, tone: '', state: 'ok' }
   }
 </script>
 

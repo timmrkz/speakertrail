@@ -171,6 +171,17 @@ const walks = [
     },
   },
   {
+    name: 'Settings in the sidebar wears no dot while nothing there stands in the way',
+    async run(page) {
+      await page.goto(`${url}/app/people/1000`)
+      await page.locator('.first-message').waitFor()
+      await page.waitForFunction(() => document.querySelector('.first-message button.act')?.title !== undefined)
+      await page.waitForTimeout(200)
+      if (await page.locator('a.nav[href="/app/settings"] .dot').count()) return 'Settings wears a dot with the key saved and the model here'
+      return ''
+    },
+  },
+  {
     name: 'Draft without a language model goes to the model in Settings',
     async run(page) {
       await page.route('**/api/language', (route) => route.fulfill({ json: {
@@ -189,6 +200,12 @@ const walks = [
         return r.top >= 0 && r.bottom <= innerHeight
       })
       if (asked) return 'Draft was asked for with no model'
+      // And Settings in the sidebar says why it is the way, the way
+      // Updates wears its own dot.
+      const settings = page.locator('a.nav[href="/app/settings"]')
+      if (!(await settings.locator('.dot.warn').count())) return 'Settings in the sidebar wears no dot without a model'
+      const title = await settings.getAttribute('title')
+      if (!/language model/.test(title)) return `Settings in the sidebar says ${JSON.stringify(title)}`
       return ''
     },
   },

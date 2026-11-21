@@ -72,7 +72,11 @@ func (in Installer) Install(ctx context.Context, m Model, dir string) error {
 		os.Remove(part)
 		return err
 	}
-	if in.take(m, part) {
+	took, err := in.take(ctx, m, part)
+	if err != nil {
+		return err
+	}
+	if took {
 		if err := os.Rename(part, final); err != nil {
 			return err
 		}
@@ -227,7 +231,10 @@ func writeChecked(dir string, record map[string]checked) {
 // and either can remove its own name without taking the other's. A folder
 // on another volume cannot be linked from, and the model is downloaded.
 // Nothing is ever written in the other app's folder.
-func (in Installer) take(m Model, part string) bool {
+//
+// Reading all of it to check it takes seconds, so it says how far it is,
+// and Cancel stops it.
+func (in Installer) take(ctx context.Context, m Model, part string) (bool, error) {
 	for _, dir := range in.Elsewhere {
 		if dir == "" || m.SHA256 == "" {
 			continue
@@ -240,13 +247,18 @@ func (in Installer) take(m Model, part string) bool {
 		if in.Report != nil {
 			in.Report(&fetch.Progress{Text: "copying", Fraction: fetch.Unknown, Remaining: fetch.Unknown})
 		}
-		if _, ok := fetch.Arrived(there, m.Download, m.SHA256); !ok {
+		g := fetch.Getter{Report: in.Report, Now: in.Now}
+		ok, err := g.Check(ctx, there, m.Download, m.SHA256, "copying")
+		if err != nil {
+			return false, err
+		}
+		if !ok {
 			continue
 		}
 		os.Remove(part)
 		if os.Link(there, part) == nil {
-			return true
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }

@@ -170,7 +170,9 @@ func (in Getter) Get(ctx context.Context, url string, expect int64, path, what s
 	if res.ContentLength <= 0 {
 		total = expect
 	}
-	done, err := in.copyWithProgress(ctx, io.MultiWriter(file, sum), body, have, total)
+	done, err := in.copyWithProgress(ctx, io.MultiWriter(file, sum), body, have, total, func(done, total int64, speed string) string {
+		return fmt.Sprintf("fetching %s of %s%s", InMB(done), InMB(total), speed)
+	})
 	if err != nil {
 		if outer.Err() != nil {
 			return "", ErrCancelled
@@ -233,6 +235,31 @@ func (r watchedReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// Check reads a file that is already on the disk through its checksum,
+// saying how far it is the way a download does, in the words text gives.
+// A model is gigabytes, and reading it takes seconds that would otherwise
+// show nothing. It answers whether the file is whole and the one sha
+// names, and ErrCancelled when ctx ends first.
+func (in Getter) Check(ctx context.Context, path string, size int64, sha, text string) (bool, error) {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || sha == "" || info.Size() != size {
+		return false, nil
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return false, nil
+	}
+	defer file.Close()
+	sum := sha256.New()
+	if _, err := in.copyWithProgress(ctx, sum, io.LimitReader(file, size), 0, size, func(int64, int64, string) string { return text }); err != nil {
+		if errors.Is(err, ErrCancelled) {
+			return false, err
+		}
+		return false, nil
+	}
+	return strings.EqualFold(hex.EncodeToString(sum.Sum(nil)), sha), nil
+}
+
 // hashInto feeds the first n bytes of a file to a checksum.
 func hashInto(sum io.Writer, path string, n int64) error {
 	file, err := os.Open(path)
@@ -245,9 +272,10 @@ func hashInto(sum io.Writer, path string, n int64) error {
 }
 
 // copyWithProgress is io.Copy that says how far it has got, about once a
-// second. done starts at what was already there, so a download carrying
-// on shows how far the file has come rather than how far this attempt has.
-func (in Getter) copyWithProgress(ctx context.Context, dst io.Writer, src io.Reader, already, total int64) (int64, error) {
+// second, in the words say gives it. done starts at what was already
+// there, so a download carrying on shows how far the file has come rather
+// than how far this attempt has.
+func (in Getter) copyWithProgress(ctx context.Context, dst io.Writer, src io.Reader, already, total int64, say func(done, total int64, speed string) string) (int64, error) {
 	buf := make([]byte, 256*1024)
 	done := already
 	began := in.now()
@@ -273,8 +301,7 @@ func (in Getter) copyWithProgress(ctx context.Context, dst io.Writer, src io.Rea
 					left = float64(total-done) / rate
 					speed = fmt.Sprintf(" at %s a second", InMB(int64(rate)))
 				}
-				in.report(&Progress{Text: fmt.Sprintf("fetching %s of %s%s", InMB(done), InMB(total), speed),
-					Fraction: float64(done) / float64(total), Remaining: left})
+				in.report(&Progress{Text: say(done, total, speed), Fraction: float64(done) / float64(total), Remaining: left})
 			} else {
 				in.report(&Progress{Text: fmt.Sprintf("fetching, %s", InMB(done)), Fraction: Unknown, Remaining: Unknown})
 			}

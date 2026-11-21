@@ -136,7 +136,7 @@ from none to all of it. With no connections yet every person gets half.
 
 **It grows with Tim's choices.** The part's share of the 100 points
 starts at nothing and grows with the number of people Tim connected
-with or marked as Not a fit, towards at most 40:
+with or rejected, towards at most 40:
 
 | People decided | Like your picks | Each fixed part |
 | --- | --- | --- |
@@ -181,22 +181,17 @@ A shop owner in Bielefeld, age not known, whose newest activity is a
 like 80 days ago, with no signals beyond owning the business and traits
 Tim's picks rarely have, reaches about 17.
 
-## Not a fit
+## Rejected is Tim's no
 
-Today a person is connected or open, and nothing says "not for me". An
-open person may simply not have been looked at yet, so leaving someone
-open teaches little.
+Tim rejects a profile with Not this person on the person. Since #67 a
+rejected person leaves All and Under 30 for a list of their own,
+Rejected, and Undo brings them back. A profile search finds a person by
+their own profile, so the profile cannot be someone else's, and in
+practice a rejection is Tim saying no to the person.
 
-**Proposed:** a **Not a fit** mark on a person, one click, undone with
-one click. Like a connected person, they leave All and Under 30 and are
-found under a filter of their own. They stay in the file. For Like your
-picks a Not a fit counts three times as much as an open person. This
-changes the decision of 10 November 2026 that there is no skipping, so
-it waits for Tim's answer. Without it, Like your picks still learns from
-connections alone, only slower.
-
-Not this person, the button that sets a LinkedIn profile aside because
-it is someone else's, says nothing about fit and teaches nothing.
+So the fit learns from it, with no new mark. For Like your picks a
+rejected person counts as three open people, because an open person may
+simply not have been looked at yet. Undo takes the no back.
 
 ## How the fit steers the searches
 
@@ -205,8 +200,8 @@ first, so each gets one try. After them, `RankSearches` takes the
 searches by connections per person found, each with one connection's
 worth of doubt, so one lucky find does not put a search on top. Among
 searches without connections, those whose open people have the best fit
-come first, the mean of their 10 best. A search whose people Tim marked
-Not a fit 5 times, and connected with none, pauses itself, with a line
+come first, the mean of their 10 best. A search with 5 people Tim
+rejected, and none he connected with, pauses itself, with a line
 that says why. Tim resumes it with one click.
 
 **New searches from Tim's picks.** After a run, the app makes up to 2
@@ -221,7 +216,7 @@ at once. Tim pauses one with one click. Each costs one call to Exa
 against the month's budget, like any search.
 
 **Exclusions suggested, never added.** A headline word found on at
-least 5 people marked Not a fit, and on nobody Tim connected with,
+least 5 people Tim rejected, and on nobody he connected with,
 shows as a suggestion beside the exclusions. Tim adds it with one click. The app
 never adds one itself, because an exclusion hides people.
 
@@ -251,8 +246,7 @@ revisited with the counts per part.
   people that is about 150,000 counts, a few milliseconds, to be
   measured in the pull request. Nothing slow happens inside
   `Store.Update`.
-- New in the file: the setting Where you are, Not a fit and when on a
-  person, the fit and place at connecting, and three facts read from the
+- New in the file: the setting Where you are, the fit and place at connecting, and three facts read from the
   profile text when it arrives: the newest post or comment, how many
   follow, and whether it has an About. For people found before, these
   are read once from `profile-texts.json`.
@@ -266,7 +260,7 @@ One pull request each, as in the issue's Progress list:
 
 1. The fit from the four fixed parts, Where you are in Settings, People
    sorted by fit by default, the parts under Why.
-2. Not a fit, if Tim wants it, and Like your picks.
+2. Like your picks, learning from connected and rejected people.
 3. Searches ordered by fit, new searches made from Tim's picks, and
    exclusions suggested.
 4. The fit and place at connecting, and the line on Searches.

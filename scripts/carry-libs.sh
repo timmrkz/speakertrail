@@ -180,6 +180,11 @@ Darwin)
 	# relative first. Then the program is told where to look.
 	for lib in "$LIBDIR"/*.dylib; do
 		base=$(basename "$lib")
+		# Each library loses its local symbols, strip -x, which nothing
+		# loads it by and every update would download. Its exported
+		# symbols, the ones a program links by, stay. The signature it
+		# breaks is made again below. See docs/UPDATES.md.
+		strip -x "$lib"
 		install_name_tool -id "@rpath/$base" "$lib" 2>/dev/null || true
 		# A library that calls another one records the same absolute path.
 		for other in "$LIBDIR"/*.dylib; do

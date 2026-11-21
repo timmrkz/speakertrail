@@ -15,7 +15,7 @@
   import Info from '../lib/components/Info.svelte'
   import Pick from '../lib/components/Pick.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
-  import { channelName, conflicted as conflictedIn, following as followingIn, standing as standingOf, updates } from '../lib/updates.svelte'
+  import { channelName, conflicted as conflictedIn, ended as endedIn, following as followingIn, standing as standingOf, updates } from '../lib/updates.svelte'
 
   const update = $derived(updates.shown)
   let restarting = $state(false)
@@ -57,7 +57,7 @@
   async function follow(channel: string) {
     if (!update || !channel) return
     problem = ''
-    updates.heard({ ...update, picked: channel, gone: '', building: '', next: '', phase: 'checking' })
+    updates.heard({ ...update, picked: channel, gone: '', ended: '', building: '', next: '', phase: 'checking' })
     try {
       await api.followChannel(channel)
     } catch (e) {
@@ -99,21 +99,23 @@
 
   const following = $derived(followingIn(update))
   const conflicted = $derived(conflictedIn(update))
+  const ended = $derived(endedIn(update))
   const options = $derived.by(() => {
     // A channel is named by what it is, a branch or a pull request by its
     // number, never by the pull request's title, which is not what is
     // picked here and made the list as wide as the window. A pull request
     // that no longer merges into main says so in its name, the way a
-    // closed one does.
+    // merged or closed one does.
     const listed = (update?.channels ?? []).map((c) => ({
       value: c.id,
       label: c.conflict ? `${channelName(c.id)}, conflicts` : channelName(c.id),
     }))
     // A pull request followed that has gone stays in the list while it is
     // followed, so the list never names nothing and says what became of
-    // it. Closed only when a list that was read says so.
+    // it: merged, closed or not open, only when a list that was read says it
+    // has gone.
     if (following && !listed.some((o) => o.value === following)) {
-      listed.push({ value: following, label: update?.gone === following ? `${channelName(following)}, closed` : channelName(following) })
+      listed.push({ value: following, label: update?.gone === following ? `${channelName(following)}, ${ended.word}` : channelName(following) })
     }
     return listed
   })
@@ -164,7 +166,7 @@
               </Info>
             </span>
             <Pick label="Channel" id="channel" value={following} {options} align="right" placeholder="Choose a channel"
-              tone={update.phase === 'gone' || conflicted ? 'warn' : undefined} disabled={options.length === 0}
+              tone={update.phase === 'gone' ? ended.tone : conflicted ? 'warn' : undefined} disabled={options.length === 0}
               title="Where this app updates from: main, or one pull request. It downloads the newest build by itself"
               onpick={(v) => follow(v)} />
           </span>

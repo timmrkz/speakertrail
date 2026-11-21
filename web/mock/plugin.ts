@@ -177,7 +177,7 @@ function updateState(): UpdateState {
   const ch = UPDATE_CHANNELS.find((c) => c.id === follows)!
   const base: UpdateState = {
     version: '0.1.0-pr9.e808a87', commit: 'e808a87ee3a7', channel: upd.running, off: '', channels: UPDATE_CHANNELS,
-    picked: upd.picked, follows, gone: '', building: '', phase: 'current', next: '', nextName: '', nextCommit: '',
+    picked: upd.picked, follows, gone: '', ended: '', building: '', phase: 'current', next: '', nextName: '', nextCommit: '',
     checked: new Date(upd.lookFrom + 600).toISOString(), written: 0, total: 0, problem: '', detail: '',
   }
   if (now - upd.lookFrom < 600) return { ...base, phase: 'checking' }

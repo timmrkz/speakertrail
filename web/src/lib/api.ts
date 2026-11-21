@@ -100,6 +100,9 @@ export interface UpdateState {
   picked: string
   follows: string
   gone: string
+  // What became of the pull request in gone: merged, closed, or empty
+  // when the channel list does not say.
+  ended: '' | 'merged' | 'closed'
   building: string
   phase: UpdatePhase
   next: string

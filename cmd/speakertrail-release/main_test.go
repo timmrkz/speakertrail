@@ -190,3 +190,44 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 		t.Errorf("the list says it was written at %v", l.Written)
 	}
 }
+
+// On the real disk: the workflow hands the list the pull requests that are
+// not open any more, as gh writes them, merged in one file and closed in
+// another. The list says which were merged and which closed, so the app
+// does not call a merged one closed, as it did PR #46. A file that cannot
+// be read leaves the list written all the same.
+func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
+	release(t)
+	good := signed(t, "main", "main")
+	dir := t.TempDir()
+	merged := filepath.Join(dir, "merged.json")
+	closed := filepath.Join(dir, "closed.json")
+	// gh lists merged ones under closed too, so both files may name one.
+	if err := os.WriteFile(merged, []byte(`[{"number": 46, "state": "MERGED"}, {"number": 50, "state": "MERGED"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(closed, []byte(`[{"number": 46, "state": "MERGED"}, {"number": 12, "state": "CLOSED"}, {"number": 60, "state": "OPEN"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "channels.json")
+	if err := list([]string{"-out", out, "-ended", merged, "-ended", closed, "-ended", filepath.Join(dir, "missing.json"), good}); err != nil {
+		t.Fatal(err)
+	}
+	written, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := updates.Parse(written)
+	if err != nil {
+		t.Fatalf("the app cannot read the list: %v", err)
+	}
+	if got := strings.Join(l.Merged, " "); got != "pr-50 pr-46" {
+		t.Errorf("merged %q, want pr-50 pr-46", got)
+	}
+	if got := strings.Join(l.Closed, " "); got != "pr-12" {
+		t.Errorf("closed %q, want pr-12", got)
+	}
+	if l.Ended("pr-60") != "" {
+		t.Error("an open pull request is said to have ended")
+	}
+}

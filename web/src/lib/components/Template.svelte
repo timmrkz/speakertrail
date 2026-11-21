@@ -213,8 +213,8 @@
     <span class="ask">
       <Info label="About the template" side="left">
         A draft starts at origin and takes one variation of each part at random. #opener# in a variation stands for a
-        variation of the part opener. An empty variation leaves the part out, and a variation written twice comes twice as
-        often.
+        variation of the part opener. An empty variation leaves the part out now and then, a part with none leaves it out
+        always, and a variation written twice comes twice as often.
         {#if tpl.data}
           {#each tpl.data.fields as f (f.name)}<br />#{f.name}# is filled in by {fieldBy(f.by)}: {f.about}.{/each}
         {/if}

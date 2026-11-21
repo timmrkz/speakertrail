@@ -1012,7 +1012,6 @@ function checkTemplate(parts: TemplatePart[]): string {
   for (const p of parts) {
     if (!/^[a-z][a-z0-9_]*$/.test(p.name)) return `"${p.name}" cannot name a part. Use small letters, digits and _, starting with a letter.`
     if (TEMPLATE_FIELDS.some((f) => f.name === p.name)) return `${p.name[0].toUpperCase()}${p.name.slice(1)} is filled in by the ${TEMPLATE_FIELDS.find((f) => f.name === p.name)?.by === 'model' ? 'language model' : 'app'}, so no part takes its name.`
-    if (!p.variations.length) return `${p.name[0].toUpperCase()}${p.name.slice(1)} needs at least one variation. An empty one leaves it out.`
     for (const v of p.variations) {
       for (const [, ref] of v.matchAll(/#([a-z][a-z0-9_]*)#/g)) {
         if (!names.has(ref) && !TEMPLATE_FIELDS.some((f) => f.name === ref)) return `${p.name[0].toUpperCase()}${p.name.slice(1)} uses #${ref}#, and there is no part of that name.`
@@ -1026,7 +1025,7 @@ function checkTemplate(parts: TemplatePart[]): string {
 function expand(fields: Record<string, string>, name = 'origin', depth = 0, random = Math.random): string {
   if (name in fields) return fields[name]
   const p = template.find((x) => x.name === name)
-  if (!p || depth > 20) return ''
+  if (!p || depth > 20 || !p.variations.length) return ''
   const v = p.variations[Math.floor(random() * p.variations.length)]
   return v.replace(/#([a-z][a-z0-9_]*)#/g, (_, ref: string) => expand(fields, ref, depth + 1, random))
 }

@@ -182,7 +182,7 @@ const walks0 = [
     },
   },
   {
-    name: 'A variation is added and removed, and a part needs one',
+    name: 'A variation is added and removed, and the last one too, which leaves the part out',
     async run(page) {
       await settings(page)
       await part(page, 'intensity').locator('summary').click()
@@ -196,11 +196,12 @@ const walks0 = [
       await page.locator('.toast').filter({ hasText: 'Removed a variation of intensity' }).waitFor()
       const left = await p.locator('textarea').evaluateAll((ts) => ts.map((t) => t.value))
       if (JSON.stringify(left) !== '["super gern","richtig gern"]') return `left ${JSON.stringify(left)}`
-      // The last one cannot go: the app says the part needs one.
+      // The last one goes too, and the part is left out of the message.
       await part(page, 'greeting').locator('summary').click()
       await part(page, 'greeting').locator('button[aria-label="Remove variation 1 of greeting"]').click()
-      await part(page, 'greeting').locator('.field-error').filter({ hasText: 'Greeting needs at least one variation' }).waitFor()
-      if ((await part(page, 'greeting').locator('textarea').count()) !== 1) return 'the last variation of greeting went'
+      await page.locator('.toast').filter({ hasText: 'Removed a variation of greeting' }).waitFor()
+      if ((await part(page, 'greeting').locator('.count').innerText()) !== '0 variations') return `greeting says ${await part(page, 'greeting').locator('.count').innerText()}`
+      await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith(' [first_name],'))
       return ''
     },
   },

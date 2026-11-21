@@ -113,8 +113,10 @@ func isField(name string) bool {
 }
 
 // Check says what is wrong with a template, in words Tim reads in
-// Settings: a part named wrong or without a variation, a #name# that is
-// no part, a part inside itself, or no #reason# to be found from origin.
+// Settings: a part named wrong, a #name# that is no part, a part inside
+// itself, or no #reason# to be found from origin. A part without a
+// variation is left out of every message, as an empty variation leaves
+// it out now and then.
 func (t Template) Check() error {
 	if len(t.Parts) > maxParts {
 		return fmt.Errorf("a template takes at most %d parts", maxParts)
@@ -127,8 +129,6 @@ func (t Template) Check() error {
 			return fmt.Errorf("%s is filled in by the %s, so no part takes its name", p.Name, fieldBy(p.Name))
 		case slices.ContainsFunc(t.Parts[:i], func(o Part) bool { return o.Name == p.Name }):
 			return fmt.Errorf("there are two parts named %s", p.Name)
-		case len(p.Variations) == 0:
-			return fmt.Errorf("%s needs at least one variation. An empty one leaves it out", p.Name)
 		case len(p.Variations) > maxVariations:
 			return fmt.Errorf("%s takes at most %d variations", p.Name, maxVariations)
 		}
@@ -167,10 +167,8 @@ func checkVariation(t Template, part, v string) error {
 	if n := utf8.RuneCountInString(v); n > maxVariation {
 		return fmt.Errorf("a variation of %s has %d letters, at most %d fit", part, n, maxVariation)
 	}
-	for _, r := range v {
-		if r != '\n' && unicode.IsControl(r) {
-			return fmt.Errorf("a variation of %s holds a character that cannot be written", part)
-		}
+	if err := Invisible(v, "\n"); err != nil {
+		return fmt.Errorf("a variation of %s holds %w", part, err)
 	}
 	for _, m := range ref.FindAllStringSubmatch(v, -1) {
 		if name := m[1]; t.index(name) < 0 && !isField(name) {
@@ -381,6 +379,46 @@ func (d *Data) SetTemplatePart(name string, variations []string, at int) error {
 		t.Parts = slices.Insert(t.Parts, at, p)
 	}
 	return d.setTemplate(t)
+}
+
+// Invisible says where text holds a character that shows nothing or
+// changes how the text around it reads: a control character other than
+// those in allowed, a format character like a zero width space or a
+// mark that turns text right to left, or a line or paragraph separator.
+// Pasted text brings them along unseen, and they reach the language
+// model or a message as they are. The joiner inside emoji like 👨‍👩‍👧
+// shows as part of the emoji, so it stays.
+func Invisible(text, allowed string) error {
+	line := 1
+	for i, r := range text {
+		if r == '\n' {
+			line++
+		}
+		hidden := unicode.IsControl(r) && !strings.ContainsRune(allowed, r) ||
+			unicode.Is(unicode.Cf, r) && r != '\u200d' ||
+			unicode.In(r, unicode.Zl, unicode.Zp) || r == utf8.RuneError
+		if !hidden {
+			continue
+		}
+		at := fmt.Sprintf("an invisible character, U+%04X, in line %d", r, line)
+		if before := lastWords(text[:i]); before != "" {
+			at += fmt.Sprintf(" after %q", before)
+		}
+		return errors.New(at + ". Take it out")
+	}
+	return nil
+}
+
+// lastWords is the end of the line before a place, for Tim to find it.
+func lastWords(s string) string {
+	if i := strings.LastIndexByte(s, '\n'); i >= 0 {
+		s = s[i+1:]
+	}
+	r := []rune(strings.TrimSpace(s))
+	if len(r) > 24 {
+		r = r[len(r)-24:]
+	}
+	return string(r)
 }
 
 // ErrNoPart is a part asked for that the template does not have.

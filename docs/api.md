@@ -358,8 +358,8 @@ The template a first message is put together from, as Tracery does it:
 each part has variations, a draft starts at `origin` and picks one
 variation of each part it meets at random, and `#name#` inside a
 variation stands for a variation of the part `name`. An empty variation
-leaves the part out, and a variation written twice is picked twice as
-often. The app fills `#first_name#`, the language model `#portrait#`,
+leaves the part out now and then, a part with no variation at all leaves
+it out always, and a variation written twice is picked twice as often. The app fills `#first_name#`, the language model `#portrait#`,
 `#reason#` and `#reaction_part#`, a space and the reaction or nothing.
 What they fill in is put in as it is, never read for `#name#` again.
 Tim's first template is `internal/store/first_message_template.json`.
@@ -384,8 +384,10 @@ Each change answers with the template:
 
 A change that leaves a template that cannot work answers 400 with why,
 and changes nothing: a part named other than with small letters, digits
-and `_`, or with the name of a field, a part without a variation, `#name#`
-for a part there is not, a part inside itself or more than 20 deep, no
+and `_`, or with the name of a field, `#name#` for a part there is not,
+an invisible character, like a zero width space or a mark that turns text
+right to left, where a control character other than a line break, the
+joiner inside an emoji aside, counts as one, a part inside itself or more than 20 deep, no
 `origin`, no `#reason#` that origin reaches, a longest message of more
 than 3,000 letters, or origin taken out. Each part is walked once, so the
 check takes as long as the template is. `kept` says why a part cannot be

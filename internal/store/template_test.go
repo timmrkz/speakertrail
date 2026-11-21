@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // first always picks the first variation.
@@ -67,12 +68,15 @@ func TestATemplateThatCannotWorkIsRefused(t *testing.T) {
 		"no reason":          {`{"origin":["Hallo"]}`, "#reason#"},
 		"reason not reached": {`{"origin":["Hallo"],"hook":["#reason#"]}`, "#reason#"},
 		"unknown part":       {`{"origin":["#reason# #nope#"]}`, "#nope#"},
-		"empty part":         {`{"origin":["#reason# #a#"],"a":[]}`, "at least one variation"},
 		"a field's name":     {`{"origin":["#reason#"],"first_name":["x"]}`, "filled in by the app"},
 		"a model's field":    {`{"origin":["#reason#"],"reason":["x"]}`, "language model"},
 		"bad name":           {`{"origin":["#reason#"],"Opener":["x"]}`, "cannot name a part"},
 		"itself":             {`{"origin":["#reason# #a#"],"a":["#b#"],"b":["#a#"]}`, "holds itself"},
-		"control":            {`{"origin":["#reason#\u0000"]}`, "cannot be written"},
+		"control":            {`{"origin":["#reason#\u0000"]}`, "invisible character, U+0000, in line 1 after \"#reason#\""},
+		"zero width space":   {`{"origin":["#reason#"],"a":["Hallo\n\u200bdu"]}`, "U+200B, in line 2"},
+		"right to left":      {`{"origin":["#reason#"],"a":["\u202eHallo"]}`, "U+202E"},
+		"byte order mark":    {`{"origin":["#reason#"],"a":["\ufeffHallo"]}`, "U+FEFF"},
+		"line separator":     {`{"origin":["#reason#"],"a":["Hallo\u2028du"]}`, "U+2028"},
 		"too long":           {`{"origin":["#reason#` + strings.Repeat("x", 2001) + `"]}`, "at most 2000"},
 	}
 	for name, c := range cases {
@@ -89,6 +93,49 @@ func TestATemplateThatCannotWorkIsRefused(t *testing.T) {
 	}
 	if err := tmpl(t, `{"origin":["#reason#"],"a":["`+strings.Repeat("x", 2000)+`"]}`).Check(); err != nil {
 		t.Errorf("2000 letters should fit: %v", err)
+	}
+}
+
+// Tim had nothing more to say in extra for now, so a part may have no
+// variation at all, and is then left out of every message.
+func TestAPartWithoutVariationsIsLeftOut(t *testing.T) {
+	tp := tmpl(t, `{"origin":["Hallo#extra# #reason#"],"extra":[]}`)
+	if err := tp.Check(); err != nil {
+		t.Fatalf("a part without variations was refused: %v", err)
+	}
+	if got := tp.Expand(map[string]string{ReasonField: "R"}, first); got != "Hallo R" {
+		t.Errorf("got %q, want %q", got, "Hallo R")
+	}
+	d := &Data{}
+	if err := d.SetTemplatePart("extra", []string{}, -1); err != nil {
+		t.Fatalf("taking out every variation of extra: %v", err)
+	}
+	b, _ := json.Marshal(d.FirstMessageTemplate())
+	if !strings.Contains(string(b), `"extra":[]`) {
+		t.Errorf("extra is kept as %s", b)
+	}
+	// What is not hidden stays: the joiner inside an emoji, umlauts, and
+	// a tab nowhere but the prompt.
+	if err := (Template{Parts: []Part{{"origin", []string{"#reason# 👨\u200d👩\u200d👧 Grüße"}}}}).Check(); err != nil {
+		t.Errorf("an emoji with joiners was refused: %v", err)
+	}
+}
+
+func TestThePromptHoldsNothingHidden(t *testing.T) {
+	d := &Data{Settings: map[string]SettingValue{}}
+	set := func(prompt string) error {
+		b, _ := json.Marshal(prompt)
+		return d.SetSetting(FirstMessagePrompt, b, time.Now())
+	}
+	if err := set("Schreib\tkurz\n\n{{profile}} 😄"); err != nil {
+		t.Errorf("a prompt with a tab and an emoji: %v", err)
+	}
+	err := set("Schreib kurz\nTim\u200b mag Sport\n{{profile}}")
+	if err == nil || !strings.Contains(err.Error(), `U+200B, in line 2 after "Tim"`) {
+		t.Errorf("a zero width space in the prompt: %v", err)
+	}
+	if err := set(DefaultFirstMessagePrompt); err != nil {
+		t.Errorf("Tim's prompt: %v", err)
 	}
 }
 

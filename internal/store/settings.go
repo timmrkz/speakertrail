@@ -195,6 +195,9 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 		if err := json.Unmarshal(value, &prompt); err != nil || !strings.Contains(prompt, ProfileField) {
 			return fmt.Errorf("the prompt needs %s, where the profile goes", ProfileField)
 		}
+		if err := Invisible(prompt, "\n\t"); err != nil {
+			return fmt.Errorf("the prompt holds %w", err)
+		}
 	}
 	if kindOf(value) == "number" {
 		var n float64

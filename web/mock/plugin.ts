@@ -633,12 +633,16 @@ const ROUTES: [string, RegExp, Handler][] = [
   // on it. The walks read what was copied from the request itself.
   ['POST', /^\/api\/clipboard$/, () => ({ status: 204 })],
   ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
-    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
+    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next, people: false }
     return { status: 204 }
   }],
   ['PUT', /^\/api\/report\/text$/, (_s, _m, _q, b) => {
     report.text = String(b.text ?? '')
     return { status: 204 }
+  }],
+  ['PUT', /^\/api\/report\/people$/, (_s, _m, _q, b) => {
+    report.people = b.people === true
+    return ok(draftShown())
   }],
   ['POST', /^\/api\/report\/pick$/, () => attachMock('Screenshot 2026-11-16 at 10.12.04.png', 1440, 900)],
   ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => attachMock(String(b.name || 'Pasted picture.png'), 800, 500)],
@@ -653,7 +657,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     return ok(draftShown())
   }],
   ['POST', /^\/api\/report\/send$/, () => {
-    report = { text: '', pictures: [], next: report.next }
+    report = { text: '', pictures: [], next: report.next, people: false }
     return ok({ path: '~/Desktop/Speaker Trail report 2026-11-16 10.15.zip' })
   }],
   // Dictate, like listenAPI. The mock hears nothing and sends no events,
@@ -1100,10 +1104,10 @@ function draftJob(s: State, d: MockDraft): DraftJob {
 
 // The draft of a report and the recordings Dictate started.
 type MockPicture = { id: string; name: string; width: number; height: number; removed?: boolean }
-let report: { text: string; pictures: MockPicture[]; next: number } = { text: '', pictures: [], next: 1 }
+let report: { text: string; pictures: MockPicture[]; next: number; people: boolean } = { text: '', pictures: [], next: 1, people: false }
 let listened = 0
 function draftShown() {
-  return { text: report.text, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
+  return { text: report.text, people: report.people, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
 }
 function attachMock(name: string, width: number, height: number) {
   if (report.pictures.filter((p) => !p.removed).length >= 10) {

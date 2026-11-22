@@ -21,8 +21,10 @@ import (
 
 // A report of a problem: one zip on the Desktop, with what Tim says
 // happened, the app's log and what is needed to read it. It never holds
-// the app's file, the people in it or their names, and paths under the
+// the app's file or the names of the people in it, and paths under the
 // home folder are written as ~, so the Mac's user name does not travel.
+// With People switched on it holds people.json, every person without
+// name, link, notes or first message, see store.Shared.
 // Bugs in the sidebar, bugs.go and docs/LOGGING.md. Ported from
 // FrameFairy's report.go.
 
@@ -96,13 +98,14 @@ type reportMaker struct {
 }
 
 // ReportProblem writes a report of a problem to the Desktop, shows it in
-// Finder and closes the report window, with what Tim says happened and
-// the pictures he attached. It gives the report's path, and lets go of the
-// draft it was made from.
+// Finder and closes the report window, with what Tim says happened, the
+// pictures he attached and People when the draft takes them. It gives
+// the report's path, and lets go of the draft it was made from.
 func (m reportMaker) ReportProblem(what string) (string, error) {
 	what = cut(what, reportWordsMax)
 	sent, pictures := m.report.reportPictures()
-	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(what)).Int("pictures", len(pictures)).Msg("a report of a problem is being made")
+	people := m.report.takesPeople()
+	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(what)).Int("pictures", len(pictures)).Bool("people", people).Msg("a report of a problem is being made")
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
 	add := func(name string, data []byte) error {
@@ -142,6 +145,20 @@ func (m reportMaker) ReportProblem(what string) (string, error) {
 		}
 		if err := add("first-message-template.json", append(body, '\n')); err != nil {
 			return "", err
+		}
+		// People, as Tim chose on 22 November 2026, issue #73: what the
+		// person screen shows and the profile text, never a name or a
+		// link.
+		if people {
+			shared := m.st.Share()
+			body, err := json.MarshalIndent(shared, "", "  ")
+			if err != nil {
+				return "", err
+			}
+			if err := add("people.json", append(body, '\n')); err != nil {
+				return "", err
+			}
+			theLog.line(zerolog.InfoLevel, "report").Int("people", len(shared)).Msg("the report takes People along")
 		}
 	}
 	for _, path := range theLog.files() {

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -19,8 +20,9 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	t.Setenv("HOME", "/Users/someone")
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	var made string
+	var withPeople bool
 	a := reportAPI{r: r, make: func(what string) (string, error) {
-		made = what
+		made, withPeople = what, r.takesPeople()
 		return filepath.Join("/Users/someone", "Desktop", "Speaker Trail report.zip"), nil
 	}}
 	ask := func(method, path, body string) *httptest.ResponseRecorder {
@@ -55,9 +57,15 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	if rec := ask("GET", "/api/report/picture?id="+id, ""); rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" {
 		t.Fatalf("the picture answered %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
+	if d := draft(ask("PUT", "/api/report/people", `{"people":true}`)); !d.People || len(d.Pictures) != 1 {
+		t.Fatalf("after People was switched on the draft is %+v", d)
+	}
+	if d := draft(ask("GET", "/api/report", "")); !d.People {
+		t.Fatalf("People was not kept in the draft: %+v", d)
+	}
 	rec := ask("POST", "/api/report/send", `{"what":"It froze."}`)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"~/Desktop/Speaker Trail report.zip"`) || made != "It froze." {
-		t.Fatalf("sending answered %d %s, made with %q", rec.Code, rec.Body, made)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"~/Desktop/Speaker Trail report.zip"`) || made != "It froze." || !withPeople {
+		t.Fatalf("sending answered %d %s, made with %q and People %v", rec.Code, rec.Body, made, withPeople)
 	}
 	for _, bad := range [][3]string{{"POST", "/api/report/text", "{}"}, {"DELETE", "/api/report", ""}, {"POST", "/api/report/remove", "not json"}} {
 		if rec := ask(bad[0], bad[1], bad[2]); rec.Code < 400 {
@@ -87,5 +95,24 @@ func TestDictateOverHTTPSaysWhereTheModelIs(t *testing.T) {
 	a.ServeHTTP(rec, httptest.NewRequest("POST", "/api/listen/cancel", nil))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("cancel answered %d", rec.Code)
+	}
+}
+
+// People is switched from several requests at once while the draft is
+// read and written, and the last switch is what the draft keeps.
+func TestPeopleIsSwitchedFromSeveralRequestsAtOnce(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			r.TakePeople(i%2 == 0)
+			_ = r.SaveReportText("It froze.")
+			_ = r.ReportDraft()
+		})
+	}
+	wg.Wait()
+	r.TakePeople(true)
+	if d := r.ReportDraft(); !d.People || d.Text != "It froze." {
+		t.Errorf("the draft is %+v", d)
 	}
 }

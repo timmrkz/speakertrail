@@ -497,7 +497,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
-    if (typeof b.draft === 'string') p.draft = b.draft
+    if (typeof b.draft === 'string') {
+      p.draft = b.draft
+      // An emptied message was drafted at no time, as the app says.
+      if (!b.draft) p.drafted_at = undefined
+    }
     if (typeof b.connected === 'boolean') p.connected = b.connected
     else if (b.connected !== undefined) return err(400, 'connected must be true or false')
     return ok(personDetail(s, p))
@@ -692,13 +696,20 @@ const ROUTES: [string, RegExp, Handler][] = [
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="${p.width}" height="${p.height}"><rect width="100%" height="100%" fill="#8fb3c0"/><rect x="8%" y="10%" width="84%" height="12%" rx="8" fill="#f7f9fa"/></svg>`,
     }
   }],
+  // The Mac's clipboard, as cmd/speakertrail-app/clipboard.go puts text
+  // on it. The walks read what was copied from the request itself.
+  ['POST', /^\/api\/clipboard$/, () => ({ status: 204 })],
   ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
-    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
+    if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next, people: false }
     return { status: 204 }
   }],
   ['PUT', /^\/api\/report\/text$/, (_s, _m, _q, b) => {
     report.text = String(b.text ?? '')
     return { status: 204 }
+  }],
+  ['PUT', /^\/api\/report\/people$/, (_s, _m, _q, b) => {
+    report.people = b.people === true
+    return ok(draftShown())
   }],
   ['POST', /^\/api\/report\/pick$/, () => attachMock('Screenshot 2026-11-16 at 10.12.04.png', 1440, 900)],
   ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => attachMock(String(b.name || 'Pasted picture.png'), 800, 500)],
@@ -713,7 +724,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     return ok(draftShown())
   }],
   ['POST', /^\/api\/report\/send$/, () => {
-    report = { text: '', pictures: [], next: report.next }
+    report = { text: '', pictures: [], next: report.next, people: false }
     return ok({ path: '~/Desktop/Speaker Trail report 2026-11-16 10.15.zip' })
   }],
   // Dictate, like listenAPI. The mock hears nothing and sends no events,
@@ -1165,10 +1176,10 @@ function draftJob(s: State, d: MockDraft): DraftJob {
 
 // The draft of a report and the recordings Dictate started.
 type MockPicture = { id: string; name: string; width: number; height: number; removed?: boolean }
-let report: { text: string; pictures: MockPicture[]; next: number } = { text: '', pictures: [], next: 1 }
+let report: { text: string; pictures: MockPicture[]; next: number; people: boolean } = { text: '', pictures: [], next: 1, people: false }
 let listened = 0
 function draftShown() {
-  return { text: report.text, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
+  return { text: report.text, people: report.people, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
 }
 function attachMock(name: string, width: number, height: number) {
   if (report.pictures.filter((p) => !p.removed).length >= 10) {

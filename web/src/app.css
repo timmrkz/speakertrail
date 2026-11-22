@@ -71,8 +71,12 @@
      this wide at most, centred in the window. */
   --col-w: 880px;
   /* Two gaps and no others on a page: between its sections, and between
-     the parts of one section, like a heading and its list. */
-  --gap-page: 24px;
+     the parts of one section, like a heading and its list. The gap
+     between sections is the page's own inset, --pad, so the space over
+     the first control, at the sides and between the controls and the list
+     under them is one, on every page and in both panes of People (Tim, 21
+     November 2026). */
+  --gap-page: var(--pad);
   --gap-group: 12px;
   /* Two gaps and no others between controls. --gap-control stands between
      two controls side by side or one over the other: the buttons of a
@@ -224,8 +228,10 @@ button { -webkit-tap-highlight-color: transparent; }
    #46 on 21 November 2026, twice: Clear and the plain buttons beside
    Report wore Report's colour.
    A list to pick from wears the same ring inside its edge, as in
-   FrameFairy. A field shows focus by its edge alone, in the accent (Tim,
-   the same day). A row, a page in the sidebar and a segment of a choice
+   FrameFairy. A field in use keeps the edge it has under the pointer,
+   --line-hover, and nothing more: the caret says where typing goes. The
+   accent there lit up only once the pointer left it (Tim, 21 November
+   2026). A row, a page in the sidebar and a segment of a choice
    keep the edge inside them, 2 px in their own colour over their own
    border with a faint wash of it, since a ring would be cut off by the
    list or the pane round them. The wash alone was too faint to find, Tim
@@ -281,7 +287,6 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .row-btn:hover { background: var(--hover); text-decoration: none; }
 .row-btn:active { background: var(--press); }
-.row-btn:hover .avatar, .row-btn[aria-current="true"] .avatar { background: var(--surface); }
 .row-btn[aria-current="true"] { background: var(--chosen); }
 
 /* Controls. Everything in one row shares --control-h.
@@ -340,7 +345,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .textarea.code { font: 13px/1.5 var(--mono); }
 .input::placeholder, .textarea::placeholder { color: var(--ink-3); }
 .input:hover:enabled:not([aria-disabled="true"]), .textarea:hover:enabled:not([aria-disabled="true"]) { border-color: var(--line-hover); }
-.input:focus, .textarea:focus { border-color: var(--accent); }
+.input:focus, .textarea:focus { border-color: var(--line-hover); }
 .input:disabled, .textarea:disabled { background: var(--disabled); color: var(--disabled-ink); border-color: transparent; }
 .input[aria-invalid="true"], .textarea[aria-invalid="true"] { border-color: var(--bad); }
 .field { display: grid; gap: 6px; min-width: 0; align-content: start; }
@@ -415,12 +420,6 @@ button { -webkit-tap-highlight-color: transparent; }
 .plat.ok { border-color: var(--good); color: var(--good); background: var(--good-soft); }
 .plat.no { text-decoration: line-through; opacity: .6; }
 
-.avatar {
-  width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center;
-  font-size: 13px; font-weight: 700; background: var(--surface-2); color: var(--ink-2);
-}
-.avatar.lg { width: 52px; height: 52px; font-size: 17px; }
-
 /* Messages */
 .banner {
   display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-radius: 8px; font-size: 14px; font-weight: 500;
@@ -481,7 +480,7 @@ button { -webkit-tap-highlight-color: transparent; }
 @keyframes pulse { from { transform: scale(1); opacity: .8; } to { transform: scale(2.8); opacity: 0; } }
 
 /* Section inside sheets */
-.section { display: grid; gap: 10px; min-width: 0; }
+.section { display: grid; gap: var(--gap-group); min-width: 0; }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; font-size: 14px; }
 .kv dt { color: var(--ink-3); }
 .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
@@ -504,6 +503,9 @@ button { -webkit-tap-highlight-color: transparent; }
   --wails-draggable: drag;
 }
 .bar h1 { font-size: 15px; font-weight: 650; letter-spacing: 0; flex: 1 1 auto; min-width: 0; }
+/* A person's name, at the head of the pane or the sheet that shows them,
+   on the row of the cross that closes it. */
+.person-name { font-size: 22px; font-weight: 650; letter-spacing: -.01em; min-width: 0; }
 .bar .num-count { font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; }
 a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-drag; }
 /* A page of its own: the bar runs the width of the window, and what is in

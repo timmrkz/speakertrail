@@ -71,7 +71,7 @@ add up to.
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
 `{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`
-does.
+does. An empty `draft` clears `drafted_at` too.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
@@ -208,6 +208,17 @@ when it starts and hears every change after on the Wails event called
 `chrome`. `GET /api/chrome?window=report` answers the same for the
 report window, whose changes come as `chrome-report`. See
 `cmd/speakertrail-app/chrome.go`.
+
+## Copy
+
+`POST /api/clipboard` with `{"text": "…"}` puts the text on the Mac's
+clipboard and answers 204. It is answered by the app itself, not by
+`internal/api`, see `cmd/speakertrail-app/clipboard.go`. The window's own
+`navigator.clipboard.writeText` is refused in the app's web view with a
+`NotAllowedError`, so the copy mark
+on a first message and Copy on the Updates page ask the app instead. When
+the Mac does not take it, the answer is 500 with an `error` that says to
+select the text and press Cmd+C.
 
 ## Quitting
 
@@ -425,7 +436,7 @@ answer 409 with a sentence that can go in a toast.
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}]}`. Pictures removed a moment ago are left out |
+| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}], "people": false}`. Pictures removed a moment ago are left out |
 | `GET /api/report/window` | `{"open": true}` while the report window is open |
 | `POST /api/report/open` | `{"how": "bugs"}` opens the report window, or brings it to the front |
 | `POST /api/report/about` | `{"text": "…"}` opens it with the words of a toast after what was written |
@@ -435,8 +446,9 @@ answer 409 with a sentence that can go in a toast.
 | `POST /api/report/pasted` | `{"name": "…", "data": "<base64>"}` adds a pasted picture |
 | `POST /api/report/remove` | `{"id": "p1"}` takes a picture out, and keeps it aside for Put it back |
 | `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
-| `POST /api/report/clear` | empties the draft, and keeps it aside for Undo |
-| `POST /api/report/send` | `{"what": "…"}` makes the report, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
+| `POST /api/report/clear` | empties the draft, and keeps it aside for Undo. People stays as it is |
+| `PUT /api/report/people` | `{"people": true}` takes People along, and answers the draft. Every new draft starts with it off |
+| `POST /api/report/send` | `{"what": "…"}` makes the report, with `people.json` when the draft takes People, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
 
 At most 10 pictures, each at most 10 MB. The draft as it changes is sent
 as the Wails event `report-draft`, and whether the window is open as

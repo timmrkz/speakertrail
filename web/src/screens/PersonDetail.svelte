@@ -1,11 +1,12 @@
 <script lang="ts">
-  // One person, with room to read: who they are, Connect and LinkedIn,
-  // the first message to them, why they fit, which search found them, and
-  // Tim's notes. The pane
-  // beside the list in a wide window and the sheet in a narrow one both
-  // show this, so the two never drift apart.
+  // One person, with room to read: Connect, Draft and LinkedIn in one
+  // row, the first message to them, why they fit, which search found
+  // them, and Tim's notes. The pane beside the list in a wide window and
+  // the sheet in a narrow one both show this, so the two never drift
+  // apart. The name stands in the row of the cross above it, which the
+  // pane and the sheet draw, so onname tells them the name.
+  import type { Snippet } from 'svelte'
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
-  import { fmtDay, initials } from '../lib/format'
   import { Load } from '../lib/load.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
@@ -16,7 +17,12 @@
   // onmoved follows once the app took a change that moves the person to
   // another list, connected or the profile rejected, or turned it down,
   // so a list can read again what it shows.
-  let { id, onupdate, onmoved }: { id: number; onupdate?: (p: PersonDetail) => void; onmoved?: () => void } = $props()
+  let { id, onupdate, onmoved, onname }: {
+    id: number
+    onupdate?: (p: PersonDetail) => void
+    onmoved?: () => void
+    onname?: (id: number, name: string) => void
+  } = $props()
 
   const person = new Load<PersonDetail>()
   let notes = $state('')
@@ -27,19 +33,13 @@
   function load() {
     person.run(() => api.person(id)).then(() => {
       notes = savedNotes = person.data?.notes ?? ''
+      // The person's own id goes with the name, so an answer that comes
+      // after another person opened is told apart.
+      if (person.data) onname?.(person.data.id, person.data.name)
     })
   }
   load()
 
-  const year = new Date().getFullYear()
-  let facts = $derived.by(() => {
-    const p = person.data
-    if (!p) return ''
-    const l = p.linkedin
-    return [l?.born_about ? `About ${year - l.born_about}` : '', p.city, l?.last_active ? `active ${fmtDay(l.last_active)}` : '']
-      .filter(Boolean)
-      .join(' · ')
-  })
   // The LinkedIn profile the search found, and the link the app opens,
   // which it leaves out once Tim said the profile is not them.
   let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin'))
@@ -152,47 +152,49 @@
   </EmptyState>
 {:else if person.data}
   {@const p = person.data}
-  <article class="person" data-personal aria-labelledby="person-{p.id}">
-    <header class="who">
-      <span class="avatar xl" class:connected={p.connected} aria-hidden="true">{initials(p.name)}</span>
-      <div class="names">
-        <h2 id="person-{p.id}">{p.name}</h2>
-        {#if p.headline}<p class="headline">{p.headline}</p>{/if}
-        {#if facts}<p class="facts" title={p.linkedin?.age_reason ? `The age is a guess from the LinkedIn profile: ${p.linkedin.age_reason}` : undefined}>{facts}</p>{/if}
-      </div>
-      <div class="actions">
-        <button class="btn connect good" class:primary={!p.connected} type="button"
-          aria-pressed={p.connected} disabled={deciding} onclick={toggleConnected}
-          title={p.connected ? 'Connected on LinkedIn. Click again to take it back' : 'Mark as connected once you connected on LinkedIn. It counts for the search that found them'}>
-          <Icon name={p.connected ? 'check' : 'connect'} />{p.connected ? 'Connected' : 'Connect'}
-        </button>
-        {#if linkedin}
-          <a class="btn" href={linkedin} target="_blank" rel="noopener noreferrer" aria-busy={opening} onclick={openLinkedin}
-            title="Open the LinkedIn profile in the browser profile chosen in Settings">
-            {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
-          </a>
-        {/if}
-        {#if profile}
-          {@const rejected = profile.review === 'rejected'}
-          <button class="btn icon bad" type="button" aria-pressed={rejected} disabled={reviewing} onclick={toggleRejected}
-            title={rejected ? 'Rejected as not this person. Click again to take it back' : "Not this person. The LinkedIn profile the search found is someone else's"}
-            aria-label="Not this person">
-            <Icon name="not-them" />
+  <article class="person" data-personal aria-label={p.name}>
+    <!-- One row of what Tim does with a person, in the order he does it:
+         connect, draft the first message, open LinkedIn to send it. Draft
+         belongs to the first message, which hands it here. -->
+    {#snippet row(draft?: Snippet)}
+      <div class="top">
+        <div class="actions">
+          <button class="btn connect good" class:primary={!p.connected} type="button"
+            aria-pressed={p.connected} disabled={deciding} onclick={toggleConnected}
+            title={p.connected ? 'Connected on LinkedIn. Click again to take it back' : 'Mark as connected once you connected on LinkedIn. It counts for the search that found them'}>
+            <Icon name={p.connected ? 'check' : 'connect'} />{p.connected ? 'Connected' : 'Connect'}
           </button>
+          {#if draft}{@render draft()}{/if}
+          {#if linkedin}
+            <a class="btn" href={linkedin} target="_blank" rel="noopener noreferrer" aria-busy={opening} onclick={openLinkedin}
+              title="Open the LinkedIn profile in the browser profile chosen in Settings">
+              {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
+            </a>
+          {/if}
+          {#if profile}
+            {@const rejected = profile.review === 'rejected'}
+            <button class="btn icon bad" type="button" aria-pressed={rejected} disabled={reviewing} onclick={toggleRejected}
+              title={rejected ? 'Rejected as not this person. Click again to take it back' : "Not this person. The LinkedIn profile the search found is someone else's"}
+              aria-label="Not this person">
+              <Icon name="not-them" />
+            </button>
+          {/if}
+        </div>
+        {#if profile?.review === 'rejected'}
+          <p class="rejected small">LinkedIn profile rejected as not this person.</p>
+        {/if}
+        {#if openProblem}
+          <p class="open-problem small" role="alert">
+            {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
+          </p>
         {/if}
       </div>
-      {#if profile?.review === 'rejected'}
-        <p class="rejected small">LinkedIn profile rejected as not this person.</p>
-      {/if}
-      {#if openProblem}
-        <p class="open-problem small" role="alert">
-          {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
-        </p>
-      {/if}
-    </header>
+    {/snippet}
 
     {#if linkedin}
-      <FirstMessage person={p} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />
+      <FirstMessage person={p} {row} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />
+    {:else}
+      {@render row()}
     {/if}
 
     {#if p.fit_parts?.length}
@@ -244,23 +246,14 @@
   </article>
 {:else}
   <div class="person" aria-busy="true">
-    <div class="who">
-      <span class="avatar xl skel" aria-hidden="true"></span>
-      <div class="names"><span class="skel" style:width="55%" style:height="24px"></span><span class="skel" style:width="80%" style:height="14px"></span></div>
-    </div>
+    <div class="actions"><span class="skel" style:width="110px" style:height="var(--control-h)"></span><span class="skel" style:width="96px" style:height="var(--control-h)"></span></div>
   </div>
 {/if}
 
 <style>
-  .person { display: grid; gap: 28px; min-width: 0; }
-  .who { display: grid; gap: 16px; min-width: 0; }
-  .names { display: grid; gap: 6px; min-width: 0; }
-  .names h2 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; overflow-wrap: anywhere; }
-  .headline { font-size: 16px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
-  .facts { font-size: 14px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .avatar.xl { width: 64px; height: 64px; font-size: 20px; font-weight: 650; }
-  .avatar.connected { background: var(--good-soft); color: var(--good); }
-  .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .person { display: grid; gap: var(--gap-page); min-width: 0; }
+  .top { display: grid; gap: var(--gap-group); min-width: 0; }
+  .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
   .why { display: grid; gap: 10px; }
   .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
   .why .mark {
@@ -275,7 +268,7 @@
   .fit .pts { color: var(--ink-2); text-align: end; }
   .fit .because { color: var(--ink-2); overflow-wrap: anywhere; }
   .found { font-size: 13px; color: var(--ink-3); }
-  .open-problem { color: var(--bad); margin-top: -6px; }
+  .open-problem { color: var(--bad); }
   .rejected { color: var(--ink-3); }
   .note-state { color: var(--ink-3); }
 </style>

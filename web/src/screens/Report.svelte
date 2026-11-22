@@ -127,9 +127,17 @@
   // dictation may be on their way, so Report waits for them rather than
   // being off.
   const nothing = $derived(!what.trim() && pictures.length === 0 && !hearing)
+  // People says the report takes People along, as people.json: every
+  // person with what the person screen shows and the profile text,
+  // without names or links, see store.Shared. A report of People alone
+  // is something to report. Clear leaves it as it is, since it empties
+  // what was written and attached.
+  let people = $state(false)
+  // Whether People was pressed since the window opened.
+  let pressed = false
   // When each button of the row can do nothing. They stay in the Tab
   // order then, see the row.
-  const reportOff = $derived(nothing || making || listening || attaching)
+  const reportOff = $derived((nothing && !people) || making || listening || attaching)
   const clearOff = $derived(nothing || making || listening || hearing || attaching)
   const dictateOff = $derived(hearing || making)
   const attachOff = $derived(attaching || making)
@@ -238,6 +246,7 @@
   // picture was left out.
   function took(d: ReportDraft) {
     pictures = d.pictures ?? []
+    people = !!d.people
     for (const id of Object.keys(removed)) if (pictures.some((p) => p.id === id)) delete removed[id]
     if (d.error) oops(d.error.endsWith('.') ? d.error : d.error + '.')
   }
@@ -282,6 +291,21 @@
       attaching = false
       home()
     }
+  }
+
+  // People goes on or off at once, and the next press takes it back. The
+  // Go side keeps it with the draft, in the turn every change to the
+  // draft waits for.
+  function togglePeople() {
+    if (making) return
+    unclear()
+    pressed = true
+    people = !people
+    const on = people
+    newest(() => api.takePeople(on)).then(tookNewest, (e) => {
+      people = !on
+      oops(sentence(e))
+    })
   }
 
   // stay keeps the focus in the field when Dictate or Attach is pressed
@@ -700,7 +724,9 @@
           field.value = d.text
           what = d.text
         }
-        took({ ...d, error: '' })
+        // People pressed before the draft came keeps what the press
+        // said, since its own answer may have come first.
+        took({ ...d, error: '', people: pressed ? people : d.people })
       })
       .catch(() => {})
       .finally(() => (loaded = true))
@@ -724,7 +750,7 @@
     if (hearing) log('report: Report waits for the last words of the dictation', { level: 'info' })
     await writing
     // Nothing was said after all, so there is nothing to report.
-    if (!what.trim() && pictures.length === 0) {
+    if (!what.trim() && pictures.length === 0 && !people) {
       making = false
       return
     }
@@ -736,6 +762,9 @@
     loaded = false
     try {
       // Finder shows the report, and the Go side closes this window.
+      // People goes along when the draft says so, so a press of People
+      // still on its way is waited for.
+      await turn
       await api.reportProblem(what)
       // The report holds it all, and the next one starts empty.
       field.value = ''
@@ -743,6 +772,7 @@
       steps = new Undo()
       pictures = []
       removed = {}
+      people = false
     } catch (e) {
       oops(sentence(e))
     } finally {
@@ -805,8 +835,10 @@
         with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
         here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
         Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
-        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. Never the people, the
-        searches or your keys, and your home folder is written as ~. You can look inside before you send it.
+        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
+        it holds your People too, with what each person screen shows and the profile texts, with each person's own name written
+        [name] and every link [link]. Other names in a profile text go along. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
+        you send it.
       </Info>
       <!-- Only what the microphone hears, and why a recording stopped by
            itself. What the buttons are doing shows on the buttons, how the
@@ -818,6 +850,21 @@
           <span>{note}</span>
         {/if}
       </div>
+      <!-- People goes along as people.json, without names or links. On,
+           it wears green, as every toggle that is on does. -->
+      <button
+        class="btn icon good people"
+        type="button"
+        onmousedown={stay}
+        onclick={togglePeople}
+        aria-pressed={people}
+        aria-disabled={making}
+        aria-label="Take People along"
+        title={people
+          ? 'People go along with this report, with their profile texts, but without their names or profile links. Click to leave them out'
+          : 'Take People along: what each person screen shows and the profile texts, without their names or profile links'}>
+        <Icon name="people" />
+      </button>
       <button
         class="btn icon attach"
         type="button"
@@ -907,7 +954,7 @@
     white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 19px; color: var(--ink);
     background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; margin: 0; resize: none;
   }
-  .telling:focus { border-color: var(--accent); }
+  .telling:hover, .telling:focus { border-color: var(--line-hover); }
   .telling::placeholder { color: var(--ink-3); }
 
   /* One row of controls of one height: the icons on the left, what the

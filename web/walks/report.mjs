@@ -179,7 +179,7 @@ const walks = [
         }
         return went.join(', ')
       }
-      const row = ['Report', 'Clear', 'Attach screenshots', 'Dictate']
+      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots', 'Dictate']
       await openReport(page)
       const field = page.locator('textarea.telling')
       await field.click()
@@ -207,6 +207,49 @@ const walks = [
       await page.waitForFunction(() => document.querySelector('button.dictate')?.getAttribute('aria-label') === 'Dictate')
       await page.keyboard.press('Tab')
       if ((await where()) !== 'Report') return `after dictating Tab went to ${await where()}, want Report`
+      return ''
+    },
+  },
+  {
+    // People goes on with one click and off with the next, kept with the
+    // draft, and a report of People alone can be made. Report waits for
+    // the last press, and the next report starts with People off. Tim asked for a way
+    // to hand Claude his People on 22 November 2026, issue #73.
+    name: 'People goes along with a report only when it is on',
+    async run(page) {
+      await openReport(page)
+      const people = page.locator('button.people')
+      if ((await people.getAttribute('aria-pressed')) !== 'false') return 'People is on in a new report'
+      if ((await page.locator('button.make').getAttribute('aria-disabled')) !== 'true') return 'Report can be pressed with nothing to report'
+      const kept = page.waitForResponse((r) => r.url().endsWith('/api/report/people'))
+      await people.click()
+      if ((await people.getAttribute('aria-pressed')) !== 'true') return 'People did not show on at once'
+      await kept
+      const draft = await page.evaluate(() => fetch('/api/report').then((r) => r.json()))
+      if (draft.people !== true) return `the draft holds People ${draft.people}`
+      await page.reload()
+      await page.waitForFunction(() => document.querySelector('button.people')?.getAttribute('aria-pressed') === 'true')
+      if ((await page.locator('button.make').getAttribute('aria-disabled')) !== 'false') return 'Report cannot be pressed with People on'
+      const off = page.waitForResponse((r) => r.url().endsWith('/api/report/people'))
+      await people.click()
+      if (JSON.parse((await off).request().postData() ?? '{}').people !== false) return 'a second click did not take People off'
+      // The draft says whether People goes, so Report waits for a press
+      // of People still on its way, held here until Report is making.
+      const [held, hold] = later()
+      await page.route('**/api/report/people', async (route) => {
+        await held
+        await route.continue()
+      })
+      const order = []
+      page.on('request', (r) => { if (r.url().endsWith('/api/report/send')) order.push('send') })
+      page.on('response', (r) => { if (r.url().endsWith('/api/report/people')) order.push('kept') })
+      await people.click()
+      await page.locator('button.make').click()
+      await page.locator('button.make .beam').waitFor()
+      hold()
+      await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
+      if (order.join(',') !== 'kept,send') return `Report did not wait for People: ${order.join(',')}`
+      await page.waitForFunction(() => document.querySelector('button.people')?.getAttribute('aria-pressed') === 'false')
       return ''
     },
   },

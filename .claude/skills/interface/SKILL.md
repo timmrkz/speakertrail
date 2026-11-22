@@ -162,7 +162,11 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   21 November 2026, twice: Clear and the plain buttons beside Report
   wore Report's accent. A list to pick from wears the same ring 1 px
   inside its edge, as in FrameFairy, and none while it is open. A field
-  in use shows the accent on its own edge and nothing more. A row, a
+  in use keeps the grey edge it has under the pointer, `--line-hover`,
+  and nothing more, since the caret says where typing goes. Tim found
+  the accent edge lighting up only once the pointer left a field he
+  was typing in, and asked for it gone from every field on 21 November
+  2026. A row, a
   page in the sidebar and a segment of a choice show their own colour
   2 px inside their edge with a faint wash, since a ring would be cut
   off by the list or pane round them. The wash alone was too faint to
@@ -172,6 +176,14 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   `:focus-visible` in `app.css`.
   What is selected already, like the open person's row, shows nothing
   more.
+- **One inset round a page and between its sections.** The space over
+  the first control, at the sides, and between the controls and the list
+  or the next section is `--gap-page`, which is `--pad`, on every page.
+  The person beside the list mirrors it: the name and the cross on the
+  row of the search field, the person's buttons on the row of the filter,
+  and the first section on the line the list starts on. Tim marked each
+  place it was off on a screenshot testing #60 on 21 November 2026, and
+  `walks/look.mjs` measures them at 1280 and 390 px.
 - **Every list looks the same.** People, Searches and Settings read in
   one centred column, `--col-w`, with the controls above a `.list` of
   rows, each a name over one line of what is known, with what is

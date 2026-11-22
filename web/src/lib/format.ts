@@ -194,17 +194,6 @@ export const PLATFORM_LABEL: Record<string, string> = {
   other: 'Link',
 }
 
-export function initials(name: string): string {
-  return name
-    .replace(/^(Dr|Prof)\.\s+/i, '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0])
-    .join('')
-    .toUpperCase()
-}
-
 // "startplatz.de/events" from a full URL.
 export function shortUrl(url: string | null | undefined): string {
   if (!url) return ''

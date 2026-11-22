@@ -202,6 +202,7 @@ func main() {
 		quit:   func() { app.Quit() },
 	}
 	api.Handle("/api/quit/", quitAPI{leave: leave})
+	api.Handle("/api/clipboard", clipboardAPI{set: func(text string) bool { return app.Clipboard.SetText(text) }})
 	api.Handle("/", answers)
 	app = application.New(application.Options{
 		Name:        "Speaker Trail",

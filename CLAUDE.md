@@ -218,8 +218,9 @@ messages, pull request text, code comments and chat replies.
   themes (Tim, 21 November 2026). Hover, pressed, chosen and greyed out
   come from the state tokens in `app.css`, the same for every control.
 - **Quiet marks.** No lines or patterns in the background. A button in
-  focus wears a ring in its own colour, a field shows only its edge in
-  the accent (Tim, 21 November 2026). See the interface skill.
+  focus wears a ring in its own colour, a field in use keeps the grey
+  edge it has under the pointer, never the accent (Tim, 21 November
+  2026). See the interface skill.
 
 ## Engineering rules
 
@@ -255,7 +256,9 @@ messages, pull request text, code comments and chat replies.
   whichever profile was used last. See [docs/open-in-profile.md](docs/open-in-profile.md).
 - **Personal data.** Names, roles and profile links are personal data.
   Store only what the data model lists, never email addresses or phone
-  numbers. The app's file stays on Tim's Mac. Real names never go into
+  numbers. The app's file stays on Tim's Mac. People leave it only in
+  a report with People switched on, without their names or links, see
+  `store.Shared` (Tim, 22 November 2026, #73). Real names never go into
   test fixtures, mock data or anything committed: invent them.
   The app's log never names a person either: whatever shows a person's
   words is marked `data-personal`, see [docs/LOGGING.md](docs/LOGGING.md).

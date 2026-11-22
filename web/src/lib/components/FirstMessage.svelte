@@ -1,20 +1,31 @@
 <script lang="ts">
   // The first message to a person: Draft has the language model write it
   // on this Mac, in the background, and it grows here as it is written.
-  // Then it is Tim's to change, saved the moment he leaves it. A double
-  // click selects all of it, ready for Cmd+C, and Copy does the same in
-  // one press. LinkedIn above opens the profile to send it from. See
-  // internal/draft and docs/api.md, Drafts.
+  // Then it is Tim's to change, saved the moment he leaves it. The box is
+  // always there, empty too, so he can write a message himself, and as
+  // tall as the message, so it never scrolls. A double click selects
+  // all of it, ready for Cmd+C, and the copy mark in its corner, there
+  // while the pointer is on the box, copies it in one press. Draft stands
+  // in the person's row of buttons, between Connect and LinkedIn, which
+  // row draws. See internal/draft and docs/api.md, Drafts.
+  import type { Snippet } from 'svelte'
+  import { fit, fitNow } from '../fit'
   import { api, type DraftJob, type PersonDetail } from '../api'
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
   import { navigate } from '../router.svelte'
+  import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
 
-  let { person, onsaved }: { person: PersonDetail; onsaved?: (p: PersonDetail) => void } = $props()
+  let { person, row, onsaved }: {
+    person: PersonDetail
+    // The person's row of buttons, handed the Draft button to place.
+    row: Snippet<[Snippet]>
+    onsaved?: (p: PersonDetail) => void
+  } = $props()
 
   $effect(() => draftWatch.watch())
   $effect(() => languageWatch.watch())
@@ -108,6 +119,8 @@
   async function keep(value: string) {
     const updated = await api.patchPerson(person.id, { draft: value })
     text = saved = updated.draft
+    // An emptied message was drafted at no time, as the app says.
+    draftedAt = updated.drafted_at
     onsaved?.(updated)
   }
 
@@ -129,12 +142,34 @@
     ;(e.currentTarget as HTMLTextAreaElement).select()
   }
 
+  // The copy mark copies through the app, since the web view refuses the
+  // window's own clipboard, see docs/api.md, Copy. It turns into a tick
+  // in the same frame as the click and back a moment later, as Copy on
+  // the Updates page does. A copy that fails says so over the box, where
+  // the click was, in words that say what to do, and the web view's own
+  // words go to the app's log.
+  let copied = $state(false)
+  let copyRefused = $state('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  let refusedTimer: ReturnType<typeof setTimeout> | undefined
+  $effect(() => () => {
+    clearTimeout(copiedTimer)
+    clearTimeout(refusedTimer)
+  })
   async function copy() {
+    copied = true
+    copyRefused = ''
+    clearTimeout(copiedTimer)
+    clearTimeout(refusedTimer)
+    copiedTimer = setTimeout(() => (copied = false), 1500)
     try {
-      await navigator.clipboard.writeText(text)
-      toast.show('Copied the message')
+      await api.copy(text)
     } catch (e) {
-      toast.show(errorText(e), 'bad')
+      clearTimeout(copiedTimer)
+      copied = false
+      copyRefused = 'Could not copy the message. Select it and press Cmd+C.'
+      refusedTimer = setTimeout(() => (copyRefused = ''), 8000)
+      said(`copy: ${errorText(e)}`, { level: 'warn' })
     }
   }
 
@@ -170,6 +205,13 @@
   )
   // While the model writes, the box shows what it wrote so far.
   const shown = $derived(running ? (running.text ?? '').trimStart() : text)
+  // The box grows with every piece the model writes and every key Tim
+  // types, measured once the text is in it, see lib/fit.ts.
+  let field = $state<HTMLTextAreaElement>()
+  $effect(() => {
+    void shown
+    if (field) fitNow(field)
+  })
   const failed = $derived(job?.state === 'failed' ? (job.error ?? 'The draft stopped.') : '')
   // A draft the model's answer did not fit has … where its part goes, and
   // says why until the next draft.
@@ -180,16 +222,49 @@
   )
 </script>
 
+<!-- Draft and Cancel take one place in the row, each as wide as its words,
+     so LinkedIn after it moves a little as one turns into the other. While
+     it writes, the draft carries the beam
+     and the fill in the one control that can do something about it, as a
+     download does in Settings. Only one button in the row is filled:
+     Connect, until Tim is connected, and then Draft while there is no
+     message. -->
+{#snippet draftButton()}
+  {#if busy}
+    <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
+      title="Stop writing. The message before it stays as it was">
+      <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
+    </button>
+  {:else}
+    <button class="btn act" class:primary={!text && person.connected} type="button" disabled={starting} onclick={draft}
+      title={noModel ? languageWatch.state.standing.why
+        : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
+      {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
+    </button>
+  {/if}
+{/snippet}
+
+{@render row(draftButton)}
+
 <section class="section first-message" aria-labelledby="message-{person.id}">
   <div class="row between">
     <label class="label" id="message-{person.id}" for="message-text-{person.id}">First message</label>
     <span class="small state" aria-live="polite">{stateText}</span>
   </div>
-  {#if busy || shown}
-    <textarea id="message-text-{person.id}" class="textarea" rows="8" value={shown} readonly={busy}
-      aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+  <div class="box">
+    <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
+      bind:this={field} use:fit aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
       ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
-  {/if}
+    {#if text && !busy}
+      <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
+        title={copied ? 'Copied' : 'Copy the whole message'}>
+        <Icon name={copied ? 'check' : 'copy'} />
+      </button>
+    {/if}
+    {#if copyRefused}
+      <p class="refused small" role="alert">{copyRefused}</p>
+    {/if}
+  </div>
   {#if running}
     <div class="draft-progress" aria-live="polite">
       <p class="step ellipsis">{stepOf(running)}</p>
@@ -198,43 +273,42 @@
   {/if}
   {#if failed}
     <p class="failed small" role="alert">
-      {failed}{#if failed.includes('Settings')} <a href="/app/settings#language">Open Settings</a>{/if}
+      <!-- A failure that needs the Exa key leads to the top of Settings,
+           where the key is, and any other to the language model. -->
+      {failed}{#if failed.includes('Settings')}{' '}<a href={failed.includes('Exa') ? '/app/settings' : '/app/settings#language'}>Open Settings</a>{/if}
     </p>
   {/if}
   {#if problem}
     <p class="failed small" role="alert">{problem}</p>
   {/if}
-  <div class="actions">
-    {#if busy}
-      <!-- The draft carries the beam and the fill in the one control that
-           can do something about it, as a download does in Settings. -->
-      <button class="btn act" type="button" disabled={cancelling} onclick={cancel}
-        title="Stop writing. The message before it stays as it was">
-        <Busy {fraction} />{cancelling ? 'Cancelling' : 'Cancel'}
-      </button>
-    {:else}
-      <button class="btn act" class:primary={!text} type="button" disabled={starting} onclick={draft}
-        title={noModel ? languageWatch.state.standing.why
-          : text ? 'Write a new message from their profile. Undo brings this one back' : 'Write a first message from their profile, on this Mac'}>
-        {#if starting}<Busy />{/if}<Icon name={text ? 'refresh' : 'draft'} />{starting ? 'Starting' : text ? 'Draft again' : 'Draft'}
-      </button>
-    {/if}
-    {#if text && !busy}
-      <button class="btn act" type="button" onclick={copy} title="Copy the whole message">
-        <Icon name="copy" />Copy
-      </button>
-    {/if}
-  </div>
 </section>
 
 <style>
-  .first-message { display: grid; gap: 10px; }
+  .first-message { display: grid; gap: var(--gap-group); }
   .state { color: var(--ink-3); font-variant-numeric: tabular-nums; }
-  .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
-  /* Draft, Draft again and Cancel take the same place, each with room
-     for the longest of them, see .room in app.css, so nothing moves when
-     one turns into another. */
   .act { position: relative; }
+  /* The box is as tall as the message, see lib/fit.ts, so it never
+     scrolls and needs no handle to pull it longer. */
+  .box { position: relative; min-width: 0; }
+  .box .textarea { display: block; width: 100%; resize: none; overflow-y: hidden; }
+  /* The copy mark sits in the box's top right corner, there while the
+     pointer is on the box or the keyboard is on the mark, the way a code
+     block on GitHub shows its copy button. Its ground is the box's, so
+     it never sits on the words under it unseen, and its states are every
+     plain button's. */
+  .box .copy {
+    position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-color: transparent; color: var(--ink-2);
+    opacity: 0; pointer-events: none;
+  }
+  .box:hover .copy, .copy:focus-visible, .box .copy.copied { opacity: 1; pointer-events: auto; }
+  .box .copy.copied { color: var(--good); }
+  /* A copy that failed lies over the top of the box, beside the mark,
+     on the box's own ground with an edge in red, so it reads where the
+     click was and covers no more than its line. */
+  .refused {
+    position: absolute; top: 4px; left: 4px; right: 38px; margin: 0; padding: 5px 9px;
+    background: var(--surface); color: var(--bad); border: var(--line-w) solid var(--bad); border-radius: 6px;
+  }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

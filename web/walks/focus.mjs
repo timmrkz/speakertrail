@@ -168,6 +168,35 @@ for (const theme of ['light', 'dark']) {
       return ''
     },
   })
+  walks.push({
+    theme,
+    // Tim typed in a field, took the pointer off it, and its edge lit up
+    // in the accent, 21 November 2026. A field in use keeps the grey edge
+    // it has under the pointer, see the interface skill.
+    name: `In ${theme}, a text field in use keeps its grey edge with the pointer on it or away`,
+    async run(page) {
+      await page.goto(`${url}/app/people/1003`)
+      const fields = [['the search field', page.locator('main .search input')], ['the notes', page.locator('main textarea[id^="notes-"]')]]
+      for (const [name, field] of fields) {
+        await field.waitFor()
+        await field.click()
+        for (const where of ['on it', 'away']) {
+          if (where === 'away') await page.mouse.move(2, 400)
+          const edge = await field.evaluate((f) => {
+            const grey = document.createElement('div')
+            grey.style.color = 'var(--line-hover)'
+            document.body.append(grey)
+            const want = getComputedStyle(grey).color
+            grey.remove()
+            return { got: getComputedStyle(f).borderTopColor, want, focus: f === document.activeElement }
+          })
+          if (!edge.focus) return `${name} lost the focus`
+          if (edge.got !== edge.want) return `${name} in use with the pointer ${where} has its edge in ${edge.got}, not the grey ${edge.want}`
+        }
+      }
+      return ''
+    },
+  })
 }
 
 async function measure(page, controls) {

@@ -212,12 +212,39 @@ and shows it in Finder. In it:
 | `about.json` | when it was made, the build, `start`, macOS, the chip and the memory |
 | `settings.json` | the settings Settings shows, but for Where you are, which says where Tim lives. Never the people, the searches, the notes or a key |
 | `first-message-template.json` | the first message template as Settings has it, in the shape of `internal/store/first_message_template.json` |
+| `people.json` | only with People on, see below |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
 | `pictures/` | the screenshots, as PNG |
 
 Paths under the home folder are written as `~` in every file but the
 pictures, so the Mac's user name does not travel. The report never holds
-the app's file. The draft is kept in `~/Library/Application
+the app's file.
+
+### People
+
+The People button beside Attach takes People along, so Claude can read
+the data behind what People shows without screenshots, and score a
+profile again from its text. Tim asked for it on 22 November 2026, issue
+#73, and chose what goes: `people.json` holds every person by id, with
+what the person screen shows and the profile text. That is the headline,
+the city, the roles, the age guess and why, when they were last active,
+the fit and its reasons with their passages, whether Tim connected with
+them, whether the profile is confirmed or rejected, the exclusion that
+leaves them out, when they were found and by which searches, and whether
+a first message was drafted. Never the name, the profile link, the
+handle, the notes or the first message. Inside every text that goes,
+each word of the person's own name of three letters or more that starts
+with a capital, also with an s after it and with its umlauts written
+out, and the handle are written `[name]`, and every link `[link]`. "von"
+and "der" stay. Other people's names in a profile text go along, which
+Tim accepted. The names are taken out after the store's lock is let go,
+since that reads every profile text, see `Store.Share`. `store.Shared` lists what
+goes, so a field added to a person goes only once it is added there.
+
+People is off in every new draft and goes off again once a report is
+made, so it goes only in a report it was switched on for. The draft on
+the Go side says whether it goes, and Report waits for a press of People
+still on its way. Clear leaves it as it is. The draft is kept in `~/Library/Application
 Support/Speaker Trail/report` until Report is pressed, so closing the
 window or the app loses nothing.
 

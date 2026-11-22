@@ -2,6 +2,7 @@ package search_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -163,5 +164,22 @@ func TestExaProfile(t *testing.T) {
 	}
 	if s.Load() != 0 || c.Load() != 1 {
 		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
+	}
+}
+
+// A profile Exa's index does not hold is ErrNotIndexed, said without the
+// link, since a link is personal data and the error reaches the log.
+func TestExaProfileNotIndexedNamesNoLink(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	_, err := exa.Profile(t.Context(), "https://www.linkedin.com/in/erika-beispiel")
+	if !errors.Is(err, search.ErrNotIndexed) {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "erika-beispiel") {
+		t.Errorf("the error names the link: %v", err)
 	}
 }

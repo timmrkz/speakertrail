@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -118,7 +117,8 @@ func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 			return p, nil
 		}
 	}
-	return Profile{}, fmt.Errorf("%w at %s", ErrNotIndexed, link)
+	// Said without the link, which is personal data and reaches the log.
+	return Profile{}, ErrNotIndexed
 }
 
 // ErrNotIndexed is a profile Exa's index does not hold yet, like one

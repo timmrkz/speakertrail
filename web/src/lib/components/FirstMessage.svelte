@@ -2,7 +2,8 @@
   // The first message to a person: Draft has the language model write it
   // on this Mac, in the background, and it grows here as it is written.
   // Then it is Tim's to change, saved the moment he leaves it. The box is
-  // as tall as the message, so it never scrolls. A double click selects
+  // always there, empty too, so he can write a message himself, and as
+  // tall as the message, so it never scrolls. A double click selects
   // all of it, ready for Cmd+C, and the copy mark in its corner, there
   // while the pointer is on the box, copies it in one press. Draft stands
   // in the person's row of buttons, between Connect and LinkedIn, which
@@ -243,46 +244,42 @@
 
 {@render row(draftButton)}
 
-{#if busy || shown || failed || problem || stateText}
-  <section class="section first-message" aria-labelledby="message-{person.id}">
-    <div class="row between">
-      <label class="label" id="message-{person.id}" for="message-text-{person.id}">First message</label>
-      <span class="small state" aria-live="polite">{stateText}</span>
+<section class="section first-message" aria-labelledby="message-{person.id}">
+  <div class="row between">
+    <label class="label" id="message-{person.id}" for="message-text-{person.id}">First message</label>
+    <span class="small state" aria-live="polite">{stateText}</span>
+  </div>
+  <div class="box">
+    <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
+      bind:this={field} use:fit aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+      ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
+    {#if text && !busy}
+      <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
+        title={copied ? 'Copied' : 'Copy the whole message'}>
+        <Icon name={copied ? 'check' : 'copy'} />
+      </button>
+    {/if}
+    {#if copyRefused}
+      <p class="refused small" role="alert">{copyRefused}</p>
+    {/if}
+  </div>
+  {#if running}
+    <div class="draft-progress" aria-live="polite">
+      <p class="step ellipsis">{stepOf(running)}</p>
+      <p class="meta num">{fmtElapsed(now - new Date(running.started_at).getTime())} so far, {left}</p>
     </div>
-    {#if busy || shown}
-      <div class="box">
-        <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-          bind:this={field} use:fit aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
-          ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
-        {#if text && !busy}
-          <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
-            title={copied ? 'Copied' : 'Copy the whole message'}>
-            <Icon name={copied ? 'check' : 'copy'} />
-          </button>
-        {/if}
-        {#if copyRefused}
-          <p class="refused small" role="alert">{copyRefused}</p>
-        {/if}
-      </div>
-    {/if}
-    {#if running}
-      <div class="draft-progress" aria-live="polite">
-        <p class="step ellipsis">{stepOf(running)}</p>
-        <p class="meta num">{fmtElapsed(now - new Date(running.started_at).getTime())} so far, {left}</p>
-      </div>
-    {/if}
-    {#if failed}
-      <p class="failed small" role="alert">
-        <!-- A failure that needs the Exa key leads to the top of Settings,
-             where the key is, and any other to the language model. -->
-        {failed}{#if failed.includes('Settings')}{' '}<a href={failed.includes('Exa') ? '/app/settings' : '/app/settings#language'}>Open Settings</a>{/if}
-      </p>
-    {/if}
-    {#if problem}
-      <p class="failed small" role="alert">{problem}</p>
-    {/if}
-  </section>
-{/if}
+  {/if}
+  {#if failed}
+    <p class="failed small" role="alert">
+      <!-- A failure that needs the Exa key leads to the top of Settings,
+           where the key is, and any other to the language model. -->
+      {failed}{#if failed.includes('Settings')}{' '}<a href={failed.includes('Exa') ? '/app/settings' : '/app/settings#language'}>Open Settings</a>{/if}
+    </p>
+  {/if}
+  {#if problem}
+    <p class="failed small" role="alert">{problem}</p>
+  {/if}
+</section>
 
 <style>
   .first-message { display: grid; gap: var(--gap-group); }

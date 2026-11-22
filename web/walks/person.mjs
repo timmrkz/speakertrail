@@ -76,6 +76,39 @@ const walks = [
     },
   },
   {
+    // Tim, 22 November 2026: an emptied message took its box with it, and
+    // only Draft brought it back, with a new message he did not want. The
+    // box stays, for a person with no message too, so he can write one
+    // himself.
+    name: 'The first message box stays when it is emptied, and what is written in it is kept',
+    async run(page) {
+      await page.goto(`${url}/app/people/1003`)
+      await page.locator('.person .actions a.btn').waitFor()
+      await keepDraft(page, 1003, message)
+      await page.reload()
+      const box = page.locator('.first-message textarea')
+      await box.waitFor()
+      await box.fill('')
+      if (!(await box.count())) return 'the box went away once it was emptied'
+      await box.blur()
+      await page.waitForFunction(() => document.querySelector('.first-message .state')?.textContent === 'Saved')
+      if ((await person(page, 1003)).draft !== '') return 'the emptied message was not kept'
+      await box.click()
+      await page.keyboard.type('Hallo Mara, ich schreibe selbst.')
+      await box.blur()
+      await page.waitForFunction(() => document.querySelector('.first-message .state')?.textContent === 'Saved')
+      if ((await person(page, 1003)).draft !== 'Hallo Mara, ich schreibe selbst.') return 'what was written in the empty box was not kept'
+      await keepDraft(page, 1003, '')
+      await page.goto(`${url}/app/people/1002`)
+      await page.locator('.person .actions a.btn').waitFor()
+      await keepDraft(page, 1002, '')
+      await page.reload()
+      await page.locator('.person .actions a.btn').waitFor()
+      if (!(await page.locator('.first-message textarea').count())) return 'a person with no message has no box to write one in'
+      return ''
+    },
+  },
+  {
     // Tim saw the list reshuffle as a person came in: rows went from one
     // line to two, the toolbar broke into lines and the list jumped.
     name: 'Opening a person narrows the list and moves nothing in it',

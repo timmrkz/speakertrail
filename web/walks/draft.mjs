@@ -74,7 +74,9 @@ const walks = [
       await open(page, 1003)
       const button = act(page)
       if ((await button.innerText()).trim() !== 'Draft') return `the button reads ${JSON.stringify(await button.innerText())}`
-      if (await box(page).count()) return 'an empty box shows before anything was drafted'
+      // The box is there before anything was drafted, empty, so Tim can
+      // write one himself (Tim, 22 November 2026).
+      if ((await box(page).count()) !== 1 || (await box(page).inputValue()) !== '') return 'no empty box stands ready before anything was drafted'
       await button.click()
       await page.locator('.first-message .step').filter({ hasText: 'Waiting for the draft before it' }).waitFor()
       if ((await act(page).innerText()).trim() !== 'Cancel') return `while it runs the button reads ${await act(page).innerText()}`

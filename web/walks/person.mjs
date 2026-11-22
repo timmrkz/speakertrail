@@ -24,6 +24,36 @@ const keepDraft = (page, id, draft) =>
 // A first message as long as the ones the app drafts, invented.
 const message = 'Hallo Mara,\n\nschön mit dir vernetzt zu sein. Du bist mir aufgefallen, weil du ein Keramikstudio neben dem Studium aufgebaut hast.\n\nDaher würde ich dich gern in meinen Podcast einladen, um deine Geschichte als Gründerin zu erzählen. Die erste Frage ist immer: was ist deine erste Erinnerung?\n\nWenn du Lust hast, lass uns die Tage einen kurzen Video Call machen.\n\nLiebe Grüße, Tim'
 
+
+// Whether a scroller scrolls only when what is in it and one inset under
+// it do not fit, issue #77. The window is made just 10 px taller than
+// that, where it must not scroll, then 60 px shorter, where it must, and
+// scrolled to the end the last content stands one inset above the bottom.
+// Only the height changes, so nothing wraps anew.
+async function scrollsOnlyWhenNeeded(page, where, scroller, content) {
+  const measure = () => page.evaluate(([scroller, content]) => {
+    const s = document.querySelector(scroller)
+    const c = [...document.querySelectorAll(content)].at(-1)
+    const inset = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pad'))
+    const end = c.getBoundingClientRect().bottom - s.getBoundingClientRect().top + s.scrollTop
+    return { need: end + inset, room: s.clientHeight, over: s.scrollHeight - s.clientHeight, inset, height: innerHeight, width: innerWidth }
+  }, [scroller, content])
+  const m = await measure()
+  await page.setViewportSize({ width: m.width, height: Math.round(m.height + m.need + 10 - m.room) })
+  const fits = await measure()
+  if (fits.over > 0) return `${where} fits with ${Math.round(fits.room - fits.need)} px to spare and still scrolls by ${fits.over} px`
+  await page.setViewportSize({ width: m.width, height: Math.round(m.height + m.need - 60 - m.room) })
+  const short = await measure()
+  if (short.over <= 0) return `${where} does not fit and cannot be scrolled`
+  await page.evaluate((scroller) => { const s = document.querySelector(scroller); s.scrollTop = s.scrollHeight }, scroller)
+  const end = await page.evaluate(([scroller, content]) => {
+    const s = document.querySelector(scroller)
+    return s.getBoundingClientRect().top + s.clientHeight - [...document.querySelectorAll(content)].at(-1).getBoundingClientRect().bottom
+  }, [scroller, content])
+  if (Math.abs(end - short.inset) > 1) return `${where} scrolled to the end leaves ${Math.round(end)} px under the last section, not ${short.inset}`
+  return ''
+}
+
 const walks = [
   {
     // Tim, 21 November 2026: no empty avatar, the name on the row of the
@@ -422,6 +452,69 @@ const walks = [
       await page.locator(`#${id}`).waitFor()
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`undone, the list is ${await rows()}, was ${before}`)
       if ((await count('Rejected')) !== rejected) wrong.push(`undone, Rejected counts ${await count('Rejected')}, want ${rejected}`)
+      return wrong.join('\n\t')
+    },
+  },
+  {
+    // Tim, 22 November 2026, issue #77: everything on the person fitted,
+    // and the page still scrolled. Under the last section stood more room
+    // than the window had left.
+    name: 'A person who fits does not scroll, beside the list and in the narrow sheet, nor do the People list and Searches',
+    async run(page) {
+      const wrong = []
+      await page.goto(`${url}/app/people/1003`)
+      await page.locator('.detail-body .person .actions a.btn').waitFor()
+      wrong.push(await scrollsOnlyWhenNeeded(page, 'the person beside the list', '.detail-body', '.detail-body .person'))
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/people/1003`)
+      await page.locator('.sheet .person .actions a.btn').waitFor()
+      wrong.push(await scrollsOnlyWhenNeeded(page, 'the person in the sheet', '.sheet', '.sheet-body .person'))
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto(`${url}/app/people`)
+      await page.locator('.list-pane .prow').first().waitFor()
+      wrong.push(await scrollsOnlyWhenNeeded(page, 'the People list', '.list-pane', '.list-pane .rows'))
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto(`${url}/app/searches`)
+      await page.locator('main button.toggle').first().waitFor()
+      wrong.push(await scrollsOnlyWhenNeeded(page, 'Searches', 'main', 'main .page-body > *'))
+      return wrong.filter(Boolean).join('\n\t')
+    },
+  },
+  {
+    // Tim, 22 November 2026, issue #77, in a recording: with 75 people
+    // the whole People page scrolled away and left an empty window. What
+    // is placed absolutely in a row, like its words for a screen reader,
+    // belonged to the window's main area, not to the list that scrolls,
+    // and stretched that area to the list's whole length.
+    name: 'With a long list, only the list and the person scroll, never the page round them',
+    async run(page) {
+      await page.route((u) => u.pathname === '/api/people', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue()
+        const r = await route.fetch()
+        const body = await r.json()
+        if (!body.people.length) return route.fulfill({ response: r, json: body })
+        const people = Array.from({ length: 75 }, (_, i) => ({ ...body.people[i % body.people.length], id: 5000 + i }))
+        return route.fulfill({ response: r, json: { ...body, people } })
+      })
+      const wrong = []
+      for (const [w, h] of [[1280, 900], [390, 844]]) {
+        await page.setViewportSize({ width: w, height: h })
+        for (const path of ['/app/people', '/app/people/1003']) {
+          await page.goto(`${url}${path}`)
+          await page.locator('#person-row-5074').waitFor({ state: 'attached' })
+          if (path.endsWith('1003')) await page.locator('.person .actions a.btn').first().waitFor()
+          const over = await page.evaluate(() => {
+            const out = []
+            for (const el of [document.scrollingElement, document.querySelector('main')]) {
+              if (el.scrollHeight > el.clientHeight) out.push(`${el.tagName.toLowerCase()} scrolls by ${el.scrollHeight - el.clientHeight} px`)
+            }
+            return out
+          })
+          if (over.length) wrong.push(`${path} at ${w} px: ${over.join(', ')}`)
+        }
+        const list = await page.evaluate(() => { const l = document.querySelector('.list-pane'); return l.scrollHeight > l.clientHeight })
+        if (!list) wrong.push(`at ${w} px the list of 75 people cannot be scrolled`)
+      }
       return wrong.join('\n\t')
     },
   },

@@ -414,6 +414,11 @@
      own that scrolls by itself, the way Mail is laid out. */
   .people { display: flex; height: 100%; min-width: 0; overflow: hidden; }
   .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+  /* A pane that scrolls holds what is placed absolutely in it, like a
+     row's words for a screen reader. Without a position of its own those
+     belong to the main area round it, which then grows as long as the
+     whole list and scrolls the page away, issue #77. */
+  .list-pane, .detail-body { position: relative; }
   .list-pane { flex: 1 1 0; }
   /* The person comes in from the right and takes its share of the width.
      Closed, it is not there at all. */
@@ -473,7 +478,9 @@
   .run-now:hover:enabled { background: color-mix(in srgb, var(--ink) var(--hover-mix), var(--surface-2)); }
   .run-now:active:enabled { background: color-mix(in srgb, var(--ink) var(--press-mix), var(--surface-2)); }
   .run-now:disabled { cursor: default; }
-  .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
+  /* Under the list the page's inset, so a list that fits never scrolls,
+     issue #77. */
+  .rows-wrap { padding: 0 var(--x) var(--gap-page); display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
@@ -501,5 +508,7 @@
     box-sizing: content-box; height: var(--control-h); padding: var(--gap-page) var(--dx) 0;
   }
   .detail-pane { --dx: max(var(--pad), calc((100% - 640px) / 2)); }
-  .detail-body { padding: var(--gap-control) var(--dx) 64px; }
+  /* Under the last section the same inset as round the rest, so a person
+     who fits never scrolls, issue #77. */
+  .detail-body { padding: var(--gap-control) var(--dx) var(--gap-page); }
 </style>

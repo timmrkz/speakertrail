@@ -177,8 +177,12 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   What is selected already, like the open person's row, shows nothing
   more.
 - **One inset round a page and between its sections.** The space over
-  the first control, at the sides, and between the controls and the list
-  or the next section is `--gap-page`, which is `--pad`, on every page.
+  the first control, at the sides, under the last section, and between
+  the controls and the list or the next section is `--gap-page`, which
+  is `--pad`, on every page, in a pane and in a sheet. More room under
+  the last section scrolls a page whose content fits, which Tim found
+  on the person on 22 November 2026, issue #77, and `walks/person.mjs`
+  measures it.
   The person beside the list mirrors it: the name and the cross on the
   row of the search field, the person's buttons on the row of the filter,
   and the first section on the line the list starts on. Tim marked each

@@ -509,12 +509,14 @@ button { -webkit-tap-highlight-color: transparent; }
 .bar .num-count { font-size: 13px; color: var(--ink-3); font-weight: 500; margin-left: 6px; font-variant-numeric: tabular-nums; }
 a, button, input, select, textarea, label, [tabindex] { --wails-draggable: no-drag; }
 /* A page of its own: the bar runs the width of the window, and what is in
-   it stands in the same centred column as the page under it. */
+   it stands in the same centred column as the page under it. The same
+   inset under the last section as over the first, so a page that fits
+   never scrolls, issue #77. */
 .page { display: flex; flex-direction: column; min-height: 100%; min-width: 0; }
 .page > .bar { padding: 0 max(var(--pad), calc((100% - var(--col-w)) / 2)); }
 .page-body {
   width: 100%; max-width: calc(var(--col-w) + 2 * var(--pad)); margin: 0 auto;
-  padding: var(--gap-page) var(--pad) 64px; display: grid; gap: var(--gap-page); align-content: start; min-width: 0;
+  padding: var(--gap-page) var(--pad); display: grid; gap: var(--gap-page); align-content: start; min-width: 0;
 }
 /* The parts of one section, like a heading, a search field and a list. */
 .group { display: grid; gap: var(--gap-group); min-width: 0; align-content: start;

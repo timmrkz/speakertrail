@@ -36,8 +36,13 @@ Settings. It goes into the macOS keychain, as **Speaker Trail: Exa API
 key**, and never into a file. `EXA_API_KEY` in the environment stands in
 while no key is saved.
 
-Each new build asks for the keychain password once, the first time it
-reads the key. Always Allow keeps that build from asking again. Keychain
+The first build signed with the Developer ID asks for the keychain
+password once, the first time it reads the key. Always Allow there
+covers every build signed with it after, until the key is saved again
+in Settings, see The Developer ID in
+[UPDATES.md](UPDATES.md). A build signed ad hoc, like one from `make
+run`, asks once for itself. Closing the box without an answer keeps the
+key back for that one read, and the next run or draft asks again. Keychain
 Access shows the item as open to all applications, because the list of
 trusted apps would ask a second time. Another program is still asked, by
 the item's partition list, which holds only the builds you allowed.

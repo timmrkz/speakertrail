@@ -96,7 +96,8 @@ own, and answers 202. While a run goes it gets 409.
 
 `POST /api/runs` starts a run of the due searches and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
-false and `run_id` is that run. Without an Exa key, with the month's
+false and `run_id` is that run. Without an Exa key, with the key kept
+back by macOS because its password box was closed, with the month's
 budget spent, or with no search due it gets 409 and says which.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
@@ -362,7 +363,9 @@ the one before it, of any draft, so the window keeps the newer of the
 answer to `POST` and the event, whichever arrives last.
 
 A draft that is done is kept on the person as `draft`. Reading a profile
-counts against Exa's monthly budget like a search. Each change is sent as
+counts against Exa's monthly budget like a search. A draft that needs
+the Exa key fails with why when macOS keeps it back, and Draft again
+asks macOS again. Each change is sent as
 the Wails event `draft`, one draft at a time, and once a second while one
 runs. Where the app runs no language model, starting one answers 409.
 

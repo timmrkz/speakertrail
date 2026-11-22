@@ -90,9 +90,12 @@ Exa key. A person is named by id.
 
 Each read of the Exa key from the keychain is a line from `keys`, `the
 Exa key was read from the keychain`, with `ms`, whether it was `found`
-and the keychain's `status`, `0` when it was. The app reads the key at
-most once per start. A read that waits on a password box from macOS
-waits as long as the box is on screen, and `ms` shows how long.
+and the keychain's `status`, `0` when it was, `-25300` when no key is
+saved and `-128` when the password box was closed. Once found, the key
+is kept for the start and not read again. A read that did not find it
+is tried again the next time a run or a draft needs the key. A read
+that waits on a password box from macOS waits as long as the box is on
+screen, and `ms` shows how long.
 
 ### Acts
 

@@ -43,13 +43,27 @@ var (
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
 	ErrNothing  = errors.New("no search is due. Add one in Searches, or resume a paused one")
 	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
+	// ErrUnread is a key that is saved and could not be read, like one
+	// macOS kept back because its password box was closed. The error a
+	// run starts with says why in its own words.
+	ErrUnread = errors.New("the Exa key could not be read")
 )
+
+// unread is a Finder's failure other than ErrNoKey, said in its own
+// words and matched as ErrUnread.
+type unread struct{ err error }
+
+func (u unread) Error() string        { return u.err.Error() }
+func (u unread) Unwrap() error        { return u.err }
+func (u unread) Is(target error) bool { return target == ErrUnread }
 
 // Engine runs profile searches against a store.
 type Engine struct {
 	Store *store.Store
-	// Finder is the search provider, nil while there is no key.
-	Finder func() Finder
+	// Finder is the search provider. It fails with ErrNoKey while no key
+	// is saved, and with why when the key could not be read, like a
+	// password box closed on the Mac. Each ask tries again.
+	Finder func() (Finder, error)
 	Log    *slog.Logger
 	// Act is what the person did last, the id the app's log ties lines
 	// to, or nil. A run keeps the act that started it on every line it
@@ -134,8 +148,13 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	if e.closed > 0 {
 		return 0, false, ErrClosed
 	}
-	if e.Finder == nil || e.Finder() == nil {
+	if e.Finder == nil {
 		return 0, false, ErrNoKey
+	}
+	if _, err := e.Finder(); errors.Is(err, ErrNoKey) {
+		return 0, false, ErrNoKey
+	} else if err != nil {
+		return 0, false, unread{err}
 	}
 	now := e.Store.Now()
 	var run *store.Run
@@ -297,11 +316,9 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 		e.mu.Unlock()
 	}()
 
-	finder := e.Finder()
 	var profiles []search.Profile
-	if finder == nil {
-		err = ErrNoKey
-	} else {
+	finder, err := e.Finder()
+	if err == nil {
 		profiles, err = finder.People(ctx, query, results)
 	}
 	if ctx.Err() != nil {

@@ -552,6 +552,8 @@ export interface ReportPicture {
 export interface ReportDraft {
   text: string
   pictures: ReportPicture[]
+  // Whether the report takes People along, without names or links.
+  people: boolean
   error?: string
 }
 
@@ -737,7 +739,9 @@ export const api = {
   // Report a Problem, in a window of its own, see docs/api.md. The report
   // is made on the Desktop and its path, with the home folder as ~, comes
   // back.
-  reportProblem: (what: string) => request<{ path: string }>('POST', '/api/report/send', { what }).then((r) => r.path),
+  reportProblem: (what: string, people: boolean) => request<{ path: string }>('POST', '/api/report/send', { what, people }).then((r) => r.path),
+  // Whether the report takes People along.
+  takePeople: (people: boolean) => request<ReportDraft>('PUT', '/api/report/people', { people }),
   // Opens the report window, or brings it forward, and says how it was
   // asked for: "bugs" from the sidebar.
   openReport: (how: string) => request<void>('POST', '/api/report/open', { how }),

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -94,5 +95,24 @@ func TestDictateOverHTTPSaysWhereTheModelIs(t *testing.T) {
 	a.ServeHTTP(rec, httptest.NewRequest("POST", "/api/listen/cancel", nil))
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("cancel answered %d", rec.Code)
+	}
+}
+
+// People is switched from several requests at once while the draft is
+// read and written, and the last switch is what the draft keeps.
+func TestPeopleIsSwitchedFromSeveralRequestsAtOnce(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			r.TakePeople(i%2 == 0)
+			_ = r.SaveReportText("It froze.")
+			_ = r.ReportDraft()
+		})
+	}
+	wg.Wait()
+	r.TakePeople(true)
+	if d := r.ReportDraft(); !d.People || d.Text != "It froze." {
+		t.Errorf("the draft is %+v", d)
 	}
 }

@@ -255,7 +255,9 @@ messages, pull request text, code comments and chat replies.
   whichever profile was used last. See [docs/open-in-profile.md](docs/open-in-profile.md).
 - **Personal data.** Names, roles and profile links are personal data.
   Store only what the data model lists, never email addresses or phone
-  numbers. The app's file stays on Tim's Mac. Real names never go into
+  numbers. The app's file stays on Tim's Mac. People leave it only in
+  a report with People switched on, without names or links, see
+  `store.Shared` (Tim, 22 November 2026, #73). Real names never go into
   test fixtures, mock data or anything committed: invent them.
   The app's log never names a person either: whatever shows a person's
   words is marked `data-personal`, see [docs/LOGGING.md](docs/LOGGING.md).

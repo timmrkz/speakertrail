@@ -41,7 +41,7 @@ const walks = [
       const names = await page.evaluate(() => fetch('/api/people').then((r) => r.json()).then((d) => d.people.flatMap((p) => [p.name, p.headline ?? ''].filter(Boolean))))
       await page.locator('.prow').nth(1).click()
       await page.locator('.detail-pane .person').waitFor()
-      await page.locator('.detail-pane .person h2, .detail-pane .person h1').first().click()
+      await page.locator('.detail-pane .person-name').click()
       await page.locator('.connect').click()
       const h = await until(page, (h) => h.acts.length >= 3)
       const all = JSON.stringify(h)

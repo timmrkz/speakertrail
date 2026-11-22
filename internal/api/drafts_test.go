@@ -62,8 +62,15 @@ func TestDraftAFirstMessage(t *testing.T) {
 		t.Errorf("person %+v", p)
 	}
 	call(t, a, "PATCH", "/api/people/"+itoa(id), `{"draft":"Hallo Mara, danke!"}`, &p)
-	if p.Draft != "Hallo Mara, danke!" {
-		t.Errorf("edited draft %q", p.Draft)
+	if p.Draft != "Hallo Mara, danke!" || p.DraftedAt == nil {
+		t.Errorf("edited draft %q drafted at %v", p.Draft, p.DraftedAt)
+	}
+	// An emptied message was drafted at no time, so the person page says
+	// nothing was drafted over an empty box (review of #60, 22 November
+	// 2026).
+	call(t, a, "PATCH", "/api/people/"+itoa(id), `{"draft":""}`, &p)
+	if p.Draft != "" || p.DraftedAt != nil {
+		t.Errorf("emptied draft %q drafted at %v", p.Draft, p.DraftedAt)
 	}
 	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft/cancel", "{}", nil); code != http.StatusConflict {
 		t.Errorf("cancel with nothing under way: %d", code)

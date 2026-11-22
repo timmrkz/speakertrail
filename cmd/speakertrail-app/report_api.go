@@ -24,7 +24,8 @@ import (
 //	POST /api/report/remove         {"id": "p1"} takes a picture out, gives the draft
 //	POST /api/report/put-back       {"id": "p1"} puts it back, gives the draft
 //	POST /api/report/clear          lets go of the draft, gives the empty one
-//	POST /api/report/send           {"what": "…"} makes the report, gives {"path": "~/Desktop/…"}
+//	PUT  /api/report/people         {"people": true} takes People along, gives the draft
+//	POST /api/report/send           {"what": "…"} makes the report, with People when the draft takes them, gives {"path": "~/Desktop/…"}
 type reportAPI struct {
 	r    *reporting
 	make func(what string) (string, error)
@@ -37,12 +38,13 @@ const reportBodyMax = pictureBytesMax*4/3 + 4096
 func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
-		How  string `json:"how"`
-		Text string `json:"text"`
-		Name string `json:"name"`
-		Data string `json:"data"`
-		ID   string `json:"id"`
-		What string `json:"what"`
+		How    string `json:"how"`
+		Text   string `json:"text"`
+		Name   string `json:"name"`
+		Data   string `json:"data"`
+		ID     string `json:"id"`
+		What   string `json:"what"`
+		People bool   `json:"people"`
 	}
 	if (r.Method == http.MethodPost || r.Method == http.MethodPut) && !readBody(w, r, reportBodyMax, &body) {
 		return
@@ -67,6 +69,8 @@ func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	case "PUT /api/report/people":
+		answer(w, http.StatusOK, a.r.TakePeople(body.People))
 	case "POST /api/report/pick":
 		answer(w, http.StatusOK, a.r.AttachPictures())
 	case "POST /api/report/pasted":

@@ -239,6 +239,10 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 		}
 		if body.Draft != nil {
 			p.Draft, p.UpdatedAt = *body.Draft, now
+			// An emptied message was drafted at no time.
+			if p.Draft == "" {
+				p.DraftedAt = time.Time{}
+			}
 		}
 		return nil
 	}) {

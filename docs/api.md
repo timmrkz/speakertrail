@@ -63,7 +63,7 @@ app has none and a draft reads it first. See [Drafts](#drafts).
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
 `{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`
-does.
+does. An empty `draft` clears `drafted_at` too.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
@@ -196,6 +196,17 @@ when it starts and hears every change after on the Wails event called
 `chrome`. `GET /api/chrome?window=report` answers the same for the
 report window, whose changes come as `chrome-report`. See
 `cmd/speakertrail-app/chrome.go`.
+
+## Copy
+
+`POST /api/clipboard` with `{"text": "…"}` puts the text on the Mac's
+clipboard and answers 204. It is answered by the app itself, not by
+`internal/api`, see `cmd/speakertrail-app/clipboard.go`. The window's own
+`navigator.clipboard.writeText` is refused in the app's web view with a
+`NotAllowedError`, so the copy mark
+on a first message and Copy on the Updates page ask the app instead. When
+the Mac does not take it, the answer is 500 with an `error` that says to
+select the text and press Cmd+C.
 
 ## Quitting
 

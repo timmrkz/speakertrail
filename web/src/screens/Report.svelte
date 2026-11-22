@@ -907,7 +907,7 @@
     white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 14px; line-height: 19px; color: var(--ink);
     background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 12px; margin: 0; resize: none;
   }
-  .telling:focus { border-color: var(--accent); }
+  .telling:hover, .telling:focus { border-color: var(--line-hover); }
   .telling::placeholder { color: var(--ink-3); }
 
   /* One row of controls of one height: the icons on the left, what the

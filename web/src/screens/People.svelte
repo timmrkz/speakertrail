@@ -287,6 +287,14 @@
     if (openId !== null && at >= 0) gone = { id: openId, at, name: people.data![at].name }
     people.run(fetchPeople({ q: query, sort, filter }), { quiet: true })
   }
+
+  // The open person's name, from the person once loaded, and from the
+  // list until then. A person can be open who is not in the list shown.
+  let named = $state<{ id: number; name: string } | null>(null)
+  let openName = $derived(
+    openId === null ? '' : named?.id === openId ? named.name
+      : (people.data?.find((x) => x.id === openId)?.name ?? (gone?.id === openId ? gone.name : '')),
+  )
 </script>
 
 <svelte:window onkeydown={keydown} />
@@ -371,14 +379,17 @@
         onpointerdown={startDrag} onkeydown={edgeKey} ondblclick={() => setShare(0.45)}>
         {#if dragging}<span class="share">{percent} %</span>{/if}
       </div>
-      <!-- The cross stands in the row the list's controls stand in, the
-           same height, its glyph on the edge of the person under it. -->
+      <!-- The name and the cross stand in the row the list's controls
+           stand in, the same height, the cross's glyph on the edge of the
+           person under it. Tim asked for the name there on 21 November
+           2026, so the person starts with what he does. -->
       <div class="detail-top">
+        <h2 class="person-name ellipsis" data-personal title={openName}>{openName}</h2>
         <button class="btn quiet icon flush-end" type="button" onclick={() => navigate('/app/people')} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
       </div>
       <div class="detail-body">
         {#key openId}
-          <PersonDetail id={openId} onupdate={updated} onmoved={moved} />
+          <PersonDetail id={openId} onupdate={updated} onmoved={moved} onname={(id, name) => (named = { id, name })} />
         {/key}
       </div>
     </section>
@@ -430,7 +441,7 @@
      of what is known. The column is the same with a person open or not,
      only narrower when the list is, so nothing moves when one opens. */
   .list-pane { --x: max(var(--pad), calc((100% - var(--col-w)) / 2)); }
-  .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x) var(--gap-group); }
+  .controls { display: grid; gap: var(--gap-control); padding: var(--gap-page) var(--x); }
   .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; }
   /* Four filters with their counts need about 370 px, and a narrow
      window has 306 at 390. There they stand two by two, each segment as
@@ -476,9 +487,15 @@
   .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .connected { color: var(--good); font-weight: 600; }
   @media (max-width: 520px) { .prow { padding: 12px 14px; } }
-  /* The person stands in a column of its own width, and the cross in the
-     bar over it ends where the column ends. */
-  .detail-top { flex: none; display: flex; justify-content: flex-end; align-items: center; height: calc(var(--control-h) + 28px); padding-inline: var(--dx); }
-  .detail-pane { --dx: max(32px, calc((100% - 640px) / 2)); }
-  .detail-body { padding: 0 var(--dx) 48px; }
+  /* The person mirrors the list beside it: the same inset at the sides
+     and over the top, the name and the cross on the row of the search
+     field, and the person's buttons on the row of the filter, a
+     --gap-control under it, see walks/look.mjs. Wider than its column,
+     the person stands in the middle, as the list does. */
+  .detail-top {
+    flex: none; display: flex; justify-content: space-between; align-items: center; gap: var(--gap-control);
+    box-sizing: content-box; height: var(--control-h); padding: var(--gap-page) var(--dx) 0;
+  }
+  .detail-pane { --dx: max(var(--pad), calc((100% - 640px) / 2)); }
+  .detail-body { padding: var(--gap-control) var(--dx) 64px; }
 </style>

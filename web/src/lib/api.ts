@@ -741,6 +741,9 @@ export const api = {
   // Opens the report window, or brings it forward, and says how it was
   // asked for: "bugs" from the sidebar.
   openReport: (how: string) => request<void>('POST', '/api/report/open', { how }),
+  // The Mac's clipboard, which the app writes, since the web view refuses
+  // the window's own. See docs/api.md, Copy.
+  copy: (text: string) => request<void>('POST', '/api/clipboard', { text }),
   // Opens it with a toast's words, as a report of its own.
   reportAbout: (text: string) => request<void>('POST', '/api/report/about', { text }),
   reportWindowOpen: () => request<{ open: boolean }>('GET', '/api/report/window').then((r) => r.open),

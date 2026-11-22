@@ -218,8 +218,9 @@ messages, pull request text, code comments and chat replies.
   themes (Tim, 21 November 2026). Hover, pressed, chosen and greyed out
   come from the state tokens in `app.css`, the same for every control.
 - **Quiet marks.** No lines or patterns in the background. A button in
-  focus wears a ring in its own colour, a field shows only its edge in
-  the accent (Tim, 21 November 2026). See the interface skill.
+  focus wears a ring in its own colour, a field in use keeps the grey
+  edge it has under the pointer, never the accent (Tim, 21 November
+  2026). See the interface skill.
 
 ## Engineering rules
 

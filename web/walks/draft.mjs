@@ -32,7 +32,7 @@ async function open(page, id) {
     route.fulfill({ json: job(id, ++n, { state: 'queued' }) }))
   await page.route(/\/api\/people\/\d+\/draft\/cancel$/, (route) => route.fulfill({ status: 204 }))
   await page.goto(`${url}/app/people/${id}`)
-  await page.locator('.first-message').waitFor()
+  await act(page).waitFor()
 }
 
 // Each change numbered higher than the one before, as Seq in
@@ -51,7 +51,7 @@ const keep = (page, id, draft) =>
 const kept = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.draft), id)
 
 const box = (page) => page.locator('.first-message textarea')
-const act = (page) => page.locator('.first-message button.act').first()
+const act = (page) => page.locator('.person button.act').first()
 
 // A draft written from start to end: Draft, the text as it grows, then
 // the whole message, Tim's to change.
@@ -74,7 +74,9 @@ const walks = [
       await open(page, 1003)
       const button = act(page)
       if ((await button.innerText()).trim() !== 'Draft') return `the button reads ${JSON.stringify(await button.innerText())}`
-      if (await box(page).count()) return 'an empty box shows before anything was drafted'
+      // The box is there before anything was drafted, empty, so Tim can
+      // write one himself (Tim, 22 November 2026).
+      if ((await box(page).count()) !== 1 || (await box(page).inputValue()) !== '') return 'no empty box stands ready before anything was drafted'
       await button.click()
       await page.locator('.first-message .step').filter({ hasText: 'Waiting for the draft before it' }).waitFor()
       if ((await act(page).innerText()).trim() !== 'Cancel') return `while it runs the button reads ${await act(page).innerText()}`
@@ -95,9 +97,13 @@ const walks = [
     },
   },
   {
-    name: 'The message is Tim’s to change, a double click selects all of it, and Copy copies it',
+    name: 'The message is Tim’s to change, a double click selects all of it, and the copy mark copies it',
     async run(page) {
-      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+      // The app's web view refuses the window's own clipboard, as Tim saw
+      // testing #60 on 22 November 2026, so the walk refuses it too.
+      await page.addInitScript(() => {
+        navigator.clipboard.writeText = () => Promise.reject(new DOMException('The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.', 'NotAllowedError'))
+      })
       await open(page, 1004)
       await drafted(page, 1004, 1, first)
       await box(page).dblclick()
@@ -107,9 +113,68 @@ const walks = [
       await box(page).blur()
       await page.locator('.first-message .state').filter({ hasText: 'Saved' }).waitFor()
       if ((await kept(page, 1004)) !== `${first} PS`) return 'the change was not saved'
-      await page.locator('.first-message button', { hasText: 'Copy' }).click()
-      const copied = await page.evaluate(() => navigator.clipboard.readText())
+      // The copy mark shows only while the pointer is on the box.
+      const mark = page.locator('.first-message button.copy')
+      await page.mouse.move(0, 0)
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '0') return 'the copy mark shows with the pointer away from the box'
+      await box(page).hover()
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the copy mark does not show with the pointer on the box'
+      const asked = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/clipboard')
+      await mark.click()
+      await page.waitForFunction(() => document.querySelector('.first-message button.copy')?.getAttribute('aria-label') === 'Copied')
+      const copied = (await asked).postDataJSON().text
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
+      if (await page.locator('.first-message .refused, .toast').count()) return 'a copy that worked says something went wrong'
+      // The tick stays while it shows, with the pointer gone.
+      await page.mouse.move(0, 0)
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the tick hides with the pointer away'
+      return ''
+    },
+  },
+  {
+    // Tim saw the box keep its first size while the model wrote and jump
+    // once it was done, 22 November 2026. It grows with every piece.
+    name: 'The box grows with the draft as the model writes it',
+    async run(page) {
+      await open(page, 1000)
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      const words = 'Hallo Mara, schön mit dir vernetzt zu sein. Du bist mir aufgefallen, weil du ein Keramikstudio neben dem Studium aufgebaut hast.'.repeat(5).split(' ')
+      let text = ''
+      let grew = 0
+      let before = 0
+      for (let i = 0; i < words.length; i += 5) {
+        text += ` ${words.slice(i, i + 5).join(' ')}`
+        await say(page, job(1000, 1, { state: 'writing', text, fraction: 0.5, seconds_left: 4 }))
+        const m = await page.waitForFunction((want) => {
+          const t = document.querySelector('.first-message textarea')
+          return t && t.value === want && { over: t.scrollHeight - t.clientHeight, h: t.clientHeight }
+        }, text.trimStart()).then((h) => h.jsonValue())
+        if (m.over > 0) return `with ${text.length} letters written the text is ${m.over} px taller than its box`
+        if (m.h > before) grew++
+        before = m.h
+      }
+      if (grew < 4) return `the box grew only ${grew} times while the draft was written`
+      return ''
+    },
+  },
+  {
+    // An error shows where it happened, over the box, never as a toast
+    // over the window, and in words Tim can act on (22 November 2026).
+    name: 'A copy the Mac refuses says what to do, over the message, with no toast',
+    async run(page) {
+      await page.route('**/api/clipboard', (route) => route.fulfill({ status: 500, json: { error: 'The Mac did not take it on the clipboard. Select the text and press Cmd+C.' } }))
+      await open(page, 1001)
+      await drafted(page, 1001, 1, first)
+      await box(page).hover()
+      await page.locator('.first-message button.copy').click()
+      const line = page.locator('.first-message .box .refused')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'Could not copy the message. Select it and press Cmd+C.') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      const [b, l] = await Promise.all([box(page).boundingBox(), line.boundingBox()])
+      if (l.y < b.y || l.y + l.height > b.y + b.height || l.x < b.x || l.x + l.width > b.x + b.width) return 'the line is not over the box'
       return ''
     },
   },
@@ -138,10 +203,10 @@ const walks = [
         await route.fulfill({ json: queued })
       })
       await page.goto(`${url}/app/people/1008`)
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       await act(page).click()
       await page.locator('.first-message .failed').waitFor()
-      await page.locator('.first-message button.act', { hasText: /^Draft$/ }).waitFor()
+      await page.locator('.person button.act', { hasText: /^Draft$/ }).waitFor()
       if (await page.locator('.first-message .step').count()) return 'the draft still waits after it failed'
       return ''
     },
@@ -161,7 +226,7 @@ const walks = [
         await route.fulfill({ json: [writing] })
       })
       await page.goto(`${url}/app/people/1007`)
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       await say(page, job(1007, 1, { state: 'done', text: first }))
       release()
       await page.waitForResponse('**/api/drafts')
@@ -178,7 +243,7 @@ const walks = [
       const answered = Promise.all([page.waitForResponse('**/api/keys'), page.waitForResponse('**/api/language')])
       await page.goto(`${url}/app/people/1000`)
       await answered
-      await page.locator('.first-message').waitFor()
+      await act(page).waitFor()
       if (await page.locator('a.nav[href="/app/settings"] .dot').count()) return 'Settings wears a dot with the key saved and the model here'
       return ''
     },
@@ -206,8 +271,8 @@ const walks = [
       let asked = 0
       await page.route(/\/api\/people\/\d+\/draft$/, (route) => { asked++; return route.fulfill({ status: 409, json: { error: 'no' } }) })
       await page.goto(`${url}/app/people/1000`)
-      await page.locator('.first-message').waitFor()
-      await page.waitForFunction(() => /Download it in Settings/.test(document.querySelector('.first-message button.act')?.title ?? ''))
+      await act(page).waitFor()
+      await page.waitForFunction(() => /Download it in Settings/.test(document.querySelector('.person button.act')?.title ?? ''))
       await act(page).click()
       await page.locator('#language').waitFor()
       await page.waitForFunction(() => {
@@ -225,6 +290,23 @@ const walks = [
     },
   },
   {
+    // The key is at the top of Settings, not at the language model.
+    name: 'A draft that failed for want of the Exa key leads to the key in Settings',
+    async run(page) {
+      await open(page, 1002)
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      await say(page, job(1002, 1, { state: 'failed', error: 'The app has no profile text for them yet, and reading it needs the Exa key. Add it in Settings.' }))
+      const link = page.locator('.first-message .failed').getByRole('link', { name: 'Open Settings' })
+      await link.click()
+      await page.locator('#exa-key').waitFor()
+      if (new URL(page.url()).hash) return `the link went to ${new URL(page.url()).hash}, not the top of Settings`
+      const top = await page.locator('#exa-key').evaluate((e) => { const r = e.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight })
+      if (!top) return 'the key is not in view'
+      return ''
+    },
+  },
+  {
     name: 'A draft that failed for want of something in Settings leads there',
     async run(page) {
       await open(page, 1006)
@@ -234,6 +316,9 @@ const walks = [
       const alert = page.locator('.first-message .failed')
       await alert.waitFor()
       if ((await act(page).innerText()).trim() !== 'Draft') return `after it failed the button reads ${await act(page).innerText()}`
+      // Tim saw "Settings.Open Settings", the link stuck to the full stop.
+      const said = (await alert.innerText()).trim()
+      if (!said.endsWith('Mac. Open Settings')) return `the line reads ${JSON.stringify(said)}`
       await alert.getByRole('link', { name: 'Open Settings' }).click()
       await page.locator('#language').waitFor()
       await page.waitForFunction(() => {

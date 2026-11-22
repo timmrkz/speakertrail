@@ -76,7 +76,9 @@
      stands where the content's right edge is. */
   .sheet-bar { position: sticky; top: 0; z-index: 1; background: var(--surface); border-bottom-color: transparent; }
   .head-body { flex: 1 1 auto; min-width: 0; }
-  .sheet-body { display: grid; gap: 22px; min-width: 0; padding: 8px var(--pad) calc(32px + env(safe-area-inset-bottom, 0px)); }
+  /* The body stands a --gap-control under the bar, as a person's buttons
+     stand under the name in the pane, and its sections --gap-page apart. */
+  .sheet-body { display: grid; gap: var(--gap-page); min-width: 0; padding: var(--gap-control) var(--pad) calc(32px + env(safe-area-inset-bottom, 0px)); }
   @keyframes fade { from { opacity: 0; } }
   @keyframes slide-in { from { transform: translateX(48px); opacity: 0; } }
 </style>

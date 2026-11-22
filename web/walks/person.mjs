@@ -331,6 +331,59 @@ const walks = [
     },
   },
   {
+    // Tim, 21 November 2026: he picks the best fit from the top, and every
+    // point of the fit has a reason he can read, docs/fit-score.md.
+    name: 'People puts the best fit first, and a person says what their fit adds up to',
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      const set = (v) => page.evaluate((v) => fetch('/api/settings/home_city', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: v }) }).then((r) => r.status), v)
+      if ((await set('Cologne')) !== 200) return 'Where you are did not take Cologne'
+      try {
+        await page.reload()
+        await page.locator('.prow').first().waitFor()
+        const order = (await page.locator('.list-pane').innerText()).includes('Best fit')
+        if (!order) return 'the list is not in the order Best fit'
+        const fits = await page.$$eval('.prow .fit', (els) => els.map((e) => Number(e.textContent.replace(/\D/g, ''))))
+        if (fits.length < 3) return `only ${fits.length} rows show a fit`
+        if (fits.some((f, i) => i && f > fits[i - 1])) return `the fits are not best first: ${fits.join(' ')}`
+        await page.locator('.prow').first().click()
+        await page.locator('.fit .part').first().waitFor()
+        const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace(/\D/g, ''))))
+        const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
+        if (parts.length !== 4) return `${parts.length} parts, want 4`
+        if (parts.reduce((a, b) => a + b, 0) !== head || head !== fits[0]) return `the parts ${parts.join(' + ')} are not the fit ${head}, the row says ${fits[0]}`
+        const near = await page.locator('.fit .part').nth(2).innerText()
+        if (!/where you are|km/.test(near)) return `Near you says ${near}`
+        return ''
+      } finally {
+        await set('')
+      }
+    },
+  },
+  {
+    // Tim, 22 November 2026: people who founded something but work as an
+    // employee elsewhere stood high. Who they are takes points away for
+    // that, shown with a minus, and the parts still add up to the fit.
+    name: 'Fit is one list: someone employed elsewhere loses points under Who they are, with a minus and a cross under it',
+    async run(page) {
+      await page.goto(`${url}/app/people/1009`)
+      await page.locator('.fit .part').first().waitFor()
+      const who = await page.locator('.fit .part').first().innerText()
+      if (!/^−\d+/.test(who.trim()) || !who.includes('Employed elsewhere')) return `Who they are says ${who}`
+      // Tim, 22 November 2026: one list, not Fit and Why saying the same
+      // twice. The cross and the tick sit under the part they count in.
+      const against = await page.locator('.fit .part').first().locator('li.against').allInnerTexts()
+      if (!against.some((t) => t.includes('Employed elsewhere'))) return `the crosses under Who they are: ${against.join(' | ')}`
+      if (await page.locator('.fit .part').first().locator('li:not(.against):not(.neither)', { hasText: 'Runs their own business' }).count() !== 1) return 'Runs their own business has no tick under Who they are'
+      if (await page.locator('h3', { hasText: /^Why$/ }).count()) return 'Why is still a list of its own'
+      if (await page.locator('.fit .part').nth(1).locator('li').count() !== 1) return 'Active lately shows more than its why'
+      const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace('−', '-').replace('+', ''))))
+      const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
+      if (parts.reduce((a, b) => a + b, 0) !== head) return `the parts ${parts.join(' ')} are not the fit ${head}`
+      return ''
+    },
+  },
+  {
     // Tim, 21 November 2026, issue #66: people whose profile he rejected
     // stayed among those he still has to go through. Rejected, a person
     // leaves All for Rejected, the counts follow and the person stays

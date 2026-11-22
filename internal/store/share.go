@@ -31,6 +31,14 @@ type Shared struct {
 	Score   int      `json:"score"`
 	Rubric  int      `json:"rubric"`
 	Signals []Signal `json:"signals"`
+	// Fit and FitParts are the fit People orders by, as the person shows
+	// it on the day of the report, see Data.Fit. LastWrote is the newest
+	// post or comment the profile text shows, and Wrote whether its
+	// activity says what kind it is.
+	Fit       int          `json:"fit"`
+	FitParts  []SharedPart `json:"fit_parts"`
+	LastWrote *time.Time   `json:"last_wrote,omitempty"`
+	Wrote     bool         `json:"wrote"`
 	// Connected says Tim marked that he connected with them, Review is
 	// confirmed or rejected, and HiddenBy the exclusion that leaves them
 	// out of People, if one does.
@@ -48,6 +56,13 @@ type Shared struct {
 	FoundBy   []SharedFound `json:"found_by"`
 }
 
+// SharedPart is one part of the fit, with its points and why.
+type SharedPart struct {
+	Key    string `json:"key"`
+	Points int    `json:"points"`
+	Why    string `json:"why"`
+}
+
 // SharedFound is a search that found a person, by its words, and when it
 // last did.
 type SharedFound struct {
@@ -63,7 +78,8 @@ type SharedFound struct {
 func (s *Store) Share() []Shared {
 	var out []Shared
 	var names [][2]string
-	s.Read(func(d *Data) { out, names = d.share() })
+	now := s.now()
+	s.Read(func(d *Data) { out, names = d.share(now) })
 	for i := range out {
 		clean := unnamed(names[i][0], names[i][1])
 		sh := &out[i]
@@ -71,13 +87,16 @@ func (s *Store) Share() []Shared {
 		for j := range sh.Signals {
 			sh.Signals[j].Label, sh.Signals[j].Passage = clean(sh.Signals[j].Label), clean(sh.Signals[j].Passage)
 		}
+		for j := range sh.FitParts {
+			sh.FitParts[j].Why = clean(sh.FitParts[j].Why)
+		}
 	}
 	return out
 }
 
 // share copies every person as Shared, names and all, with each one's
 // name and handle beside it for Share to take out.
-func (d *Data) share() ([]Shared, [][2]string) {
+func (d *Data) share(now time.Time) ([]Shared, [][2]string) {
 	hidden := d.Hidden()
 	out := make([]Shared, 0, len(d.People))
 	names := make([][2]string, 0, len(d.People))
@@ -90,6 +109,11 @@ func (d *Data) share() ([]Shared, [][2]string) {
 			Connected: p.Connected, ConnectedAt: when(p.ConnectedAt), Review: l.Review, HiddenBy: hidden[p.ID],
 			Text: l.Text, TextAt: when(l.TextAt), HasDraft: p.Draft != "",
 			FirstSeen: p.FirstSeen, FoundBy: make([]SharedFound, 0, len(p.FoundBy)),
+		}
+		fit, parts := d.Fit(p, now)
+		s.Fit, s.FitParts, s.LastWrote, s.Wrote = fit, make([]SharedPart, 0, len(parts)), when(l.LastWrote), l.Wrote
+		for _, pt := range parts {
+			s.FitParts = append(s.FitParts, SharedPart{Key: pt.Key, Points: pt.Points, Why: pt.Why})
 		}
 		for _, f := range p.FoundBy {
 			if search := d.Search(f.SearchID); search != nil {

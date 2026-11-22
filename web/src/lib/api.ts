@@ -22,7 +22,7 @@ export type SourceKind =
 export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
-export type PeopleSort = 'young' | 'new' | 'fit' | 'next' | 'name'
+export type PeopleSort = 'fit' | 'young' | 'new' | 'next' | 'name'
 export type PeopleFilter = 'all' | 'young' | 'connected' | 'rejected' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export interface EventPerson {
@@ -156,7 +156,7 @@ export interface Person {
   city: string
   fit: PersonFit
   first_seen: string
-  // The signals for less those against. The signals are the reasons.
+  // The fit from 0 to 100, as of now. fit_parts on the person say why.
   fit_score: number
   signals: FitSignal[]
   // Whether Tim connected with the person on LinkedIn.
@@ -209,6 +209,27 @@ export interface PersonDetail extends Omit<Person, 'appearances'> {
   // When Exa's index gave the profile text a draft is written from, null
   // while the app has none and a draft reads it first.
   profile_read_at: string | null
+  // What fit_score adds up, in the order Why shows them.
+  fit_parts: FitPart[]
+}
+
+// One part of the fit, with the points it gave and why: who, younger,
+// active or near.
+export interface FitPart {
+  key: string
+  label: string
+  points: number
+  why: string
+  // What the part shows under it, each line with a tick, a cross or
+  // neither: the signals of Who they are, or the why of the others.
+  lines: FitLine[]
+}
+
+export interface FitLine {
+  mark: 'for' | 'against' | 'neither'
+  text: string
+  passage: string
+  found_in: string
 }
 
 export interface PeopleQuery {

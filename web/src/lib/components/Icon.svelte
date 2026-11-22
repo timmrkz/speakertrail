@@ -12,6 +12,7 @@
   import RotateCw from '@lucide/svelte/icons/rotate-cw'
   import X from '@lucide/svelte/icons/x'
   import Check from '@lucide/svelte/icons/check'
+  import Minus from '@lucide/svelte/icons/minus'
   import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down'
   import Download from '@lucide/svelte/icons/download'
   import Plus from '@lucide/svelte/icons/plus'
@@ -56,6 +57,8 @@
     close: X,
     x: X,
     check: Check,
+    // Neither for nor against, beside a tick and a cross.
+    neither: Minus,
     plus: Plus,
     connect: UserPlus,
     'not-them': UserX,

@@ -56,24 +56,40 @@ type SharedFound struct {
 }
 
 // Share gives every person the way Report a Problem takes them along,
-// in the order they were found.
-func (d *Data) Share() []Shared {
+// in the order they were found. What it gives is copied under the lock,
+// and the names are taken out after, since that reads every profile text
+// and the window and a run would wait on it: 1.5 s for 1000 people of
+// 8000 characters on a 4-core build runner.
+func (s *Store) Share() []Shared {
+	var out []Shared
+	var names [][2]string
+	s.Read(func(d *Data) { out, names = d.share() })
+	for i := range out {
+		clean := unnamed(names[i][0], names[i][1])
+		sh := &out[i]
+		sh.Headline, sh.Roles, sh.AgeReason, sh.Text = clean(sh.Headline), clean(sh.Roles), clean(sh.AgeReason), clean(sh.Text)
+		for j := range sh.Signals {
+			sh.Signals[j].Label, sh.Signals[j].Passage = clean(sh.Signals[j].Label), clean(sh.Signals[j].Passage)
+		}
+	}
+	return out
+}
+
+// share copies every person as Shared, names and all, with each one's
+// name and handle beside it for Share to take out.
+func (d *Data) share() ([]Shared, [][2]string) {
 	hidden := d.Hidden()
 	out := make([]Shared, 0, len(d.People))
+	names := make([][2]string, 0, len(d.People))
 	for _, p := range d.People {
-		clean := unnamed(p.Name, p.LinkedIn.Handle)
 		l := p.LinkedIn
 		s := Shared{
-			ID: p.ID, Headline: clean(p.Headline), City: p.City, Roles: clean(l.Roles),
-			BornAbout: l.BornAbout, AgeReason: clean(l.AgeReason), LastActive: when(l.LastActive),
-			Score: p.Score, Rubric: p.Rubric, Signals: make([]Signal, 0, len(p.Signals)),
+			ID: p.ID, Headline: p.Headline, City: p.City, Roles: l.Roles,
+			BornAbout: l.BornAbout, AgeReason: l.AgeReason, LastActive: when(l.LastActive),
+			Score: p.Score, Rubric: p.Rubric, Signals: append(make([]Signal, 0, len(p.Signals)), p.Signals...),
 			Connected: p.Connected, ConnectedAt: when(p.ConnectedAt), Review: l.Review, HiddenBy: hidden[p.ID],
-			Text: clean(l.Text), TextAt: when(l.TextAt), HasDraft: p.Draft != "",
+			Text: l.Text, TextAt: when(l.TextAt), HasDraft: p.Draft != "",
 			FirstSeen: p.FirstSeen, FoundBy: make([]SharedFound, 0, len(p.FoundBy)),
-		}
-		for _, sig := range p.Signals {
-			sig.Label, sig.Passage = clean(sig.Label), clean(sig.Passage)
-			s.Signals = append(s.Signals, sig)
 		}
 		for _, f := range p.FoundBy {
 			if search := d.Search(f.SearchID); search != nil {
@@ -81,8 +97,9 @@ func (d *Data) Share() []Shared {
 			}
 		}
 		out = append(out, s)
+		names = append(names, [2]string{p.Name, l.Handle})
 	}
-	return out
+	return out, names
 }
 
 func when(t time.Time) *time.Time {
@@ -97,22 +114,35 @@ func when(t time.Time) *time.Time {
 // [link].
 var links = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s)\]>"]+`)
 
-// unnamed gives what takes a person's name out of a text: each word of
-// the name, of three letters or more, and the profile's handle whole, are
-// written [name] wherever they stand as a word of their own, in any case.
-// A business named after its owner, "Studio Lea Probe", so leaves no
-// name behind in the roles or a passage. Every link is taken out too,
-// see links. The words of a handle are not
-// taken one by one, since one like yoga-mit-lea would take out "yoga"
-// and "mit" everywhere.
+// unnamed gives what takes a person's own name out of a text, as the
+// app has it: each word of the name of three letters or more that starts
+// with a capital, and the profile's handle whole, are written [name]
+// wherever they stand as a word of their own, in any case, also with an
+// s after them, "Annas Studio", and in the letters of a keyboard without
+// umlauts, "Mueller" for "Müller". A business named after its owner,
+// "Studio Lea Probe", so leaves no name behind in the roles or a
+// passage. Every link is taken out too, see links. Other people's names
+// in a text go along, as Tim accepted.
+//
+// "von" and "der" in "Anna von der Heide" stay, since they are words of
+// every German text. A surname that is a word too, like Koch, is taken
+// out everywhere, since a name left in is worse than a word lost. The
+// words of a handle are not taken one by one, since one like yoga-mit-lea
+// would take out "yoga" and "mit" everywhere.
 func unnamed(name, handle string) func(string) string {
 	var words []string
+	add := func(w string) {
+		if w = strings.ToLower(w); !slices.Contains(words, w) {
+			words = append(words, w)
+		}
+	}
 	if len([]rune(handle)) >= 3 {
-		words = append(words, strings.ToLower(handle))
+		add(handle)
 	}
 	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) }) {
-		if len([]rune(w)) >= 3 && !slices.Contains(words, strings.ToLower(w)) {
-			words = append(words, strings.ToLower(w))
+		if len([]rune(w)) >= 3 && unicode.IsUpper([]rune(w)[0]) {
+			add(w)
+			add(plain.Replace(w))
 		}
 	}
 	if len(words) == 0 {
@@ -123,15 +153,19 @@ func unnamed(name, handle string) func(string) string {
 	for i, w := range words {
 		words[i] = regexp.QuoteMeta(w)
 	}
-	// A word of letters alone: no letter or digit on either side.
-	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(` + strings.Join(words, "|") + `)($|[^\p{L}\p{N}])`)
+	// A word of letters alone, with an s after it or not: no letter or
+	// digit on either side.
+	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(?:` + strings.Join(words, "|") + `)(s?)($|[^\p{L}\p{N}])`)
 	return func(s string) string {
 		s = links.ReplaceAllString(s, "[link]")
 		// Twice, since two names next to each other share the space
 		// between them and the first match takes it.
 		for range 2 {
-			s = re.ReplaceAllString(s, "${1}[name]${3}")
+			s = re.ReplaceAllString(s, "${1}[name]${2}${3}")
 		}
 		return s
 	}
 }
+
+// plain writes a name in the letters of a keyboard without umlauts.
+var plain = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "Ä", "Ae", "Ö", "Oe", "Ü", "Ue", "ß", "ss", "é", "e", "è", "e")

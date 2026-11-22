@@ -425,7 +425,7 @@ answer 409 with a sentence that can go in a toast.
 | `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
 | `POST /api/report/clear` | empties the draft, and keeps it aside for Undo. People stays as it is |
 | `PUT /api/report/people` | `{"people": true}` takes People along, and answers the draft. Every new draft starts with it off |
-| `POST /api/report/send` | `{"what": "…", "people": true}` makes the report, with `people.json` when `people` is true, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
+| `POST /api/report/send` | `{"what": "…"}` makes the report, with `people.json` when the draft takes People, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
 
 At most 10 pictures, each at most 10 MB. The draft as it changes is sent
 as the Wails event `report-draft`, and whether the window is open as

@@ -212,8 +212,8 @@ const walks = [
   },
   {
     // People goes on with one click and off with the next, kept with the
-    // draft, and a report of People alone can be made. The report sends
-    // it, and the next report starts with People off. Tim asked for a way
+    // draft, and a report of People alone can be made. Report waits for
+    // the last press, and the next report starts with People off. Tim asked for a way
     // to hand Claude his People on 22 November 2026, issue #73.
     name: 'People goes along with a report only when it is on',
     async run(page) {
@@ -230,14 +230,25 @@ const walks = [
       await page.reload()
       await page.waitForFunction(() => document.querySelector('button.people')?.getAttribute('aria-pressed') === 'true')
       if ((await page.locator('button.make').getAttribute('aria-disabled')) !== 'false') return 'Report cannot be pressed with People on'
-      const off = page.waitForRequest((r) => r.url().endsWith('/api/report/people'))
+      const off = page.waitForResponse((r) => r.url().endsWith('/api/report/people'))
       await people.click()
-      if (JSON.parse((await off).postData() ?? '{}').people !== false) return 'a second click did not take People off'
+      if (JSON.parse((await off).request().postData() ?? '{}').people !== false) return 'a second click did not take People off'
+      // The draft says whether People goes, so Report waits for a press
+      // of People still on its way, held here until Report is making.
+      const [held, hold] = later()
+      await page.route('**/api/report/people', async (route) => {
+        await held
+        await route.continue()
+      })
+      const order = []
+      page.on('request', (r) => { if (r.url().endsWith('/api/report/send')) order.push('send') })
+      page.on('response', (r) => { if (r.url().endsWith('/api/report/people')) order.push('kept') })
       await people.click()
-      const sent = page.waitForRequest((r) => r.url().endsWith('/api/report/send'))
       await page.locator('button.make').click()
-      const body = JSON.parse((await sent).postData() ?? '{}')
-      if (body.people !== true) return `Report sent ${JSON.stringify(body)}`
+      await page.locator('button.make .beam').waitFor()
+      hold()
+      await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
+      if (order.join(',') !== 'kept,send') return `Report did not wait for People: ${order.join(',')}`
       await page.waitForFunction(() => document.querySelector('button.people')?.getAttribute('aria-pressed') === 'false')
       return ''
     },

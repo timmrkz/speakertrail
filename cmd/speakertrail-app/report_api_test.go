@@ -21,8 +21,8 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	var made string
 	var withPeople bool
-	a := reportAPI{r: r, make: func(what string, people bool) (string, error) {
-		made, withPeople = what, people
+	a := reportAPI{r: r, make: func(what string) (string, error) {
+		made, withPeople = what, r.takesPeople()
 		return filepath.Join("/Users/someone", "Desktop", "Speaker Trail report.zip"), nil
 	}}
 	ask := func(method, path, body string) *httptest.ResponseRecorder {
@@ -63,7 +63,7 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	if d := draft(ask("GET", "/api/report", "")); !d.People {
 		t.Fatalf("People was not kept in the draft: %+v", d)
 	}
-	rec := ask("POST", "/api/report/send", `{"what":"It froze.","people":true}`)
+	rec := ask("POST", "/api/report/send", `{"what":"It froze."}`)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"~/Desktop/Speaker Trail report.zip"`) || made != "It froze." || !withPeople {
 		t.Fatalf("sending answered %d %s, made with %q and People %v", rec.Code, rec.Body, made, withPeople)
 	}

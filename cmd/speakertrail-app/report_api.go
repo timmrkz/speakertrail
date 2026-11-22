@@ -25,10 +25,10 @@ import (
 //	POST /api/report/put-back       {"id": "p1"} puts it back, gives the draft
 //	POST /api/report/clear          lets go of the draft, gives the empty one
 //	PUT  /api/report/people         {"people": true} takes People along, gives the draft
-//	POST /api/report/send           {"what": "…", "people": true} makes the report, gives {"path": "~/Desktop/…"}
+//	POST /api/report/send           {"what": "…"} makes the report, with People when the draft takes them, gives {"path": "~/Desktop/…"}
 type reportAPI struct {
 	r    *reporting
-	make func(what string, people bool) (string, error)
+	make func(what string) (string, error)
 }
 
 // reportBodyMax is the most a request may carry: a pasted picture of
@@ -82,7 +82,7 @@ func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "POST /api/report/clear":
 		answer(w, http.StatusOK, a.r.ClearReport())
 	case "POST /api/report/send":
-		path, err := a.make(body.What, body.People)
+		path, err := a.make(body.What)
 		if err != nil {
 			answer(w, http.StatusInternalServerError, map[string]string{"error": sentence(err.Error())})
 			return

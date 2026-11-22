@@ -12,11 +12,24 @@ import (
 // link, the handle, the notes or the first message, not even inside a
 // headline, a passage or the text.
 func TestSharedPeopleCarryNoNameOrLink(t *testing.T) {
-	var d Data
-	d.fill()
-	s, err := d.AddSearch("Yogalehrerin Köln", 1, t0)
+	st, err := Open(t.TempDir(), func() time.Time { return t0 })
 	if err != nil {
 		t.Fatal(err)
+	}
+	var p *Person
+	if err := st.Update(func(d *Data) error {
+		return carry(d, &p)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	shared := st.Share()
+	check(t, p, shared)
+}
+
+func carry(d *Data, out **Person) error {
+	s, err := d.AddSearch("Yogalehrerin Köln", 1, t0)
+	if err != nil {
+		return err
 	}
 	p, _ := d.AddFound(Found{
 		URL: "https://www.linkedin.com/in/wiebke-quandtmann-7a1", Handle: "wiebke-quandtmann-7a1", Name: "Wiebke Quandtmann",
@@ -28,9 +41,12 @@ func TestSharedPeopleCarryNoNameOrLink(t *testing.T) {
 	p.Signals = []Signal{{Key: "owner", Label: "Runs Yoga Quandtmann", For: true, Passage: "wiebke-quandtmann-7a1 owns the studio", FoundIn: "roles"}}
 	p.Score = 72
 	p.Connect(true, t0)
-	d.AddExclusion("Online Marketing", t0)
+	*out = p
+	return nil
+}
 
-	shared := d.Share()
+func check(t *testing.T, p *Person, shared []Shared) {
+	t.Helper()
 	if len(shared) != 1 {
 		t.Fatalf("%d people shared, want 1", len(shared))
 	}
@@ -62,7 +78,7 @@ func TestUnnamedTakesWholeWordsOnly(t *testing.T) {
 	clean := unnamed("Lea Probe", "lea-probe")
 	for in, want := range map[string]string{
 		"Lea Probe Coaching":           "[name] [name] Coaching",
-		"Leadership and probes":        "Leadership and probes",
+		"Leadership and probing":       "Leadership and probing",
 		"Studio LEA, Köln":             "Studio [name], Köln",
 		"see lea-probe for more":       "see [name] for more",
 		"Abitur 2016":                  "Abitur 2016",
@@ -73,6 +89,18 @@ func TestUnnamedTakesWholeWordsOnly(t *testing.T) {
 		if got := clean(in); got != want {
 			t.Errorf("%q gave %q, want %q", in, got, want)
 		}
+	}
+	clean = unnamed("Anna von der Heide", "")
+	for in, want := range map[string]string{
+		"Annas Studio von der Leyen-Str.": "[name]s Studio von der Leyen-Str.",
+		"Heides Blumen, Heide's Café":     "[name]s Blumen, [name]'s Café",
+	} {
+		if got := clean(in); got != want {
+			t.Errorf("%q gave %q, want %q", in, got, want)
+		}
+	}
+	if got := unnamed("Jörg Müller", "")("Joerg Mueller und Jörg Müller"); got != "[name] [name] und [name] [name]" {
+		t.Errorf("umlauts written out gave %q", got)
 	}
 	if got := unnamed("Al", "")("Al runs it"); got != "Al runs it" {
 		t.Errorf("a name of two letters took %q", got)

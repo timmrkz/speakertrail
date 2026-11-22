@@ -99,11 +99,12 @@ type reportMaker struct {
 
 // ReportProblem writes a report of a problem to the Desktop, shows it in
 // Finder and closes the report window, with what Tim says happened, the
-// pictures he attached and People when he switched them on. It gives the
-// report's path, and lets go of the draft it was made from.
-func (m reportMaker) ReportProblem(what string, people bool) (string, error) {
+// pictures he attached and People when the draft takes them. It gives
+// the report's path, and lets go of the draft it was made from.
+func (m reportMaker) ReportProblem(what string) (string, error) {
 	what = cut(what, reportWordsMax)
 	sent, pictures := m.report.reportPictures()
+	people := m.report.takesPeople()
 	theLog.line(zerolog.InfoLevel, "report").Int("characters", len(what)).Int("pictures", len(pictures)).Bool("people", people).Msg("a report of a problem is being made")
 	var buf bytes.Buffer
 	z := zip.NewWriter(&buf)
@@ -149,8 +150,7 @@ func (m reportMaker) ReportProblem(what string, people bool) (string, error) {
 		// person screen shows and the profile text, never a name or a
 		// link.
 		if people {
-			var shared []store.Shared
-			m.st.Read(func(d *store.Data) { shared = d.Share() })
+			shared := m.st.Share()
 			body, err := json.MarshalIndent(shared, "", "  ")
 			if err != nil {
 				return "", err

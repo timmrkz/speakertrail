@@ -762,7 +762,10 @@
     loaded = false
     try {
       // Finder shows the report, and the Go side closes this window.
-      await api.reportProblem(what, people)
+      // People goes along when the draft says so, so a press of People
+      // still on its way is waited for.
+      await turn
+      await api.reportProblem(what)
       // The report holds it all, and the next one starts empty.
       field.value = ''
       what = ''
@@ -833,8 +836,8 @@
         here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
         Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
         like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
-        it holds your People too, with what each person screen shows and the profile texts, but with every name written [name] and
-        every link [link]. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
+        it holds your People too, with what each person screen shows and the profile texts, with each person's own name written
+        [name] and every link [link]. Other names in a profile text go along. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
         you send it.
       </Info>
       <!-- Only what the microphone hears, and why a recording stopped by
@@ -858,8 +861,8 @@
         aria-disabled={making}
         aria-label="Take People along"
         title={people
-          ? 'People go along with this report, with their profile texts, but without names or profile links. Click to leave them out'
-          : 'Take People along: what each person screen shows and the profile texts, without names or profile links'}>
+          ? 'People go along with this report, with their profile texts, but without their names or profile links. Click to leave them out'
+          : 'Take People along: what each person screen shows and the profile texts, without their names or profile links'}>
         <Icon name="people" />
       </button>
       <button

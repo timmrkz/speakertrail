@@ -369,6 +369,17 @@ func (r *reporting) TakePeople(on bool) ReportDraft {
 	return r.shown("")
 }
 
+// takesPeople says whether the report takes People along.
+func (r *reporting) takesPeople() bool {
+	if r == nil {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.load()
+	return r.draft.People
+}
+
 // AttachPictures asks for pictures in the system's open box and attaches
 // them. Cancelled, it attaches nothing and says nothing.
 func (r *reporting) AttachPictures() ReportDraft {

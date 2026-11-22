@@ -65,11 +65,11 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 	}
 	var shown []string
 	m := reportMaker{report: newReporting(afero.NewMemMapFs(), "/config/report"), st: st, show: func(p string) error { shown = append(shown, p); return nil }}
-	first, err := m.ReportProblem("  The run stopped in "+folder+".  ", false)
+	first, err := m.ReportProblem("  The run stopped in " + folder + ".  ")
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := m.ReportProblem("", false)
+	second, err := m.ReportProblem("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,7 +164,7 @@ func TestAReportTakesPeopleAlongOnlyWhenAsked(t *testing.T) {
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	r.TakePeople(true)
 	m := reportMaker{report: r, st: st, folder: func() string { return home }, show: func(string) error { return nil }}
-	with, err := m.ReportProblem("Why is she first?", true)
+	with, err := m.ReportProblem("Why is she first?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestAReportTakesPeopleAlongOnlyWhenAsked(t *testing.T) {
 	if r.ReportDraft().People {
 		t.Error("People is still on for the next report")
 	}
-	without, err := m.ReportProblem("", false)
+	without, err := m.ReportProblem("")
 	if err != nil {
 		t.Fatal(err)
 	}

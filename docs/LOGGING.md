@@ -233,13 +233,18 @@ them, whether the profile is confirmed or rejected, the exclusion that
 leaves them out, when they were found and by which searches, and whether
 a first message was drafted. Never the name, the profile link, the
 handle, the notes or the first message. Inside every text that goes,
-each word of the person's name, of three letters or more, and the handle
-are written `[name]`, and every link `[link]`. `store.Shared` lists what
+each word of the person's own name of three letters or more that starts
+with a capital, also with an s after it and with its umlauts written
+out, and the handle are written `[name]`, and every link `[link]`. "von"
+and "der" stay. Other people's names in a profile text go along, which
+Tim accepted. The names are taken out after the store's lock is let go,
+since that reads every profile text, see `Store.Share`. `store.Shared` lists what
 goes, so a field added to a person goes only once it is added there.
 
 People is off in every new draft and goes off again once a report is
-made, so it goes only in a report it was switched on for. Clear leaves it
-as it is. The draft is kept in `~/Library/Application
+made, so it goes only in a report it was switched on for. The draft on
+the Go side says whether it goes, and Report waits for a press of People
+still on its way. Clear leaves it as it is. The draft is kept in `~/Library/Application
 Support/Speaker Trail/report` until Report is pressed, so closing the
 window or the app loses nothing.
 

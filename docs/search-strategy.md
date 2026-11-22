@@ -250,6 +250,10 @@ Signals against:
 - a large team, or a company without a person behind it
 - enterprise software sold to other companies
 - quiet on LinkedIn: the last known post is more than a year old
+- still studying or in training, like "Studentin" or "In Ausbildung"
+- employed elsewhere: a job at another organisation beside what they
+  founded, like "Digitale Projekte beim 1. FC Beispielstadt" next to
+  "Founder of Probe AI"
 
 Scoring is kept simple and readable: a list of signals, each with its
 passage, for and against. There is no hidden number. Since 22 November
@@ -528,6 +532,16 @@ Built, in the order above:
    paused. The signal Writes on LinkedIn became **Active on LinkedIn**, a
    post, comment or reaction in the last six months, and a new signal
    against, **Consultant, agency or office**, rules people out.
+15. **Studies or in training** and **Employed elsewhere**, against, from
+   22 November 2026. Tim rejected people high in People who said they
+   founded something but study, or have a job at another organisation:
+   "I would like to connect with people who are actually doing this full
+   time so that it pays the bills." Both are read from the headline and
+   the roles held now. A job counts only beside a company the person
+   runs by name, and not when they work with people there, like a
+   trainer at a gym, or hold a role beside the work, like a member or a
+   speaker. Neither leaves anyone out, they only take points off the fit.
+   When the rubric changes, the app scores everyone again as it starts.
 
 Waiting:
 

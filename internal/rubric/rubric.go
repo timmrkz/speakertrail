@@ -14,11 +14,12 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 3
+const Version = 4
 
 // Where a passage comes from.
 const (
@@ -61,7 +62,7 @@ var Defs = []Def{
 		Means: "is probably younger than 30, by the years of their education and first jobs"},
 	{Key: "works_with_people", For: true, Label: "Works with people",
 		Means:   "coaches, teaches, trains, treats or counsels people face to face, or runs a gym, studio or academy where people train",
-		pattern: words(`\w*coach(?:in|es|ing)?|mentor(?:in)?|\w*trainer(?:in)?|lehrer(?:in)?|teacher|dozent(?:in)?|instructor|übungsleiter(?:in)?|yoga\w*|pilates|physiotherapeut(?:in)?|ergotherapeut(?:in)?|ernährungsberater(?:in)?|heilpraktiker(?:in)?|hebamme|counsell?or|begleitet menschen|bjj|jiu[- ]?jitsu|kampfsport\w*|boxing|boxen|dojo|crossfit|gym|fitness\w*|tanzschule`),
+		pattern: words(`\w*coach(?:in|es|ing)?|mentor(?:in)?|\w*trainer(?:in)?|lehrer(?:in)?|teacher|dozent(?:in)?|instructor|übungsleiter(?:in)?|kursleiter(?:in)?|yoga\w*|pilates|physiotherapeut(?:in)?|ergotherapeut(?:in)?|ernährungsberater(?:in)?|heilpraktiker(?:in)?|hebamme|counsell?or|begleitet menschen|bjj|jiu[- ]?jitsu|kampfsport\w*|boxing|boxen|dojo|crossfit|gym|fitness\w*|tanzschule`),
 		unless:  words(`agile coach|scrum|sales[- ]?trainer|vertriebstrainer`)},
 	{Key: "owner_operator", For: true, Label: "Runs their own business",
 		Means:   "owns and runs a small business, studio, gym or practice themselves, with a small team",
@@ -111,6 +112,13 @@ var Defs = []Def{
 		Means: "what they run is being wound up or gone"},
 	{Key: "quiet_on_linkedin", For: false, Label: "Quiet on LinkedIn",
 		Means: "nothing on LinkedIn in the last six months"},
+	{Key: "studies", For: false, Label: "Studies or in training",
+		Means: "still studies, is in training or works as a student or intern, so does not yet live from what they run",
+		// A coach for students is not one.
+		pattern: words(`student(?:in)?|studierender|werkstudent(?:in)?|studiere|studying|im studium|in ausbildung|trainee|praktikant(?:in)?|internship`),
+		unless:  words(`(?:für|for|mit|with) (?:student|studierende)\w*`)},
+	{Key: "employed", For: false, Label: "Employed elsewhere",
+		Means: "holds a job at another organisation beside what they founded, so what they run does not pay the bills"},
 	{Key: "advisor", For: false, Label: "Consultant, agency or office",
 		Means:   "works as a consultant, in an agency, a law or tax office, in sales or recruiting, or in politics, rather than with people face to face",
 		pattern: words(`(?:unternehmens|management|strategie|it-?|steuer|finanz|vermögens|versicherungs|personal|immobilien|business-?|digital-?)berater(?:in)?|unternehmensberatung|consultant|consulting|beratungsunternehmen|agentur\w*|agency|kanzlei|rechtsanwält\w*|rechtsanwalt|anwält\w*|steuerberat\w*|wirtschaftsprüf\w*|recruit\w*|headhunt\w*|personalvermittl\w*|makler(?:in)?|vertrieb\w*|account executive|sales|politiker(?:in)?|landtag\w*|bundestag\w*|abgeordnete[rn]?|kandidat(?:in)?|bürgermeister(?:in)?|ratsmitglied|fraktion\w*`),
@@ -289,6 +297,13 @@ func Signals(p Person) []Signal {
 		}
 	}
 
+	// A job at another organisation beside what they founded. Tim, 22
+	// November 2026: "I would like to connect with people who are actually
+	// doing this full time so that it pays the bills."
+	if job, where := employedElsewhere(p.Headline, roles, p.Name); job != "" {
+		add("employed", job, where)
+	}
+
 	// The years on their profile point to their age. It is a guess, and
 	// says so, and an older person is not counted against.
 	if p.BornAbout > 0 && p.AgeReason != "" && p.Now.Year()-p.BornAbout < YoungUntil {
@@ -375,7 +390,27 @@ func namedAfter(org, name string) bool {
 	if len([]rune(last)) < 3 {
 		return false
 	}
-	return words(regexp.QuoteMeta(last)).MatchString(org)
+	return hasWord(org, last)
+}
+
+// hasWord tells whether s holds w as a word of its own, in any case, the
+// same as words(w) would but without making a pattern for every role.
+func hasWord(s, w string) bool {
+	s, w = strings.ToLower(s), strings.ToLower(w)
+	wordy := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsNumber(r) }
+	for i := 0; ; {
+		j := strings.Index(s[i:], w)
+		if j < 0 {
+			return false
+		}
+		start, end := i+j, i+j+len(w)
+		before, _ := utf8.DecodeLastRuneInString(s[:start])
+		after, _ := utf8.DecodeRuneInString(s[end:])
+		if (start == 0 || !wordy(before)) && (end == len(s) || !wordy(after)) {
+			return true
+		}
+		i = start + 1
+	}
 }
 
 // postPassage dates a post and quotes its first line. A line with

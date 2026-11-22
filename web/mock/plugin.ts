@@ -110,6 +110,9 @@ function createState() {
       ['Emil Beispiel', 'Inhaber, Beispiel Kampfsport Akademie', 'Köln', 1994, 'Bachelor from 2013', 60, 106],
       ['Lina Probe', 'Gründerin direkt nach dem Studium · Probe Interiors', 'Düsseldorf', 1998, 'Master from 2021', 12, 107],
       ['Paul Muster', 'Life Coach | Selbstständig seit 2021', 'Bonn', 1991, 'Bachelor from 2010', 100, 101],
+      // Founded something, but works at another organisation, so it
+      // stands below the owners (Tim, 22 November 2026).
+      ['Nele Muster', 'Mitgründerin, Probe AI und Digitale Projekte beim Beispielverein', 'Köln', 2000, 'First job from 2021', 14, 101],
     ]
     return rows.map(([name, headline, city, born, reason, activeDaysAgo, searchId], i) => ({
       id: 1000 + i, name, headline, city, fit: 'founder' as const, first_seen: hoursAgo(2 + i * 9), notes: '',
@@ -238,6 +241,8 @@ const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
   [/athlete|athlet/i, 'athlete', 'Athlete', true],
   [/head of|\bvp\b|director of/i, 'corporate', 'Corporate title', false],
   [/researcher|data lead/i, 'large_company', 'Large company', false],
+  [/student|in ausbildung/i, 'studies', 'Studies or in training', false],
+  [/ beim /i, 'employed', 'Employed elsewhere', false],
 ]
 
 function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
@@ -283,7 +288,7 @@ function km(a: string, b: string): number | null {
 }
 
 // The fit's four parts, the way rubric.Fit gives them.
-const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed'])
+const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed', 'studies', 'employed'])
 function fitParts(s: State, p: Person): FitPart[] {
   // Who they are 40, active lately 30, near you 20, younger 10, as in
   // internal/rubric/fit.go.
@@ -293,7 +298,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const contra = counted.filter((x) => !x.for).map((x) => x.label)
   let why = pro.join(', ')
   if (contra.length) why = (why ? why + ', against ' : 'Against ') + contra.join(', ')
-  const who = { key: 'who', label: 'Who they are', points: pts(40, (pro.length - contra.length) / 3), why: why || 'Nothing beyond running their own business' }
+  const who = { key: 'who', label: 'Who they are', points: Math.round(40 * Math.max(-1, Math.min(1, (pro.length - contra.length) / 3))), why: why || 'Nothing beyond running their own business' }
   const now = new Date()
   const born = p.linkedin?.born_about
   const age = born ? now.getFullYear() - born : 0
@@ -314,6 +319,9 @@ function fitParts(s: State, p: Person): FitPart[] {
       : d < 1
         ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
         : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
+  // Who they are takes away no more than the rest gives, so the fit
+  // stays 0 or more.
+  who.points = Math.max(who.points, -(active.points + near.points + younger.points))
   return [who, active, near, younger]
 }
 

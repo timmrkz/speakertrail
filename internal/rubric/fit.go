@@ -74,28 +74,34 @@ type FitPerson struct {
 var who = map[string]bool{
 	"works_with_people": true, "bootstrapped": true, "runs_events": true, "author": true,
 	"athlete": true, "career_switch": true, "funded": true, "enterprise": true, "backed": true,
+	"studies": true, "employed": true,
 }
 
 // Fit is a person's fit and its parts, in the order Why shows them. The
-// fit is the sum of the parts' points.
+// fit is the sum of the parts' points. Who they are can take points away,
+// but never more than the other parts give, so the fit is never below 0.
 func Fit(p FitPerson) (int, []Part) {
 	parts := []Part{whoPart(p, true), activePart(p, true), nearPart(p, true), youngerPart(p, true)}
-	total := 0
-	for _, pt := range parts {
-		total += pt.Points
-	}
-	return total, parts
+	rest := parts[1].Points + parts[2].Points + parts[3].Points
+	parts[0].Points = max(parts[0].Points, -rest)
+	return parts[0].Points + rest, parts
 }
 
 // FitPoints is the fit alone, the same as Fit gives, without writing why,
 // so a list of thousands is sorted by it quickly.
 func FitPoints(p FitPerson) int {
-	return whoPart(p, false).Points + activePart(p, false).Points + nearPart(p, false).Points + youngerPart(p, false).Points
+	rest := activePart(p, false).Points + nearPart(p, false).Points + youngerPart(p, false).Points
+	return max(whoPart(p, false).Points, -rest) + rest
 }
 
 // points is a share of most, from none to all of it.
 func points(most int, share float64) int {
 	return int(math.Round(float64(most) * math.Max(0, math.Min(1, share))))
+}
+
+// signed is a share of most from minus all of it to all of it.
+func signed(most int, share float64) int {
+	return int(math.Round(float64(most) * math.Max(-1, math.Min(1, share))))
 }
 
 // Each part says why only when say is true.
@@ -119,8 +125,11 @@ func whoPart(p FitPerson, say bool) Part {
 			contra = append(contra, d.Label)
 		}
 	}
+	// Each signal against takes a third away, below none too, so a
+	// student or someone employed elsewhere falls behind an owner who
+	// shows nothing more (Tim, 22 November 2026).
 	if !say {
-		return Part{Points: points(WhoPoints, float64(n)/3)}
+		return Part{Points: signed(WhoPoints, float64(n)/3)}
 	}
 	why := strings.Join(pro, ", ")
 	if len(contra) > 0 {
@@ -134,7 +143,7 @@ func whoPart(p FitPerson, say bool) Part {
 	if why == "" {
 		why = "Nothing beyond running their own business"
 	}
-	return Part{Key: "who", Label: "Who they are", Points: points(WhoPoints, float64(n)/3), Why: why}
+	return Part{Key: "who", Label: "Who they are", Points: signed(WhoPoints, float64(n)/3), Why: why}
 }
 
 func youngerPart(p FitPerson, say bool) Part {

@@ -64,12 +64,25 @@ learns from Tim and grows as he connects with people.
 The rubric's signals, as today, without age and activity, which have
 parts of their own. Works with people, Built it from own means, Runs
 their own events, Author, Athlete and Switched careers towards people
-are for. Raised money, Sells to companies and Backed by a startup
-programme are against.
+are for. Raised money, Sells to companies, Backed by a startup
+programme, Studies or in training and Employed elsewhere are against.
 
 Each signal for is a third of the part, each against takes a third
-away, between none and all of it. Runs their own business is not
-counted, since everyone kept has it.
+away, from minus all of it to all of it. Below none it takes points
+from the other parts, but never more than they give, so the fit stays
+0 or more. Runs their own business is not counted, since everyone kept
+has it.
+
+Tim, 22 November 2026: people high up said they founded something, but
+studied, or had a job at another organisation. "I would like to connect
+with people who are actually doing this full time so that it pays the
+bills." So **Studies or in training**, like "In Ausbildung/Studium", and
+**Employed elsewhere**, like "Digitale Projekte beim 1. FC Beispielstadt"
+beside "Founder of Probe AI", count against. A job counts only beside a
+company the person runs by name, and not when they work with people
+there or hold a role beside the work, like a member or a speaker. The
+two Tim rejected stood at 33 and 32, and fall to about 20, below an
+owner who shows nothing more.
 
 ### 2. Active lately
 

@@ -233,6 +233,22 @@ const walks = [
     },
   },
   {
+    // Tim, 22 November 2026: people who founded something but work as an
+    // employee elsewhere stood high. Who they are takes points away for
+    // that, shown with a minus, and the parts still add up to the fit.
+    name: 'Someone employed elsewhere loses points under Who they are, shown with a minus',
+    async run(page) {
+      await page.goto(`${url}/app/people/1009`)
+      await page.locator('.fit li').first().waitFor()
+      const who = await page.locator('.fit li').first().innerText()
+      if (!/^−\d+/.test(who.trim()) || !who.includes('Employed elsewhere')) return `Who they are says ${who}`
+      const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace('−', '-').replace('+', ''))))
+      const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
+      if (parts.reduce((a, b) => a + b, 0) !== head) return `the parts ${parts.join(' ')} are not the fit ${head}`
+      return ''
+    },
+  },
+  {
     // Tim, 21 November 2026, issue #66: people whose profile he rejected
     // stayed among those he still has to go through. Rejected, a person
     // leaves All for Rejected, the counts follow and the person stays

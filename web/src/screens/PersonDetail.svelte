@@ -203,7 +203,7 @@
         <ul class="why fit">
           {#each p.fit_parts as f (f.key)}
             <li>
-              <span class="pts num" aria-hidden="true">+{f.points}</span>
+              <span class="pts num" aria-hidden="true">{f.points < 0 ? '−' : '+'}{Math.abs(f.points)}</span>
               <span class="what"><b>{f.label}</b><span class="sr-only">, {f.points} points</span>
                 <span class="because">{f.why}</span></span>
             </li>

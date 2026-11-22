@@ -111,7 +111,10 @@ func TestFitWhoTheyAre(t *testing.T) {
 		{[]string{"works_with_people", "athlete"}, 27, "Works with people, Athlete"},
 		{[]string{"works_with_people", "athlete", "author", "runs_events"}, 40, "Works with people, Runs their own events, Author, Athlete"},
 		{[]string{"works_with_people", "funded"}, 0, "Works with people, against Raised money"},
-		{[]string{"funded"}, 0, "Against Raised money"},
+		// Against takes points away below none, but never more than the
+		// other parts give.
+		{[]string{"funded"}, -13, "Against Raised money"},
+		{[]string{"funded", "enterprise", "backed", "studies", "employed"}, -15, "Against Raised money, Sells to companies, Backed by a startup programme, Studies or in training, Employed elsewhere"},
 	} {
 		var sigs []Signal
 		for _, d := range Defs {
@@ -169,7 +172,7 @@ func TestWriting(t *testing.T) {
 // A row shows FitPoints and the person Fit, so the two never disagree.
 func TestFitPointsIsFit(t *testing.T) {
 	now := day("2026-11-21")
-	signals := [][]Signal{nil, {{Key: "works_with_people", For: true}}, {{Key: "athlete", For: true}, {Key: "funded"}}}
+	signals := [][]Signal{nil, {{Key: "works_with_people", For: true}}, {{Key: "athlete", For: true}, {Key: "funded"}}, {{Key: "studies"}, {Key: "employed"}}}
 	dates := []time.Time{{}, day("2026-11-20"), day("2026-09-01"), day("2026-05-01")}
 	n := 0
 	for _, sigs := range signals {

@@ -65,7 +65,9 @@ app has none and a draft reads it first. See [Drafts](#drafts).
 `fit_parts` are what `fit_score` adds up, in the order the person's Why
 shows them, each with its points and why, like
 `{"key": "near", "label": "Near you", "points": 13, "why": "Bonn, about 24 km"}`.
-The keys are `who`, `active`, `near` and `younger`, in that order.
+The keys are `who`, `active`, `near` and `younger`, in that order. Only
+`who` can be below 0, by signals against, never by more than the others
+add up to.
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
 `{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`

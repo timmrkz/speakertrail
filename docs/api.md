@@ -18,12 +18,14 @@ types.
 `GET /api/people?q=lea&sort=young&filter=all`
 
 `sort` is `young` (the default), `new`, `fit` or `name`. `filter` is `all`,
-`young` or `connected`. `q` looks in the name, the headline and the city.
+`young`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
-Someone Tim connected with is only under `connected`. `all` and `young`
-hold the people he has not connected with yet, so they shrink as he
-connects.
+Someone Tim connected with is only under `connected`, and someone whose
+profile he rejected only under `rejected`. `all` and `young` hold the
+people he has neither connected with nor rejected, so they shrink as he
+goes through them. Someone connected stays under `connected` even when
+their profile is rejected.
 
 People whom one of Tim's exclusions leaves out are not in the list or the
 counts, unless Tim connected with them, see [Exclusions](#exclusions).
@@ -44,7 +46,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "young": 1, "connected": 0 }
+  "counts": { "all": 1, "young": 1, "connected": 0, "rejected": 0 }
 }
 ```
 
@@ -90,7 +92,8 @@ own, and answers 202. While a run goes it gets 409.
 
 `POST /api/runs` starts a run of the due searches and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
-false and `run_id` is that run. Without an Exa key, with the month's
+false and `run_id` is that run. Without an Exa key, with the key kept
+back by macOS because its password box was closed, with the month's
 budget spent, or with no search due it gets 409 and says which.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
@@ -362,7 +365,9 @@ the one before it, of any draft, so the window keeps the newer of the
 answer to `POST` and the event, whichever arrives last.
 
 A draft that is done is kept on the person as `draft`. Reading a profile
-counts against Exa's monthly budget like a search. Each change is sent as
+counts against Exa's monthly budget like a search. A draft that needs
+the Exa key fails with why when macOS keeps it back, and Draft again
+asks macOS again. Each change is sent as
 the Wails event `draft`, one draft at a time, and once a second while one
 runs. Where the app runs no language model, starting one answers 409.
 

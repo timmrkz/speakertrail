@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/language"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
@@ -76,7 +77,7 @@ func newRig(t *testing.T) *rig {
 	r.d = &Drafter{
 		Store: st, Host: host,
 		Model:  func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
-		Finder: func() Finder { return r.finder },
+		Finder: func() (Finder, error) { return r.finder, nil },
 		Ask: func(ctx context.Context, _ *language.Server, msgs []language.Message, schema json.RawMessage, heard func(string)) (language.Answer, error) {
 			r.asks.Add(1)
 			n := r.now.Add(1)
@@ -253,7 +254,7 @@ func TestAMissingProfileIsReadFromExa(t *testing.T) {
 func TestADraftWithoutAKeyOrAModelFails(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "")
-	r.d.Finder = func() Finder { return nil }
+	r.d.Finder = func() (Finder, error) { return nil, engine.ErrNoKey }
 	r.d.Start(id)
 	r.d.Wait()
 	j := r.d.Jobs()[0]
@@ -274,6 +275,37 @@ func TestADraftWithoutAKeyOrAModelFails(t *testing.T) {
 	}
 	if r.asks.Load() != 0 {
 		t.Error("the model was asked")
+	}
+}
+
+// The report of 21 November 2026: Tim closed the keychain's password box
+// on Draft, and the draft said the Exa key was missing. A key macOS kept
+// back says so, Draft again asks for it again, and with it the draft is
+// written.
+func TestADraftWhoseKeyWasKeptBackSaysSoAndDraftAgainWorks(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "")
+	keptBack := errors.New("the password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow")
+	var asked atomic.Int32
+	r.d.Finder = func() (Finder, error) {
+		if asked.Add(1) == 1 {
+			return nil, keptBack
+		}
+		return r.finder, nil
+	}
+	r.d.Start(id)
+	r.d.Wait()
+	j := r.d.Jobs()[0]
+	want := "The app reads their profile text from Exa first, and the password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow."
+	if j.State != "failed" || j.Error != want {
+		t.Fatalf("kept back: %s, %q, want %q", j.State, j.Error, want)
+	}
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	if j := r.d.Jobs()[0]; j.State != "done" || asked.Load() != 2 || r.finder.asked.Load() != 1 {
+		t.Errorf("Draft again: %+v, key asked %d times, profile read %d times", j, asked.Load(), r.finder.asked.Load())
 	}
 }
 

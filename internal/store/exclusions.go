@@ -104,7 +104,7 @@ func (d *Data) Hidden() map[int64]string {
 			continue
 		}
 		roles := ""
-		if p.LinkedIn.Review != "rejected" {
+		if !p.Rejected() {
 			roles = p.LinkedIn.Roles
 		}
 		if phrase, ok := rubric.Excluded(p.Headline+" "+roles, phrases); ok {

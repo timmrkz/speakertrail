@@ -6,7 +6,7 @@
   import Sheet from '../lib/components/Sheet.svelte'
   import PersonDetail from './PersonDetail.svelte'
 
-  let { id, name = '', onclose, onupdate, onconnected }: { id: number; name?: string; onclose: () => void; onupdate?: (p: Detail) => void; onconnected?: () => void } = $props()
+  let { id, name = '', onclose, onupdate, onmoved }: { id: number; name?: string; onclose: () => void; onupdate?: (p: Detail) => void; onmoved?: () => void } = $props()
   // The parent keys this by id, so the name from the list holds until
   // the person's own arrives.
   // svelte-ignore state_referenced_locally
@@ -17,5 +17,5 @@
   {#snippet head()}
     <h2 class="person-name ellipsis" data-personal title={shown}>{shown}</h2>
   {/snippet}
-  <PersonDetail {id} {onupdate} {onconnected} onname={(n) => (shown = n)} />
+  <PersonDetail {id} {onupdate} {onmoved} onname={(n) => (shown = n)} />
 </Sheet>

@@ -1,9 +1,14 @@
 // Package keys keeps the search provider's API key the way macOS keeps
-// secrets, in the keychain, never in a file. Each read by a build of the
-// app that macOS does not know yet asks for the password once, and Always
-// Allow keeps that build from being asked again. Another program that
-// asks for it gets a box from macOS first, and the key never passes
-// through a command line. See keys_darwin.go for how macOS checks a read.
+// secrets, in the keychain, never in a file. The first read by a build of
+// the app that macOS does not know yet asks for the password once, and
+// Always Allow keeps it from being asked again. macOS knows a build
+// signed with a Developer ID by its team, so one Always Allow covers
+// every build signed with it, and one signed ad hoc by itself alone, so
+// each such build asks once. A box closed without an answer keeps the
+// key back for that read only, and the next read asks again. Another
+// program that asks for it gets a box from macOS first, and the key
+// never passes through a command line. See keys_darwin.go for how macOS
+// checks a read.
 //
 // EXA_API_KEY in the environment stands in while no key is saved, which
 // is how a terminal or a test hands one over. Elsewhere than on a Mac
@@ -12,6 +17,7 @@ package keys
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -42,10 +48,12 @@ type vault interface {
 type Exa struct {
 	v   vault
 	env func(string) string
-	// mu keeps the key read once, rather than once per search.
+	// mu keeps the key read once, rather than once per search. Only a
+	// read that brought the key is kept. One that did not is asked again
+	// the next time, so a password box closed once does not leave the app
+	// without its key until it is started again.
 	mu     sync.Mutex
 	cached string
-	read   bool
 	// log says when the keychain was read, how long it took and what it
 	// answered, never the key. A read may wait on a password box, and
 	// the wait shows how long it was on screen.
@@ -64,27 +72,75 @@ func (e *Exa) Has() bool {
 	return e.v.has() || e.env("EXA_API_KEY") != ""
 }
 
-// Get reads the key, the saved one first. A key saved by an older build
-// of the app, which asked twice on each read by a new build, is saved
-// again right after the read the person has just answered, so the next
-// build asks once.
-func (e *Exa) Get() string {
+// ErrNoKey is no key saved in the keychain, and none in the environment.
+var ErrNoKey = errors.New("no Exa key is saved")
+
+// ErrKeptBack is a key that is in the keychain, which macOS did not hand
+// over, most often because the password box was closed. Asking again
+// puts the box up again.
+var ErrKeptBack = errors.New("macOS kept the Exa key back")
+
+// Get reads the key, the saved one first, then EXA_API_KEY. It is
+// ErrNoKey when there is neither, and ErrKeptBack when macOS did not hand
+// over the saved one. A key saved by an older build of the app, which
+// asked twice on each read by a new build, is saved again right after
+// the read the person has just answered, so the next build asks once.
+func (e *Exa) Get() (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if !e.read {
-		start := time.Now()
-		secret, status := e.v.get()
-		e.cached, e.read = secret, true
-		e.logger().Info("the Exa key was read from the keychain", "ms", time.Since(start).Milliseconds(),
-			"found", status == 0, "status", status)
-		if secret != "" && !e.v.open() {
-			e.saveAgain(secret)
-		}
+	var err error
+	if e.cached == "" {
+		e.cached, err = e.readKeychain()
 	}
 	if e.cached != "" {
-		return e.cached
+		return e.cached, nil
 	}
-	return e.env("EXA_API_KEY")
+	if key := e.env("EXA_API_KEY"); key != "" {
+		return key, nil
+	}
+	return "", err
+}
+
+// readKeychain reads the key from the keychain once, and logs how it
+// went.
+func (e *Exa) readKeychain() (string, error) {
+	start := time.Now()
+	secret, status := e.v.get()
+	e.logger().Info("the Exa key was read from the keychain", "ms", time.Since(start).Milliseconds(),
+		"found", status == 0, "status", status)
+	switch {
+	case status == errItemNotFound:
+		return "", ErrNoKey
+	case status != 0:
+		return "", keptBack(status)
+	case secret == "":
+		return "", ErrNoKey
+	}
+	if !e.v.open() {
+		e.saveAgain(secret)
+	}
+	return secret, nil
+}
+
+// The keychain's statuses for a read the person was asked about and that
+// did not bring the key.
+const (
+	errUserCanceled          = -128
+	errAuthFailed            = -25293
+	errInteractionNotAllowed = -25308
+)
+
+// keptBack says why macOS kept the key back, in words, as ErrKeptBack.
+func keptBack(status int) error {
+	switch status {
+	case errUserCanceled:
+		return fmt.Errorf("the password box was closed, so %w. Try again, and pick Always Allow", ErrKeptBack)
+	case errAuthFailed:
+		return fmt.Errorf("the password box was denied, so %w. Try again, and pick Always Allow", ErrKeptBack)
+	case errInteractionNotAllowed:
+		return fmt.Errorf("the keychain is locked and could not ask for its password, so %w. Try again once the Mac is unlocked", ErrKeptBack)
+	}
+	return fmt.Errorf("%w, with status %d. Try again", ErrKeptBack, status)
 }
 
 // saveAgain saves a key kept the old way the new way, and says in the log
@@ -136,7 +192,7 @@ func (e *Exa) Set(key string) error {
 	} else {
 		open = kept
 	}
-	e.cached, e.read = key, true
+	e.cached = key
 	if open {
 		e.logger().Info("the Exa key was saved in the keychain", "removed", key == "")
 	} else {

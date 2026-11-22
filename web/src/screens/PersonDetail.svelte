@@ -14,12 +14,13 @@
   import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
 
-  // onconnected follows once the app took a change of connected, or
-  // turned it down, so a list can read again what it shows.
-  let { id, onupdate, onconnected, onname }: {
+  // onmoved follows once the app took a change that moves the person to
+  // another list, connected or the profile rejected, or turned it down,
+  // so a list can read again what it shows.
+  let { id, onupdate, onmoved, onname }: {
     id: number
     onupdate?: (p: PersonDetail) => void
-    onconnected?: () => void
+    onmoved?: () => void
     onname?: (name: string) => void
   } = $props()
 
@@ -42,41 +43,43 @@
   let profile = $derived(person.data?.profiles.find((x) => x.platform === 'linkedin'))
   let linkedin = $derived(person.data?.linkedin?.url ?? '')
 
-  // A search can find the wrong person's profile. Not this person sets it
-  // aside, so LinkedIn no longer opens it. Undo in the toast, or in the
-  // line that stays while it is set aside, brings it back.
-  let settingAside = $state(false)
+  // A search can find the wrong person's profile. Not this person rejects
+  // it, so LinkedIn no longer opens it and the person moves to Rejected.
+  // Like Connect, the button stays and the same button again takes it
+  // back (Tim, testing #67 on 22 November 2026). It shows at once and
+  // goes back if the app says no. Undo in the toast sets back what was
+  // there before.
+  let reviewing = $state(false)
+  function showReview(of: Profile, next: Review) {
+    if (!person.data) return
+    person.data = { ...person.data, profiles: person.data.profiles.map((x) => (x.id === of.id ? { ...x, review: next } : x)) }
+  }
   async function review(of: Profile, next: Review) {
     await api.patchProfile(of.id, next)
     // The app says what follows from it, the link and the facts.
     person.data = await api.person(id)
     onupdate?.(person.data)
+    onmoved?.()
   }
-  async function takeBack() {
-    if (!profile || settingAside) return
-    settingAside = true
-    try {
-      await review(profile, 'open')
-    } catch (e) {
-      fault(e)
-    } finally {
-      settingAside = false
-    }
-  }
-  async function notThem() {
-    if (!profile || settingAside) return
+  async function toggleRejected() {
+    if (!profile || reviewing) return
     const of = profile
-    settingAside = true
+    const next: Review = of.review === 'rejected' ? 'confirmed' : 'rejected'
+    reviewing = true
+    showReview(of, next)
     try {
-      await review(of, 'rejected')
-      toast.show('LinkedIn profile set aside as not this person', 'plain', {
-        label: 'Undo',
-        run: () => review(of, of.review).catch((e) => fault(e)),
-      })
+      await review(of, next)
+      if (next === 'rejected') {
+        toast.show('LinkedIn profile rejected as not this person', 'plain', {
+          label: 'Undo',
+          run: () => review(of, of.review).catch((e) => fault(e)),
+        })
+      }
     } catch (e) {
+      showReview(of, of.review)
       fault(e)
     } finally {
-      settingAside = false
+      reviewing = false
     }
   }
   let reasons = $derived((person.data?.signals ?? []).filter((s) => s.for))
@@ -136,7 +139,7 @@
       fault(e)
     } finally {
       deciding = false
-      onconnected?.()
+      onmoved?.()
     }
   }
 </script>
@@ -165,15 +168,18 @@
               title="Open the LinkedIn profile in the browser profile chosen in Settings">
               {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
             </a>
-            <button class="btn icon" type="button" disabled={settingAside} onclick={notThem}
-              title="Not this person. The LinkedIn profile the search found is someone else's" aria-label="Not this person">
+          {/if}
+          {#if profile}
+            {@const rejected = profile.review === 'rejected'}
+            <button class="btn icon bad" type="button" aria-pressed={rejected} disabled={reviewing} onclick={toggleRejected}
+              title={rejected ? 'Rejected as not this person. Click again to take it back' : "Not this person. The LinkedIn profile the search found is someone else's"}
+              aria-label="Not this person">
               <Icon name="not-them" />
             </button>
           {/if}
         </div>
         {#if profile?.review === 'rejected'}
-          <p class="set-aside small">LinkedIn profile set aside as not this person.
-            <button class="link" type="button" disabled={settingAside} onclick={takeBack}>Undo</button></p>
+          <p class="rejected small">LinkedIn profile rejected as not this person.</p>
         {/if}
         {#if openProblem}
           <p class="open-problem small" role="alert">
@@ -241,6 +247,6 @@
   .why q { color: var(--ink-2); overflow-wrap: anywhere; }
   .found { font-size: 13px; color: var(--ink-3); }
   .open-problem { color: var(--bad); }
-  .set-aside { color: var(--ink-3); }
+  .rejected { color: var(--ink-3); }
   .note-state { color: var(--ink-3); }
 </style>

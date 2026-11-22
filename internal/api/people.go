@@ -77,7 +77,7 @@ func listPerson(p *store.Person) personJSON {
 	if l := p.LinkedIn; l.URL != "" {
 		// A person has one profile, so it goes by the person's id.
 		out.Profiles = append(out.Profiles, profileJSON{ID: p.ID, Platform: "linkedin", URL: l.URL, Review: l.Review})
-		if l.Review != "rejected" {
+		if !p.Rejected() {
 			lj := &linkedInJSON{URL: l.URL, AgeReason: l.AgeReason, Roles: l.Roles, LastActive: ptrTime(l.LastActive)}
 			if l.BornAbout != 0 {
 				born := l.BornAbout

@@ -123,7 +123,7 @@ func (a *API) openLinkedin(w http.ResponseWriter, r *http.Request) {
 	a.Store.Read(func(d *store.Data) {
 		if p := d.Person(id); p != nil {
 			found = true
-			if p.LinkedIn.Review != "rejected" {
+			if !p.Rejected() {
 				link = p.LinkedIn.URL
 			}
 		}

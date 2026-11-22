@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
+	"github.com/timmrkz/speakertrail/internal/keys"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
@@ -47,11 +49,11 @@ func newAPI(t *testing.T) (*API, *store.Store, *engine.Engine) {
 		t.Fatal(err)
 	}
 	keys := &memKeys{key: "invented"}
-	e := &engine.Engine{Store: st, Finder: func() engine.Finder {
+	e := &engine.Engine{Store: st, Finder: func() (engine.Finder, error) {
 		if !keys.Has() {
-			return nil
+			return nil, engine.ErrNoKey
 		}
-		return finder{}
+		return finder{}, nil
 	}}
 	return New(st, e, keys, nil), st, e
 }
@@ -147,6 +149,17 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if code := call(t, a, "PATCH", "/api/people/999", `{"connected":true}`, nil); code != http.StatusNotFound {
 		t.Errorf("nobody: %d", code)
 	}
+	// Not connected and her profile rejected, she is only under Rejected.
+	call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":false}`, nil)
+	if code := call(t, a, "PATCH", "/api/profiles/"+itoa(p.ID), `{"review":"rejected"}`, nil); code != http.StatusNoContent {
+		t.Fatalf("reject: %d", code)
+	}
+	call(t, a, "GET", "/api/people?filter=rejected", "", &people)
+	if len(people.People) != 1 || people.People[0].ID != p.ID || people.Counts["all"] != 0 || people.Counts["connected"] != 0 || people.Counts["rejected"] != 1 {
+		t.Errorf("people once rejected = %+v", people)
+	}
+	call(t, a, "PATCH", "/api/profiles/"+itoa(p.ID), `{"review":"confirmed"}`, nil)
+	call(t, a, "PATCH", "/api/people/"+itoa(p.ID), `{"connected":true}`, nil)
 
 	var searches struct{ Sources []searchJSON }
 	call(t, a, "GET", "/api/sources?kind=profile_search", "", &searches)
@@ -194,6 +207,21 @@ func TestSettingsAndKeys(t *testing.T) {
 	}
 	if code := call(t, a, "POST", "/api/runs", `{}`, nil); code != http.StatusConflict {
 		t.Errorf("a run without a key: %d", code)
+	}
+}
+
+// A run whose key macOS kept back is refused with why, the way a run
+// without a key is, never as something gone wrong inside.
+func TestARunWhoseKeyWasKeptBackSaysWhy(t *testing.T) {
+	a, _, e := newAPI(t)
+	call(t, a, "POST", "/api/sources", `{"query":"Yogalehrerin Bonn","kind":"profile_search"}`, nil)
+	e.Finder = func() (engine.Finder, error) {
+		return nil, fmt.Errorf("the password box was closed, so %w. Try again, and pick Always Allow", keys.ErrKeptBack)
+	}
+	var refused struct{ Error string }
+	want := "The password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow"
+	if code := call(t, a, "POST", "/api/runs", `{}`, &refused); code != http.StatusConflict || refused.Error != want {
+		t.Errorf("%d %q, want %q", code, refused.Error, want)
 	}
 }
 

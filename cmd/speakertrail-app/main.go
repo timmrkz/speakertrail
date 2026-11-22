@@ -10,6 +10,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"io"
@@ -137,11 +138,16 @@ func main() {
 	api.Handle("/api/language/", languageAPI{s: writers})
 	answers.Drafts = &draft.Drafter{Store: e.Store, Host: writer, Model: writers.inUse,
 		Check: func(m language.Model) error { return language.Check(m, writers.dir) },
-		Finder: func() draft.Finder {
-			if f, ok := e.Finder().(draft.Finder); ok {
-				return f
+		Finder: func() (draft.Finder, error) {
+			f, err := e.Finder()
+			if err != nil {
+				return nil, err
 			}
-			return nil
+			reader, ok := f.(draft.Finder)
+			if !ok {
+				return nil, errors.New("the search provider cannot read a profile")
+			}
+			return reader, nil
 		},
 		Told: func(j draft.Job) {
 			if app != nil {
@@ -357,11 +363,15 @@ func open() (*apipkg.API, *engine.Engine, string, error) {
 		return nil, nil, "", err
 	}
 	exa := keys.NewExa(theLog.slog("keys", zerolog.TraceLevel))
-	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Act: theLog.acting, Finder: func() engine.Finder {
-		if key := exa.Get(); key != "" {
-			return &search.Exa{Key: key}
+	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Act: theLog.acting, Finder: func() (engine.Finder, error) {
+		key, err := exa.Get()
+		switch {
+		case errors.Is(err, keys.ErrNoKey):
+			return nil, engine.ErrNoKey
+		case err != nil:
+			return nil, err
 		}
-		return nil
+		return &search.Exa{Key: key}, nil
 	}}
 	if err := e.Recover(); err != nil {
 		return nil, nil, "", err

@@ -23,7 +23,7 @@ export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'young' | 'new' | 'fit' | 'next' | 'name'
-export type PeopleFilter = 'all' | 'young' | 'connected' | 'fits' | 'upcoming' | 'profile' | 'founder'
+export type PeopleFilter = 'all' | 'young' | 'connected' | 'rejected' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export interface EventPerson {
   id?: number

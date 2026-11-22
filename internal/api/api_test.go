@@ -42,6 +42,17 @@ func (finder) People(ctx context.Context, query string, results int) ([]search.P
 	}}, nil
 }
 
+// Profile reads one invented profile, and no other link is in the index.
+func (finder) Profile(ctx context.Context, link string) (search.Profile, error) {
+	if link != "https://www.linkedin.com/in/ida-probe" {
+		return search.Profile{}, search.ErrNotIndexed
+	}
+	return search.Profile{
+		URL: link, Name: "Ida Probe", Headline: "Inhaberin, Probe Studio", Location: "Essen, Germany", LastActive: t0.AddDate(0, -1, 0),
+		Text: "Ida Probe\nInhaberin, Probe Studio",
+	}, nil
+}
+
 func newAPI(t *testing.T) (*API, *store.Store, *engine.Engine) {
 	t.Helper()
 	st, err := store.Open(t.TempDir(), func() time.Time { return t0 })

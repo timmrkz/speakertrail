@@ -7,6 +7,11 @@
 // One run goes at a time, started by hand. It takes the searches that are
 // due, a few side by side, and can be stopped at any moment. What it did
 // not get to waits for the next run.
+//
+// A run also reads the profiles of people Tim added from their LinkedIn
+// links, see Add. Adding links starts a run that reads only those, or
+// joins the run going. Profiles are read before searches are asked,
+// since Tim waits for them.
 package engine
 
 import (
@@ -15,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,13 +34,15 @@ import (
 // Provider is the budget name of the one search provider runs use.
 const Provider = "exa"
 
-// SideBySide is how many searches a run asks at the same time.
+// SideBySide is how many searches a run asks, or profiles it reads, at
+// the same time.
 const SideBySide = 4
 
-// Finder finds LinkedIn profiles that match a query. search.Exa is one,
-// tests have their own.
+// Finder finds LinkedIn profiles that match a query, and reads one
+// profile by its link. search.Exa is one, tests have their own.
 type Finder interface {
 	People(ctx context.Context, query string, results int) ([]search.Profile, error)
+	Profile(ctx context.Context, link string) (search.Profile, error)
 }
 
 // Errors a run can start with.
@@ -42,6 +50,7 @@ var (
 	ErrNoKey    = errors.New("add the Exa key in Settings first, runs ask Exa for the profiles")
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
 	ErrNothing  = errors.New("no search is due. Add one in Searches, or resume a paused one")
+	ErrNoLinks  = errors.New("there is no link to a LinkedIn profile in it, like linkedin.com/in/name")
 	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
 	// ErrUnread is a key that is saved and could not be read, like one
 	// macOS kept back because its password box was closed. The error a
@@ -79,14 +88,29 @@ type Engine struct {
 	closed int
 }
 
-// going is the run that goes now.
+// job is one search to ask, or one person whose profile to read.
+type job struct{ search, person int64 }
+
+// going is the run that goes now. What it has still to do and who works
+// on it change under Engine.mu.
 type going struct {
 	id     int64
+	ctx    context.Context
 	cancel context.CancelFunc
 	done   chan struct{}
+	// queue is what the run has still to do, in order. Links Tim adds
+	// while it goes join it.
+	queue []job
+	// workers work through the queue, at most SideBySide. The last to
+	// find it empty closes idle and sets ending, and from then on
+	// nothing joins the run.
+	workers int
+	ending  bool
+	idle    chan struct{}
 	// running are the searches being asked now, by id, with when they
-	// started.
+	// started, and reading the people whose profiles are read now.
 	running map[int64]time.Time
+	reading map[int64]time.Time
 	// log is the engine's log with the act that started the run.
 	log *slog.Logger
 }
@@ -159,7 +183,7 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 	now := e.Store.Now()
 	var run *store.Run
 	err := e.Store.Update(func(d *store.Data) error {
-		var ids []int64
+		var ids, links []int64
 		if only != 0 {
 			if d.Search(only) == nil {
 				return fmt.Errorf("no search %d", only)
@@ -169,8 +193,14 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 			for _, s := range d.Due(now, d.Int("profile_searches_per_run")) {
 				ids = append(ids, s.ID)
 			}
+			// Profiles a run before did not get to read.
+			for _, p := range d.People {
+				if p.ToRead {
+					links = append(links, p.ID)
+				}
+			}
 		}
-		if len(ids) == 0 {
+		if len(ids) == 0 && len(links) == 0 {
 			return ErrNothing
 		}
 		if d.Used(Provider, now) >= d.Int(Provider+"_monthly_searches") {
@@ -181,24 +211,180 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 		for _, p := range d.People {
 			score(p, now)
 		}
-		run = &store.Run{ID: d.NewID(), Kind: kind, StartedAt: now, Searches: ids, Checks: []store.Check{}}
+		run = &store.Run{ID: d.NewID(), Kind: kind, StartedAt: now, Searches: ids, Checks: []store.Check{}, Links: links}
 		d.Runs = append(d.Runs, run)
 		return nil
 	})
 	if err != nil {
 		return 0, false, err
 	}
+	e.launch(run)
+	return run.ID, true, nil
+}
+
+// launch starts the work of a run saved a moment ago. Engine.mu is held.
+func (e *Engine) launch(run *store.Run) {
 	ctx, cancel := context.WithCancel(context.Background())
-	g := &going{id: run.ID, cancel: cancel, done: make(chan struct{}), running: map[int64]time.Time{}, log: e.log()}
+	g := &going{id: run.ID, ctx: ctx, cancel: cancel, done: make(chan struct{}), idle: make(chan struct{}),
+		running: map[int64]time.Time{}, reading: map[int64]time.Time{}, log: e.log()}
 	if e.Act != nil {
 		if act := e.Act(); act != "" {
 			g.log = g.log.With("act", act)
 		}
 	}
+	for _, id := range run.Links {
+		g.queue = append(g.queue, job{person: id})
+	}
+	for _, id := range run.Searches {
+		g.queue = append(g.queue, job{search: id})
+	}
 	e.going = g
-	go e.run(ctx, g, run.Searches)
-	g.log.Info("a run started", "run", run.ID, "searches", len(run.Searches))
-	return run.ID, true, nil
+	e.hire(g)
+	go e.run(g)
+	g.log.Info("a run started", "run", run.ID, "searches", len(run.Searches), "links", len(run.Links))
+}
+
+// hire starts workers until there are SideBySide or one for each thing
+// queued. Engine.mu is held.
+func (e *Engine) hire(g *going) {
+	for g.workers < SideBySide && g.workers < len(g.queue) {
+		g.workers++
+		go e.work(g)
+	}
+}
+
+// work does what the run has queued until nothing is left or the run
+// is stopped.
+func (e *Engine) work(g *going) {
+	for {
+		e.mu.Lock()
+		if g.ctx.Err() != nil || len(g.queue) == 0 {
+			g.workers--
+			if g.workers == 0 {
+				g.ending = true
+				close(g.idle)
+			}
+			e.mu.Unlock()
+			return
+		}
+		j := g.queue[0]
+		g.queue = g.queue[1:]
+		e.mu.Unlock()
+		if j.person != 0 {
+			e.read(g.ctx, g, j.person)
+		} else {
+			e.check(g.ctx, g, j.search)
+		}
+	}
+}
+
+// Added is what came of links Tim added: the people new to the app, those
+// here already, how many other links there were, and the run that reads
+// the new profiles.
+type Added struct {
+	Run   int64   `json:"run"`
+	New   []int64 `json:"new"`
+	Here  []int64 `json:"here"`
+	Other int     `json:"other"`
+}
+
+// Add adds the people behind the LinkedIn profile links in a text, as
+// connected, and has a run read their profiles: the run going, or a new
+// one that reads only those. Someone here already is only marked
+// connected. Without a key or budget the people are still added, and
+// the next run reads them.
+func (e *Engine) Add(text string) (Added, error) {
+	profiles, other := Links(text)
+	out := Added{New: []int64{}, Here: []int64{}, Other: other}
+	if len(profiles) == 0 {
+		return out, ErrNoLinks
+	}
+	for {
+		e.mu.Lock()
+		g := e.going
+		if g == nil || !g.ending {
+			break
+		}
+		// The going run has done all it had and is ending, so nothing
+		// joins it. The links start the next.
+		e.mu.Unlock()
+		<-g.done
+	}
+	defer e.mu.Unlock()
+	if e.closed > 0 {
+		return out, ErrClosed
+	}
+	g := e.going
+	var startErr error
+	if g == nil {
+		if e.Finder == nil {
+			startErr = ErrNoKey
+		} else if _, err := e.Finder(); errors.Is(err, ErrNoKey) {
+			startErr = ErrNoKey
+		} else if err != nil {
+			startErr = unread{err}
+		}
+	}
+	now := e.Store.Now()
+	var run *store.Run
+	var read []int64
+	err := e.Store.Update(func(d *store.Data) error {
+		runID := int64(0)
+		switch {
+		case g != nil:
+			runID = g.id
+		case startErr == nil && d.Used(Provider, now) >= d.Int(Provider+"_monthly_searches"):
+			startErr = ErrNoBudget
+		case startErr == nil:
+			runID = d.NewID()
+		}
+		for _, link := range profiles {
+			p, isNew := d.AddLink(link, handleOf(link), runID, now)
+			if isNew {
+				out.New = append(out.New, p.ID)
+			} else {
+				out.Here = append(out.Here, p.ID)
+			}
+			if p.ToRead && !slices.Contains(read, p.ID) {
+				read = append(read, p.ID)
+			}
+		}
+		if runID == 0 || len(read) == 0 {
+			return nil
+		}
+		if g != nil {
+			if r := d.Run(g.id); r != nil {
+				for _, id := range read {
+					if !slices.Contains(r.Links, id) {
+						r.Links = append(r.Links, id)
+					}
+				}
+			}
+		} else {
+			run = &store.Run{ID: runID, Kind: "add", StartedAt: now, Searches: []int64{}, Checks: []store.Check{}, Links: read}
+			d.Runs = append(d.Runs, run)
+		}
+		out.Run = runID
+		return nil
+	})
+	if err != nil {
+		return out, err
+	}
+	switch {
+	case run != nil:
+		e.launch(run)
+	case g != nil && out.Run != 0:
+		for _, id := range read {
+			if _, now := g.reading[id]; !now && !slices.Contains(g.queue, job{person: id}) {
+				g.queue = append(g.queue, job{person: id})
+			}
+		}
+		// Profiles before searches, since Tim waits for them.
+		slices.SortStableFunc(g.queue, func(a, b job) int { return cmpBool(a.person == 0, b.person == 0) })
+		e.hire(g)
+		g.log.Info("links joined a run", "run", g.id, "new", len(out.New), "here", len(out.Here))
+	}
+	return out, startErr
 }
 
 // Stop ends the going run. What it did not get to waits for the next
@@ -240,27 +426,31 @@ func (e *Engine) Going() (int64, map[int64]time.Time) {
 	return e.going.id, now
 }
 
-func (e *Engine) run(ctx context.Context, g *going, ids []int64) {
-	defer close(g.done)
-	work := make(chan int64)
-	var wg sync.WaitGroup
-	for range SideBySide {
-		wg.Go(func() {
-			for id := range work {
-				e.check(ctx, g, id)
-			}
-		})
+// Reading is whose profiles the going run reads now, with since when, and
+// whose wait their turn.
+func (e *Engine) Reading() (reading map[int64]time.Time, waiting []int64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	reading = map[int64]time.Time{}
+	if e.going == nil {
+		return reading, nil
 	}
-feed:
-	for _, id := range ids {
-		select {
-		case work <- id:
-		case <-ctx.Done():
-			break feed
+	for id, at := range e.going.reading {
+		reading[id] = at
+	}
+	for _, j := range e.going.queue {
+		if j.person != 0 {
+			waiting = append(waiting, j.person)
 		}
 	}
-	close(work)
-	wg.Wait()
+	return reading, waiting
+}
+
+// run waits until the run's workers are done, and saves its end.
+func (e *Engine) run(g *going) {
+	defer close(g.done)
+	<-g.idle
+	ctx := g.ctx
 
 	ended := ""
 	if ctx.Err() != nil {
@@ -376,6 +566,100 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 	}
 }
 
+// read reads the profile of someone Tim added from a link. Stopped, it
+// waits for the next run. A profile Exa's index does not hold yet is not
+// read again by itself.
+func (e *Engine) read(ctx context.Context, g *going, id int64) {
+	if ctx.Err() != nil {
+		return
+	}
+	start := e.Store.Now()
+	var link string
+	reserved := false
+	err := e.Store.Update(func(d *store.Data) error {
+		p := d.Person(id)
+		if p == nil || !p.ToRead {
+			return nil
+		}
+		link = p.LinkedIn.URL
+		reserved = d.Reserve(Provider, start)
+		return nil
+	})
+	if err != nil || link == "" {
+		if err != nil {
+			g.log.Error("a profile could not be read", "run", g.id, "person", id, "error", err)
+		}
+		return
+	}
+	if !reserved {
+		g.log.Info("a profile waits, no Exa searches left this month", "run", g.id, "person", id)
+		return
+	}
+	e.mu.Lock()
+	g.reading[id] = start
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(g.reading, id)
+		e.mu.Unlock()
+	}()
+
+	var prof search.Profile
+	finder, err := e.Finder()
+	if err == nil {
+		prof, err = finder.Profile(ctx, link)
+	}
+	if ctx.Err() != nil {
+		g.log.Debug("a read was stopped", "run", g.id, "person", id)
+		return
+	}
+	r := store.Read{PersonID: id, At: e.Store.Now()}
+	r.DurationMS = r.At.Sub(start).Milliseconds()
+	err = e.Store.Update(func(d *store.Data) error {
+		p := d.Person(id)
+		if p == nil {
+			return nil
+		}
+		switch {
+		case errors.Is(err, search.ErrNotIndexed):
+			// Said without the link, which is personal data.
+			r.Error = NotIndexed
+			p.ToRead, p.ReadError = false, NotIndexed
+		case err != nil:
+			// Exa or the network failed. The next run tries again.
+			r.Error = err.Error()
+			p.ReadError = err.Error()
+		default:
+			city, inNRW := place.PlaceInNRW(prof.Location)
+			if !inNRW {
+				city, _, _ = strings.Cut(prof.Location, ",")
+			}
+			born, reason, roles := careerOf(prof, r.At)
+			d.ReadLink(p, store.Found{
+				Name: prof.Name, Headline: prof.Headline, City: strings.TrimSpace(city),
+				BornAbout: born, AgeReason: reason, Roles: roles, LastActive: prof.LastActive, Text: prof.Text,
+			}, r.At)
+			score(p, r.At)
+		}
+		if run := d.Run(g.id); run != nil {
+			run.Reads = append(run.Reads, r)
+		}
+		return nil
+	})
+	if err != nil {
+		g.log.Error("a profile read was not saved", "run", g.id, "person", id, "error", err)
+		return
+	}
+	if r.Error != "" {
+		g.log.Warn("a profile could not be read", "run", g.id, "person", id, "ms", r.DurationMS, "error", r.Error)
+	} else {
+		g.log.Debug("a profile was read", "run", g.id, "person", id, "ms", r.DurationMS)
+	}
+}
+
+// NotIndexed is why someone added from a link has no profile yet.
+const NotIndexed = "Not in Exa's index yet"
+
 // Guest tells whether a profile shows a possible guest: in NRW, active on
 // LinkedIn since a time, running their own business, and neither ruled out
 // nor left out by one of Tim's exclusions.
@@ -450,6 +734,31 @@ func score(p *store.Person, now time.Time) {
 	p.Score, p.Rubric = rubric.Score(sigs), rubric.Version
 }
 
+// Links finds the LinkedIn profile links in a text, like a list pasted
+// from a note, each in one spelling and once, and counts the other links
+// in it, like a company page. Words that are no link are passed over. A
+// link may come without https:// or www.
+func Links(text string) (profiles []string, other int) {
+	for _, word := range strings.Fields(text) {
+		word = strings.Trim(word, "<>()[]\"',;")
+		lower := strings.ToLower(word)
+		if !strings.Contains(lower, "://") && !strings.HasPrefix(lower, "www.") && !strings.Contains(lower, "linkedin.com") {
+			continue
+		}
+		if !strings.Contains(lower, "://") {
+			word = "https://" + word
+		}
+		if p := linkedIn(word); p != "" {
+			if !slices.Contains(profiles, p) {
+				profiles = append(profiles, p)
+			}
+			continue
+		}
+		other++
+	}
+	return profiles, other
+}
+
 // linkedIn gives a LinkedIn profile's link in one spelling, or nothing
 // for any other link.
 func linkedIn(raw string) string {
@@ -462,7 +771,7 @@ func linkedIn(raw string) string {
 		return ""
 	}
 	path := strings.TrimSuffix(u.Path, "/")
-	if !strings.HasPrefix(path, "/in/") {
+	if !strings.HasPrefix(path, "/in/") || strings.Count(path, "/") != 2 || len(path) == len("/in/") {
 		return ""
 	}
 	return "https://www.linkedin.com" + path
@@ -471,6 +780,17 @@ func linkedIn(raw string) string {
 // handleOf is the last part of a profile's link.
 func handleOf(profile string) string {
 	return profile[strings.LastIndex(profile, "/")+1:]
+}
+
+// cmpBool puts false before true.
+func cmpBool(a, b bool) int {
+	switch {
+	case a == b:
+		return 0
+	case a:
+		return 1
+	}
+	return -1
 }
 
 func cmpOr(a, b string) string {

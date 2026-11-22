@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -117,8 +118,12 @@ func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 			return p, nil
 		}
 	}
-	return Profile{}, fmt.Errorf("Exa's index holds no profile at %s", link)
+	return Profile{}, fmt.Errorf("%w at %s", ErrNotIndexed, link)
 }
+
+// ErrNotIndexed is a profile Exa's index does not hold yet, like one
+// made lately.
+var ErrNotIndexed = errors.New("Exa's index holds no profile")
 
 // contentsURL is where Exa's contents API is, beside its search, whose
 // address a test may change.

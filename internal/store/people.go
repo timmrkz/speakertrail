@@ -31,6 +31,53 @@ func (d *Data) AddFound(f Found, search *Search, runID int64, at time.Time) (*Pe
 		}
 		d.People = append(d.People, p)
 	}
+	p.take(d, f, at)
+	seen := false
+	for i := range p.FoundBy {
+		if p.FoundBy[i].SearchID == search.ID {
+			p.FoundBy[i].At, seen = at, true
+		}
+	}
+	if !seen {
+		p.FoundBy = append(p.FoundBy, Sighting{SearchID: search.ID, At: at})
+	}
+	return p, isNew
+}
+
+// AddedByHand is how someone Tim added from a link was found.
+const AddedByHand = "Added by hand"
+
+// AddLink finds the person behind a LinkedIn profile link Tim added, or
+// adds them, named by the handle in the link until a run reads their
+// profile. Either way they are marked connected: Tim adds people he
+// connected with. It reports whether they are new.
+func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (*Person, bool) {
+	p := d.PersonByProfile(url)
+	isNew := p == nil
+	if isNew {
+		p = &Person{
+			ID: d.NewID(), Name: handle, FirstSeen: at, FirstRunID: runID, Evidence: AddedByHand,
+			LinkedIn: LinkedIn{URL: url, Handle: handle, Review: "confirmed"}, ToRead: true,
+		}
+		d.People = append(d.People, p)
+	}
+	p.Connect(true, at)
+	p.UpdatedAt = at
+	return p, isNew
+}
+
+// ReadLink fills in someone Tim added from a link with what their profile
+// says, the name too.
+func (d *Data) ReadLink(p *Person, f Found, at time.Time) {
+	if f.Name != "" {
+		p.Name = f.Name
+	}
+	p.take(d, f, at)
+	p.ToRead, p.ReadError = false, ""
+}
+
+// take keeps what a profile says now.
+func (p *Person) take(d *Data, f Found, at time.Time) {
 	p.UpdatedAt = at
 	if p.City == "" {
 		p.City = f.City
@@ -51,16 +98,6 @@ func (d *Data) AddFound(f Found, search *Search, runID int64, at time.Time) (*Pe
 	if f.Text != "" {
 		d.SetProfileText(p, f.Text, at)
 	}
-	seen := false
-	for i := range p.FoundBy {
-		if p.FoundBy[i].SearchID == search.ID {
-			p.FoundBy[i].At, seen = at, true
-		}
-	}
-	if !seen {
-		p.FoundBy = append(p.FoundBy, Sighting{SearchID: search.ID, At: at})
-	}
-	return p, isNew
 }
 
 // Connect marks a person as connected on LinkedIn, or open again. Tim
@@ -77,14 +114,9 @@ func (p *Person) Connect(connected bool, at time.Time) {
 	}
 }
 
-// YoungUntil is the age up to which a person counts as young, by the
-// likely year of birth their profile shows.
-const YoungUntil = 30
-
-// Young says whether a person is likely under 30 in the year of now.
-func (p *Person) Young(now time.Time) bool {
-	return p.LinkedIn.BornAbout > now.Year()-YoungUntil
-}
+// NewFor is how long someone counts as new under New after they came
+// in, found by a search or added by hand.
+const NewFor = 7 * 24 * time.Hour
 
 // Rejected says whether Tim said the LinkedIn profile a search found is
 // not this person's.
@@ -95,7 +127,7 @@ func (p *Person) Rejected() bool {
 // Filters are the ways People can be narrowed, and Sorts the orders it
 // can be in.
 var (
-	Filters = []string{"all", "young", "connected", "rejected"}
+	Filters = []string{"all", "new", "connected", "rejected"}
 	Sorts   = []string{"young", "new", "fit", "name"}
 )
 
@@ -109,9 +141,11 @@ type PeopleQuery struct {
 // would show for the same words, so a filter that shows nobody never hides
 // that others were found. Someone Tim connected with is only under
 // Connected, and someone whose profile he rejected only under Rejected,
-// so All and Under 30 shrink to whom he can still reach out to.
+// so All shrinks to whom he can still reach out to.
 // Connected comes first, since a person he connected with is real
-// whatever the profile. Whom an exclusion leaves out is in no list,
+// whatever the profile. New is whoever came in during the last week,
+// connected or not, the newest first whatever the order, so those just
+// added stand on top. Whom an exclusion leaves out is in no list,
 // unless Tim connected with them. They stay in the file, so removing the exclusion brings them
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
@@ -141,7 +175,7 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		open := !p.Connected && !p.Rejected()
 		in := map[string]bool{
 			"all":       open,
-			"young":     open && p.Young(q.Now),
+			"new":       !(p.Rejected() && !p.Connected) && q.Now.Sub(p.FirstSeen) < NewFor,
 			"connected": p.Connected,
 			"rejected":  !p.Connected && p.Rejected(),
 		}
@@ -157,8 +191,12 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	newest := func(a, b *Person) int {
 		return cmp.Or(b.FirstSeen.Compare(a.FirstSeen), cmp.Compare(b.ID, a.ID))
 	}
+	sort := q.Sort
+	if q.Filter == "new" {
+		sort = "new"
+	}
 	slices.SortStableFunc(out, func(a, b *Person) int {
-		switch q.Sort {
+		switch sort {
 		case "new":
 			return newest(a, b)
 		case "name":

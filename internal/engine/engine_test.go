@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -27,6 +28,31 @@ type finder struct {
 	err      error
 	hold     chan struct{}
 	started  chan string
+	// read are the profiles Profile reads, by link. A link not in it
+	// is not in the index.
+	read  map[string]search.Profile
+	links []string
+}
+
+func (f *finder) Profile(ctx context.Context, link string) (search.Profile, error) {
+	f.mu.Lock()
+	f.links = append(f.links, link)
+	prof, ok := f.read[link]
+	f.mu.Unlock()
+	if f.started != nil {
+		f.started <- link
+	}
+	if f.hold != nil {
+		select {
+		case <-f.hold:
+		case <-ctx.Done():
+			return search.Profile{}, ctx.Err()
+		}
+	}
+	if !ok {
+		return search.Profile{}, fmt.Errorf("%w at %s", search.ErrNotIndexed, link)
+	}
+	return prof, f.err
 }
 
 func (f *finder) People(ctx context.Context, query string, results int) ([]search.Profile, error) {
@@ -513,4 +539,191 @@ func TestEveryCheckIsALineOfTheLog(t *testing.T) {
 	if !found {
 		t.Error("a failed check wrote no line")
 	}
+}
+
+// A profile the invented index holds, of someone Tim connected with.
+var ida = search.Profile{
+	URL: "https://www.linkedin.com/in/ida-probe-7f", Name: "Ida Probe", Headline: "Inhaberin, Probe Studio",
+	Location: "Essen, Nordrhein-Westfalen, Deutschland", LastActive: t0.AddDate(0, -1, 0),
+	Career: steps("Inhaberin", "Probe Studio", 2022, "Universität Duisburg-Essen", 2018), Text: "Ida Probe\nInhaberin, Probe Studio",
+}
+
+func TestLinks(t *testing.T) {
+	text := `Leute vom Gründerfrühstück:
+https://www.linkedin.com/in/ida-probe-7f/
+https://de.linkedin.com/in/ole-muster?utm_source=share, (linkedin.com/in/ida-probe-7f)
+www.linkedin.com/in/pia-beispiel https://www.linkedin.com/company/probe-gmbh/ linkedin.com/in/ https://example.org`
+	profiles, other := Links(text)
+	want := []string{"https://www.linkedin.com/in/ida-probe-7f", "https://www.linkedin.com/in/ole-muster", "https://www.linkedin.com/in/pia-beispiel"}
+	if strings.Join(profiles, " ") != strings.Join(want, " ") || other != 3 {
+		t.Errorf("Links = %q and %d others, want %q and 3", profiles, other, want)
+	}
+	if profiles, other := Links("Yogalehrerin Köln"); len(profiles) != 0 || other != 0 {
+		t.Errorf("words alone gave %q and %d", profiles, other)
+	}
+}
+
+// Links Tim adds are people at once, connected and named by their handle,
+// and a run of their own reads their profiles and asks no search. A
+// profile Exa's index does not hold keeps the handle and says why.
+func TestAddReadsTheProfilesOfTheLinks(t *testing.T) {
+	f := &finder{read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	out, err := e.Add(ida.URL + "/ linkedin.com/in/neu-hier-3 https://www.linkedin.com/company/probe-gmbh")
+	if err != nil || out.Run == 0 || len(out.New) != 2 || len(out.Here) != 0 || out.Other != 1 {
+		t.Fatalf("Add = %+v, %v", out, err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		p := d.PersonByProfile(ida.URL)
+		if p == nil || p.Name != "Ida Probe" || !p.Connected || p.ToRead || p.City != "Essen" || p.LinkedIn.Text == "" || p.LinkedIn.BornAbout == 0 || p.Evidence != store.AddedByHand {
+			t.Errorf("read %+v", p)
+		}
+		q := d.PersonByProfile("https://www.linkedin.com/in/neu-hier-3")
+		if q == nil || q.Name != "neu-hier-3" || !q.Connected || q.ToRead || q.ReadError != NotIndexed {
+			t.Errorf("not in the index %+v", q)
+		}
+		r := d.Run(out.Run)
+		if r == nil || r.Kind != "add" || r.FinishedAt.IsZero() || len(r.Links) != 2 || len(r.Reads) != 2 || len(r.Searches) != 0 {
+			t.Errorf("run %+v", r)
+		}
+		for _, read := range r.Reads {
+			if strings.Contains(read.Error, "linkedin") {
+				t.Errorf("a read's error names the link: %q", read.Error)
+			}
+		}
+		if d.Used(Provider, t0) != 2 {
+			t.Errorf("used %d Exa calls, want 2", d.Used(Provider, t0))
+		}
+	})
+	if len(f.queries) != 0 {
+		t.Errorf("adding links asked the searches %q", f.queries)
+	}
+	// The same link again only marks them connected, nobody is added.
+	_ = st.Update(func(d *store.Data) error { d.PersonByProfile(ida.URL).Connect(false, t0); return nil })
+	again, err := e.Add("https://www.linkedin.com/in/ida-probe-7f")
+	if err != nil || len(again.New) != 0 || len(again.Here) != 1 || again.Run != 0 {
+		t.Errorf("again %+v, %v", again, err)
+	}
+	st.Read(func(d *store.Data) {
+		if len(d.People) != 2 || !d.PersonByProfile(ida.URL).Connected {
+			t.Errorf("people after adding the same link: %d", len(d.People))
+		}
+	})
+	if _, err := e.Add("Yogalehrerin Köln"); !errors.Is(err, ErrNoLinks) {
+		t.Errorf("words alone: %v, want ErrNoLinks", err)
+	}
+}
+
+// Without a key the people are added all the same, and the next run
+// reads them.
+func TestAddWithoutAKeyLeavesTheProfilesForTheNextRun(t *testing.T) {
+	e, st := newEngine(t, nil)
+	out, err := e.Add(ida.URL)
+	if !errors.Is(err, ErrNoKey) || len(out.New) != 1 || out.Run != 0 {
+		t.Fatalf("Add = %+v, %v", out, err)
+	}
+	st.Read(func(d *store.Data) {
+		if p := d.PersonByProfile(ida.URL); p == nil || !p.ToRead || !p.Connected {
+			t.Errorf("added %+v", p)
+		}
+	})
+}
+
+// Links added while a run goes join it, read before the searches it has
+// left. Stopped, the profiles not read wait for the next run, which reads
+// them.
+func TestLinksJoinTheRunGoingAndStopLeavesThemForTheNext(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	_ = st.Update(func(d *store.Data) error {
+		for _, q := range []string{"Yogalehrerin Bonn", "Personal Trainer Essen", "Coach Münster", "Tattoo Studio Dortmund", "Bäckerei Aachen"} {
+			if _, err := d.AddSearch(q, 0, t0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range SideBySide {
+		<-f.started
+	}
+	out, err := e.Add(ida.URL + " linkedin.com/in/neu-hier-3")
+	if err != nil || out.Run != id || len(out.New) != 2 {
+		t.Fatalf("Add = %+v, %v, want it to join run %d", out, err, id)
+	}
+	if reading, waiting := e.Reading(); len(reading) != 0 || len(waiting) != 2 {
+		t.Errorf("reading %v, waiting %v, want both waiting", reading, waiting)
+	}
+	if !e.Stop(id) {
+		t.Fatal("Stop found no run")
+	}
+	st.Read(func(d *store.Data) {
+		r := d.Run(id)
+		if len(r.Links) != 2 || len(r.Reads) != 0 {
+			t.Errorf("stopped run %+v", r)
+		}
+		for _, p := range d.People {
+			if !p.ToRead {
+				t.Errorf("%s was not left for the next run", p.Name)
+			}
+		}
+	})
+	close(f.hold)
+	next, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if r := d.Run(next); len(r.Links) != 2 || len(r.Reads) != 2 {
+			t.Errorf("the next run %+v", r)
+		}
+		if p := d.PersonByProfile(ida.URL); p.ToRead || p.Name != "Ida Probe" {
+			t.Errorf("after the next run %+v", p)
+		}
+	})
+}
+
+// The window adds links, starts, stops and watches runs from several
+// goroutines at once.
+func TestAddStartStopAndReadingFromSeveralGoroutines(t *testing.T) {
+	f := &finder{profiles: invented, read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		wg.Go(func() {
+			link := fmt.Sprintf("https://www.linkedin.com/in/probe-%d", i%4)
+			if _, err := e.Add(link + " " + ida.URL); err != nil {
+				t.Errorf("Add: %v", err)
+			}
+		})
+		wg.Go(func() {
+			if id, _, err := e.Start("manual", 0); err == nil && i%3 == 0 {
+				e.Stop(id)
+			}
+		})
+		wg.Go(func() { e.Reading() })
+		wg.Go(func() { e.Going() })
+	}
+	wg.Wait()
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		seen := map[string]bool{}
+		for _, p := range d.People {
+			if p.Evidence != store.AddedByHand {
+				continue
+			}
+			if seen[p.LinkedIn.URL] {
+				t.Errorf("%s was added twice", p.LinkedIn.URL)
+			}
+			seen[p.LinkedIn.URL] = true
+		}
+		if len(seen) != 5 {
+			t.Errorf("%d people added from links, want 5: Ida and four probes", len(seen))
+		}
+	})
 }

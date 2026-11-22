@@ -163,6 +163,13 @@ type Person struct {
 	Rubric int `json:"rubric"`
 	// FoundBy are the searches that found them, each with the last time.
 	FoundBy []Sighting `json:"found_by"`
+	// ToRead says Tim added them from a link and a run has not read their
+	// profile from Exa yet. Until it does they are named by the handle in
+	// the link. The next run reads it.
+	ToRead bool `json:"to_read,omitempty"`
+	// ReadError says why the last read of their profile failed, like a
+	// profile Exa's index does not hold yet.
+	ReadError string `json:"read_error,omitempty"`
 }
 
 // LinkedIn is what a LinkedIn profile says, as the search provider's
@@ -242,6 +249,18 @@ type Run struct {
 	// Searches are the ids the run takes, in order.
 	Searches []int64 `json:"searches"`
 	Checks   []Check `json:"checks"`
+	// Links are the people whose profiles the run reads, by id, those Tim
+	// added from links. Reads is what came of each read so far.
+	Links []int64 `json:"links,omitempty"`
+	Reads []Read  `json:"reads,omitempty"`
+}
+
+// Read is one profile read from Exa's index in a run.
+type Read struct {
+	PersonID   int64     `json:"person_id"`
+	At         time.Time `json:"at"`
+	DurationMS int64     `json:"duration_ms"`
+	Error      string    `json:"error,omitempty"`
 }
 
 // Check is one search's part in a run.

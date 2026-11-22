@@ -59,7 +59,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "young": 1, "connected": 0, "rejected": 0 }
+  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 }
 }
 ```
 

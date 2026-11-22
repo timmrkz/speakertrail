@@ -6,7 +6,7 @@
 import type { Plugin } from 'vite'
 import type {
   Activity, Appearance, DraftJob, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
-  Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
+  Run, RunFailure, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
   FirstMessageTemplate, TemplateField, TemplatePart,
 } from '../src/lib/api.ts'
 import {
@@ -51,6 +51,11 @@ interface PersonRow {
   // The first message to them and when it was drafted.
   draft?: string
   drafted_at?: string
+  // Where reading the profile of someone added from a link stands, like
+  // the app's, see readsOf.
+  read?: Person['read']
+  read_since?: string
+  read_error?: string
 }
 
 function createState() {
@@ -283,8 +288,45 @@ function personList(s: State, p: PersonRow): Person {
     activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
       ? { ...MOCK_ACTIVITY[p.id % MOCK_ACTIVITY.length], company: p.affiliations[0]?.organisation ?? 'Beispiel GmbH' }
       : null,
+    read: p.read ?? '',
+    read_since: p.read === 'reading' ? p.read_since ?? null : null,
+    read_ms: p.read === 'reading' ? READ_MS : null,
+    read_error: p.read_error,
   }
 }
+
+// Links to LinkedIn profiles in a text, in one spelling, and how many
+// other links it holds, like engine.Links.
+function profileLinks(text: string): { profiles: string[]; other: number } {
+  const profiles: string[] = []
+  let other = 0
+  for (let word of text.split(/\s+/).filter(Boolean)) {
+    word = word.replace(/^[<>()[\]"',;]+|[<>()[\]"',;]+$/g, '')
+    const lower = word.toLowerCase()
+    if (!lower.includes('://') && !lower.startsWith('www.') && !lower.includes('linkedin.com')) continue
+    let u: URL
+    try {
+      u = new URL(lower.includes('://') ? word : `https://${word}`)
+    } catch {
+      other++
+      continue
+    }
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
+    const path = u.pathname.replace(/\/$/, '')
+    if ((host === 'linkedin.com' || host.endsWith('.linkedin.com')) && /^\/in\/[^/]+$/.test(path)) {
+      const link = `https://www.linkedin.com${path}`
+      if (!profiles.includes(link)) profiles.push(link)
+    } else other++
+  }
+  return { profiles, other }
+}
+
+// About how long Exa takes to give one profile in the mock, and how many
+// it reads at once, like the app's SideBySide.
+const READ_MS = 4000
+const SIDE_BY_SIDE = 4
+
+const linkOf = (p: PersonRow) => p.profiles.find((x) => x.platform === 'linkedin')?.url
 
 const MOCK_ACTIVITY: { state: Activity; since: string | null; note: string }[] = [
   { state: 'active', since: '2026-08-14T00:00:00Z', note: 'the website changed August 2026, by its sitemap' },
@@ -304,7 +346,8 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
   }
   const search = p.searchId ? s.sources.find((x) => x.id === p.searchId) : undefined
   if (search) seen.set(search.id, { source_id: search.id, source: search.name, checked_at: hoursAgo(search.checked_hours_ago ?? 5) })
-  const fit_evidence = search ? `Found by the profile search ${search.name}` : p.id >= 900
+  // Like the app: someone added from a link says so.
+  const fit_evidence = search ? `Found by the profile search ${search.name}` : p.read !== undefined ? 'Added by hand' : p.id >= 900 && p.id < 1000
     ? `Managing director of ${p.affiliations[0].organisation}, by its imprint. In the portfolio of Gateway startups`
     : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
   return {
@@ -377,6 +420,108 @@ function exclusionsOf(s: State) {
 const ok = (body: unknown) => ({ status: 200, body })
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
+// The profiles being read and waiting, for every run, like the app's
+// queue. A run ends once its searches are checked and its profiles read.
+const reads = { queue: [] as { id: number; run: number }[] }
+
+// Starts a run like the app's: its searches are checked two every two
+// seconds, about 3 s a check four at a time, each finding someone now and
+// then, and the profiles of links added are read four at a time, about
+// READ_MS each. All the people are invented.
+function startRun(s: State, kind: Run['kind'], checks: number): Run {
+  const run: Run = {
+    id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind, state: 'going', started_at: new Date().toISOString(), finished_at: null,
+    sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
+    people_new: 0, fits_new: 0, errors: 0,
+    progress: { checks, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 0, lookups: 0, lookups_done: 0, lookups_expected: 0, now: [], seconds_left: null },
+  }
+  s.runs.unshift(run)
+  s.checks.set(run.id, [])
+  const searches = s.sources.slice(0, checks).map((x) => x.query ?? x.name)
+  const found: [string, string][] = [
+    ['Frieda Faustmann', 'Coach, Faustmann Coaching'], ['Kemal Kastner', 'Inhaber, Kastner Kampfsport'],
+    ['Rike Reimers', 'Yogalehrerin, Studio Reimers'], ['Paul Pannwitz', 'Gründer, Pannwitz Putzteam'],
+  ]
+  const t = setInterval(() => {
+    const p = run.progress
+    if (run.state !== 'going' || !p) {
+      run.progress = null
+      // Stopped by hand: the profiles not read wait for the next run.
+      for (const q of reads.queue.filter((x) => x.run === run.id)) {
+        const person = s.people.find((x) => x.id === q.id)
+        if (person) person.read = 'next'
+      }
+      reads.queue = reads.queue.filter((x) => x.run !== run.id)
+      return clearInterval(t)
+    }
+    const since = new Date().toISOString()
+    if (p.checks_done < p.checks) {
+      p.checks_done = Math.min(p.checks, p.checks_done + 2)
+      run.sources_checked = p.checks_done
+      const next = found.shift()
+      if (next && p.checks_done % 4 === 0) {
+        s.people.push({
+          id: Math.max(...s.people.map((x) => x.id)) + 1, name: next[0], headline: next[1], city: 'Köln', fit: 'founder', first_seen: since, notes: '',
+          profiles: [], affiliations: [], linkedin: { born_about: 1996, age_reason: 'Bachelor from 2018', roles: next[1], last_active: since },
+        })
+        run.people_new++
+      }
+    }
+    // The reads of this run: done ones fill in, the next take their place.
+    const mine = reads.queue.filter((x) => x.run === run.id)
+    for (const q of mine) {
+      const person = s.people.find((x) => x.id === q.id)
+      if (!person) continue
+      if (person.read === 'reading' && Date.now() - new Date(person.read_since!).getTime() >= READ_MS) {
+        readDone(person)
+        p.reads_done++
+        run.people_new++
+        reads.queue = reads.queue.filter((x) => x !== q)
+      }
+    }
+    let busy = s.people.filter((x) => x.read === 'reading').length
+    for (const q of reads.queue.filter((x) => x.run === run.id)) {
+      const person = s.people.find((x) => x.id === q.id)
+      if (person?.read === 'waiting' && busy < SIDE_BY_SIDE) {
+        person.read = 'reading'
+        person.read_since = since
+        busy++
+      }
+    }
+    p.now = [
+      ...(p.checks_done < p.checks ? searches.slice(p.checks_done, p.checks_done + 2).map((label) => ({ kind: 'check' as const, label, since })) : []),
+      ...s.people.filter((x) => x.read === 'reading').map((x) => ({ kind: 'read' as const, label: x.name, since: x.read_since! })),
+    ]
+    const left = ((p.checks - p.checks_done) * 3) / SIDE_BY_SIDE + ((p.reads - p.reads_done) * READ_MS) / 1000 / SIDE_BY_SIDE
+    p.seconds_left = left
+    if (p.checks_done >= p.checks && p.reads_done >= p.reads) {
+      run.finished_at = new Date().toISOString()
+      run.state = 'finished'
+      run.progress = null
+      clearInterval(t)
+    }
+  }, 1000)
+  return run
+}
+
+// What Exa gives for a profile in the mock: an invented person for most
+// handles, and nothing for one with "neu" in it, which is not in the
+// index yet.
+function readDone(p: PersonRow) {
+  const handle = p.name
+  p.read_since = undefined
+  if (handle.includes('neu')) {
+    p.read = 'not_indexed'
+    p.read_error = "Not in Exa's index yet"
+    return
+  }
+  p.read = ''
+  p.name = handle.split('-').filter((w) => !/^\d+$/.test(w)).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || handle
+  p.headline = 'Inhaberin, eigenes Studio'
+  p.city = 'Köln'
+  p.linkedin = { born_about: 1995, age_reason: 'Bachelor from 2017', roles: p.headline, last_active: new Date().toISOString() }
+}
+
 const ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
@@ -386,16 +531,20 @@ const ROUTES: [string, RegExp, Handler][] = [
     // with, less whom the exclusions hide.
     const hidden = hiddenBy(s)
     let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
-    const year = new Date().getFullYear()
-    const young = (p: Person) => !!p.linkedin?.born_about && p.linkedin.born_about > year - 30
-    if (needle) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
+    // Like the app: in the last 7 days, newest first.
+    const fresh = (p: Person) => Date.now() - new Date(p.first_seen).getTime() < 7 * 86400e3
+    // A search that holds links to profiles shows whom they lead to, under
+    // any filter, and says how many are new.
+    const found = profileLinks(q.get('q') ?? '')
+    const linked = found.profiles.length > 0 || found.other > 0
+    if (needle && !linked) list = list.filter((p) => `${p.name} ${p.headline} ${p.city}`.toLowerCase().includes(needle))
     // Like the app: someone Tim connected with is only under Connected,
     // and someone whose LinkedIn profile he rejected only under Rejected.
     const rejected = (p: Person) => !p.connected && p.profiles.some((x) => x.platform === 'linkedin' && x.review === 'rejected')
     const open = (p: Person) => !p.connected && !rejected(p)
     const counts = {
       all: list.filter(open).length,
-      young: list.filter((p) => open(p) && young(p)).length,
+      new: list.filter((p) => !rejected(p) && fresh(p)).length,
       connected: list.filter((p) => p.connected).length,
       rejected: list.filter(rejected).length,
       fits: list.filter((p) => p.fit_score > 0).length,
@@ -404,7 +553,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       profile: list.filter((p) => p.profiles.some((x) => x.review !== 'rejected')).length,
     }
     if (filter === 'all') list = list.filter(open)
-    if (filter === 'young') list = list.filter((p) => open(p) && young(p))
+    if (filter === 'new') list = list.filter((p) => !rejected(p) && fresh(p))
     if (filter === 'connected') list = list.filter((p) => p.connected)
     if (filter === 'rejected') list = list.filter(rejected)
     if (filter === 'upcoming') list = list.filter((p) => p.next_appearance)
@@ -420,7 +569,46 @@ const ROUTES: [string, RegExp, Handler][] = [
       const rank = (p: Person) => ['active', 'unknown', 'quiet', 'dissolved', 'gone'].indexOf(p.activity?.state ?? 'unknown')
       list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || rank(a) - rank(b) || a.name.localeCompare(b.name))
     }
-    return ok({ people: list, counts })
+    // New is newest first, whatever the order, like the app.
+    if (filter === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
+    if (linked) {
+      const here = s.people.filter((p) => found.profiles.includes(linkOf(p) ?? ''))
+      return ok({
+        people: here.map((p) => personList(s, p)), counts,
+        links: { new: found.profiles.length - here.length, here: here.map((p) => p.id), other: found.other },
+      })
+    }
+    return ok({ people: list, counts, links: null })
+  }],
+  ['POST', /^\/api\/people$/, (s, _m, _q, b) => {
+    const found = profileLinks(String(b.text ?? ''))
+    if (!found.profiles.length) return err(400, 'There is no link to a LinkedIn profile in it, like linkedin.com/in/name')
+    const at = new Date().toISOString()
+    const added: number[] = []
+    const here: number[] = []
+    for (const link of found.profiles) {
+      const p = s.people.find((x) => linkOf(x) === link)
+      if (p) {
+        p.connected = true
+        here.push(p.id)
+        continue
+      }
+      // Named by its handle until the profile is read, like the app.
+      const id = Math.max(...s.people.map((x) => x.id)) + 1
+      s.people.push({
+        id, name: link.slice(link.lastIndexOf('/') + 1), headline: '', city: '', fit: 'other', first_seen: at, notes: '',
+        profiles: [{ id: 50000 + id, platform: 'linkedin', url: link, review: 'confirmed' }], affiliations: [], connected: true, read: 'waiting',
+      })
+      added.push(id)
+    }
+    let run = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
+    if (added.length) {
+      if (!run) run = startRun(s, 'add', 0)
+      run.progress!.reads += added.length
+      run.progress!.reads_expected = run.progress!.reads
+      reads.queue.push(...added.map((id) => ({ id, run: run!.id })))
+    }
+    return ok({ run: run?.id ?? 0, new: added, here, other: found.other })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -772,78 +960,13 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['POST', /^\/api\/runs$/, (s) => {
     const going = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
     if (going) return { status: 202, body: { run_id: going.id, started: false } }
-    const run: Run = {
-      id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind: 'manual' as const, state: 'going', started_at: new Date().toISOString(), finished_at: null as string | null,
-      sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
-      people_new: 0, fits_new: 0, errors: 0,
-      // Like the server: 8 checks four at a time, then the reads they bring,
-      // one at a time, and 4 lookups of startups from a portfolio among the
-      // checks, measured at about 3 s a check, 5 s a read and 4 s a lookup.
-      progress: {
-        checks: 8, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 6, lookups: 0, lookups_done: 0, lookups_expected: 4,
-        now: [] as RunProgress['now'], seconds_left: 40,
-      } as RunProgress | null,
-    }
-    s.runs.unshift(run)
-    s.checks.set(run.id, [])
-    // Pretend the run checks a few sources, then finishes.
-    const names = s.sources.slice(0, 8).map((x) => x.name)
-    const titles = s.events.slice(0, 6).map((e) => e.title)
-    const startups = ['Beispiel Robotics', 'Probe Labs', 'Muster Health', 'Kontrolle Analytics']
-    // People the run finds, one or two at a time, so People fills while
-    // Tim watches. All invented.
-    const found: [string, string, Person['fit']][] = [
-      ['Frieda Faustmann', 'Coach, Faustmann Coaching', 'other'], ['Kemal Kastner', 'Inhaber, Kastner Kampfsport', 'founder'],
-      ['Nora Nettelbeck', 'Author, Das leise Jahr', 'other'], ['Paul Pannwitz', 'Founder, Pannwitz Putzteam', 'founder'],
-      ['Rike Reimers', 'Yoga teacher, Studio Reimers', 'other'], ['Sven Sandkamp', 'Head coach, TV Beispielstadt', 'athlete'],
-    ]
-    const addPerson = () => {
-      const next = found.shift()
-      if (!next) return
-      const [name, headline, fit] = next
-      s.people.push({
-        id: Math.max(...s.people.map((x) => x.id)) + 1, name, headline, city: 'Köln', fit, first_seen: new Date().toISOString(),
-        notes: '', profiles: [], affiliations: [],
-      })
-      run.people_new++
-      if (fit !== 'other') run.fits_new++
-    }
-    const t = setInterval(() => {
-      const p = run.progress
-      // Stopped by hand, or done.
-      if (run.state !== 'going' || !p) {
-        run.progress = null
-        return clearInterval(t)
-      }
-      const since = new Date().toISOString()
-      if (p.checks_done < p.checks) {
-        p.checks_done = Math.min(p.checks, p.checks_done + 2)
-        run.sources_checked = p.checks_done
-        run.events_found += 5
-        run.events_new += 1
-        p.reads = Math.min(6, p.checks_done - 1)
-        p.now = p.checks_done < p.checks ? names.slice(p.checks_done, p.checks_done + 2).map((label) => ({ kind: 'check' as const, label, since })) : []
-      } else if (p.lookups_done < 4) {
-        // The portfolio among the checks brought its lookups.
-        p.lookups = 4
-        p.lookups_done = Math.min(4, p.lookups_done + 2)
-        run.startups_looked_up = p.lookups_done
-        addPerson()
-        p.now = p.lookups_done < 4 ? startups.slice(p.lookups_done, p.lookups_done + 2).map((label) => ({ kind: 'lookup' as const, label, since })) : []
-      } else if (p.reads_done < p.reads) {
-        p.reads_done++
-        run.pages_read = p.reads_done
-        addPerson()
-        p.now = p.reads_done < p.reads ? [{ kind: 'read' as const, label: titles[p.reads_done % titles.length], since }] : []
-      } else {
-        run.finished_at = new Date().toISOString()
-        run.state = 'finished'
-        run.progress = null
-        return clearInterval(t)
-      }
-      p.reads_expected = Math.max(p.reads, 6)
-      p.seconds_left = ((p.checks - p.checks_done) * 3 + (p.lookups_expected - p.lookups_done) * 4) / 4 + (p.reads_expected - p.reads_done) * 5
-    }, 2000)
+    // Like the app: the due searches, four at a time, and the profiles of
+    // links added before that still wait to be read.
+    const waiting = s.people.filter((p) => p.read === 'next')
+    const run = startRun(s, 'manual', 8)
+    for (const p of waiting) p.read = 'waiting'
+    run.progress!.reads = run.progress!.reads_expected = waiting.length
+    reads.queue.push(...waiting.map((p) => ({ id: p.id, run: run.id })))
     return { status: 202, body: { run_id: run.id, started: true } }
   }],
   ['GET', /^\/api\/runs\/(\d+)$/, (s, m) => {

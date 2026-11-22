@@ -56,7 +56,7 @@ come from in [docs/WORKFLOW.md](docs/WORKFLOW.md).
 | [review](.claude/skills/review/SKILL.md) | how a pull request is reviewed by an agent that did none of the work |
 | [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
 | [collaboration](.claude/skills/collaboration/SKILL.md) | replies, what goes in the repository instead of memory, issues with a priority and a size, writing rules |
-| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
+| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `runWatch` |
 
 Where the generic skills meet this repository:
 
@@ -157,7 +157,8 @@ messages, pull request text, code comments and chat replies.
   each **part** of the **template** in Settings, picked at random, and the
   **hook**, the portrait, reason and reaction the **language model**
   wrote. A **run** is
-  one pass over the due searches, started by hand. A **check** is one search asked once in a
+  one pass over the due searches and the profiles of links Tim added,
+  started by hand or by adding links. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. A **channel** is what the app
@@ -198,9 +199,10 @@ messages, pull request text, code comments and chat replies.
 - **Work never runs silently.** Anything that takes more than a moment
   says what it does now, how far it is, how long it has run and about how
   long is left, measured from earlier work rather than guessed, and it can
-  be stopped. It looks the same everywhere: the fill, the shuttle and the
-  pulsing dot in `app.css`, and `RunProgress.svelte` for a run. See the
-  interface skill.
+  be stopped. It looks the same everywhere: the beam and the fill of
+  `Busy.svelte` on the control that started it and on the row of what
+  it works on, and the pulsing dot in `app.css`. No line of progress
+  under a toolbar (Tim, 22 November 2026, #43). See the interface skill.
 - **Short runs, often.** Tim runs the engine by hand on his Mac. A run
   stays short enough to watch, and what does not fit waits for the next.
 - **The sidebar is FrameFairy's.** A rail of icons until the pointer

@@ -16,6 +16,7 @@
   import { api, onUndo } from '../lib/api'
   import { typing } from '../lib/keys'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
+  import Landing from '../lib/components/Landing.svelte'
   import TitleBar from '../lib/components/TitleBar.svelte'
   import People from './People.svelte'
   import Settings from './Settings.svelte'
@@ -92,15 +93,47 @@
   )
 
   const current = (href: string) => router.under(href)
+
+  // Links dragged from Chrome land anywhere on the window, lit the way
+  // Report a Problem lights for a picture, and add the people behind
+  // them, see runWatch.add. A drag that starts on the page, like words
+  // picked out of a profile, is the page's own and lands nowhere. The
+  // window has no file drops of its own, so the page gets the link.
+  let ours = false
+  let held = $state(0)
+  const carriesLink = (e: DragEvent) => !ours && !!e.dataTransfer && [...e.dataTransfer.types].some((t) => t === 'text/uri-list' || t === 'text/plain')
+  function dragEnter(e: DragEvent) {
+    if (!carriesLink(e)) return
+    held++
+  }
+  function dragOver(e: DragEvent) {
+    if (!carriesLink(e)) return
+    e.preventDefault()
+    e.dataTransfer!.dropEffect = 'copy'
+  }
+  function drop(e: DragEvent) {
+    if (!carriesLink(e)) return
+    e.preventDefault()
+    held = 0
+    const text = e.dataTransfer!.getData('text/uri-list') || e.dataTransfer!.getData('text/plain')
+    if (text.trim()) void runWatch.add(text)
+  }
 </script>
 
 <svelte:window
+  ondragstart={() => (ours = true)}
+  ondragend={() => ((ours = false), (held = 0))}
+  ondragenter={dragEnter}
+  ondragleave={(e) => { if (carriesLink(e)) held = Math.max(0, held - 1) }}
+  ondragover={dragOver}
+  ondrop={drop}
   onpointermove={(e) => sidebar.pointerMoved(e)}
   onkeydowncapture={(e) => sidebar.escape(e)}
   onblur={() => sidebar.away()} />
 
 <div class="shell">
   <TitleBar {title} />
+  <Landing lit={held > 0} />
 
   <div class="body" class:kept={sidebar.pinned}>
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->

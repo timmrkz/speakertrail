@@ -70,13 +70,21 @@ repository.
 Tim wants to see at every moment what the engine does. Adopted from Frame
 Fairy's rules, without its styling:
 
-- **Say what happens now.** "Checking Startplatz events", "Reading the
-  page of Pitch Abend Köln". Not "Working".
-- **Show how far.** The `.progress` fill in `app.css`, with a band
-  travelling over what is done. Work that cannot say how far it is uses
-  `.progress.unknown`, the shuttle, never a bar stuck at a number it does
+- **Say what happens now.** "Reading the profile from Exa", "Checking
+  Yogalehrerin Köln". Not "Working". On the row of what is worked on,
+  or in the `title` of the control that started it, never in a line of
+  its own that pushes the page down (Tim, 22 November 2026, #43).
+- **Show how far, where the work is.** The fill of `Busy.svelte`, with a
+  band travelling over what is done: in the control that started the
+  work, like Stop for a whole run, and across the row of each thing the
+  work is on, like a person whose profile is read, several rows at once,
+  the way FrameFairy fills a clip's card. A row holding it sets
+  `position: relative`, `isolation: isolate` and `--beam-edge`, and its
+  words read over the fill, `walks/look.mjs`. Work that cannot say how
+  far it is shows the beam alone, never a fill stuck at a number it does
   not have. The fill never jumps back: count what the work will add, like
-  the reads a check queues, before it is queued.
+  links that join a run, before they are queued. A count says the same
+  in figures, like New's 3 of 12 while a run goes.
 - **Show time so far and about how long is left.** Time left is measured
   from how long the same kind of work took before, like the app's
   `seconds_left`, never guessed. It moves in steps of five seconds and in
@@ -88,8 +96,8 @@ Fairy's rules, without its styling:
   `lib/run.svelte.ts`, for every screen and the dot alike, so no screen
   shows a state another has left. A screen that shows the run calls
   `runWatch.watch()` in an effect. Start and Stop go through it and show
-  at once, before the app answers. How a run ended shows through
-  `RunStatePill.svelte` and `RunOutcome.svelte`, everywhere the same.
+  at once, before the app answers. A run that ended says what it
+  brought in a toast, from `runWatch` too.
 - **The beam runs on the line round the control**, not a pixel inside
   it, with the fill and the motes inside that line. A control holding a
   beam says how far out its line lies in `--beam-edge`, which is
@@ -99,14 +107,15 @@ Fairy's rules, without its styling:
   inside the border testing #24, issue #29, and FrameFairy fixed the same
   in its #795.
 - **It can be stopped**, in the same place it was started.
-- **One component per kind of work.** A run shows itself through
-  `RunProgress.svelte` in the list and in its sheet alike. A new kind of
-  work gets the same fill, shuttle and pulse, never a new animation.
+- **One component per kind of work.** Work in hand shows itself through
+  `Busy.svelte`, on a control and on a row alike. A new kind of work gets
+  the same beam, fill and pulse, never a new animation.
 
-Check it in the mock: the mock's run moves through its checks and reads
-every two seconds, like the app's. Probe the step text, the fill width
-and the time left over the whole run and see that the fill only grows and
-the time left only shrinks.
+Check it in the mock: the mock's run checks two searches a second and
+reads profiles four at a time, about 4 s each, like the app's.
+`walks/links.mjs` adds people from links and watches the rows fill and
+New count. Probe the fill width and the time left over the whole run and
+see that the fill only grows and the time left only shrinks.
 
 ## The look
 

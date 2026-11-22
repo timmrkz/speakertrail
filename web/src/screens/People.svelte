@@ -473,7 +473,9 @@
   .run-now:hover:enabled { background: color-mix(in srgb, var(--ink) var(--hover-mix), var(--surface-2)); }
   .run-now:active:enabled { background: color-mix(in srgb, var(--ink) var(--press-mix), var(--surface-2)); }
   .run-now:disabled { cursor: default; }
-  .rows-wrap { padding: 0 var(--x) 64px; display: grid; }
+  /* Under the list the page's inset, so a list that fits never scrolls,
+     issue #77. */
+  .rows-wrap { padding: 0 var(--x) var(--gap-page); display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }

@@ -459,7 +459,7 @@ const walks = [
     // Tim, 22 November 2026, issue #77: everything on the person fitted,
     // and the page still scrolled. Under the last section stood more room
     // than the window had left.
-    name: 'A person who fits does not scroll, beside the list and in the narrow sheet, nor does Searches',
+    name: 'A person who fits does not scroll, beside the list and in the narrow sheet, nor do the People list and Searches',
     async run(page) {
       const wrong = []
       await page.goto(`${url}/app/people/1003`)
@@ -469,6 +469,10 @@ const walks = [
       await page.goto(`${url}/app/people/1003`)
       await page.locator('.sheet .person .actions a.btn').waitFor()
       wrong.push(await scrollsOnlyWhenNeeded(page, 'the person in the sheet', '.sheet', '.sheet-body .person'))
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto(`${url}/app/people`)
+      await page.locator('.list-pane .prow').first().waitFor()
+      wrong.push(await scrollsOnlyWhenNeeded(page, 'the People list', '.list-pane', '.list-pane .rows'))
       await page.setViewportSize({ width: 1280, height: 900 })
       await page.goto(`${url}/app/searches`)
       await page.locator('main button.toggle').first().waitFor()

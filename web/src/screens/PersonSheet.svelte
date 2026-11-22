@@ -5,9 +5,9 @@
   import Sheet from '../lib/components/Sheet.svelte'
   import PersonDetail from './PersonDetail.svelte'
 
-  let { id, name = 'Person', onclose, onupdate, onconnected }: { id: number; name?: string; onclose: () => void; onupdate?: (p: Detail) => void; onconnected?: () => void } = $props()
+  let { id, name = 'Person', onclose, onupdate, onmoved }: { id: number; name?: string; onclose: () => void; onupdate?: (p: Detail) => void; onmoved?: () => void } = $props()
 </script>
 
 <Sheet label={name} personal {onclose}>
-  <PersonDetail {id} {onupdate} {onconnected} />
+  <PersonDetail {id} {onupdate} {onmoved} />
 </Sheet>

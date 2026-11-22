@@ -19,8 +19,9 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	t.Setenv("HOME", "/Users/someone")
 	r := newReporting(afero.NewMemMapFs(), "/config/report")
 	var made string
-	a := reportAPI{r: r, make: func(what string) (string, error) {
-		made = what
+	var withPeople bool
+	a := reportAPI{r: r, make: func(what string, people bool) (string, error) {
+		made, withPeople = what, people
 		return filepath.Join("/Users/someone", "Desktop", "Speaker Trail report.zip"), nil
 	}}
 	ask := func(method, path, body string) *httptest.ResponseRecorder {
@@ -55,9 +56,15 @@ func TestTheReportWindowWorksTheDraftOverHTTP(t *testing.T) {
 	if rec := ask("GET", "/api/report/picture?id="+id, ""); rec.Code != 200 || rec.Header().Get("Content-Type") != "image/png" {
 		t.Fatalf("the picture answered %d %s", rec.Code, rec.Header().Get("Content-Type"))
 	}
-	rec := ask("POST", "/api/report/send", `{"what":"It froze."}`)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"~/Desktop/Speaker Trail report.zip"`) || made != "It froze." {
-		t.Fatalf("sending answered %d %s, made with %q", rec.Code, rec.Body, made)
+	if d := draft(ask("PUT", "/api/report/people", `{"people":true}`)); !d.People || len(d.Pictures) != 1 {
+		t.Fatalf("after People was switched on the draft is %+v", d)
+	}
+	if d := draft(ask("GET", "/api/report", "")); !d.People {
+		t.Fatalf("People was not kept in the draft: %+v", d)
+	}
+	rec := ask("POST", "/api/report/send", `{"what":"It froze.","people":true}`)
+	if rec.Code != 200 || !strings.Contains(rec.Body.String(), `"path":"~/Desktop/Speaker Trail report.zip"`) || made != "It froze." || !withPeople {
+		t.Fatalf("sending answered %d %s, made with %q and People %v", rec.Code, rec.Body, made, withPeople)
 	}
 	for _, bad := range [][3]string{{"POST", "/api/report/text", "{}"}, {"DELETE", "/api/report", ""}, {"POST", "/api/report/remove", "not json"}} {
 		if rec := ask(bad[0], bad[1], bad[2]); rec.Code < 400 {

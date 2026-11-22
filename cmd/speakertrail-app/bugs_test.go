@@ -412,7 +412,7 @@ func TestAReportHoldsThePictures(t *testing.T) {
 	shut := 0
 	r.make = func(closed func()) (func(), func()) { return func() {}, func() { shut++; closed() } }
 	r.OpenReport("bugs")
-	path, err := m.ReportProblem("It froze.")
+	path, err := m.ReportProblem("It froze.", false)
 	if err != nil {
 		t.Fatal(err)
 	}

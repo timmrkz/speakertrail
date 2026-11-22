@@ -65,11 +65,11 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 	}
 	var shown []string
 	m := reportMaker{report: newReporting(afero.NewMemMapFs(), "/config/report"), st: st, show: func(p string) error { shown = append(shown, p); return nil }}
-	first, err := m.ReportProblem("  The run stopped in " + folder + ".  ")
+	first, err := m.ReportProblem("  The run stopped in "+folder+".  ", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := m.ReportProblem("")
+	second, err := m.ReportProblem("", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +136,62 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 	}
 	if _, ok := unzipped(t, second)["what-happened.txt"]; ok {
 		t.Error("a report with nothing written holds an empty what-happened.txt")
+	}
+}
+
+// With People switched on, a report holds people.json, every person
+// with the profile text and without their name or link. Without it, it
+// holds no person at all, and the next report starts with People off.
+func TestAReportTakesPeopleAlongOnlyWhenAsked(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	testLog(t)
+	st, err := store.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Update(func(d *store.Data) error {
+		s, err := d.AddSearch("Floristin Münster", 1, time.Now())
+		if err != nil {
+			return err
+		}
+		d.AddFound(store.Found{URL: "https://www.linkedin.com/in/oda-brinkhege", Handle: "oda-brinkhege", Name: "Oda Brinkhege",
+			Headline: "Floristin und Inhaberin, Blumen Brinkhege", City: "Münster", Text: "Ich bin Oda, Floristin aus Münster."}, s, 1, time.Now())
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	r.TakePeople(true)
+	m := reportMaker{report: r, st: st, folder: func() string { return home }, show: func(string) error { return nil }}
+	with, err := m.ReportProblem("Why is she first?", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	people := unzipped(t, with)["people.json"]
+	var shared []store.Shared
+	if err := json.Unmarshal([]byte(people), &shared); err != nil || len(shared) != 1 {
+		t.Fatalf("people.json is %v, %s", err, people)
+	}
+	if shared[0].Headline != "Floristin und Inhaberin, Blumen [name]" || shared[0].Text != "Ich bin [name], Floristin aus Münster." || shared[0].City != "Münster" {
+		t.Errorf("the person went as %+v", shared[0])
+	}
+	for _, never := range []string{"Oda", "Brinkhege", "linkedin"} {
+		if strings.Contains(people, never) {
+			t.Errorf("%q went along in people.json", never)
+		}
+	}
+	if r.ReportDraft().People {
+		t.Error("People is still on for the next report")
+	}
+	without, err := m.ReportProblem("", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, text := range unzipped(t, without) {
+		if name == "people.json" || strings.Contains(text, "Floristin und") {
+			t.Errorf("a report without People holds a person in %s", name)
+		}
 	}
 }
 

@@ -65,6 +65,8 @@ type ReportPicture struct {
 type ReportDraft struct {
 	Text     string          `json:"text"`
 	Pictures []ReportPicture `json:"pictures"`
+	// People says the report takes People along, see store.Shared.
+	People bool `json:"people"`
 	// Why some of the pictures given last were left out. Said once, with
 	// the answer to what gave them, and never kept.
 	Error string `json:"error,omitempty"`
@@ -76,6 +78,7 @@ type draftFile struct {
 	Text     string          `json:"text"`
 	Pictures []ReportPicture `json:"pictures"`
 	Next     int             `json:"next"`
+	People   bool            `json:"people,omitempty"`
 }
 
 // reporting is the report window and its draft.
@@ -348,6 +351,24 @@ func (r *reporting) SaveReportText(text string) error {
 	return r.keep()
 }
 
+// TakePeople says whether the report takes People along. It is off in
+// every new draft, so People go only in a report they were switched on
+// for.
+func (r *reporting) TakePeople(on bool) ReportDraft {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.load()
+	if r.draft.People == on {
+		return r.shown("")
+	}
+	r.draft.People = on
+	theLog.line(zerolog.InfoLevel, "report").Bool("people", on).Msg("whether the report takes People along changed")
+	if err := r.keep(); err != nil {
+		return r.shown(sentence(err.Error()))
+	}
+	return r.shown("")
+}
+
 // AttachPictures asks for pictures in the system's open box and attaches
 // them. Cancelled, it attaches nothing and says nothing.
 func (r *reporting) AttachPictures() ReportDraft {
@@ -607,7 +628,7 @@ func (r *reporting) count() int {
 // left out.
 func (r *reporting) shown(why string) ReportDraft {
 	r.load()
-	d := ReportDraft{Text: r.draft.Text, Pictures: []ReportPicture{}, Error: why}
+	d := ReportDraft{Text: r.draft.Text, Pictures: []ReportPicture{}, People: r.draft.People, Error: why}
 	for _, p := range r.draft.Pictures {
 		if !p.Removed {
 			d.Pictures = append(d.Pictures, p)

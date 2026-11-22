@@ -24,10 +24,11 @@ import (
 //	POST /api/report/remove         {"id": "p1"} takes a picture out, gives the draft
 //	POST /api/report/put-back       {"id": "p1"} puts it back, gives the draft
 //	POST /api/report/clear          lets go of the draft, gives the empty one
-//	POST /api/report/send           {"what": "…"} makes the report, gives {"path": "~/Desktop/…"}
+//	PUT  /api/report/people         {"people": true} takes People along, gives the draft
+//	POST /api/report/send           {"what": "…", "people": true} makes the report, gives {"path": "~/Desktop/…"}
 type reportAPI struct {
 	r    *reporting
-	make func(what string) (string, error)
+	make func(what string, people bool) (string, error)
 }
 
 // reportBodyMax is the most a request may carry: a pasted picture of
@@ -37,12 +38,13 @@ const reportBodyMax = pictureBytesMax*4/3 + 4096
 func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	var body struct {
-		How  string `json:"how"`
-		Text string `json:"text"`
-		Name string `json:"name"`
-		Data string `json:"data"`
-		ID   string `json:"id"`
-		What string `json:"what"`
+		How    string `json:"how"`
+		Text   string `json:"text"`
+		Name   string `json:"name"`
+		Data   string `json:"data"`
+		ID     string `json:"id"`
+		What   string `json:"what"`
+		People bool   `json:"people"`
 	}
 	if (r.Method == http.MethodPost || r.Method == http.MethodPut) && !readBody(w, r, reportBodyMax, &body) {
 		return
@@ -67,6 +69,8 @@ func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	case "PUT /api/report/people":
+		answer(w, http.StatusOK, a.r.TakePeople(body.People))
 	case "POST /api/report/pick":
 		answer(w, http.StatusOK, a.r.AttachPictures())
 	case "POST /api/report/pasted":
@@ -78,7 +82,7 @@ func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "POST /api/report/clear":
 		answer(w, http.StatusOK, a.r.ClearReport())
 	case "POST /api/report/send":
-		path, err := a.make(body.What)
+		path, err := a.make(body.What, body.People)
 		if err != nil {
 			answer(w, http.StatusInternalServerError, map[string]string{"error": sentence(err.Error())})
 			return

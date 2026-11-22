@@ -9,11 +9,13 @@ import (
 )
 
 // Shared is one person as Report a Problem takes them along when Tim
-// ticks People, so Claude can read the data behind what People shows
-// without screenshots. Only what is listed here goes, never the name,
-// the profile link, the handle, the notes or the first message. The
-// person's name and handle are taken out of every text that goes, see
-// unnamed. Tim agreed to what goes on 22 November 2026, issue #73.
+// switches People on, so Claude can read the data behind what People
+// shows without screenshots, and score a profile again from its text.
+// Only what is listed here goes, never the name, the profile link, the
+// handle, the notes or the first message. The person's name and handle
+// are taken out of every text that goes, the profile text too, see
+// unnamed. Tim chose this on 22 November 2026, over the same without
+// the profile texts and over numbers alone, issue #73.
 type Shared struct {
 	ID       int64  `json:"id"`
 	Headline string `json:"headline"`
@@ -36,10 +38,10 @@ type Shared struct {
 	ConnectedAt *time.Time `json:"connected_at,omitempty"`
 	Review      string     `json:"review"`
 	HiddenBy    string     `json:"hidden_by,omitempty"`
-	// HasText says the app has their profile text, and TextAt when Exa's
-	// index gave it. The text itself stays on the Mac.
-	HasText bool       `json:"has_text"`
-	TextAt  *time.Time `json:"text_at,omitempty"`
+	// Text is the whole profile as Exa's index had it at TextAt, empty
+	// while the app has none.
+	Text   string     `json:"text,omitempty"`
+	TextAt *time.Time `json:"text_at,omitempty"`
 	// HasDraft says a first message was drafted for them.
 	HasDraft  bool          `json:"has_draft"`
 	FirstSeen time.Time     `json:"first_seen"`
@@ -66,7 +68,7 @@ func (d *Data) Share() []Shared {
 			BornAbout: l.BornAbout, AgeReason: clean(l.AgeReason), LastActive: when(l.LastActive),
 			Score: p.Score, Rubric: p.Rubric, Signals: make([]Signal, 0, len(p.Signals)),
 			Connected: p.Connected, ConnectedAt: when(p.ConnectedAt), Review: l.Review, HiddenBy: hidden[p.ID],
-			HasText: l.Text != "", TextAt: when(l.TextAt), HasDraft: p.Draft != "",
+			Text: clean(l.Text), TextAt: when(l.TextAt), HasDraft: p.Draft != "",
 			FirstSeen: p.FirstSeen, FoundBy: make([]SharedFound, 0, len(p.FoundBy)),
 		}
 		for _, sig := range p.Signals {
@@ -90,11 +92,17 @@ func when(t time.Time) *time.Time {
 	return &t
 }
 
+// links are the addresses in a text, like the link to each post in the
+// activity of a profile text, which lead to the person. Each is written
+// [link].
+var links = regexp.MustCompile(`(?i)\b(?:https?://|www\.)[^\s)\]>"]+`)
+
 // unnamed gives what takes a person's name out of a text: each word of
 // the name, of three letters or more, and the profile's handle whole, are
 // written [name] wherever they stand as a word of their own, in any case.
 // A business named after its owner, "Studio Lea Probe", so leaves no
-// name behind in the roles or a passage. The words of a handle are not
+// name behind in the roles or a passage. Every link is taken out too,
+// see links. The words of a handle are not
 // taken one by one, since one like yoga-mit-lea would take out "yoga"
 // and "mit" everywhere.
 func unnamed(name, handle string) func(string) string {
@@ -108,7 +116,7 @@ func unnamed(name, handle string) func(string) string {
 		}
 	}
 	if len(words) == 0 {
-		return func(s string) string { return s }
+		return func(s string) string { return links.ReplaceAllString(s, "[link]") }
 	}
 	// Longest first, so a longer word is never cut by a shorter one.
 	slices.SortFunc(words, func(a, b string) int { return len(b) - len(a) })
@@ -118,6 +126,7 @@ func unnamed(name, handle string) func(string) string {
 	// A word of letters alone: no letter or digit on either side.
 	re := regexp.MustCompile(`(?i)(^|[^\p{L}\p{N}])(` + strings.Join(words, "|") + `)($|[^\p{L}\p{N}])`)
 	return func(s string) string {
+		s = links.ReplaceAllString(s, "[link]")
 		// Twice, since two names next to each other share the space
 		// between them and the first match takes it.
 		for range 2 {

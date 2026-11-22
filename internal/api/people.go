@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/engine"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -28,13 +29,14 @@ type linkedInJSON struct {
 
 // personJSON is a person in the list.
 type personJSON struct {
-	ID             int64          `json:"id"`
-	Name           string         `json:"name"`
-	KnownAs        string         `json:"known_as"`
-	Headline       string         `json:"headline"`
-	City           string         `json:"city"`
-	Fit            string         `json:"fit"`
-	FirstSeen      time.Time      `json:"first_seen"`
+	ID        int64     `json:"id"`
+	Name      string    `json:"name"`
+	KnownAs   string    `json:"known_as"`
+	Headline  string    `json:"headline"`
+	City      string    `json:"city"`
+	Fit       string    `json:"fit"`
+	FirstSeen time.Time `json:"first_seen"`
+	// FitScore is the fit from 0 to 100, see store.Data.Fit.
 	FitScore       int            `json:"fit_score"`
 	Connected      bool           `json:"connected"`
 	Signals        []store.Signal `json:"signals"`
@@ -76,12 +78,63 @@ type personDetail struct {
 	// ProfileReadAt is when Exa's index gave the profile text a draft is
 	// written from, nil while the app has none and a draft reads it first.
 	ProfileReadAt *time.Time `json:"profile_read_at"`
+	// FitParts are what the fit adds up, each with its points and why.
+	FitParts []fitPartJSON `json:"fit_parts"`
 }
 
-func listPerson(p *store.Person) personJSON {
+type fitPartJSON struct {
+	Key    string `json:"key"`
+	Label  string `json:"label"`
+	Points int    `json:"points"`
+	Why    string `json:"why"`
+	// Lines are what the part shows under it, each with a tick or a
+	// cross: the signals of Who they are with their passages, or for the
+	// other parts their why.
+	Lines []fitLineJSON `json:"lines"`
+}
+
+// fitLineJSON is one line under a part of the fit. Mark is "for",
+// "against" or "neither".
+type fitLineJSON struct {
+	Mark    string `json:"mark"`
+	Text    string `json:"text"`
+	Passage string `json:"passage"`
+	FoundIn string `json:"found_in"`
+}
+
+// fitParts gives the parts of a fit with the lines under each, so the
+// person shows one list: every signal under the part it belongs to, see
+// rubric.PartOf. A signal under Active lately or Younger says what the
+// part's why says, so only Who they are shows its signals.
+func fitParts(parts []rubric.Part, signals []store.Signal) []fitPartJSON {
+	marks := map[int]string{1: "for", 0: "neither", -1: "against"}
+	out := make([]fitPartJSON, 0, len(parts))
+	for _, pt := range parts {
+		f := fitPartJSON{Key: pt.Key, Label: pt.Label, Points: pt.Points, Why: pt.Why, Lines: []fitLineJSON{}}
+		if pt.Key == "who" {
+			for _, s := range signals {
+				if rubric.PartOf(s.Key) == "who" {
+					m := "against"
+					if s.For {
+						m = "for"
+					}
+					f.Lines = append(f.Lines, fitLineJSON{Mark: m, Text: s.Label, Passage: s.Passage, FoundIn: s.FoundIn})
+				}
+			}
+		}
+		if len(f.Lines) == 0 {
+			f.Lines = append(f.Lines, fitLineJSON{Mark: marks[pt.Mark], Text: pt.Why})
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+// listPerson gives a person as the list shows them, with their fit.
+func listPerson(p *store.Person, fit int) personJSON {
 	out := personJSON{
 		ID: p.ID, Name: p.Name, Headline: p.Headline, City: p.City, Fit: "other", FirstSeen: p.FirstSeen,
-		FitScore: p.Score, Connected: p.Connected, Signals: p.Signals, Profiles: []profileJSON{},
+		FitScore: fit, Connected: p.Connected, Signals: p.Signals, Profiles: []profileJSON{},
 	}
 	if out.Signals == nil {
 		out.Signals = []store.Signal{}
@@ -146,13 +199,15 @@ func (r reads) mark(p *store.Person, out *personJSON) {
 	}
 }
 
-func detailPerson(d *store.Data, p *store.Person) personDetail {
-	out := personDetail{personJSON: listPerson(p), Appearances: []any{}, Affiliations: []any{},
+func detailPerson(d *store.Data, p *store.Person, now time.Time) personDetail {
+	fit, parts := d.Fit(p, now)
+	out := personDetail{personJSON: listPerson(p, fit), Appearances: []any{}, Affiliations: []any{},
 		Notes: p.Notes, FitEvidence: p.Evidence, Sightings: []sightingJSON{},
 		Draft: p.Draft, DraftedAt: ptrTime(p.DraftedAt)}
 	if p.LinkedIn.Text != "" {
 		out.ProfileReadAt = ptrTime(p.LinkedIn.TextAt)
 	}
+	out.FitParts = fitParts(parts, p.Signals)
 	for _, s := range p.FoundBy {
 		name := "a search since removed"
 		if search := d.Search(s.SearchID); search != nil {
@@ -186,11 +241,12 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 	profiles, other := engine.Links(q.Get("q"))
 	a.Store.Read(func(d *store.Data) {
 		var people []*store.Person
+		now := a.Store.Now()
 		words := q.Get("q")
 		if len(profiles) > 0 || other > 0 {
 			words = ""
 		}
-		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: words, Sort: q.Get("sort"), Filter: q.Get("filter"), Now: a.Store.Now()})
+		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: words, Sort: q.Get("sort"), Filter: q.Get("filter"), Now: now})
 		if len(profiles) > 0 || other > 0 {
 			out.Links = &linksJSON{Here: []int64{}, Other: other}
 			people = people[:0]
@@ -205,8 +261,9 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 		}
 		rs := a.readsNow(d)
 		out.People = make([]personJSON, 0, len(people))
+		fitOf := d.Fitter(now)
 		for _, p := range people {
-			pj := listPerson(p)
+			pj := listPerson(p, fitOf(p))
 			rs.mark(p, &pj)
 			out.People = append(out.People, pj)
 		}
@@ -257,7 +314,7 @@ func (a *API) sendPerson(w http.ResponseWriter, id int64) {
 	var out *personDetail
 	a.Store.Read(func(d *store.Data) {
 		if p := d.Person(id); p != nil {
-			v := detailPerson(d, p)
+			v := detailPerson(d, p, a.Store.Now())
 			a.readsNow(d).mark(p, &v.personJSON)
 			out = &v
 		}

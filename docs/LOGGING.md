@@ -210,7 +210,7 @@ and shows it in Finder. In it:
 | --- | --- |
 | `what-happened.txt` | what Tim wrote, when he wrote anything |
 | `about.json` | when it was made, the build, `start`, macOS, the chip and the memory |
-| `settings.json` | the settings Settings shows. Never the people, the searches, the notes or a key |
+| `settings.json` | the settings Settings shows, but for Where you are, which says where Tim lives. Never the people, the searches, the notes or a key |
 | `first-message-template.json` | the first message template as Settings has it, in the shape of `internal/store/first_message_template.json` |
 | `people.json` | only with People on, see below |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
@@ -228,7 +228,9 @@ profile again from its text. Tim asked for it on 22 November 2026, issue
 #73, and chose what goes: `people.json` holds every person by id, with
 what the person screen shows and the profile text. That is the headline,
 the city, the roles, the age guess and why, when they were last active,
-the fit and its reasons with their passages, whether Tim connected with
+the rubric's signals with their passages, the fit as People orders by it
+on the day of the report with each part's points and why, the newest
+post or comment the profile text shows, whether Tim connected with
 them, whether the profile is confirmed or rejected, the exclusion that
 leaves them out, when they were found and by which searches, and whether
 a first message was drafted. Never the name, the profile link, the

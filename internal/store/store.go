@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/rubric"
 )
 
 // Version is the shape of the file. A file of a newer version is not
@@ -196,6 +198,11 @@ type LinkedIn struct {
 	// with Data.SetProfileText.
 	Text   string    `json:"-"`
 	TextAt time.Time `json:"-"`
+	// LastWrote is the newest post or comment Text lists, and Wrote says
+	// whether Text lists any activity at all, so its kinds are known. Both
+	// are read from Text whenever it is set, never kept.
+	LastWrote time.Time `json:"-"`
+	Wrote     bool      `json:"-"`
 }
 
 // Signal is one reason for or against a fit, with the passage that shows
@@ -368,6 +375,7 @@ func (d *Data) attach(texts map[string]profileText) {
 	for _, p := range d.People {
 		if t, ok := texts[p.LinkedIn.URL]; ok && p.LinkedIn.URL != "" {
 			p.LinkedIn.Text, p.LinkedIn.TextAt = t.Text, t.At
+			p.LinkedIn.LastWrote, p.LinkedIn.Wrote = rubric.Writing(t.Text)
 		}
 	}
 }
@@ -393,6 +401,7 @@ func (d *Data) SetProfileText(p *Person, text string, at time.Time) {
 		return
 	}
 	p.LinkedIn.Text, p.LinkedIn.TextAt = text, at
+	p.LinkedIn.LastWrote, p.LinkedIn.Wrote = rubric.Writing(text)
 	d.textsChanged = true
 }
 

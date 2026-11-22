@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, DraftJob, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Activity, Appearance, DraftJob, FitLine, FitPart, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
   FirstMessageTemplate, TemplateField, TemplatePart,
 } from '../src/lib/api.ts'
@@ -115,6 +115,9 @@ function createState() {
       ['Emil Beispiel', 'Inhaber, Beispiel Kampfsport Akademie', 'Köln', 1994, 'Bachelor from 2013', 60, 106],
       ['Lina Probe', 'Gründerin direkt nach dem Studium · Probe Interiors', 'Düsseldorf', 1998, 'Master from 2021', 12, 107],
       ['Paul Muster', 'Life Coach | Selbstständig seit 2021', 'Bonn', 1991, 'Bachelor from 2010', 100, 101],
+      // Founded something, but works at another organisation, so it
+      // stands below the owners (Tim, 22 November 2026).
+      ['Nele Muster', 'Mitgründerin, Probe AI und Digitale Projekte beim Beispielverein', 'Köln', 2000, 'First job from 2021', 14, 101],
     ]
     return rows.map(([name, headline, city, born, reason, activeDaysAgo, searchId], i) => ({
       id: 1000 + i, name, headline, city, fit: 'founder' as const, first_seen: hoursAgo(2 + i * 9), notes: '',
@@ -243,6 +246,10 @@ const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
   [/athlete|athlet/i, 'athlete', 'Athlete', true],
   [/head of|\bvp\b|director of/i, 'corporate', 'Corporate title', false],
   [/researcher|data lead/i, 'large_company', 'Large company', false],
+  [/student|in ausbildung/i, 'studies', 'Studies or in training', false],
+  [/ beim /i, 'employed', 'Employed elsewhere', false],
+  [/social media|content creator|influencer/i, 'social_media', 'Social media work', false],
+  [/\bai\b|\bki\b/i, 'ai', 'Builds on AI', false],
 ]
 
 function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
@@ -266,14 +273,86 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
   return out.sort((a, b) => Number(b.for) - Number(a.for))
 }
 
+// The centres of the invented people's cities, from internal/place, so
+// Near you answers the way the app does.
+const CENTRES: Record<string, [number, number]> = {
+  Köln: [50.9333, 6.95], Bonn: [50.7344, 7.0955], Düsseldorf: [51.2232, 6.7793], Essen: [51.4566, 7.0123],
+  Dortmund: [51.5149, 7.466], Duisburg: [51.4325, 6.7652], Bochum: [51.4817, 7.2165], Aachen: [50.7766, 6.0834],
+  Münster: [51.9624, 7.6257], Bielefeld: [52.0333, 8.5333], Neuss: [51.1981, 6.685], Hürth: [50.8708, 6.8676],
+  Siegburg: [50.8002, 7.2077],
+}
+const ALIASES: Record<string, string> = { cologne: 'Köln', koeln: 'Köln', dusseldorf: 'Düsseldorf', duesseldorf: 'Düsseldorf', muenster: 'Münster' }
+function cityOf(v: string): string | undefined {
+  const t = v.trim().toLowerCase()
+  return Object.keys(CENTRES).find((c) => c.toLowerCase() === t) ?? ALIASES[t]
+}
+function km(a: string, b: string): number | null {
+  const p = CENTRES[a], q = CENTRES[b]
+  if (!p || !q) return null
+  const r = Math.PI / 180
+  const h = Math.sin(((q[0] - p[0]) * r) / 2) ** 2 + Math.cos(p[0] * r) * Math.cos(q[0] * r) * Math.sin(((q[1] - p[1]) * r) / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+
+// The fit's four parts, the way rubric.Fit gives them.
+const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed', 'studies', 'employed', 'social_media', 'ai'])
+function fitParts(s: State, p: Person): FitPart[] {
+  // Who they are 40, active lately 30, near you 20, younger 10, as in
+  // internal/rubric/fit.go.
+  const pts = (most: number, share: number) => Math.round(most * Math.max(0, Math.min(1, share)))
+  const counted = p.signals.filter((x) => WHO.has(x.key))
+  const pro = counted.filter((x) => x.for).map((x) => x.label)
+  const contra = counted.filter((x) => !x.for).map((x) => x.label)
+  const why = [...pro, ...contra].join(', ')
+  const who = { key: 'who', label: 'Who they are', points: Math.round(40 * Math.max(-1, Math.min(1, (pro.length - contra.length) / 3))), why: why || 'Nothing beyond running their own business' }
+  const now = new Date()
+  const born = p.linkedin?.born_about
+  const age = born ? now.getFullYear() - born : 0
+  const younger = born
+    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(0, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
+    : { key: 'younger', label: 'Younger', points: pts(10, 0.5), why: 'Age not known' }
+  const last = p.linkedin?.last_active
+  const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+  const active = last
+    ? { key: 'active', label: 'Active lately', points: pts(30, 0.5 ** ((now.getTime() - new Date(last).getTime()) / (30 * 864e5)) / 2), why: `Last active on ${day(last)}, not known whether they wrote` }
+    : { key: 'active', label: 'Active lately', points: 0, why: 'No activity on LinkedIn known' }
+  const home = String(setting(s, 'home_city') ?? '')
+  const d = home ? km(home, p.city) : null
+  const near = !home
+    ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: 'Where you are is not set in Settings' }
+    : d === null
+      ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
+      : d < 1
+        ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
+        : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
+  // Who they are takes away no more than the rest gives, so the fit
+  // stays 0 or more.
+  who.points = Math.max(who.points, -(active.points + near.points + younger.points))
+  // The lines under each part, as internal/api fitParts gives them: the
+  // signals under Who they are, the why with a tick or a cross under
+  // the others, the way rubric.Fit marks it.
+  const mark = (pts: number, most: number, known: boolean): FitLine['mark'] =>
+    !known ? 'neither' : 2 * pts >= most ? 'for' : 4 * pts < most ? 'against' : 'neither'
+  const line = (m: FitLine['mark'], text: string): FitLine => ({ mark: m, text, passage: '', found_in: '' })
+  const whoLines = p.signals
+    .filter((x) => !['young', 'active_on_linkedin', 'quiet_on_linkedin'].includes(x.key))
+    .map((x): FitLine => ({ mark: x.for ? 'for' : 'against', text: x.label, passage: x.passage, found_in: x.found_in }))
+  return [
+    { ...who, lines: whoLines.length ? whoLines : [line('neither', who.why)] },
+    { ...active, lines: [line(mark(active.points, 30, true), active.why)] },
+    { ...near, lines: [line(mark(near.points, 20, !!home && d !== null), near.why)] },
+    { ...younger, lines: [line(mark(younger.points, 10, !!born), younger.why)] },
+  ]
+}
+
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
   const now = new Date().toISOString()
   const next = apps.find((a) => a.event.starts_at >= now)
   const signals = signalsOf(p, apps)
-  return {
+  const out: Person = {
     id: p.id, name: p.name, known_as: '', headline: p.headline, city: p.city, fit: p.fit, first_seen: p.first_seen,
-    fit_score: signals.reduce((n, x) => n + (x.for ? 1 : -1), 0), signals, connected: !!p.connected,
+    fit_score: 0, signals, connected: !!p.connected,
     appearances: apps.length,
     next_appearance: next
       ? { event_id: next.event.id, title: next.event.title, starts_at: next.event.starts_at, city: next.event.city, role: next.role }
@@ -293,6 +372,8 @@ function personList(s: State, p: PersonRow): Person {
     read_ms: p.read === 'reading' ? READ_MS : null,
     read_error: p.read_error,
   }
+  out.fit_score = fitParts(s, out).reduce((n, x) => n + x.points, 0)
+  return out
 }
 
 // Links to LinkedIn profiles in a text, in one spelling, and how many
@@ -353,6 +434,7 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
   return {
     ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()],
     draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.linkedin ? hoursAgo(30) : null,
+    fit_parts: fitParts(s, personList(s, p)),
   }
 }
 
@@ -525,7 +607,7 @@ function readDone(p: PersonRow) {
 const ROUTES: [string, RegExp, Handler][] = [
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
-    const sort = q.get('sort') || 'next'
+    const sort = q.get('sort') || 'fit'
     const filter = q.get('filter') || 'all'
     // Like the app: whom profile searches found, and whoever Tim connected
     // with, less whom the exclusions hide.
@@ -980,6 +1062,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
     if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
+    if (row.key === 'home_city' && String(b.value).trim() !== '') {
+      const c = cityOf(String(b.value))
+      if (!c) return err(400, `"${String(b.value).trim()}" is no city in NRW the app knows, like Köln, Bonn or Düsseldorf`)
+      b.value = c
+    }
     row.value = b.value as Json
     row.updated_at = new Date().toISOString()
     return ok(row)

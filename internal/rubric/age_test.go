@@ -71,7 +71,7 @@ func TestCurrentRoles(t *testing.T) {
 		{"a freelancer", "Freelance Designerin", "+owner_operator: Freelance Designerin"},
 		{"a corporate title, at a company that shares her name", "Head of Marketing, Beispiel AG", "-corporate: Head of Marketing, Beispiel AG"},
 		{"a product owner", "Product Owner, Muster GmbH", ""},
-		{"the second of two roles", "Teamleiterin, Muster GmbH · Mitgründerin, Probe Yoga", "+works_with_people: Mitgründerin, Probe Yoga | +owner_operator: Mitgründerin, Probe Yoga"},
+		{"the second of two roles", "Teamleiterin, Muster GmbH · Mitgründerin, Probe Yoga", "+works_with_people: Mitgründerin, Probe Yoga | +owner_operator: Mitgründerin, Probe Yoga | -employed: Teamleiterin, Muster GmbH"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var got []string

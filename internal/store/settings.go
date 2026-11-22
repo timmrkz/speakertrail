@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/place"
 )
 
 // Default is a setting with its value until Tim changes it.
@@ -24,8 +26,13 @@ var Defaults = []Default{
 	{"exa_monthly_searches", "1000", "Exa searches per month. Its free $10 a month covers about 1,400"},
 	{"probation_weeks", "3", "Weeks a new search may find nobody before runs leave it out"},
 	{"retire_after_empty_checks", "4", "Runs in a row without anyone new before a search is left out"},
+	{HomeCity, `""`, "Where you are, a city in NRW like Köln. People nearer to it come first"},
 	{FirstMessagePrompt, mustJSON(DefaultFirstMessagePrompt), "What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them"},
 }
+
+// HomeCity is the setting that says where Tim is, the city distances
+// for the fit are measured from, see docs/fit-score.md.
+const HomeCity = "home_city"
 
 // FirstMessagePrompt is the setting that holds the prompt the language
 // model writes the hook of a first message from, see internal/draft. Its
@@ -197,6 +204,20 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 		if err := Invisible(prompt, "\n\t"); err != nil {
 			return fmt.Errorf("the prompt holds %w", err)
 		}
+	}
+	if key == HomeCity {
+		var city string
+		if err := json.Unmarshal(value, &city); err != nil {
+			return err
+		}
+		if city = strings.TrimSpace(city); city != "" {
+			known := place.CityOf(city)
+			if _, ok := place.Km(known, known); !ok {
+				return fmt.Errorf("%q is no city in NRW the app knows, like Köln, Bonn or Düsseldorf", city)
+			}
+			city = known
+		}
+		value = json.RawMessage(mustJSON(city))
 	}
 	if kindOf(value) == "number" {
 		var n float64

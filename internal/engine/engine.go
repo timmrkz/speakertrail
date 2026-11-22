@@ -122,8 +122,13 @@ func (e *Engine) log() *slog.Logger {
 	return e.Log
 }
 
-// Recover ends the runs the app closed under, once, when it starts.
+// Recover ends the runs the app closed under, once, when it starts, and
+// scores again everyone a rubric older than this one scored, so a change
+// to it reaches the people found before.
 func (e *Engine) Recover() error {
+	if err := e.rescore(); err != nil {
+		return err
+	}
 	return e.Store.Update(func(d *store.Data) error {
 		for _, r := range d.Runs {
 			if r.FinishedAt.IsZero() {
@@ -713,25 +718,89 @@ func career(steps []search.Step) (born int, reason, roles string) {
 	return born, reason, strings.Join(now, " · ")
 }
 
+// rescore scores again everyone an older rubric scored. The rubric takes
+// most of a millisecond a person, so it reads them, scores them outside
+// the store's lock, and only then writes the signals back, to everyone
+// nothing changed meanwhile.
+func (e *Engine) rescore() error {
+	start, now := time.Now(), e.Store.Now()
+	type stale struct {
+		in       rubric.Person
+		rejected bool
+	}
+	todo := map[int64]stale{}
+	e.Store.Read(func(d *store.Data) {
+		for _, p := range d.People {
+			if p.Rubric != rubric.Version {
+				todo[p.ID] = stale{rubricPerson(p, now), p.Rejected()}
+			}
+		}
+	})
+	if len(todo) == 0 {
+		return nil
+	}
+	type scored struct {
+		sigs  []store.Signal
+		score int
+	}
+	done := make(map[int64]scored, len(todo))
+	for id, s := range todo {
+		if s.rejected {
+			done[id] = scored{[]store.Signal{}, 0}
+			continue
+		}
+		sigs, n := signalsOf(s.in)
+		done[id] = scored{sigs, n}
+	}
+	err := e.Store.Update(func(d *store.Data) error {
+		for _, p := range d.People {
+			s, ok := done[p.ID]
+			if ok && p.Rubric != rubric.Version && p.Rejected() == todo[p.ID].rejected && sameFacts(rubricPerson(p, now), todo[p.ID].in) {
+				p.Signals, p.Score, p.Rubric = s.sigs, s.score, rubric.Version
+			}
+		}
+		return nil
+	})
+	e.log().Info("people scored again by a newer rubric", "people", len(done), "rubric", rubric.Version, "ms", time.Since(start).Milliseconds())
+	return err
+}
+
+// rubricPerson is what the rubric reads of a person.
+func rubricPerson(p *store.Person, now time.Time) rubric.Person {
+	return rubric.Person{
+		Name: p.Name, Headline: p.Headline, CurrentRoles: p.LinkedIn.Roles,
+		BornAbout: p.LinkedIn.BornAbout, AgeReason: p.LinkedIn.AgeReason, LastActive: p.LinkedIn.LastActive, Now: now,
+	}
+}
+
+// sameFacts tells whether the rubric reads the same of two people.
+func sameFacts(a, b rubric.Person) bool {
+	return a.Name == b.Name && a.Headline == b.Headline && a.CurrentRoles == b.CurrentRoles &&
+		a.BornAbout == b.BornAbout && a.AgeReason == b.AgeReason && a.LastActive.Equal(b.LastActive)
+}
+
+// signalsOf runs the fit rubric over what it reads of a person.
+func signalsOf(in rubric.Person) ([]store.Signal, int) {
+	sigs := rubric.Signals(in)
+	out := make([]store.Signal, 0, len(sigs))
+	for _, s := range sigs {
+		label := s.Key
+		if d := rubric.Lookup(s.Key); d != nil {
+			label = d.Label
+		}
+		out = append(out, store.Signal{Key: s.Key, Label: label, For: s.For, Passage: s.Passage, FoundIn: s.Where})
+	}
+	return out, rubric.Score(sigs)
+}
+
 // score runs the fit rubric over a person as of now.
 func score(p *store.Person, now time.Time) {
 	if p.Rejected() {
 		p.Signals, p.Score, p.Rubric = []store.Signal{}, 0, rubric.Version
 		return
 	}
-	sigs := rubric.Signals(rubric.Person{
-		Name: p.Name, Headline: p.Headline, CurrentRoles: p.LinkedIn.Roles,
-		BornAbout: p.LinkedIn.BornAbout, AgeReason: p.LinkedIn.AgeReason, LastActive: p.LinkedIn.LastActive, Now: now,
-	})
-	p.Signals = make([]store.Signal, 0, len(sigs))
-	for _, s := range sigs {
-		label := s.Key
-		if d := rubric.Lookup(s.Key); d != nil {
-			label = d.Label
-		}
-		p.Signals = append(p.Signals, store.Signal{Key: s.Key, Label: label, For: s.For, Passage: s.Passage, FoundIn: s.Where})
-	}
-	p.Score, p.Rubric = rubric.Score(sigs), rubric.Version
+	p.Signals, p.Score = signalsOf(rubricPerson(p, now))
+	p.Rubric = rubric.Version
 }
 
 // Links finds the LinkedIn profile links in a text, like a list pasted

@@ -145,6 +145,14 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if !detail.Connected || detail.Notes != "Ask about the studio" || len(detail.Sightings) != 1 || detail.Sightings[0].Source != "Gründerin Köln" {
 		t.Errorf("detail = %+v", detail)
 	}
+	// The fit is its parts, the same in the list and on the person.
+	sum := 0
+	for _, part := range detail.FitParts {
+		sum += part.Points
+	}
+	if len(detail.FitParts) != 4 || detail.FitScore != sum || p.FitScore != sum || sum <= 0 {
+		t.Errorf("fit %d in the list, %d on the person, parts %+v", p.FitScore, detail.FitScore, detail.FitParts)
+	}
 	// Connected, she leaves All for Connected.
 	call(t, a, "GET", "/api/people?filter=all", "", &people)
 	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["new"] != 1 || people.Counts["connected"] != 1 {

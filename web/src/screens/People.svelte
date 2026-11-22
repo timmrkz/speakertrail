@@ -18,30 +18,32 @@
 
   let q = $state('')
   let query = $state('')
-  // The likely youngest come first, unless Tim chose another order on this
-  // device.
-  const SORTS: PeopleSort[] = ['young', 'new', 'fit', 'name']
+  // The best fit first, unless Tim chose another order on this device.
+  const SORTS: PeopleSort[] = ['fit', 'young', 'new', 'name']
   let sort = $state<PeopleSort>(savedSort())
   // The orders the list can be in, in the app's own list, see Pick.
   const sorts = [
+    { value: 'fit', label: 'Best fit' },
     { value: 'young', label: 'Youngest' },
     { value: 'new', label: 'Newest' },
-    { value: 'fit', label: 'Best fit' },
     { value: 'name', label: 'Name' },
   ]
   let filter = $state<PeopleFilter>('all')
 
+  // A new name, so the order kept before the fit, Youngest by default,
+  // gives way to Best fit once.
+  const SORT_KEY = 'people-sort-fit'
   function savedSort(): PeopleSort {
     try {
-      const v = localStorage.getItem('people-sort') as PeopleSort | null
-      return v && SORTS.includes(v) ? v : 'young'
+      const v = localStorage.getItem(SORT_KEY) as PeopleSort | null
+      return v && SORTS.includes(v) ? v : 'fit'
     } catch {
-      return 'young'
+      return 'fit'
     }
   }
   $effect(() => {
     try {
-      localStorage.setItem('people-sort', sort)
+      localStorage.setItem(SORT_KEY, sort)
     } catch {
       // Private mode. The order is forgotten, which is fine.
     }
@@ -447,6 +449,7 @@
                 <span class="who">
                   <b class="ellipsis">{p.name}</b>
                   {#if isNew(p)}<span class="dot new" title="Came in with this run"></span><span class="sr-only">, new</span>{/if}
+                  {#if !p.read}<span class="fit num" title="Fit {p.fit_score} of 100. The person says why"><span class="sr-only">, fit </span>{p.fit_score}</span>{/if}
                 </span>
                 <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
               </a>
@@ -563,6 +566,7 @@
   .prow[aria-current="true"]:focus-visible { background-image: none; outline: none; }
   .who { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .who b { font-weight: 600; }
+  .who .fit { margin-inline-start: auto; flex: none; font-size: 13px; color: var(--ink-3); }
   .dot.new { width: 7px; height: 7px; background: var(--accent); }
   .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .connected { color: var(--good); font-weight: 600; }

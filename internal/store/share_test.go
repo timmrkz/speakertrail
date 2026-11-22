@@ -61,6 +61,14 @@ func check(t *testing.T, p *Person, shared []Shared) {
 	if got.Signals[0].Label != "Runs Yoga [name]" || got.Signals[0].Passage != "[name] owns the studio" {
 		t.Errorf("signal %+v", got.Signals[0])
 	}
+	// The fit goes along as People shows it, its parts adding up to it.
+	sum := 0
+	for _, pt := range got.FitParts {
+		sum += pt.Points
+	}
+	if len(got.FitParts) != 4 || got.Fit != sum || got.Fit <= 0 || !got.Wrote || got.LastWrote == nil || got.LastWrote.Format("2006-01-02") != "2026-11-09" {
+		t.Errorf("fit %d, parts %+v, wrote %v %v", got.Fit, got.FitParts, got.Wrote, got.LastWrote)
+	}
 	body, err := json.Marshal(shared)
 	if err != nil {
 		t.Fatal(err)

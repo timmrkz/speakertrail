@@ -6,6 +6,9 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/place"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 )
 
 // Found is a LinkedIn profile a profile search kept.
@@ -125,11 +128,63 @@ func (p *Person) Rejected() bool {
 }
 
 // Filters are the ways People can be narrowed, and Sorts the orders it
-// can be in.
+// can be in, the best fit first by default, which Tim asked for on 21
+// November 2026, so he picks the best from the top.
 var (
 	Filters = []string{"all", "new", "connected", "rejected"}
-	Sorts   = []string{"young", "new", "fit", "name"}
+	Sorts   = []string{"fit", "young", "new", "name"}
 )
+
+// Fit is a person's fit from 0 to 100 as of now, with its parts, see
+// rubric.Fit. It is worked out whenever it is asked for and never kept,
+// because it changes with the date and with Where you are.
+func (d *Data) Fit(p *Person, now time.Time) (int, []rubric.Part) {
+	home := d.Text(HomeCity)
+	in := fitOf(p, home, now, nil)
+	in.Km, in.Near = place.Km(home, p.City)
+	return rubric.Fit(in)
+}
+
+// Fitter gives the fit alone of one person after another as of now,
+// without its parts, reading the settings it needs once, for a list. It
+// keeps what it worked out, so it serves one goroutine.
+func (d *Data) Fitter(now time.Time) func(p *Person) int {
+	home := d.Text(HomeCity)
+	// Few cities, many people: each distance is worked out once, and the
+	// signals of one person after another share one slice.
+	type away struct {
+		km   float64
+		near bool
+	}
+	cities := map[string]away{}
+	var sigs []rubric.Signal
+	return func(p *Person) int {
+		in := fitOf(p, "", now, sigs[:0])
+		sigs = in.Signals
+		a, ok := cities[p.City]
+		if !ok {
+			a.km, a.near = place.Km(home, p.City)
+			cities[p.City] = a
+		}
+		in.Home, in.Km, in.Near = home, a.km, a.near
+		return rubric.FitPoints(in)
+	}
+}
+
+// fitOf is what the fit reads of a person, but for the distance, with
+// their signals appended to sigs.
+func fitOf(p *Person, home string, now time.Time, sigs []rubric.Signal) rubric.FitPerson {
+	in := rubric.FitPerson{
+		BornAbout: p.LinkedIn.BornAbout, AgeReason: p.LinkedIn.AgeReason,
+		LastActive: p.LinkedIn.LastActive, LastWrote: p.LinkedIn.LastWrote, Wrote: p.LinkedIn.Wrote,
+		City: p.City, Home: home, Now: now,
+	}
+	for _, s := range p.Signals {
+		sigs = append(sigs, rubric.Signal{Key: s.Key, For: s.For})
+	}
+	in.Signals = sigs
+	return in
+}
 
 // PeopleQuery is what People asks for.
 type PeopleQuery struct {
@@ -150,7 +205,7 @@ type PeopleQuery struct {
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
-		q.Sort = "young"
+		q.Sort = "fit"
 	}
 	if q.Filter == "" {
 		q.Filter = "all"
@@ -188,6 +243,27 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 			out = append(out, p)
 		}
 	}
+	// New is the newest first, whatever the order.
+	if q.Sort == "fit" && q.Filter != "new" {
+		// Each fit once, then sorted by it, rather than worked out again on
+		// every comparison.
+		fit := d.Fitter(q.Now)
+		type fitted struct {
+			p   *Person
+			fit int
+		}
+		all := make([]fitted, len(out))
+		for i, p := range out {
+			all[i] = fitted{p, fit(p)}
+		}
+		slices.SortStableFunc(all, func(a, b fitted) int {
+			return cmp.Or(cmp.Compare(b.fit, a.fit), b.p.FirstSeen.Compare(a.p.FirstSeen), cmp.Compare(b.p.ID, a.p.ID))
+		})
+		for i := range all {
+			out[i] = all[i].p
+		}
+		return out, counts, nil
+	}
 	newest := func(a, b *Person) int {
 		return cmp.Or(b.FirstSeen.Compare(a.FirstSeen), cmp.Compare(b.ID, a.ID))
 	}
@@ -201,8 +277,6 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 			return newest(a, b)
 		case "name":
 			return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), cmp.Compare(a.ID, b.ID))
-		case "fit":
-			return cmp.Or(cmp.Compare(b.Score, a.Score), newest(a, b))
 		}
 		// The likely youngest first, those without a guess after them.
 		return cmp.Or(cmpBool(a.LinkedIn.BornAbout == 0, b.LinkedIn.BornAbout == 0),

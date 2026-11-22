@@ -84,8 +84,6 @@
       reviewing = false
     }
   }
-  let reasons = $derived((person.data?.signals ?? []).filter((s) => s.for))
-  let doubts = $derived((person.data?.signals ?? []).filter((s) => !s.for))
 
   async function saveNotes() {
     if (!person.data || notes === savedNotes) return
@@ -197,15 +195,26 @@
       {@render row()}
     {/if}
 
-    {#if reasons.length || doubts.length}
-      <section class="section" aria-labelledby="why-{p.id}">
-        <h3 id="why-{p.id}" class="label">Why</h3>
-        <ul class="why">
-          {#each [...reasons, ...doubts] as s (s.key)}
-            <li class:against={!s.for}>
-              <span class="mark" aria-hidden="true"><Icon name={s.for ? 'check' : 'x'} size={14} /></span>
-              <span class="what"><b>{s.label}</b><span class="sr-only">{s.for ? ', speaks for' : ', speaks against'}</span>
-                {#if s.passage}<q title={s.found_in}>{s.passage}</q>{/if}</span>
+    {#if p.fit_parts?.length}
+      <!-- One list of what the fit adds up: each part with its points,
+           and under it a tick or a cross for what it read, the signals
+           with their passages under Who they are, docs/fit-score.md. -->
+      <section class="section" aria-labelledby="fit-{p.id}">
+        <h3 id="fit-{p.id}" class="label">Fit <span class="num">{p.fit_score}</span><span class="sr-only"> of 100</span></h3>
+        <ul class="fit">
+          {#each p.fit_parts as f (f.key)}
+            <li class="part">
+              <span class="pts num" aria-hidden="true">{f.points < 0 ? '−' : '+'}{Math.abs(f.points)}</span>
+              <b class="part-label">{f.label}<span class="sr-only">, {f.points} points</span></b>
+              <ul class="why">
+                {#each f.lines as l, i (i)}
+                  <li class:against={l.mark === 'against'} class:neither={l.mark === 'neither'}>
+                    <span class="mark" aria-hidden="true"><Icon name={l.mark === 'for' ? 'check' : l.mark === 'against' ? 'x' : 'neither'} size={14} /></span>
+                    <span class="what"><span class="text">{l.text}</span><span class="sr-only">{l.mark === 'for' ? ', speaks for' : l.mark === 'against' ? ', speaks against' : ''}</span>
+                      {#if l.passage}<q title={l.found_in}>{l.passage}</q>{/if}</span>
+                  </li>
+                {/each}
+              </ul>
             </li>
           {/each}
         </ul>
@@ -237,16 +246,22 @@
   .person { display: grid; gap: var(--gap-page); min-width: 0; }
   .top { display: grid; gap: var(--gap-group); min-width: 0; }
   .actions { display: flex; flex-wrap: wrap; gap: var(--gap-control); }
-  .why { display: grid; gap: 10px; }
-  .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; font-size: 14px; }
+  /* Each part: its points beside its name, and under the name its
+     ticks and crosses. */
+  .fit { display: grid; gap: 16px; }
+  .fit .part { display: grid; grid-template-columns: 3ch minmax(0, 1fr); column-gap: 8px; row-gap: 8px; align-items: baseline; font-size: 14px; }
+  .fit .pts { color: var(--ink-2); text-align: end; }
+  .fit .part-label { font-weight: 600; }
+  .why { grid-column: 2; display: grid; gap: 8px; }
+  .why li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; }
   .why .mark {
-    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px;
+    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
     background: var(--good-soft); color: var(--good);
   }
   .why .against .mark { background: var(--bad-soft); color: var(--bad); }
-  .why .what { display: grid; gap: 2px; min-width: 0; }
-  .why b { font-weight: 600; }
-  .why q { color: var(--ink-2); overflow-wrap: anywhere; }
+  .why .neither .mark { background: var(--surface-2); color: var(--ink-3); }
+  .why .what { display: grid; gap: 2px; min-width: 0; line-height: 20px; }
+  .why q { color: var(--ink-2); overflow-wrap: anywhere; line-height: 1.4; }
   .found { font-size: 13px; color: var(--ink-3); }
   .open-problem { color: var(--bad); }
   .rejected { color: var(--ink-3); }

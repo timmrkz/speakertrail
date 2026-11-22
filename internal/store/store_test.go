@@ -266,11 +266,14 @@ func TestListPeople(t *testing.T) {
 	}
 	// Someone Tim connected with is only under Connected, so All holds
 	// whom he can still reach out to. New holds whoever came in during
-	// the last week, connected too, the newest first.
-	same("young first", list(PeopleQuery{}), dana, old, unknown)
+	// the last week, connected too, the newest first, whatever the order.
+	// The best fit first: with nothing else known, the youngest, then
+	// whose age is not known.
+	same("best fit first", list(PeopleQuery{}), dana, unknown, old)
+	same("young", list(PeopleQuery{Sort: "young"}), dana, old, unknown)
 	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, old)
 	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, dana)
-	same("fit", list(PeopleQuery{Sort: "fit"}), old, unknown, dana)
+	same("fit", list(PeopleQuery{Sort: "fit"}), dana, unknown, old)
 	same("new", list(PeopleQuery{Filter: "new"}), unknown, dana, young)
 	same("new, whatever the order", list(PeopleQuery{Filter: "new", Sort: "name"}), unknown, dana, young)
 	same("connected", list(PeopleQuery{Filter: "connected"}), young)
@@ -296,7 +299,7 @@ func TestListPeople(t *testing.T) {
 	if err != nil || x.Phrase != "online marketing" {
 		t.Fatalf("added %+v, %v", x, err)
 	}
-	same("with an exclusion", list(PeopleQuery{}), old, unknown)
+	same("with an exclusion", list(PeopleQuery{}), unknown, old)
 	same("with an exclusion, connected", list(PeopleQuery{Filter: "connected"}), young)
 	if h := d.Hidden(); len(h) != 1 || h[dana.ID] != "online marketing" {
 		t.Errorf("hidden = %v", h)
@@ -308,12 +311,12 @@ func TestListPeople(t *testing.T) {
 	if !d.DeleteExclusion(x.ID) || d.DeleteExclusion(x.ID) {
 		t.Error("an exclusion should be removed once")
 	}
-	same("without it", list(PeopleQuery{}), dana, old, unknown)
+	same("without it", list(PeopleQuery{}), dana, unknown, old)
 
 	// Someone whose profile Tim rejected is only under Rejected, and
 	// comes back on Undo. Someone connected stays under Connected.
 	dana.LinkedIn.Review = "rejected"
-	same("rejected leaves all", list(PeopleQuery{}), old, unknown)
+	same("rejected leaves all", list(PeopleQuery{}), unknown, old)
 	same("rejected leaves new", list(PeopleQuery{Filter: "new"}), unknown, young)
 	same("rejected", list(PeopleQuery{Filter: "rejected"}), dana)
 	same("words of someone rejected", list(PeopleQuery{Q: "dana"}))
@@ -326,7 +329,7 @@ func TestListPeople(t *testing.T) {
 		t.Errorf("counts with someone rejected = %v", counts)
 	}
 	dana.LinkedIn.Review = "open"
-	same("undone", list(PeopleQuery{}), dana, old, unknown)
+	same("undone", list(PeopleQuery{}), dana, unknown, old)
 	same("undone, not under Rejected", list(PeopleQuery{Filter: "rejected"}))
 }
 

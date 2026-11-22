@@ -7,12 +7,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
@@ -296,6 +298,32 @@ func TestRecoverEndsRunsTheAppClosedUnder(t *testing.T) {
 		r := d.Runs[0]
 		if r.Ended != "interrupted" || !r.FinishedAt.Equal(t0.Add(time.Minute)) {
 			t.Errorf("run = %+v", r)
+		}
+	})
+}
+
+// A change to the rubric reaches the people found before it when the app
+// starts, not only once a search finds them again.
+func TestRecoverScoresAgain(t *testing.T) {
+	e, st := newEngine(t, &finder{})
+	_ = st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Gründer Köln", 0, t0)
+		p, _ := d.AddFound(store.Found{URL: "https://www.linkedin.com/in/mara-kowal", Name: "Mara Kowal",
+			Headline: "Founder of Probe AI", Roles: "Founder, Probe AI · Projektmanagerin, Muster Versicherung AG"}, s, 0, t0)
+		p.Signals, p.Score, p.Rubric = []store.Signal{{Key: "owner_operator", For: true}}, 1, rubric.Version-1
+		return nil
+	})
+	if err := e.Recover(); err != nil {
+		t.Fatal(err)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.People[0]
+		var keys []string
+		for _, s := range p.Signals {
+			keys = append(keys, s.Key)
+		}
+		if p.Rubric != rubric.Version || !slices.Contains(keys, "employed") {
+			t.Errorf("rubric %d, signals %v", p.Rubric, keys)
 		}
 	})
 }

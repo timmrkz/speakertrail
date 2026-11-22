@@ -92,7 +92,8 @@ practices, most of them between 30 and 50. A founder who writes
 **The workspace** has three screens now:
 
 - **People**, with the Run button. Only people a profile search found,
-  and whoever Tim connected with before, the likely youngest first. Each row says
+  and whoever Tim connected with before, the best fit first, see
+  [fit-score.md](fit-score.md). Each row says its fit and
   about how old the person is and when they were last active on
   LinkedIn. Filters: all, under 30, connected, rejected. Someone Tim
   connected with is only under connected, and someone whose profile he
@@ -249,10 +250,19 @@ Signals against:
 - a large team, or a company without a person behind it
 - enterprise software sold to other companies
 - quiet on LinkedIn: the last known post is more than a year old
+- still studying or in training, like "Studentin" or "In Ausbildung"
+- employed elsewhere: a job at another organisation beside what they
+  founded, like "Digitale Projekte beim 1. FC Beispielstadt" next to
+  "Founder of Probe AI"
+- social media work, like "Social Media-Managerin", "Content Creator" or
+  "Influencer"
+- building on AI, "AI" or "KI" as a word
 
 Scoring is kept simple and readable: a list of signals, each with its
-passage, for and against. The People screen sorts by it and shows why.
-There is no hidden number.
+passage, for and against. There is no hidden number. Since 22 November
+2026 People sorts by the fit, from 0 to 100, which adds these signals to
+how young a person is, how lately they were active and how near they
+are, each part with why, see [fit-score.md](fit-score.md).
 
 ## Where they are found in NRW
 
@@ -525,6 +535,20 @@ Built, in the order above:
    paused. The signal Writes on LinkedIn became **Active on LinkedIn**, a
    post, comment or reaction in the last six months, and a new signal
    against, **Consultant, agency or office**, rules people out.
+15. **Studies or in training** and **Employed elsewhere**, against, from
+   22 November 2026. Tim rejected people high in People who said they
+   founded something but study, or have a job at another organisation:
+   "I would like to connect with people who are actually doing this full
+   time so that it pays the bills." Both are read from the headline and
+   the roles held now. A job counts only beside a company the person
+   runs by name, and not when they work with people there, like a
+   trainer at a gym, or hold a role beside the work, like a member or a
+   speaker. Neither leaves anyone out, they only take points off the fit.
+   When the rubric changes, the app scores everyone again as it starts.
+16. **Social media work** and **Builds on AI**, against, the same day.
+   Tim: "I'm not interested in AI platforms and social media managers or
+   social media anything." A creator many people follow can still be
+   worth talking to, so they only take points off the fit.
 
 Waiting:
 

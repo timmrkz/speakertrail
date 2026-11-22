@@ -54,8 +54,8 @@ func TestListPeopleByFit(t *testing.T) {
 	if fit != sum || len(parts) != 4 {
 		t.Errorf("fit %d is not its parts %v", fit, parts)
 	}
-	if parts[3].Why != "Bonn, about 24 km" {
-		t.Errorf("near you says %q", parts[3].Why)
+	if parts[2].Why != "Bonn, about 24 km" {
+		t.Errorf("near you says %q", parts[2].Why)
 	}
 }
 

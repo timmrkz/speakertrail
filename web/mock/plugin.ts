@@ -285,34 +285,36 @@ function km(a: string, b: string): number | null {
 // The fit's four parts, the way rubric.Fit gives them.
 const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed'])
 function fitParts(s: State, p: Person): FitPart[] {
-  const pts = (share: number) => Math.round(25 * Math.max(0, Math.min(1, share)))
+  // Who they are 40, active lately 30, near you 20, younger 10, as in
+  // internal/rubric/fit.go.
+  const pts = (most: number, share: number) => Math.round(most * Math.max(0, Math.min(1, share)))
   const counted = p.signals.filter((x) => WHO.has(x.key))
   const pro = counted.filter((x) => x.for).map((x) => x.label)
   const contra = counted.filter((x) => !x.for).map((x) => x.label)
   let why = pro.join(', ')
   if (contra.length) why = (why ? why + ', against ' : 'Against ') + contra.join(', ')
-  const who = { key: 'who', label: 'Who they are', points: pts((pro.length - contra.length) / 3), why: why || 'Nothing beyond running their own business' }
+  const who = { key: 'who', label: 'Who they are', points: pts(40, (pro.length - contra.length) / 3), why: why || 'Nothing beyond running their own business' }
   const now = new Date()
   const born = p.linkedin?.born_about
   const age = born ? now.getFullYear() - born : 0
   const younger = born
-    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(0, Math.min(25, (25 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
-    : { key: 'younger', label: 'Younger', points: pts(0.5), why: 'Age not known' }
+    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(0, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
+    : { key: 'younger', label: 'Younger', points: pts(10, 0.5), why: 'Age not known' }
   const last = p.linkedin?.last_active
   const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const active = last
-    ? { key: 'active', label: 'Active lately', points: pts(0.5 ** ((now.getTime() - new Date(last).getTime()) / (30 * 864e5))), why: `Last active on ${day(last)}` }
+    ? { key: 'active', label: 'Active lately', points: pts(30, 0.5 ** ((now.getTime() - new Date(last).getTime()) / (30 * 864e5)) / 2), why: `Last active on ${day(last)}, not known whether they wrote` }
     : { key: 'active', label: 'Active lately', points: 0, why: 'No activity on LinkedIn known' }
   const home = String(setting(s, 'home_city') ?? '')
   const d = home ? km(home, p.city) : null
   const near = !home
-    ? { key: 'near', label: 'Near you', points: pts(0.5), why: 'Where you are is not set in Settings' }
+    ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: 'Where you are is not set in Settings' }
     : d === null
-      ? { key: 'near', label: 'Near you', points: pts(0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
+      ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
       : d < 1
-        ? { key: 'near', label: 'Near you', points: 25, why: `${p.city}, where you are` }
-        : { key: 'near', label: 'Near you', points: pts(0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
-  return [who, younger, active, near]
+        ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
+        : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
+  return [who, active, near, younger]
 }
 
 function personList(s: State, p: PersonRow): Person {

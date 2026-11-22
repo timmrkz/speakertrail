@@ -215,7 +215,7 @@ const walks = [
         const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
         if (parts.length !== 4) return `${parts.length} parts, want 4`
         if (parts.reduce((a, b) => a + b, 0) !== head || head !== fits[0]) return `the parts ${parts.join(' + ')} are not the fit ${head}, the row says ${fits[0]}`
-        const near = await page.locator('.fit li').nth(3).innerText()
+        const near = await page.locator('.fit li').nth(2).innerText()
         if (!/where you are|km/.test(near)) return `Near you says ${near}`
         return ''
       } finally {

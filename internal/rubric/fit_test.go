@@ -1,6 +1,7 @@
 package rubric
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -35,13 +36,13 @@ func TestFitActiveLately(t *testing.T) {
 		points        int
 		why           string
 	}{
-		{"5 days ago", day("2026-11-16"), day("2026-11-16"), true, 22, "Wrote on 16 November 2026"},
-		{"30 days ago", day("2026-10-22"), day("2026-10-22"), true, 13, "Wrote on 22 October 2026"},
+		{"5 days ago", day("2026-11-16"), day("2026-11-16"), true, 27, "Wrote on 16 November 2026"},
+		{"30 days ago", day("2026-10-22"), day("2026-10-22"), true, 15, "Wrote on 22 October 2026"},
 		{"5 months ago", day("2026-06-24"), day("2026-06-24"), true, 1, "Wrote on 24 June 2026"},
-		{"kinds not known", day("2026-11-16"), time.Time{}, false, 22, "Last active on 16 November 2026"},
-		{"only a like", day("2026-11-16"), time.Time{}, true, 11, "Reacted on 16 November 2026, wrote nothing"},
-		{"a like after a comment", day("2026-11-20"), day("2026-11-14"), true, 21, "Wrote on 14 November 2026, reacted since"},
-		{"a like after an old comment", day("2026-11-20"), day("2026-07-01"), true, 12, "Reacted on 20 November 2026, wrote last on 1 July 2026"},
+		{"kinds not known", day("2026-11-16"), time.Time{}, false, 13, "Last active on 16 November 2026, not known whether they wrote"},
+		{"only a like", day("2026-11-16"), time.Time{}, true, 13, "Reacted on 16 November 2026, wrote nothing"},
+		{"a like after a comment", day("2026-11-20"), day("2026-11-14"), true, 26, "Wrote on 14 November 2026, reacted since"},
+		{"a like after an old comment", day("2026-11-20"), day("2026-07-01"), true, 15, "Reacted on 20 November 2026, wrote last on 1 July 2026"},
 		{"nothing", time.Time{}, time.Time{}, false, 0, "No activity on LinkedIn known"},
 	} {
 		_, parts := Fit(FitPerson{LastActive: tc.active, LastWrote: tc.wrote, Wrote: tc.known, Now: now})
@@ -64,12 +65,12 @@ func TestFitNearYou(t *testing.T) {
 		points int
 		why    string
 	}{
-		{"same city", FitPerson{Home: "Köln", City: "Köln", Near: true}, 25, "Köln, where you are"},
-		{"25 km", FitPerson{Home: "Köln", City: "Bonn", Km: 25, Near: true}, 16, "Bonn, about 25 km"},
-		{"125 km", FitPerson{Home: "Köln", City: "Münster", Km: 125, Near: true}, 3, "Münster, about 125 km"},
-		{"no city", FitPerson{Home: "Köln"}, 13, "City not known"},
-		{"a city without a centre", FitPerson{Home: "Köln", City: "Hückeswagen"}, 13, "Hückeswagen, distance not known"},
-		{"not set", FitPerson{City: "Bonn"}, 13, "Where you are is not set in Settings"},
+		{"same city", FitPerson{Home: "Köln", City: "Köln", Near: true}, 20, "Köln, where you are"},
+		{"25 km", FitPerson{Home: "Köln", City: "Bonn", Km: 25, Near: true}, 13, "Bonn, about 25 km"},
+		{"125 km", FitPerson{Home: "Köln", City: "Münster", Km: 125, Near: true}, 2, "Münster, about 125 km"},
+		{"no city", FitPerson{Home: "Köln"}, 10, "City not known"},
+		{"a city without a centre", FitPerson{Home: "Köln", City: "Hückeswagen"}, 10, "Hückeswagen, distance not known"},
+		{"not set", FitPerson{City: "Bonn"}, 10, "Where you are is not set in Settings"},
 	} {
 		_, parts := Fit(tc.p)
 		got := part(t, parts, "near")
@@ -85,7 +86,7 @@ func TestFitYounger(t *testing.T) {
 		born   int
 		points int
 	}{
-		{2002, 25}, {1996, 25}, {1991, 13}, {1987, 3}, {1986, 0}, {1970, 0}, {0, 13},
+		{2002, 10}, {1996, 10}, {1991, 5}, {1987, 1}, {1986, 0}, {1970, 0}, {0, 5},
 	} {
 		_, parts := Fit(FitPerson{BornAbout: tc.born, Now: now})
 		if got := part(t, parts, "younger"); got.Points != tc.points {
@@ -107,8 +108,8 @@ func TestFitWhoTheyAre(t *testing.T) {
 		{nil, 0, "Nothing beyond running their own business"},
 		// Running their own business, age and activity count elsewhere.
 		{[]string{"owner_operator", "young", "active_on_linkedin"}, 0, "Nothing beyond running their own business"},
-		{[]string{"works_with_people", "athlete"}, 17, "Works with people, Athlete"},
-		{[]string{"works_with_people", "athlete", "author", "runs_events"}, 25, "Works with people, Runs their own events, Author, Athlete"},
+		{[]string{"works_with_people", "athlete"}, 27, "Works with people, Athlete"},
+		{[]string{"works_with_people", "athlete", "author", "runs_events"}, 40, "Works with people, Runs their own events, Author, Athlete"},
 		{[]string{"works_with_people", "funded"}, 0, "Works with people, against Raised money"},
 		{[]string{"funded"}, 0, "Against Raised money"},
 	} {
@@ -142,7 +143,7 @@ func TestFitAddsUp(t *testing.T) {
 	for _, p := range parts {
 		sum += p.Points
 	}
-	if fit != sum || fit != 17+25+23+16 {
+	if fit != sum || fit != 27+27+13+10 {
 		t.Errorf("fit %d, parts %v", fit, parts)
 	}
 }
@@ -191,5 +192,28 @@ func TestFitPointsIsFit(t *testing.T) {
 	}
 	if n < 1000 {
 		t.Errorf("only %d people compared", n)
+	}
+}
+
+// Tim, 22 November 2026: people who showed nothing beyond running a
+// business stood at the top for being young. What they do counts most,
+// then that they are active and write, then how near, and last how young.
+func TestFitDoingComesBeforeYoung(t *testing.T) {
+	now := day("2026-11-22")
+	young := FitPerson{BornAbout: 2001, AgeReason: "First job from 2023", LastActive: day("2026-11-04"),
+		Home: "Köln", City: "Düsseldorf", Km: 36, Near: true, Now: now}
+	doing := young
+	doing.BornAbout, doing.Signals = 1988, []Signal{{Key: "works_with_people", For: true}}
+	doing.LastWrote, doing.Wrote = day("2026-11-04"), true
+	if a, b := FitPoints(young), FitPoints(doing); a >= b {
+		t.Errorf("about 25 and doing nothing known: %d, about 38, coaching and writing: %d", a, b)
+	}
+	_, parts := Fit(young)
+	var order []string
+	for _, p := range parts {
+		order = append(order, p.Key)
+	}
+	if got := strings.Join(order, " "); got != "who active near younger" {
+		t.Errorf("the parts come as %s", got)
 	}
 }

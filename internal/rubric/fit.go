@@ -10,9 +10,9 @@ import (
 
 // The fit is a number from 0 to 100 that orders People, best first. It
 // adds up parts, each with the reason it gave its points, so every point
-// has a reason Tim can read. Four parts count the same for now: who they
-// are, how young, how lately active on LinkedIn, and how near. See
-// docs/fit-score.md, which Tim agreed on 21 November 2026.
+// has a reason Tim can read. Four parts, in the order of how much they
+// count: who they are, how lately active on LinkedIn, how near, and how
+// young. See docs/fit-score.md, which Tim agreed on 21 November 2026.
 
 // Part is one part of the fit, with the points it gave and why.
 type Part struct {
@@ -22,8 +22,18 @@ type Part struct {
 	Why    string
 }
 
-// PartPoints is what each of the four parts gives at most.
-const PartPoints = 25
+// What each part gives at most. Tim, 22 November 2026: "the most
+// important thing is that they are doing something. And then the next
+// most important thing is that they're actually active on doing that
+// thing and that they are talking about it. And then I think the next
+// important thing is that they are close to me. And then the next
+// important thing at the end is that they are younger."
+const (
+	WhoPoints     = 40
+	ActivePoints  = 30
+	NearPoints    = 20
+	YoungerPoints = 10
+)
 
 // ActiveHalf is after how long the points for being active on LinkedIn
 // halve, and NearHalfKm after how many kilometres the points for being
@@ -69,7 +79,7 @@ var who = map[string]bool{
 // Fit is a person's fit and its parts, in the order Why shows them. The
 // fit is the sum of the parts' points.
 func Fit(p FitPerson) (int, []Part) {
-	parts := []Part{whoPart(p, true), youngerPart(p, true), activePart(p, true), nearPart(p, true)}
+	parts := []Part{whoPart(p, true), activePart(p, true), nearPart(p, true), youngerPart(p, true)}
 	total := 0
 	for _, pt := range parts {
 		total += pt.Points
@@ -80,11 +90,12 @@ func Fit(p FitPerson) (int, []Part) {
 // FitPoints is the fit alone, the same as Fit gives, without writing why,
 // so a list of thousands is sorted by it quickly.
 func FitPoints(p FitPerson) int {
-	return whoPart(p, false).Points + youngerPart(p, false).Points + activePart(p, false).Points + nearPart(p, false).Points
+	return whoPart(p, false).Points + activePart(p, false).Points + nearPart(p, false).Points + youngerPart(p, false).Points
 }
 
-func points(share float64) int {
-	return int(math.Round(PartPoints * math.Max(0, math.Min(1, share))))
+// points is a share of most, from none to all of it.
+func points(most int, share float64) int {
+	return int(math.Round(float64(most) * math.Max(0, math.Min(1, share))))
 }
 
 // Each part says why only when say is true.
@@ -109,7 +120,7 @@ func whoPart(p FitPerson, say bool) Part {
 		}
 	}
 	if !say {
-		return Part{Points: points(float64(n) / 3)}
+		return Part{Points: points(WhoPoints, float64(n)/3)}
 	}
 	why := strings.Join(pro, ", ")
 	if len(contra) > 0 {
@@ -123,18 +134,18 @@ func whoPart(p FitPerson, say bool) Part {
 	if why == "" {
 		why = "Nothing beyond running their own business"
 	}
-	return Part{Key: "who", Label: "Who they are", Points: points(float64(n) / 3), Why: why}
+	return Part{Key: "who", Label: "Who they are", Points: points(WhoPoints, float64(n)/3), Why: why}
 }
 
 func youngerPart(p FitPerson, say bool) Part {
 	part := Part{Key: "younger", Label: "Younger"}
 	if p.BornAbout == 0 {
-		part.Points, part.Why = points(0.5), "Age not known"
+		part.Points, part.Why = points(YoungerPoints, 0.5), "Age not known"
 		return part
 	}
 	age := p.Now.Year() - p.BornAbout
-	// Points whole first, so 39 gives exactly 2.5 to round.
-	part.Points = int(math.Round(math.Max(0, math.Min(PartPoints, float64(PartPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
+	// Points whole first, so no fraction near a half rounds the wrong way.
+	part.Points = int(math.Round(math.Max(0, math.Min(YoungerPoints, float64(YoungerPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
 	if !say {
 		return part
 	}
@@ -164,16 +175,15 @@ func activePart(p FitPerson, say bool) Part {
 	switch {
 	case p.LastActive.IsZero() && p.LastWrote.IsZero():
 		part.Why = "No activity on LinkedIn known"
-	case !p.Wrote || !p.LastWrote.Before(p.LastActive):
-		newest := p.LastActive
-		if p.LastWrote.After(newest) {
-			newest = p.LastWrote
-		}
-		part.Points = points(fading(p.Now.Sub(newest), ActiveHalf))
-		part.Why = "Last active on " + day(newest)
-		if p.Wrote {
-			part.Why = "Wrote on " + day(newest)
-		}
+	case !p.Wrote:
+		// Most people on LinkedIn do not post, only 11 of 60 had in six
+		// months in a test on 30 September 2026, so activity of a kind not
+		// known counts as a reaction. Tim saw people high up who did not post, 22 November.
+		part.Points = points(ActivePoints, fading(p.Now.Sub(p.LastActive), ActiveHalf)/2)
+		part.Why = "Last active on " + day(p.LastActive) + ", not known whether they wrote"
+	case !p.LastWrote.Before(p.LastActive):
+		part.Points = points(ActivePoints, fading(p.Now.Sub(p.LastWrote), ActiveHalf))
+		part.Why = "Wrote on " + day(p.LastWrote)
 	default:
 		// A reaction counts half as much as a post or a comment of the
 		// same day, so writing a while ago can count for more.
@@ -182,7 +192,7 @@ func activePart(p FitPerson, say bool) Part {
 		if !p.LastWrote.IsZero() {
 			wrote = fading(p.Now.Sub(p.LastWrote), ActiveHalf)
 		}
-		part.Points = points(math.Max(reacted, wrote))
+		part.Points = points(ActivePoints, math.Max(reacted, wrote))
 		part.Why = "Reacted on " + day(p.LastActive)
 		switch {
 		case p.LastWrote.IsZero():
@@ -197,7 +207,7 @@ func activePart(p FitPerson, say bool) Part {
 }
 
 func nearPart(p FitPerson, say bool) Part {
-	part := Part{Key: "near", Label: "Near you", Points: points(0.5)}
+	part := Part{Key: "near", Label: "Near you", Points: points(NearPoints, 0.5)}
 	switch {
 	case p.Home == "":
 		part.Why = "Where you are is not set in Settings"
@@ -206,9 +216,9 @@ func nearPart(p FitPerson, say bool) Part {
 	case !p.Near:
 		part.Why = p.City + ", distance not known"
 	case p.Km < 1:
-		part.Points, part.Why = points(1), p.City+", where you are"
+		part.Points, part.Why = points(NearPoints, 1), p.City+", where you are"
 	default:
-		part.Points = points(math.Pow(0.5, p.Km/NearHalfKm))
+		part.Points = points(NearPoints, math.Pow(0.5, p.Km/NearHalfKm))
 		if say {
 			part.Why = fmt.Sprintf("%s, about %.0f km", p.City, p.Km)
 		}

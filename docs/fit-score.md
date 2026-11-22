@@ -40,9 +40,24 @@ run and every list of people are ordered by it, best first. Every point
 has a reason Tim can read on the person, under Why. There is no hidden
 number.
 
-It has five parts. Four are fixed and count the same, a quarter each,
-because nothing yet says one matters more. The fifth, **Like your
-picks**, learns from Tim and grows as he connects with people.
+It has five parts. Four are fixed, in the order Tim gave on 22 November
+2026: "the most important thing is that they are doing something. And
+then the next most important thing is that they're actually active on
+doing that thing and that they are talking about it. And then I think
+the next important thing is that they are close to me. And then the next
+important thing at the end is that they are younger."
+
+| Part | At most |
+| --- | --- |
+| Who they are | 40 |
+| Active lately | 30 |
+| Near you | 20 |
+| Younger | 10 |
+
+They first counted 25 each. Tim found people at the top who showed
+nothing beyond running a business and were not posting, there for being
+young, and asked for this order. The fifth part, **Like your picks**,
+learns from Tim and grows as he connects with people.
 
 ### 1. Who they are
 
@@ -56,19 +71,7 @@ Each signal for is a third of the part, each against takes a third
 away, between none and all of it. Runs their own business is not
 counted, since everyone kept has it.
 
-### 2. Younger
-
-| Likely age | Part |
-| --- | --- |
-| 30 or younger | all of it |
-| 31 to 39 | a tenth less for every year past 30, so 35 has half |
-| 40 or older | none |
-| not known | half |
-
-An age the headline gives beats the guess, as today. Nobody is left
-out for age.
-
-### 3. Active lately
+### 2. Active lately
 
 From the newest post, comment or reaction the profile shows. The part
 halves every 30 days:
@@ -85,15 +88,17 @@ or a comment of the same day, so a comment a week ago can count for
 more than a like yesterday. The kind is read from the profile's
 activity lines, `rubric.Writing`: an entry like "Gefällt mir" or
 "Likes" is a reaction, anything else, like "Kommentar", is writing. So
-a word for a reaction the app does not know counts as writing, as all
-activity did before. Whom the app has no profile text of counts as
-writing too. The words Exa's index uses were seen only in the tests, a
+a word for a reaction the app does not know counts as writing. Whom the
+app has no profile text of, mostly people found before 20 November
+2026, counts as reacting, since most people on LinkedIn do not post:
+only 11 of 60 had in six months, in a test on 30 September 2026. A
+search that finds them again brings the text. The words Exa's index uses were seen only in the tests, a
 cloud session cannot reach Exa, so Tim's own people are the check.
 
 The date is what Exa's index last saw, which can be weeks old. It is
 refreshed whenever a search finds the person again.
 
-### 4. Near you
+### 3. Near you
 
 Settings gets **Where you are**, a city in NRW. The distance is a
 straight line between the two cities, from a table of the cities the
@@ -112,6 +117,18 @@ halves every 40 km. From Köln, for example:
 A person whose profile names only a region, like "Ruhr Region", or no
 city at all, gets half. Until Tim sets Where you are, everyone gets
 half and the part changes no order.
+
+### 4. Younger
+
+| Likely age | Part |
+| --- | --- |
+| 30 or younger | all of it |
+| 31 to 39 | a tenth less for every year past 30, so 35 has half |
+| 40 or older | none |
+| not known | half |
+
+An age the headline gives beats the guess, as today. Nobody is left
+out for age.
 
 ### 5. Like your picks
 
@@ -145,12 +162,16 @@ with and rejected someone, every person gets half.
 starts at nothing and grows with the number of people Tim connected
 with or rejected, towards at most 40:
 
-| People decided | Like your picks | Each fixed part |
+| People decided | Like your picks | The fixed parts |
 | --- | --- | --- |
-| 0 | 0 | 25 |
-| 20 | 20 | 20 |
-| 60 | 30 | 17.5 |
-| 180 | 36 | 16 |
+| 0 | 0 | 100 |
+| 20 | 20 | 80 |
+| 60 | 30 | 70 |
+| 180 | 36 | 64 |
+
+The fixed parts shrink together and keep their order, so at 20 people
+decided Who they are gives at most 32, Active lately 24, Near you 16
+and Younger 8.
 
 So the order is plain at first and leans on Tim's picks as they show
 something. The cap keeps the four fixed parts above half, so a person
@@ -162,11 +183,11 @@ A row in People shows the fit as a small figure in tabular figures. The
 person shows the fit under Fit, above Why, with the points each part
 gave and why, for example:
 
-- +11 Who they are: Works with people, Athlete
-- +20 Younger: Bachelor from 2019, so about 26
-- +18 Active lately: Wrote on 16 November 2026
-- +11 Near you: Bonn, about 24 km
-- +9 Like your picks: "BJJ", 4 of 6 such people you connected with
+- +21 Who they are: Works with people, Athlete
+- +22 Active lately: Wrote on 18 November 2026
+- +10 Near you: Bonn, about 24 km
+- +8 Younger: Bachelor from 2019, so about 26
+- +14 Like your picks: "BJJ", 4 of 6 such people you connected with
 
 Why keeps the rubric's signals with the passages that show them, so an
 age or a date can show in both, once as points and once as the passage.
@@ -175,22 +196,22 @@ Signals against keep their place as today.
 
 ### Worked example
 
-Tim has connected with 20 people, so Like your picks has 20 points and
-each fixed part 20. A BJJ coach in Bonn, about 26, who commented 4 days
-ago, with the signals Works with people and Athlete:
+Tim has decided on 20 people, so Like your picks has 20 points and the
+fixed parts 80. A BJJ coach in Bonn, about 26, who commented 4 days ago,
+with the signals Works with people and Athlete:
 
 | Part | Value | Points |
 | --- | --- | --- |
-| Who they are | 2 of 3 | 13 |
-| Younger | all | 20 |
-| Active lately | 91 %, a comment | 18 |
-| Near you | 65 % | 13 |
-| Like your picks | 70 % | 14 |
-| **Fit** | | **79** |
+| Who they are | 2 of 3, of 32 | 21 |
+| Active lately | 91 %, a comment, of 24 | 22 |
+| Near you | 65 %, of 16 | 10 |
+| Younger | all, of 8 | 8 |
+| Like your picks | 70 %, of 20 | 14 |
+| **Fit** | | **75** |
 
-A shop owner in Bielefeld, age not known, whose newest activity is a
-like 80 days ago, with no signals beyond owning the business and traits
-Tim's picks rarely have, reaches about 17.
+A shop owner in Bielefeld, about 25, whose newest activity is a like 80
+days ago, with no signals beyond owning the business and traits Tim's
+picks rarely have, reaches about 15: 0 + 2 + 1 + 8 + 4.
 
 ## Rejected is Tim's no
 

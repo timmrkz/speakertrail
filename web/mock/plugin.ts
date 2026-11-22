@@ -375,6 +375,8 @@ function exclusionsOf(s: State) {
 }
 
 const ok = (body: unknown) => ({ status: 200, body })
+// The text last put on the clipboard.
+let clipboard = ''
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
 const ROUTES: [string, RegExp, Handler][] = [
@@ -621,6 +623,14 @@ const ROUTES: [string, RegExp, Handler][] = [
       body: `<svg xmlns="http://www.w3.org/2000/svg" width="${p.width}" height="${p.height}"><rect width="100%" height="100%" fill="#8fb3c0"/><rect x="8%" y="10%" width="84%" height="12%" rx="8" fill="#f7f9fa"/></svg>`,
     }
   }],
+  // The Mac's clipboard, as cmd/speakertrail-app/clipboard.go puts text
+  // on it. The mock keeps the last text, and GET reads it back for the
+  // walks, which the app does not answer.
+  ['POST', /^\/api\/clipboard$/, (_s, _m, _q, b) => {
+    clipboard = String(b.text ?? '')
+    return { status: 204 }
+  }],
+  ['GET', /^\/api\/clipboard$/, () => ok({ text: clipboard })],
   ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
     if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
     return { status: 204 }

@@ -97,7 +97,11 @@ const walks = [
   {
     name: 'The message is Tim’s to change, a double click selects all of it, and the copy mark copies it',
     async run(page) {
-      await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+      // The app's web view refuses the window's own clipboard, as Tim saw
+      // testing #60 on 22 November 2026, so the walk refuses it too.
+      await page.addInitScript(() => {
+        navigator.clipboard.writeText = () => Promise.reject(new DOMException('The request is not allowed by the user agent or the platform in the current context, possibly because the user denied permission.', 'NotAllowedError'))
+      })
       await open(page, 1004)
       await drafted(page, 1004, 1, first)
       await box(page).dblclick()
@@ -114,8 +118,60 @@ const walks = [
       await box(page).hover()
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the copy mark does not show with the pointer on the box'
       await mark.click()
-      const copied = await page.evaluate(() => navigator.clipboard.readText())
+      await page.waitForFunction(() => document.querySelector('.first-message button.copy')?.getAttribute('aria-label') === 'Copied')
+      const copied = await page.evaluate(() => fetch('/api/clipboard').then((r) => r.json()).then((c) => c.text))
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
+      if (await page.locator('.first-message .refused, .toast').count()) return 'a copy that worked says something went wrong'
+      // The tick stays while it shows, with the pointer gone.
+      await page.mouse.move(0, 0)
+      if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the tick hides with the pointer away'
+      return ''
+    },
+  },
+  {
+    // Tim saw the box keep its first size while the model wrote and jump
+    // once it was done, 22 November 2026. It grows with every piece.
+    name: 'The box grows with the draft as the model writes it',
+    async run(page) {
+      await open(page, 1000)
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      const words = 'Hallo Mara, schön mit dir vernetzt zu sein. Du bist mir aufgefallen, weil du ein Keramikstudio neben dem Studium aufgebaut hast.'.repeat(5).split(' ')
+      let text = ''
+      let grew = 0
+      let before = 0
+      for (let i = 0; i < words.length; i += 5) {
+        text += ` ${words.slice(i, i + 5).join(' ')}`
+        await say(page, job(1000, 1, { state: 'writing', text, fraction: 0.5, seconds_left: 4 }))
+        const m = await page.waitForFunction((want) => {
+          const t = document.querySelector('.first-message textarea')
+          return t && t.value === want && { over: t.scrollHeight - t.clientHeight, h: t.clientHeight }
+        }, text.trimStart()).then((h) => h.jsonValue())
+        if (m.over > 0) return `with ${text.length} letters written the text is ${m.over} px taller than its box`
+        if (m.h > before) grew++
+        before = m.h
+      }
+      if (grew < 4) return `the box grew only ${grew} times while the draft was written`
+      return ''
+    },
+  },
+  {
+    // An error shows where it happened, over the box, never as a toast
+    // over the window, and in words Tim can act on (22 November 2026).
+    name: 'A copy the Mac refuses says what to do, over the message, with no toast',
+    async run(page) {
+      await page.route('**/api/clipboard', (route) => route.fulfill({ status: 500, json: { error: 'The Mac did not take it on the clipboard. Select the text and press Cmd+C.' } }))
+      await open(page, 1001)
+      await drafted(page, 1001, 1, first)
+      await box(page).hover()
+      await page.locator('.first-message button.copy').click()
+      const line = page.locator('.first-message .box .refused')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'Could not copy the message. Select it and press Cmd+C.') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      const [b, l] = await Promise.all([box(page).boundingBox(), line.boundingBox()])
+      if (l.y < b.y || l.y + l.height > b.y + b.height || l.x < b.x || l.x + l.width > b.x + b.width) return 'the line is not over the box'
       return ''
     },
   },

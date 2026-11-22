@@ -9,6 +9,7 @@
   // FrameFairy's Updates page, ported as it is. See docs/UPDATES.md.
   import { api } from '../lib/api'
   import { runWatch } from '../lib/run.svelte'
+  import { said } from '../lib/said'
   import { errorText } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import Icon from '../lib/components/Icon.svelte'
@@ -89,11 +90,14 @@
     copyRefused = ''
     clearTimeout(copiedTimer)
     copiedTimer = setTimeout(() => (copied = false), 1500)
+    // Through the app, since the web view refuses the window's own
+    // clipboard, see docs/api.md, Copy.
     try {
-      await navigator.clipboard.writeText(text)
-    } catch {
+      await api.copy(text)
+    } catch (e) {
       copied = false
-      copyRefused = 'Copying was refused. Select the text and copy it instead.'
+      copyRefused = 'Could not copy it. Select the text and press Cmd+C.'
+      said(`copy: ${errorText(e)}`, { level: 'warn' })
     }
   }
 

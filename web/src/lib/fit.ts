@@ -1,8 +1,12 @@
 // fit makes a textarea as tall as what it holds, so it never scrolls.
 // Tim asked for it for the first message on 21 November 2026: the
-// messages are short, and he wants to read one whole. It fits again
-// whenever the value it is handed changes, and when the box gets
-// narrower or wider, since the lines wrap anew.
+// messages are short, and he wants to read one whole. The action fits it
+// when it comes and whenever the box gets narrower or wider, since the
+// lines wrap anew. A new value is fitted by fitNow from an $effect of
+// the component, which runs once the value is in the box. An action's
+// update runs before that, so it measured the text before, one piece of
+// a draft behind, and the box caught up only at the end (Tim, 22
+// November 2026).
 //
 // A height of auto lets the box shrink to what it holds before it is
 // measured. For that moment the page under it is shorter, so a pane
@@ -23,7 +27,7 @@ export function fitNow(el: HTMLTextAreaElement) {
   for (const [p, top] of kept) p.scrollTop = top
 }
 
-export function fit(el: HTMLTextAreaElement, _value?: string) {
+export function fit(el: HTMLTextAreaElement) {
   let width = el.clientWidth
   const watch = new ResizeObserver(() => {
     if (el.clientWidth === width) return
@@ -33,11 +37,6 @@ export function fit(el: HTMLTextAreaElement, _value?: string) {
   watch.observe(el)
   fitNow(el)
   return {
-    // The value is set on the box before this runs, so the measure is of
-    // the new text.
-    update() {
-      fitNow(el)
-    },
     destroy() {
       watch.disconnect()
     },

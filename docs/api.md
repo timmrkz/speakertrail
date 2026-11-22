@@ -194,6 +194,16 @@ when it starts and hears every change after on the Wails event called
 report window, whose changes come as `chrome-report`. See
 `cmd/speakertrail-app/chrome.go`.
 
+## Copy
+
+`POST /api/clipboard` with `{"text": "…"}` puts the text on the Mac's
+clipboard and answers 204. It is answered by the app itself, not by
+`internal/api`, see `cmd/speakertrail-app/clipboard.go`. The window's own
+`navigator.clipboard` is refused in the app's web view, so the copy mark
+on a first message and Copy on the Updates page ask the app instead. When
+the Mac does not take it, the answer is 500 with an `error` that says to
+select the text and press Cmd+C.
+
 ## Quitting
 
 Cmd+Q dims the app at once and says what happens next, the way

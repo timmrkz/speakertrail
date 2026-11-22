@@ -8,12 +8,13 @@
   // in the person's row of buttons, between Connect and LinkedIn, which
   // row draws. See internal/draft and docs/api.md, Drafts.
   import type { Snippet } from 'svelte'
-  import { fit } from '../fit'
+  import { fit, fitNow } from '../fit'
   import { api, type DraftJob, type PersonDetail } from '../api'
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
   import { navigate } from '../router.svelte'
+  import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
@@ -138,12 +139,34 @@
     ;(e.currentTarget as HTMLTextAreaElement).select()
   }
 
+  // The copy mark copies through the app, since the web view refuses the
+  // window's own clipboard, see docs/api.md, Copy. It turns into a tick
+  // in the same frame as the click and back a moment later, as Copy on
+  // the Updates page does. A copy that fails says so over the box, where
+  // the click was, in words that say what to do, and the web view's own
+  // words go to the app's log.
+  let copied = $state(false)
+  let copyRefused = $state('')
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  let refusedTimer: ReturnType<typeof setTimeout> | undefined
+  $effect(() => () => {
+    clearTimeout(copiedTimer)
+    clearTimeout(refusedTimer)
+  })
   async function copy() {
+    copied = true
+    copyRefused = ''
+    clearTimeout(copiedTimer)
+    clearTimeout(refusedTimer)
+    copiedTimer = setTimeout(() => (copied = false), 1500)
     try {
-      await navigator.clipboard.writeText(text)
-      toast.show('Copied the message')
+      await api.copy(text)
     } catch (e) {
-      toast.show(errorText(e), 'bad')
+      clearTimeout(copiedTimer)
+      copied = false
+      copyRefused = 'Could not copy the message. Select it and press Cmd+C.'
+      refusedTimer = setTimeout(() => (copyRefused = ''), 8000)
+      said(`copy: ${errorText(e)}`, { level: 'warn' })
     }
   }
 
@@ -179,6 +202,13 @@
   )
   // While the model writes, the box shows what it wrote so far.
   const shown = $derived(running ? (running.text ?? '').trimStart() : text)
+  // The box grows with every piece the model writes and every key Tim
+  // types, measured once the text is in it, see lib/fit.ts.
+  let field = $state<HTMLTextAreaElement>()
+  $effect(() => {
+    void shown
+    if (field) fitNow(field)
+  })
   const failed = $derived(job?.state === 'failed' ? (job.error ?? 'The draft stopped.') : '')
   // A draft the model's answer did not fit has … where its part goes, and
   // says why until the next draft.
@@ -222,12 +252,16 @@
     {#if busy || shown}
       <div class="box">
         <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-          use:fit={shown} aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+          bind:this={field} use:fit aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
           ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
         {#if text && !busy}
-          <button class="btn icon copy" type="button" onclick={copy} aria-label="Copy" title="Copy the whole message">
-            <Icon name="copy" />
+          <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
+            title={copied ? 'Copied' : 'Copy the whole message'}>
+            <Icon name={copied ? 'check' : 'copy'} />
           </button>
+        {/if}
+        {#if copyRefused}
+          <p class="refused small" role="alert">{copyRefused}</p>
         {/if}
       </div>
     {/if}
@@ -267,7 +301,15 @@
     position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border-color: transparent; color: var(--ink-2);
     opacity: 0; pointer-events: none;
   }
-  .box:hover .copy, .copy:focus-visible { opacity: 1; pointer-events: auto; }
+  .box:hover .copy, .copy:focus-visible, .box .copy.copied { opacity: 1; pointer-events: auto; }
+  .box .copy.copied { color: var(--good); }
+  /* A copy that failed lies over the top of the box, beside the mark,
+     on the box's own ground with an edge in red, so it reads where the
+     click was and covers no more than its line. */
+  .refused {
+    position: absolute; top: 4px; left: 4px; right: 38px; margin: 0; padding: 5px 9px;
+    background: var(--surface); color: var(--bad); border: var(--line-w) solid var(--bad); border-radius: 6px;
+  }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

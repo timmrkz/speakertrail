@@ -72,6 +72,13 @@ func runOf(d *store.Data, r *store.Run, going int64, now, reading map[int64]time
 		}
 	}
 	out.SourcesChecked = len(seen)
+	// A profile Exa's index does not hold yet is no failure, it says so on
+	// the person.
+	for _, rd := range r.Reads {
+		if rd.Error != "" && rd.Error != engine.NotIndexed {
+			out.ReadsFailed++
+		}
+	}
 	for _, p := range d.People {
 		if p.FirstRunID == r.ID && p.Score > 0 {
 			out.FitsNew++

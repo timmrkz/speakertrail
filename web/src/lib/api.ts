@@ -180,11 +180,14 @@ export interface Person {
 }
 
 // What a search that holds links would add: profiles new to the app, the
-// people here already by id, and other links, like a company page.
+// people here already by id, and other links, like a company page. act
+// is what Run turns into, as the app decides: Add, Open the one person
+// here, or a greyed Add for links that add nobody.
 export interface LinksFound {
   new: number
   here: number[]
   other: number
+  act: 'add' | 'open' | 'none'
 }
 
 // What came of adding links. wait says why the profiles wait for the
@@ -193,7 +196,12 @@ export interface Added {
   run: number
   new: number[]
   here: number[]
+  // Those here already whom adding marked connected, for Undo.
+  connected: number[]
   other: number
+  // The one person here the links lead to, to open, when they add
+  // nobody new.
+  open?: number
   wait?: string
 }
 
@@ -759,6 +767,8 @@ export const api = {
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null }>('GET', `/api/people${qs(q)}`),
   addPeople: (text: string) => request<Added>('POST', '/api/people', { text }),
+  // Takes out again someone added from a link, for Undo.
+  removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),

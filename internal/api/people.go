@@ -161,10 +161,11 @@ type reads struct {
 	ms      *int64
 }
 
-// readsNow asks the engine whose profiles it reads, and measures how
-// long a read takes from the last ones.
-func (a *API) readsNow(d *store.Data) reads {
-	reading, waiting := a.Engine.Reading()
+// readsNow is whose profiles the engine reads and whose wait, as it said
+// before the store was read, with how long a read takes, measured from
+// the last ones. The engine is asked first and never inside Store.Read,
+// since Engine.Add holds its own lock while it updates the store.
+func readsNow(d *store.Data, reading map[int64]time.Time, waiting []int64) reads {
 	out := reads{reading: reading, waiting: waiting}
 	var total, n int64
 	for i := len(d.Runs) - 1; i >= 0 && n < recentChecks; i-- {
@@ -226,6 +227,22 @@ type linksJSON struct {
 	New   int     `json:"new"`
 	Here  []int64 `json:"here"`
 	Other int     `json:"other"`
+	// Act is what Run turns into: add for profiles new to the app, open
+	// for the one person a link leads to who is here, none for links that
+	// add nobody, see actOf.
+	Act string `json:"act"`
+}
+
+// actOf is what adding links does, the same for the search that holds
+// them and for Add.
+func actOf(isNew int, here []int64, other int) string {
+	switch {
+	case isNew > 0:
+		return "add"
+	case len(here) == 1 && other == 0:
+		return "open"
+	}
+	return "none"
 }
 
 func (a *API) people(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +256,7 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 	}
 	var err error
 	profiles, other := engine.Links(q.Get("q"))
+	reading, waiting := a.Engine.Reading()
 	a.Store.Read(func(d *store.Data) {
 		var people []*store.Person
 		now := a.Store.Now()
@@ -258,8 +276,9 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 					out.Links.New++
 				}
 			}
+			out.Links.Act = actOf(out.Links.New, out.Links.Here, other)
 		}
-		rs := a.readsNow(d)
+		rs := readsNow(d, reading, waiting)
 		out.People = make([]personJSON, 0, len(people))
 		fitOf := d.Fitter(now)
 		for _, p := range people {
@@ -292,8 +311,14 @@ func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
 	added, err := a.Engine.Add(in.Text)
 	out := struct {
 		engine.Added
+		// Open is the one person the links lead to who was here
+		// already, for People to open, when they add nobody new.
+		Open int64  `json:"open,omitempty"`
 		Wait string `json:"wait,omitempty"`
 	}{Added: added}
+	if actOf(len(added.New), added.Here, added.Other) == "open" {
+		out.Open = added.Here[0]
+	}
 	switch {
 	case errors.Is(err, engine.ErrNoLinks):
 		fail(w, http.StatusBadRequest, capital(err.Error()))
@@ -310,12 +335,31 @@ func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusOK, out)
 }
 
+// removePerson takes out someone added from a link, for Undo.
+func (a *API) removePerson(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	switch err := a.Engine.Remove(id); {
+	case errors.Is(err, store.ErrNoPerson):
+		fail(w, http.StatusNotFound, "Not found")
+	case errors.Is(err, store.ErrNotAdded):
+		fail(w, http.StatusConflict, capital(err.Error()))
+	case err != nil:
+		a.internal(w, r, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func (a *API) sendPerson(w http.ResponseWriter, id int64) {
 	var out *personDetail
+	reading, waiting := a.Engine.Reading()
 	a.Store.Read(func(d *store.Data) {
 		if p := d.Person(id); p != nil {
 			v := detailPerson(d, p, a.Store.Now())
-			a.readsNow(d).mark(p, &v.personJSON)
+			readsNow(d, reading, waiting).mark(p, &v.personJSON)
 			out = &v
 		}
 	})

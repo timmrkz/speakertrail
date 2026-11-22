@@ -2,6 +2,7 @@ package store
 
 import (
 	"cmp"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -54,9 +55,9 @@ const AddedByHand = "Added by hand"
 // adds them, named by the handle in the link until a run reads their
 // profile. Either way they are marked connected: Tim adds people he
 // connected with. It reports whether they are new.
-func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (*Person, bool) {
-	p := d.PersonByProfile(url)
-	isNew := p == nil
+func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (p *Person, isNew, connected bool) {
+	p = d.PersonByProfile(url)
+	isNew = p == nil
 	if isNew {
 		p = &Person{
 			ID: d.NewID(), Name: handle, FirstSeen: at, FirstRunID: runID, Evidence: AddedByHand,
@@ -64,9 +65,46 @@ func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (*Person, 
 		}
 		d.People = append(d.People, p)
 	}
+	// Someone added again whose profile Exa did not have, or could not
+	// give, is asked for once more.
+	if p.ReadError != "" {
+		p.ToRead = true
+	}
+	connected = !p.Connected
 	p.Connect(true, at)
 	p.UpdatedAt = at
-	return p, isNew
+	return p, isNew, connected && !isNew
+}
+
+// ErrNoPerson is an id nobody has.
+var ErrNoPerson = errors.New("no such person")
+
+// ErrNotAdded refuses to take out someone a search found: only whom Tim
+// added from a link goes again, see RemoveAdded.
+var ErrNotAdded = errors.New("only someone added from a link can be taken out again")
+
+// RemoveAdded takes out someone Tim added from a link, for Undo, and
+// leaves them out of the runs that had not read their profile yet. A run
+// that read it keeps the read, which was paid for.
+func (d *Data) RemoveAdded(id int64) error {
+	i := slices.IndexFunc(d.People, func(p *Person) bool { return p.ID == id })
+	if i < 0 {
+		return ErrNoPerson
+	}
+	p := d.People[i]
+	if p.Evidence != AddedByHand || len(p.FoundBy) > 0 {
+		return ErrNotAdded
+	}
+	if p.LinkedIn.Text != "" {
+		d.textsChanged = true
+	}
+	d.People = slices.Delete(d.People, i, i+1)
+	for _, r := range d.Runs {
+		if !slices.ContainsFunc(r.Reads, func(x Read) bool { return x.PersonID == id }) {
+			r.Links = slices.DeleteFunc(r.Links, func(x int64) bool { return x == id })
+		}
+	}
+	return nil
 }
 
 // ReadLink fills in someone Tim added from a link with what their profile

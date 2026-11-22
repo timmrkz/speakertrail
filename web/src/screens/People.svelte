@@ -66,7 +66,8 @@
   const fetchPeople = (params: { q: string; sort: PeopleSort; filter: PeopleFilter }) => async () => {
     const r = await api.people(params)
     counts = r.counts
-    links = r.links
+    // An answer to a search since changed says nothing of this one.
+    if (params.q === query) links = r.links
     return r.people
   }
 
@@ -89,6 +90,12 @@
     const t = Date.now()
     if (runWatch.run && t - lastLive < (untrack(() => reading) ? 1500 : 4000)) return
     lastLive = t
+    untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
+  })
+
+  // What adding changed, or Undo took back, shows at once.
+  $effect(() => {
+    if (!runWatch.changed) return
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 
@@ -154,12 +161,7 @@
   // greyed out for a link that leads to nobody. Enter does the same.
   let going = $derived(runWatch.run)
   let linked = $derived(links && query === q ? links : null)
-  let mode = $derived.by((): 'run' | 'add' | 'open' | 'none' => {
-    if (!linked) return 'run'
-    if (linked.new > 0) return 'add'
-    if (linked.here.length === 1 && !linked.other) return 'open'
-    return 'none'
-  })
+  let mode = $derived<'run' | 'add' | 'open' | 'none'>(linked ? linked.act : 'run')
   let runLabel = $derived(
     runWatch.busy === 'adding' ? 'Adding' : mode === 'add' ? (linked!.new > 1 ? `Add ${linked!.new}` : 'Add') : mode === 'open' ? 'Open' : mode === 'none' ? 'Add'
       : runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop' : 'Run',
@@ -175,17 +177,27 @@
     if (mode === 'add' || mode === 'open') void runWatch.add(q)
     else if (mode === 'run') void (going ? runWatch.stop() : runWatch.start())
   }
-  // Enter in the search adds what it holds when that is a link, whether
-  // or not the app has said yet what the link leads to.
+  // Enter in the search does what the button says, once the app has said
+  // what the search holds. Words are only a search.
+  let entered = $state<string | null>(null)
   function enter(v: string) {
-    if (/https?:\/\/|www\.|linkedin\./i.test(v)) void runWatch.add(v)
+    entered = v
   }
+  $effect(() => {
+    if (entered === null || people.loading || query !== entered) return
+    const v = entered
+    untrack(() => {
+      entered = null
+      if (links && (links.act === 'add' || links.act === 'open')) void runWatch.add(v)
+    })
+  })
 
-  // Links pasted anywhere on People, not into a field, go into the search.
+  // What is pasted on People, not into a field, goes into the search,
+  // links above all.
   function paste(e: ClipboardEvent) {
     if (typing()) return
     const text = e.clipboardData?.getData('text/plain')?.trim() ?? ''
-    if (!/https?:\/\/|www\.|linkedin\./i.test(text)) return
+    if (!text) return
     e.preventDefault()
     q = text
     query = text

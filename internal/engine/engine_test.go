@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -34,6 +35,9 @@ type finder struct {
 	// is not in the index.
 	read  map[string]search.Profile
 	links []string
+	// readHold, when set, holds Profile in place of hold, so a read and a
+	// search can be let go one apart from the other.
+	readHold chan struct{}
 }
 
 func (f *finder) Profile(ctx context.Context, link string) (search.Profile, error) {
@@ -44,9 +48,13 @@ func (f *finder) Profile(ctx context.Context, link string) (search.Profile, erro
 	if f.started != nil {
 		f.started <- link
 	}
-	if f.hold != nil {
+	hold := f.hold
+	if f.readHold != nil {
+		hold = f.readHold
+	}
+	if hold != nil {
 		select {
-		case <-f.hold:
+		case <-hold:
 		case <-ctx.Done():
 			return search.Profile{}, ctx.Err()
 		}
@@ -729,6 +737,18 @@ func TestAddStartStopAndReadingFromSeveralGoroutines(t *testing.T) {
 				t.Errorf("Add: %v", err)
 			}
 		})
+		// A link added and taken out again by Undo, meanwhile.
+		wg.Go(func() {
+			out, err := e.Add(fmt.Sprintf("https://www.linkedin.com/in/undone-%d", i))
+			if err != nil {
+				t.Errorf("Add: %v", err)
+			}
+			for _, id := range out.New {
+				if err := e.Remove(id); err != nil {
+					t.Errorf("Remove: %v", err)
+				}
+			}
+		})
 		wg.Go(func() {
 			if id, _, err := e.Start("manual", 0); err == nil && i%3 == 0 {
 				e.Stop(id)
@@ -752,6 +772,127 @@ func TestAddStartStopAndReadingFromSeveralGoroutines(t *testing.T) {
 		}
 		if len(seen) != 5 {
 			t.Errorf("%d people added from links, want 5: Ida and four probes", len(seen))
+		}
+	})
+}
+
+// The same link dropped again and again while its profile is taken up
+// is read once: each read is a search of the month's budget.
+func TestALinkAddedFromSeveralGoroutinesIsReadOnce(t *testing.T) {
+	for range 20 {
+		f := &finder{read: map[string]search.Profile{ida.URL: ida}}
+		e, st := newEngine(t, f)
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				for range 10 {
+					if _, err := e.Add(ida.URL); err != nil {
+						t.Error(err)
+					}
+				}
+			})
+		}
+		wg.Wait()
+		e.Wait()
+		f.mu.Lock()
+		reads := len(f.links)
+		f.mu.Unlock()
+		if reads != 1 {
+			t.Fatalf("the profile was read %d times", reads)
+		}
+		st.Read(func(d *store.Data) {
+			if n := d.Used(Provider, t0); n != 1 {
+				t.Errorf("%d searches of the budget used, want 1", n)
+			}
+		})
+	}
+}
+
+// A profile whose read failed in a run is read again by the next run,
+// not by the same one when its link is added again, so the run never
+// counts more profiles done than it has.
+func TestALinkAddedAgainAfterAFailedReadWaitsForTheNextRun(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}, err: errors.New("Exa answered 503")}
+	e, st := newEngine(t, f)
+	_ = st.Update(func(d *store.Data) error {
+		_, err := d.AddSearch("Yogalehrerin Bonn", 0, t0)
+		return err
+	})
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	// One search lets go of its worker, which takes the profile next.
+	f.hold <- struct{}{}
+	for got := <-f.started; got != ida.URL; got = <-f.started {
+	}
+	// The read fails while the search still runs.
+	f.readHold <- struct{}{}
+	for {
+		var failed bool
+		st.Read(func(d *store.Data) { failed = len(d.Run(id).Reads) == 1 })
+		if failed {
+			break
+		}
+		runtime.Gosched()
+	}
+	// Added again, nobody is read by this run, so no run reads for it.
+	out, err := e.Add(ida.URL)
+	if err != nil || out.Run != 0 || len(out.Here) != 1 {
+		t.Fatalf("Add again = %+v, %v", out, err)
+	}
+	close(f.readHold)
+	close(f.hold)
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		r := d.Run(id)
+		if len(r.Reads) != 1 || len(r.Links) != 1 {
+			t.Errorf("the run read %d profiles of %d", len(r.Reads), len(r.Links))
+		}
+		if p := d.People[len(d.People)-1]; !p.ToRead {
+			t.Errorf("%s is not left for the next run", p.Name)
+		}
+	})
+}
+
+// Undo takes someone added out of the queue of the going run, so their
+// profile is never read, and out of the run's count.
+func TestRemoveTakesSomeoneAddedOutOfTheRun(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	out, err := e.Add(ida.URL + " linkedin.com/in/neu-hier-3")
+	if err != nil || len(out.New) != 2 {
+		t.Fatalf("Add = %+v, %v", out, err)
+	}
+	if err := e.Remove(out.New[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.Remove(out.New[1]); !errors.Is(err, store.ErrNoPerson) {
+		t.Errorf("taken out twice: %v", err)
+	}
+	close(f.hold)
+	e.Wait()
+	f.mu.Lock()
+	links := slices.Clone(f.links)
+	f.mu.Unlock()
+	if len(links) != 1 || links[0] != ida.URL {
+		t.Errorf("read %v, want only Ida's profile", links)
+	}
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); len(r.Links) != 1 || len(r.Reads) != 1 {
+			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
+		}
+		if d.Person(out.New[1]) != nil {
+			t.Error("the person taken out is still there")
 		}
 	})
 }

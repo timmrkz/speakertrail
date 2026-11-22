@@ -407,6 +407,9 @@ function profileLinks(text: string): { profiles: string[]; other: number } {
 const READ_MS = 4000
 const SIDE_BY_SIDE = 4
 
+// What adding links does, like actOf in the app.
+const actOf = (isNew: number, here: number, other: number) => (isNew > 0 ? 'add' : here === 1 && !other ? 'open' : 'none') as 'add' | 'open' | 'none'
+
 const linkOf = (p: PersonRow) => p.profiles.find((x) => x.platform === 'linkedin')?.url
 
 const MOCK_ACTIVITY: { state: Activity; since: string | null; note: string }[] = [
@@ -657,7 +660,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       const here = s.people.filter((p) => found.profiles.includes(linkOf(p) ?? ''))
       return ok({
         people: here.map((p) => personList(s, p)), counts,
-        links: { new: found.profiles.length - here.length, here: here.map((p) => p.id), other: found.other },
+        links: { new: found.profiles.length - here.length, here: here.map((p) => p.id), other: found.other, act: actOf(found.profiles.length - here.length, here.length, found.other) },
       })
     }
     return ok({ people: list, counts, links: null })
@@ -668,9 +671,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     const at = new Date().toISOString()
     const added: number[] = []
     const here: number[] = []
+    const connected: number[] = []
     for (const link of found.profiles) {
       const p = s.people.find((x) => linkOf(x) === link)
       if (p) {
+        if (!p.connected) connected.push(p.id)
         p.connected = true
         here.push(p.id)
         continue
@@ -690,7 +695,21 @@ const ROUTES: [string, RegExp, Handler][] = [
       run.progress!.reads_expected = run.progress!.reads
       reads.queue.push(...added.map((id) => ({ id, run: run!.id })))
     }
-    return ok({ run: run?.id ?? 0, new: added, here, other: found.other })
+    const open = actOf(added.length, here.length, found.other) === 'open' ? here[0] : undefined
+    return ok({ run: run?.id ?? 0, new: added, here, connected, other: found.other, open })
+  }],
+  ['DELETE', /^\/api\/people\/(\d+)$/, (s, m) => {
+    const p = s.people.find((x) => x.id === Number(m[1]))
+    if (!p) return err(404, 'Not found')
+    if (p.read === undefined) return err(409, 'Only someone added from a link can be taken out again')
+    s.people = s.people.filter((x) => x !== p)
+    // Like the app: out of the run that had not read it yet.
+    for (const q of reads.queue.filter((x) => x.id === p.id)) {
+      const run = s.runs.find((r) => r.id === q.run)
+      if (run?.progress) run.progress.reads = run.progress.reads_expected = run.progress.reads - 1
+    }
+    reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    return { status: 204 }
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))

@@ -4,7 +4,7 @@
 
 import { api, type Added, type Run } from './api'
 import { fmtElapsed, fmtLeft, plural, runBrought } from './format'
-import { navigate } from './router.svelte'
+import { navigate, router } from './router.svelte'
 import { errorText, fault, toast } from './toast.svelte'
 
 const GOING_MS = 2000
@@ -100,10 +100,19 @@ class RunWatch {
   // Adds the people behind the links in a text, from the search on
   // People or dropped on the window. Their profiles are read by the run
   // going, or by a run of their own that shows at once. People then
-  // shows them under New, or opens the one person a link leads to who
-  // was here already.
-  async add(text: string): Promise<Added | null> {
-    if (this.busy) return null
+  // shows them under New, or opens the one person the links lead to who
+  // was here already. Links dropped while others are added wait their
+  // turn rather than go lost. A toast says what was added, with Undo.
+  add(text: string): Promise<Added | null> {
+    const next = this.adding.then(() => this.addNow(text))
+    this.adding = next.catch(() => null)
+    return next
+  }
+  private adding: Promise<unknown> = Promise.resolve()
+  // Counts every change adding made or took back, so People reads again.
+  changed = $state(0)
+
+  private async addNow(text: string): Promise<Added | null> {
     this.busy = 'adding'
     const was = this.run
     if (!was) {
@@ -112,13 +121,16 @@ class RunWatch {
     }
     try {
       const r = await api.addPeople(text)
-      if (r.wait) toast.show(`Added. ${r.wait}`, 'bad')
-      if (!r.new.length && r.here.length === 1) {
-        navigate(`/app/people/${r.here[0]}`)
-      } else {
+      if (r.open) navigate(`/app/people/${r.open}`)
+      else {
         this.added = r
         navigate('/app/people')
       }
+      this.changed++
+      const said = r.new.length ? `Added ${plural(r.new.length, 'person', 'people')}` : r.connected.length ? `Marked ${plural(r.connected.length, 'person', 'people')} connected` : ''
+      const undo = said ? { label: 'Undo', run: () => void this.undo(r) } : null
+      if (r.wait) toast.show(`${said || 'Added'}. ${r.wait}`, 'bad', undo)
+      else if (said) toast.show(said, 'plain', undo)
       return r
     } catch (e) {
       if (!was) this.run = null
@@ -127,6 +139,21 @@ class RunWatch {
     } finally {
       this.busy = ''
       this.seq++
+      void this.poll()
+    }
+  }
+
+  // Takes back what adding did: whom it brought in goes again, and whom
+  // it marked connected is open again.
+  private async undo(r: Added) {
+    try {
+      await Promise.all([...r.new.map((id) => api.removePerson(id)), ...r.connected.map((id) => api.patchPerson(id, { connected: false }))])
+      const open = router.match('/app/people/:id')
+      if (open && r.new.includes(Number(open.id))) navigate('/app/people', { replace: true })
+    } catch (e) {
+      fault(e)
+    } finally {
+      this.changed++
       void this.poll()
     }
   }

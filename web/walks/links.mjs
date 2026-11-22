@@ -108,6 +108,31 @@ await walk('Enter adds the people, shows them under New on top, fills each row w
   expect(`New counted "${settled}" once the run was done`, /^\d+$/.test(settled))
 })
 
+await walk('Enter on a greyed Add adds nobody and marks nobody connected', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/example-1002 https://www.linkedin.com/in/example-1003')
+  await page.waitForFunction(() => document.querySelector('main button.start')?.textContent.trim() === 'Add')
+  expect('Add is not greyed out for people here already', await start(page).isDisabled())
+  const posts = []
+  page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/people') && posts.push(r.url()))
+  await search(page).press('Enter')
+  // Whatever Enter sent has gone by the time the search's next answer is in.
+  await search(page).fill('Probe')
+  await page.waitForFunction(() => document.querySelector('main button.start')?.textContent.trim() === 'Run')
+  expect(`Enter sent ${posts.length} adds`, posts.length === 0)
+  expect(`the filter moved to ${await pressed(page).textContent()}`, (await pressed(page).textContent()).startsWith('All'))
+})
+
+await walk('Undo takes whom adding brought in out again', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/olaf-probe-78')
+  await search(page).press('Enter')
+  await page.locator('main .prow b', { hasText: 'olaf-probe-78' }).waitFor()
+  await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  await page.locator('main .prow b', { hasText: 'olaf-probe-78' }).waitFor({ state: 'detached' })
+  await done(page)
+})
+
 await walk('Links pasted on People, not into a field, go into the search', async (browser) => {
   const page = await people(browser)
   await page.evaluate(() => {

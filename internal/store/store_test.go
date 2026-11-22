@@ -339,13 +339,18 @@ func TestListPeople(t *testing.T) {
 func TestAddLink(t *testing.T) {
 	d := &Data{}
 	d.fill()
-	p, isNew := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 5, t0)
+	p, isNew, _ := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 5, t0)
 	if !isNew || p.Name != "ida-probe-7f" || !p.Connected || !p.ToRead || p.Evidence != AddedByHand || p.FirstRunID != 5 {
 		t.Fatalf("added %+v", p)
 	}
-	again, isNew := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 6, t0.Add(time.Hour))
-	if isNew || again != p || len(d.People) != 1 {
-		t.Fatalf("the same link added %+v again, new %v", again, isNew)
+	again, isNew, connected := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 6, t0.Add(time.Hour))
+	if isNew || connected || again != p || len(d.People) != 1 {
+		t.Fatalf("the same link added %+v again, new %v, connected now %v", again, isNew, connected)
+	}
+	// A profile Exa did not have is asked for again when added again.
+	p.ToRead, p.ReadError = false, "Not in Exa's index yet"
+	if d.AddLink(p.LinkedIn.URL, "ida-probe-7f", 6, t0.Add(time.Hour)); !p.ToRead {
+		t.Error("a profile not in the index is not read again when added again")
 	}
 	d.ReadLink(p, Found{Name: "Ida Probe", Headline: "Inhaberin, Probe Studio", City: "Essen", Text: "Ida Probe\nInhaberin"}, t0.Add(time.Minute))
 	if p.Name != "Ida Probe" || p.Headline != "Inhaberin, Probe Studio" || p.City != "Essen" || p.ToRead || p.LinkedIn.Text == "" {
@@ -353,8 +358,8 @@ func TestAddLink(t *testing.T) {
 	}
 	s, _ := d.AddSearch("Gründer Köln", 0, t0)
 	found, _ := d.AddFound(Found{URL: "https://www.linkedin.com/in/jo-muster", Name: "Jo Muster"}, s, 1, t0)
-	if p, isNew := d.AddLink(found.LinkedIn.URL, "jo-muster", 7, t0.Add(time.Hour)); isNew || p != found || !p.Connected || p.ToRead || p.Name != "Jo Muster" {
-		t.Errorf("someone a search found, added from a link: %+v, new %v", p, isNew)
+	if p, isNew, connected := d.AddLink(found.LinkedIn.URL, "jo-muster", 7, t0.Add(time.Hour)); isNew || !connected || p != found || !p.Connected || p.ToRead || p.Name != "Jo Muster" {
+		t.Errorf("someone a search found, added from a link: %+v, new %v, connected now %v", p, isNew, connected)
 	}
 }
 

@@ -1,9 +1,14 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
+
+	"github.com/timmrkz/speakertrail/internal/store"
 )
 
 type linksPeople struct {
@@ -20,7 +25,7 @@ func TestAddPeopleFromLinks(t *testing.T) {
 
 	var before linksPeople
 	call(t, a, "GET", "/api/people?q="+url.QueryEscape(text), "", &before)
-	if before.Links == nil || before.Links.New != 2 || len(before.Links.Here) != 0 || before.Links.Other != 1 || len(before.People) != 0 {
+	if before.Links == nil || before.Links.New != 2 || len(before.Links.Here) != 0 || before.Links.Other != 1 || before.Links.Act != "add" || len(before.People) != 0 {
 		t.Fatalf("before = %+v", before)
 	}
 
@@ -37,8 +42,18 @@ func TestAddPeopleFromLinks(t *testing.T) {
 
 	var after linksPeople
 	call(t, a, "GET", "/api/people?q="+url.QueryEscape(text)+"&filter=all", "", &after)
-	if after.Links == nil || after.Links.New != 0 || len(after.Links.Here) != 2 || len(after.People) != 2 {
+	if after.Links == nil || after.Links.New != 0 || len(after.Links.Here) != 2 || after.Links.Act != "none" || len(after.People) != 2 {
 		t.Fatalf("after = %+v", after)
+	}
+	// One link of someone here opens them.
+	var one linksPeople
+	call(t, a, "GET", "/api/people?q="+url.QueryEscape("https://www.linkedin.com/in/ida-probe"), "", &one)
+	if one.Links == nil || one.Links.Act != "open" || len(one.People) != 1 {
+		t.Fatalf("one here = %+v", one)
+	}
+	var opened struct{ Open int64 }
+	if code := call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/ida-probe"}`, &opened); code != http.StatusOK || opened.Open != one.People[0].ID {
+		t.Fatalf("add one here: %d %+v", code, opened)
 	}
 	var newOnes linksPeople
 	call(t, a, "GET", "/api/people?filter=new", "", &newOnes)
@@ -91,5 +106,74 @@ func TestAddPeopleWithoutAKey(t *testing.T) {
 	call(t, a, "GET", "/api/people?filter=connected", "", &people)
 	if len(people.People) != 1 || people.People[0].Read != "next" || people.People[0].Name != "ida-probe" {
 		t.Errorf("people = %+v", people)
+	}
+}
+
+// People reads the list again every second or two while a run goes, and
+// links are added meanwhile, by Enter or a drop. The two never wait on
+// each other for good: the list asks the engine before it reads the
+// store, and adding takes them the other way round.
+func TestPeopleListedWhileLinksAreAddedFromSeveralGoroutines(t *testing.T) {
+	a, _, e := newAPI(t)
+	var wg sync.WaitGroup
+	for i := range 4 {
+		wg.Go(func() {
+			for j := range 20 {
+				link := fmt.Sprintf("https://www.linkedin.com/in/probe-%d-%d", i, j)
+				if code := call(t, a, "POST", "/api/people", `{"text":"`+link+`"}`, nil); code != http.StatusOK {
+					t.Errorf("add %s: %d", link, code)
+				}
+			}
+		})
+		wg.Go(func() {
+			for range 40 {
+				call(t, a, "GET", "/api/people?filter=new", "", nil)
+				call(t, a, "GET", "/api/people/1", "", nil)
+				call(t, a, "GET", "/api/runs/current", "", nil)
+			}
+		})
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		e.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("listing and adding wait on each other")
+	}
+	var list linksPeople
+	call(t, a, "GET", "/api/people?filter=new", "", &list)
+	if list.Counts["new"] != 80 {
+		t.Errorf("%d people are new, want the 80 added", list.Counts["new"])
+	}
+}
+
+// Undo takes out again whom adding brought in, and nobody else.
+func TestUndoAddingPeople(t *testing.T) {
+	a, st, e := newAPI(t)
+	var added struct{ New []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/neu-hier-3"}`, &added)
+	e.Wait()
+	if len(added.New) != 1 {
+		t.Fatalf("added %+v", added)
+	}
+	if code := call(t, a, "DELETE", fmt.Sprintf("/api/people/%d", added.New[0]), "", nil); code != http.StatusNoContent {
+		t.Fatalf("undo: %d", code)
+	}
+	if code := call(t, a, "GET", fmt.Sprintf("/api/people/%d", added.New[0]), "", nil); code != http.StatusNotFound {
+		t.Errorf("the person taken out is still there: %d", code)
+	}
+	var found int64
+	_ = st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Gründerin Köln", 0, t0)
+		p, _ := d.AddFound(store.Found{URL: "https://www.linkedin.com/in/jo-muster", Name: "Jo Muster"}, s, 1, t0)
+		found = p.ID
+		return nil
+	})
+	if code := call(t, a, "DELETE", fmt.Sprintf("/api/people/%d", found), "", nil); code != http.StatusConflict {
+		t.Errorf("someone a search found was taken out: %d", code)
 	}
 }

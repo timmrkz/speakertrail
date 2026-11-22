@@ -33,11 +33,13 @@ When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:
 `new` profiles nobody here has, `here` the ids of the people the links
 lead to, and `other` links that are no person's profile, like a company
-page. `people` are those here, under any filter. Without links, `links`
-is null.
+page. `act` is what Run turns into: `add` while any profile is new,
+`open` for one link of someone here and nothing else, and `none` when
+the links add nobody. `people` are those here, under any filter. Without
+links, `links` is null.
 
 ```json
-{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1 } }
+{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" } }
 ```
 
 People whom one of Tim's exclusions leaves out are not in the list or the
@@ -82,10 +84,21 @@ in the link, and has a run read their profiles: the run going, or a run
 of its own that reads only those and asks no search. Words and other
 links in the text are passed over. Someone here already is only marked
 connected. It answers `{"run": 12, "new": [31, 32], "here": [7],
-"other": 1}`. Without the Exa key or budget the people are added all the
-same, `run` is 0, and `wait` says why their profiles wait for the next
-run. 400 when the text holds no profile link. Each read is one call to
-Exa's index, never LinkedIn, counted against the month's budget.
+"connected": [7], "other": 1}`: `connected` are those here whom it marked
+connected, and `open` is the one person here when the links lead to that
+person alone. `run` is 0 when there is no profile to read: without the
+Exa key or budget the people are added all the same, and `wait` says why
+their profiles wait for the next run. A profile the going run read
+already, or failed to, waits for the next run too, so no run reads one
+twice. Someone whose profile Exa did not have, or could not give, is
+asked for again when added again. 400 when the text holds no profile
+link. Each read is one call to Exa's index, never LinkedIn, counted
+against the month's budget.
+
+`DELETE /api/people/{id}` takes out again someone added from a link, for
+Undo, and answers 204. A run that had not read their profile leaves it,
+one that read it keeps the read. 409 for someone a search found, 404 for
+an id nobody has.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
 `sightings`: each search that found the person, newest first. `draft` is
@@ -157,6 +170,8 @@ gives one, with its `checks` and its `failures`.
 A run's `state` is `going`, `finished`, `stopped`, or `interrupted` when
 the app was closed while it went. A run started by adding links has the `kind`
 `add`. Stopped, the profiles it did not read wait for the next run.
+`reads_failed` counts the profiles Exa could not give in it. One not in
+Exa's index yet is no failure, its person says so.
 
 ## Settings and the key
 

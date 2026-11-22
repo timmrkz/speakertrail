@@ -54,6 +54,7 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("POST /api/people", a.addPeople)
 	m.HandleFunc("GET /api/people/{id}", a.person)
 	m.HandleFunc("PATCH /api/people/{id}", a.patchPerson)
+	m.HandleFunc("DELETE /api/people/{id}", a.removePerson)
 	m.HandleFunc("PATCH /api/profiles/{id}", a.patchProfile)
 	m.HandleFunc("GET /api/sources", a.searches)
 	m.HandleFunc("POST /api/sources", a.addSearch)

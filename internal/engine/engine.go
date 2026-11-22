@@ -274,6 +274,11 @@ func (e *Engine) work(g *going) {
 		}
 		j := g.queue[0]
 		g.queue = g.queue[1:]
+		// A profile taken is being read from now on, so links added
+		// meanwhile never queue it a second time, see Add.
+		if j.person != 0 {
+			g.reading[j.person] = e.Store.Now()
+		}
 		e.mu.Unlock()
 		if j.person != 0 {
 			e.read(g.ctx, g, j.person)
@@ -287,10 +292,13 @@ func (e *Engine) work(g *going) {
 // here already, how many other links there were, and the run that reads
 // the new profiles.
 type Added struct {
-	Run   int64   `json:"run"`
-	New   []int64 `json:"new"`
-	Here  []int64 `json:"here"`
-	Other int     `json:"other"`
+	Run  int64   `json:"run"`
+	New  []int64 `json:"new"`
+	Here []int64 `json:"here"`
+	// Connected are those here already whom adding marked connected, so
+	// Undo can take that back.
+	Connected []int64 `json:"connected"`
+	Other     int     `json:"other"`
 }
 
 // Add adds the people behind the LinkedIn profile links in a text, as
@@ -300,7 +308,7 @@ type Added struct {
 // the next run reads them.
 func (e *Engine) Add(text string) (Added, error) {
 	profiles, other := Links(text)
-	out := Added{New: []int64{}, Here: []int64{}, Other: other}
+	out := Added{New: []int64{}, Here: []int64{}, Connected: []int64{}, Other: other}
 	if len(profiles) == 0 {
 		return out, ErrNoLinks
 	}
@@ -343,14 +351,26 @@ func (e *Engine) Add(text string) (Added, error) {
 		case startErr == nil:
 			runID = d.NewID()
 		}
+		// Whose profile the going run read already waits for the next,
+		// so no profile is read twice in one run.
+		var readNow []store.Read
+		if g != nil {
+			if r := d.Run(g.id); r != nil {
+				readNow = r.Reads
+			}
+		}
 		for _, link := range profiles {
-			p, isNew := d.AddLink(link, handleOf(link), runID, now)
-			if isNew {
+			p, isNew, connected := d.AddLink(link, handleOf(link), runID, now)
+			switch {
+			case isNew:
 				out.New = append(out.New, p.ID)
-			} else {
+			case connected:
+				out.Here, out.Connected = append(out.Here, p.ID), append(out.Connected, p.ID)
+			default:
 				out.Here = append(out.Here, p.ID)
 			}
-			if p.ToRead && !slices.Contains(read, p.ID) {
+			done := slices.ContainsFunc(readNow, func(r store.Read) bool { return r.PersonID == p.ID })
+			if p.ToRead && !done && !slices.Contains(read, p.ID) {
 				read = append(read, p.ID)
 			}
 		}
@@ -390,6 +410,21 @@ func (e *Engine) Add(text string) (Added, error) {
 		g.log.Info("links joined a run", "run", g.id, "new", len(out.New), "here", len(out.Here))
 	}
 	return out, startErr
+}
+
+// Remove takes out again someone Tim added from a link, for Undo: out
+// of the queue of the going run, and out of the app. A read in hand
+// finishes and finds nobody to keep it for.
+func (e *Engine) Remove(id int64) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.Store.Update(func(d *store.Data) error { return d.RemoveAdded(id) }); err != nil {
+		return err
+	}
+	if g := e.going; g != nil {
+		g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person == id })
+	}
+	return nil
 }
 
 // Stop ends the going run. What it did not get to waits for the next
@@ -575,6 +610,11 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 // waits for the next run. A profile Exa's index does not hold yet is not
 // read again by itself.
 func (e *Engine) read(ctx context.Context, g *going, id int64) {
+	defer func() {
+		e.mu.Lock()
+		delete(g.reading, id)
+		e.mu.Unlock()
+	}()
 	if ctx.Err() != nil {
 		return
 	}
@@ -603,11 +643,6 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 	e.mu.Lock()
 	g.reading[id] = start
 	e.mu.Unlock()
-	defer func() {
-		e.mu.Lock()
-		delete(g.reading, id)
-		e.mu.Unlock()
-	}()
 
 	var prof search.Profile
 	finder, err := e.Finder()

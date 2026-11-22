@@ -480,6 +480,44 @@ const walks = [
       return wrong.filter(Boolean).join('\n\t')
     },
   },
+  {
+    // Tim, 22 November 2026, issue #77, in a recording: with 75 people
+    // the whole People page scrolled away and left an empty window. What
+    // is placed absolutely in a row, like its words for a screen reader,
+    // belonged to the window's main area, not to the list that scrolls,
+    // and stretched that area to the list's whole length.
+    name: 'With a long list, only the list and the person scroll, never the page round them',
+    async run(page) {
+      await page.route((u) => u.pathname === '/api/people', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue()
+        const r = await route.fetch()
+        const body = await r.json()
+        if (!body.people.length) return route.fulfill({ response: r, json: body })
+        const people = Array.from({ length: 75 }, (_, i) => ({ ...body.people[i % body.people.length], id: 5000 + i }))
+        return route.fulfill({ response: r, json: { ...body, people } })
+      })
+      const wrong = []
+      for (const [w, h] of [[1280, 900], [390, 844]]) {
+        await page.setViewportSize({ width: w, height: h })
+        for (const path of ['/app/people', '/app/people/1003']) {
+          await page.goto(`${url}${path}`)
+          await page.locator('#person-row-5074').waitFor({ state: 'attached' })
+          if (path.endsWith('1003')) await page.locator('.person .actions a.btn').first().waitFor()
+          const over = await page.evaluate(() => {
+            const out = []
+            for (const el of [document.scrollingElement, document.querySelector('main')]) {
+              if (el.scrollHeight > el.clientHeight) out.push(`${el.tagName.toLowerCase()} scrolls by ${el.scrollHeight - el.clientHeight} px`)
+            }
+            return out
+          })
+          if (over.length) wrong.push(`${path} at ${w} px: ${over.join(', ')}`)
+        }
+        const list = await page.evaluate(() => { const l = document.querySelector('.list-pane'); return l.scrollHeight > l.clientHeight })
+        if (!list) wrong.push(`at ${w} px the list of 75 people cannot be scrolled`)
+      }
+      return wrong.join('\n\t')
+    },
+  },
 ]
 
 const browser = await chromium.launch()

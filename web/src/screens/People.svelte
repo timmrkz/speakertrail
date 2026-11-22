@@ -414,6 +414,11 @@
      own that scrolls by itself, the way Mail is laid out. */
   .people { display: flex; height: 100%; min-width: 0; overflow: hidden; }
   .list-pane, .detail-pane { min-width: 0; height: 100%; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; }
+  /* A pane that scrolls holds what is placed absolutely in it, like a
+     row's words for a screen reader. Without a position of its own those
+     belong to the main area round it, which then grows as long as the
+     whole list and scrolls the page away, issue #77. */
+  .list-pane, .detail-body { position: relative; }
   .list-pane { flex: 1 1 0; }
   /* The person comes in from the right and takes its share of the width.
      Closed, it is not there at all. */

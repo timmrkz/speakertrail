@@ -5,7 +5,7 @@
 
 import type { Plugin } from 'vite'
 import type {
-  Activity, Appearance, DraftJob, FitPart, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
+  Activity, Appearance, DraftJob, FitLine, FitPart, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, RunProgress, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
   FirstMessageTemplate, TemplateField, TemplatePart,
 } from '../src/lib/api.ts'
@@ -243,6 +243,8 @@ const MOCK_RUBRIC: [RegExp, string, string, boolean][] = [
   [/researcher|data lead/i, 'large_company', 'Large company', false],
   [/student|in ausbildung/i, 'studies', 'Studies or in training', false],
   [/ beim /i, 'employed', 'Employed elsewhere', false],
+  [/social media|content creator|influencer/i, 'social_media', 'Social media work', false],
+  [/\bai\b|\bki\b/i, 'ai', 'Builds on AI', false],
 ]
 
 function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
@@ -288,7 +290,7 @@ function km(a: string, b: string): number | null {
 }
 
 // The fit's four parts, the way rubric.Fit gives them.
-const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed', 'studies', 'employed'])
+const WHO = new Set(['works_with_people', 'bootstrapped', 'runs_events', 'author', 'athlete', 'career_switch', 'funded', 'enterprise', 'backed', 'studies', 'employed', 'social_media', 'ai'])
 function fitParts(s: State, p: Person): FitPart[] {
   // Who they are 40, active lately 30, near you 20, younger 10, as in
   // internal/rubric/fit.go.
@@ -296,8 +298,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const counted = p.signals.filter((x) => WHO.has(x.key))
   const pro = counted.filter((x) => x.for).map((x) => x.label)
   const contra = counted.filter((x) => !x.for).map((x) => x.label)
-  let why = pro.join(', ')
-  if (contra.length) why = (why ? why + ', against ' : 'Against ') + contra.join(', ')
+  const why = [...pro, ...contra].join(', ')
   const who = { key: 'who', label: 'Who they are', points: Math.round(40 * Math.max(-1, Math.min(1, (pro.length - contra.length) / 3))), why: why || 'Nothing beyond running their own business' }
   const now = new Date()
   const born = p.linkedin?.born_about
@@ -322,7 +323,21 @@ function fitParts(s: State, p: Person): FitPart[] {
   // Who they are takes away no more than the rest gives, so the fit
   // stays 0 or more.
   who.points = Math.max(who.points, -(active.points + near.points + younger.points))
-  return [who, active, near, younger]
+  // The lines under each part, as internal/api fitParts gives them: the
+  // signals under Who they are, the why with a tick or a cross under
+  // the others, the way rubric.Fit marks it.
+  const mark = (pts: number, most: number, known: boolean): FitLine['mark'] =>
+    !known ? 'neither' : 2 * pts >= most ? 'for' : 4 * pts < most ? 'against' : 'neither'
+  const line = (m: FitLine['mark'], text: string): FitLine => ({ mark: m, text, passage: '', found_in: '' })
+  const whoLines = p.signals
+    .filter((x) => !['young', 'active_on_linkedin', 'quiet_on_linkedin'].includes(x.key))
+    .map((x): FitLine => ({ mark: x.for ? 'for' : 'against', text: x.label, passage: x.passage, found_in: x.found_in }))
+  return [
+    { ...who, lines: whoLines.length ? whoLines : [line('neither', who.why)] },
+    { ...active, lines: [line(mark(active.points, 30, true), active.why)] },
+    { ...near, lines: [line(mark(near.points, 20, !!home && d !== null), near.why)] },
+    { ...younger, lines: [line(mark(younger.points, 10, !!born), younger.why)] },
+  ]
 }
 
 function personList(s: State, p: PersonRow): Person {

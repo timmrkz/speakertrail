@@ -68,7 +68,7 @@ func TestDoubtsComeAfterOwners(t *testing.T) {
 		if fit >= owner-10 {
 			t.Errorf("%s: %d, an owner who shows nothing more %d", key, fit, owner)
 		}
-		if parts[0].Points >= 0 || parts[0].Why != "Against "+byKey[key].Label {
+		if parts[0].Points >= 0 || parts[0].Why != byKey[key].Label {
 			t.Errorf("%s: %+v", key, parts[0])
 		}
 	}
@@ -76,5 +76,55 @@ func TestDoubtsComeAfterOwners(t *testing.T) {
 	p := FitPerson{Signals: []Signal{{Key: "studies"}, {Key: "employed"}, {Key: "funded"}}, Now: now, LastActive: now.Add(-400 * 24 * time.Hour)}
 	if fit, parts := Fit(p); fit != 0 || FitPoints(p) != 0 {
 		t.Errorf("fit %d, points %d, %v", fit, FitPoints(p), parts)
+	}
+}
+
+// Tim, 22 November 2026, from a report: at the top stood a social media
+// manager, studying and employed full time, whose own company was named
+// after her. "I'm not interested in AI platforms and social media
+// managers or social media anything."
+func TestSocialMediaAndAI(t *testing.T) {
+	sigs := Signals(Person{Name: "Mara Kowal", Headline: "Studium an der Hochschule Beispielstadt",
+		CurrentRoles: "Social Media-Managerin, NetProbe GmbH · Content Creator, Unfallprobe · Content Creator / Social Media Manager, Mara Kowal"})
+	for key, passage := range map[string]string{
+		"studies":      "Studium an der Hochschule Beispielstadt",
+		"employed":     "Social Media-Managerin, NetProbe GmbH",
+		"social_media": "Social Media-Managerin, NetProbe GmbH",
+	} {
+		if s, ok := has(sigs, key); !ok || s.Passage != passage {
+			t.Errorf("%s: %v %q, want %q", key, ok, s.Passage, passage)
+		}
+	}
+	if ok, why := Guest(sigs); !ok {
+		t.Errorf("left out, %s", why)
+	}
+	now := day("2026-11-22")
+	fit, parts := Fit(FitPerson{Signals: sigs, BornAbout: 2000, AgeReason: "First job from 2022", LastActive: day("2026-11-03"),
+		Home: "Köln", City: "Düsseldorf", Km: 36, Near: true, Now: now})
+	if fit > 5 || parts[0].Why != "Studies or in training, Employed elsewhere, Social media work" {
+		t.Errorf("fit %d, %+v", fit, parts[0])
+	}
+
+	for headline, want := range map[string]bool{
+		"Founder of Probe AI":                      true,
+		"Gründerin | KI-Plattform für Praxen":      true,
+		"Co-Founder, Probe Labs (GenAI)":           true,
+		"Yogalehrerin in Mainz und Kaiserslautern": false,
+		"Inhaber, Probe Kampfsport":                false,
+	} {
+		if _, got := has(Signals(Person{Headline: headline}), "ai"); got != want {
+			t.Errorf("%q builds on AI: %v, want %v", headline, got, want)
+		}
+	}
+	for headline, want := range map[string]bool{
+		"Content Creatorin | Selbstständig":   true,
+		"Gründerin · Influencer Marketing":    true,
+		"Community Managerin bei Probe":       true,
+		"Inhaberin, Beispiel Yoga | Lehrerin": false,
+		"Medienpädagogin, eigene Praxis":      false,
+	} {
+		if _, got := has(Signals(Person{Headline: headline}), "social_media"); got != want {
+			t.Errorf("%q works in social media: %v, want %v", headline, got, want)
+		}
 	}
 }

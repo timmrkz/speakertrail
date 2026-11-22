@@ -19,7 +19,7 @@ import (
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 4
+const Version = 5
 
 // Where a passage comes from.
 const (
@@ -115,10 +115,20 @@ var Defs = []Def{
 	{Key: "studies", For: false, Label: "Studies or in training",
 		Means: "still studies, is in training or works as a student or intern, so does not yet live from what they run",
 		// A coach for students is not one.
-		pattern: words(`student(?:in)?|studierender|werkstudent(?:in)?|studiere|studying|im studium|in ausbildung|trainee|praktikant(?:in)?|internship`),
+		pattern: words(`student(?:in)?|studierender|werkstudent(?:in)?|studiere|studying|im studium|studium (?:an|bei|in)|in ausbildung|trainee|praktikant(?:in)?|internship`),
 		unless:  words(`(?:für|for|mit|with) (?:student|studierende)\w*`)},
 	{Key: "employed", For: false, Label: "Employed elsewhere",
 		Means: "holds a job at another organisation beside what they founded, so what they run does not pay the bills"},
+	// Tim, 22 November 2026: "I'm not interested in AI platforms and
+	// social media managers or social media anything." A creator whose
+	// content many people follow can still be worth talking to, so both
+	// only count against, and leave no one out.
+	{Key: "social_media", For: false, Label: "Social media work",
+		Means:   "manages social media, creates content or works as an influencer, for others or for themselves",
+		pattern: words(`social[- ]media\w*|content[- ]?creator(?:in)?|content[- ]creation|ugc|ugc[- ]creator(?:in)?|influencer\w*|community[- ]manager(?:in)?|tiktok\w*|instagram[- ]?(?:manager|marketing|coach)\w*`)},
+	{Key: "ai", For: false, Label: "Builds on AI",
+		Means:   "builds or sells AI, a platform or a service around it",
+		pattern: words(`ai|ki|künstliche[rn]? intelligenz|artificial intelligence|machine learning|gen ?ai|llms?|chatgpt`)},
 	{Key: "advisor", For: false, Label: "Consultant, agency or office",
 		Means:   "works as a consultant, in an agency, a law or tax office, in sales or recruiting, or in politics, rather than with people face to face",
 		pattern: words(`(?:unternehmens|management|strategie|it-?|steuer|finanz|vermögens|versicherungs|personal|immobilien|business-?|digital-?)berater(?:in)?|unternehmensberatung|consultant|consulting|beratungsunternehmen|agentur\w*|agency|kanzlei|rechtsanwält\w*|rechtsanwalt|anwält\w*|steuerberat\w*|wirtschaftsprüf\w*|recruit\w*|headhunt\w*|personalvermittl\w*|makler(?:in)?|vertrieb\w*|account executive|sales|politiker(?:in)?|landtag\w*|bundestag\w*|abgeordnete[rn]?|kandidat(?:in)?|bürgermeister(?:in)?|ratsmitglied|fraktion\w*`),

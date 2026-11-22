@@ -5,6 +5,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -74,6 +75,47 @@ type fitPartJSON struct {
 	Label  string `json:"label"`
 	Points int    `json:"points"`
 	Why    string `json:"why"`
+	// Lines are what the part shows under it, each with a tick or a
+	// cross: the signals of Who they are with their passages, or for the
+	// other parts their why.
+	Lines []fitLineJSON `json:"lines"`
+}
+
+// fitLineJSON is one line under a part of the fit. Mark is "for",
+// "against" or "neither".
+type fitLineJSON struct {
+	Mark    string `json:"mark"`
+	Text    string `json:"text"`
+	Passage string `json:"passage"`
+	FoundIn string `json:"found_in"`
+}
+
+// fitParts gives the parts of a fit with the lines under each, so the
+// person shows one list: every signal under the part it belongs to, see
+// rubric.PartOf. A signal under Active lately or Younger says what the
+// part's why says, so only Who they are shows its signals.
+func fitParts(parts []rubric.Part, signals []store.Signal) []fitPartJSON {
+	marks := map[int]string{1: "for", 0: "neither", -1: "against"}
+	out := make([]fitPartJSON, 0, len(parts))
+	for _, pt := range parts {
+		f := fitPartJSON{Key: pt.Key, Label: pt.Label, Points: pt.Points, Why: pt.Why, Lines: []fitLineJSON{}}
+		if pt.Key == "who" {
+			for _, s := range signals {
+				if rubric.PartOf(s.Key) == "who" {
+					m := "against"
+					if s.For {
+						m = "for"
+					}
+					f.Lines = append(f.Lines, fitLineJSON{Mark: m, Text: s.Label, Passage: s.Passage, FoundIn: s.FoundIn})
+				}
+			}
+		}
+		if len(f.Lines) == 0 {
+			f.Lines = append(f.Lines, fitLineJSON{Mark: marks[pt.Mark], Text: pt.Why})
+		}
+		out = append(out, f)
+	}
+	return out
 }
 
 // listPerson gives a person as the list shows them, with their fit.
@@ -108,10 +150,7 @@ func detailPerson(d *store.Data, p *store.Person, now time.Time) personDetail {
 	if p.LinkedIn.Text != "" {
 		out.ProfileReadAt = ptrTime(p.LinkedIn.TextAt)
 	}
-	out.FitParts = make([]fitPartJSON, 0, len(parts))
-	for _, pt := range parts {
-		out.FitParts = append(out.FitParts, fitPartJSON{Key: pt.Key, Label: pt.Label, Points: pt.Points, Why: pt.Why})
-	}
+	out.FitParts = fitParts(parts, p.Signals)
 	for _, s := range p.FoundBy {
 		name := "a search since removed"
 		if search := d.Search(s.SearchID); search != nil {

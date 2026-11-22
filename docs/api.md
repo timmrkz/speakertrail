@@ -68,6 +68,10 @@ shows them, each with its points and why, like
 The keys are `who`, `active`, `near` and `younger`, in that order. Only
 `who` can be below 0, by signals against, never by more than the others
 add up to.
+Each part has `lines`, what the person shows under it, each
+`{"mark": "for" | "against" | "neither", "text", "passage", "found_in"}`:
+under `who` the signals with their passages, under the others the part's
+why, marked by how much of the part it gave.
 
 `PATCH /api/people/{id}` with `{"connected": true}`, `{"connected": false}`,
 `{"notes": "..."}` or `{"draft": "..."}` answers the person as `GET`

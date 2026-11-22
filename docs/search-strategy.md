@@ -254,6 +254,9 @@ Signals against:
 - employed elsewhere: a job at another organisation beside what they
   founded, like "Digitale Projekte beim 1. FC Beispielstadt" next to
   "Founder of Probe AI"
+- social media work, like "Social Media-Managerin", "Content Creator" or
+  "Influencer"
+- building on AI, "AI" or "KI" as a word
 
 Scoring is kept simple and readable: a list of signals, each with its
 passage, for and against. There is no hidden number. Since 22 November
@@ -542,6 +545,10 @@ Built, in the order above:
    trainer at a gym, or hold a role beside the work, like a member or a
    speaker. Neither leaves anyone out, they only take points off the fit.
    When the rubric changes, the app scores everyone again as it starts.
+16. **Social media work** and **Builds on AI**, against, the same day.
+   Tim: "I'm not interested in AI platforms and social media managers or
+   social media anything." A creator many people follow can still be
+   worth talking to, so they only take points off the fit.
 
 Waiting:
 

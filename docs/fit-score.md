@@ -65,7 +65,9 @@ The rubric's signals, as today, without age and activity, which have
 parts of their own. Works with people, Built it from own means, Runs
 their own events, Author, Athlete and Switched careers towards people
 are for. Raised money, Sells to companies, Backed by a startup
-programme, Studies or in training and Employed elsewhere are against.
+programme, Studies or in training, Employed elsewhere, Social media
+work and Builds on AI are against. Why names them all, those against
+with a minus in front of the points and no word more.
 
 Each signal for is a third of the part, each against takes a third
 away, from minus all of it to all of it. Below none it takes points
@@ -82,7 +84,15 @@ beside "Founder of Probe AI", count against. A job counts only beside a
 company the person runs by name, and not when they work with people
 there or hold a role beside the work, like a member or a speaker. The
 two Tim rejected stood at 33 and 32, and fall to about 20, below an
-owner who shows nothing more.
+owner who shows nothing more. A company named after the person counts as
+theirs here too, so a job beside it counts.
+
+Tim, the same day, from a report: "I'm not interested in AI platforms
+and social media managers or social media anything." So **Social media
+work**, like "Social Media-Managerin", "Content Creator" or
+"Influencer", and **Builds on AI**, like "AI" or "KI" as a word, count
+against too. A creator whose content many people follow can still be
+worth talking to, so neither leaves anyone out.
 
 ### 2. Active lately
 
@@ -193,19 +203,29 @@ unlike anyone before still gets seen.
 ### How it reads on screen
 
 A row in People shows the fit as a small figure in tabular figures. The
-person shows the fit under Fit, above Why, with the points each part
-gave and why, for example:
+person shows it as one list under Fit, each part with its points, and
+under each part a tick, a cross or a dash for what it read, for example:
 
-- +21 Who they are: Works with people, Athlete
-- +22 Active lately: Wrote on 18 November 2026
-- +10 Near you: Bonn, about 24 km
-- +8 Younger: Bachelor from 2019, so about 26
+- +21 Who they are
+  - ✓ Works with people, "Personal Trainerin, Probe Gym"
+  - ✓ Athlete, "BJJ Schwarzgurt"
+  - ✓ Runs their own business, "Inhaberin, Probe Gym"
+- +22 Active lately
+  - ✓ Wrote on 18 November 2026
+- +10 Near you
+  - ✓ Bonn, about 24 km
+- +8 Younger
+  - ✓ Bachelor from 2019, so about 26
 - +14 Like your picks: "BJJ", 4 of 6 such people you connected with
 
-Why keeps the rubric's signals with the passages that show them, so an
-age or a date can show in both, once as points and once as the passage.
-
-Signals against keep their place as today.
+Who they are lists the rubric's signals with the passages that show
+them, for and against, `rubric.PartOf`, Runs their own business too,
+though it counts nothing. The other parts show their why. It has a tick
+for half the part or more, a cross for less than a quarter, and a dash
+between them or when it is not known, like an age not known. Until 22
+November 2026 the person showed Fit and Why as two lists, which said the
+same twice (Tim, that day: "let's take the best pieces of everything
+and put it together").
 
 ### Worked example
 

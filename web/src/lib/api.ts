@@ -220,6 +220,16 @@ export interface FitPart {
   label: string
   points: number
   why: string
+  // What the part shows under it, each line with a tick, a cross or
+  // neither: the signals of Who they are, or the why of the others.
+  lines: FitLine[]
+}
+
+export interface FitLine {
+  mark: 'for' | 'against' | 'neither'
+  text: string
+  passage: string
+  found_in: string
 }
 
 export interface PeopleQuery {

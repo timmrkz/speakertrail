@@ -110,11 +110,11 @@ func TestFitWhoTheyAre(t *testing.T) {
 		{[]string{"owner_operator", "young", "active_on_linkedin"}, 0, "Nothing beyond running their own business"},
 		{[]string{"works_with_people", "athlete"}, 27, "Works with people, Athlete"},
 		{[]string{"works_with_people", "athlete", "author", "runs_events"}, 40, "Works with people, Runs their own events, Author, Athlete"},
-		{[]string{"works_with_people", "funded"}, 0, "Works with people, against Raised money"},
-		// Against takes points away below none, but never more than the
+		{[]string{"works_with_people", "funded"}, 0, "Works with people, Raised money"},
+		// What counts against takes points away below none, but never more than the
 		// other parts give.
-		{[]string{"funded"}, -13, "Against Raised money"},
-		{[]string{"funded", "enterprise", "backed", "studies", "employed"}, -15, "Against Raised money, Sells to companies, Backed by a startup programme, Studies or in training, Employed elsewhere"},
+		{[]string{"funded"}, -13, "Raised money"},
+		{[]string{"funded", "enterprise", "backed", "studies", "employed"}, -15, "Raised money, Sells to companies, Backed by a startup programme, Studies or in training, Employed elsewhere"},
 	} {
 		var sigs []Signal
 		for _, d := range Defs {
@@ -218,5 +218,39 @@ func TestFitDoingComesBeforeYoung(t *testing.T) {
 	}
 	if got := strings.Join(order, " "); got != "who active near younger" {
 		t.Errorf("the parts come as %s", got)
+	}
+}
+
+// A part's why carries a tick for half the part or more, a cross for
+// less than a quarter, and neither when it is not known.
+func TestFitMarks(t *testing.T) {
+	now := day("2026-11-22")
+	for _, tc := range []struct {
+		name string
+		p    FitPerson
+		key  string
+		mark int
+	}{
+		{"active 5 days ago", FitPerson{LastActive: day("2026-11-17"), LastWrote: day("2026-11-17"), Wrote: true, Now: now}, "active", 1},
+		{"active in June", FitPerson{LastActive: day("2026-06-22"), Now: now}, "active", -1},
+		{"no activity", FitPerson{Now: now}, "active", -1},
+		{"near", FitPerson{Home: "Köln", City: "Düsseldorf", Km: 36, Near: true}, "near", 1},
+		{"far", FitPerson{Home: "Köln", City: "Bielefeld", Km: 160, Near: true}, "near", -1},
+		{"city not known", FitPerson{Home: "Köln"}, "near", 0},
+		{"where you are not set", FitPerson{City: "Bonn"}, "near", 0},
+		{"about 26", FitPerson{BornAbout: 2000, Now: now}, "younger", 1},
+		{"about 37", FitPerson{BornAbout: 1989, Now: now}, "younger", 0},
+		{"about 45", FitPerson{BornAbout: 1981, Now: now}, "younger", -1},
+		{"age not known", FitPerson{Now: now}, "younger", 0},
+	} {
+		_, parts := Fit(tc.p)
+		if got := part(t, parts, tc.key).Mark; got != tc.mark {
+			t.Errorf("%s: mark %d, want %d", tc.name, got, tc.mark)
+		}
+	}
+	for key, want := range map[string]string{"young": "younger", "active_on_linkedin": "active", "quiet_on_linkedin": "active", "owner_operator": "who", "studies": "who"} {
+		if got := PartOf(key); got != want {
+			t.Errorf("%s shows under %s, want %s", key, got, want)
+		}
 	}
 }

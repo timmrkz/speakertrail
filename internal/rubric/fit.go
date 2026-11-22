@@ -20,6 +20,38 @@ type Part struct {
 	Label  string
 	Points int
 	Why    string
+	// Mark says whether Why speaks for the person, 1, against, -1, or
+	// neither, 0, for the tick or the cross beside it. Who they are
+	// leaves it 0, its signals carry their own.
+	Mark int
+}
+
+// PartOf is the key of the part of the fit a signal shows under: Likely
+// under 30 under Younger, the activity on LinkedIn under Active lately,
+// and every other signal under Who they are, whether it counts there or
+// not, like Runs their own business.
+func PartOf(key string) string {
+	switch key {
+	case "young":
+		return "younger"
+	case "active_on_linkedin", "quiet_on_linkedin":
+		return "active"
+	}
+	return "who"
+}
+
+// mark is a tick for half of a part or more, a cross for less than a
+// quarter, and neither between them or when it is not known.
+func mark(pts, most int, known bool) int {
+	switch {
+	case !known:
+		return 0
+	case 2*pts >= most:
+		return 1
+	case 4*pts < most:
+		return -1
+	}
+	return 0
 }
 
 // What each part gives at most. Tim, 22 November 2026: "the most
@@ -74,7 +106,7 @@ type FitPerson struct {
 var who = map[string]bool{
 	"works_with_people": true, "bootstrapped": true, "runs_events": true, "author": true,
 	"athlete": true, "career_switch": true, "funded": true, "enterprise": true, "backed": true,
-	"studies": true, "employed": true,
+	"studies": true, "employed": true, "social_media": true, "ai": true,
 }
 
 // Fit is a person's fit and its parts, in the order Why shows them. The
@@ -131,15 +163,9 @@ func whoPart(p FitPerson, say bool) Part {
 	if !say {
 		return Part{Points: signed(WhoPoints, float64(n)/3)}
 	}
-	why := strings.Join(pro, ", ")
-	if len(contra) > 0 {
-		if why != "" {
-			why += ", against "
-		} else {
-			why = "Against "
-		}
-		why += strings.Join(contra, ", ")
-	}
+	// What counts against says so by its name, like Employed elsewhere,
+	// and by the points, so it needs no "Against" (Tim, 22 November 2026).
+	why := strings.Join(append(pro, contra...), ", ")
 	if why == "" {
 		why = "Nothing beyond running their own business"
 	}
@@ -155,6 +181,7 @@ func youngerPart(p FitPerson, say bool) Part {
 	age := p.Now.Year() - p.BornAbout
 	// Points whole first, so no fraction near a half rounds the wrong way.
 	part.Points = int(math.Round(math.Max(0, math.Min(YoungerPoints, float64(YoungerPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
+	part.Mark = mark(part.Points, YoungerPoints, true)
 	if !say {
 		return part
 	}
@@ -212,6 +239,7 @@ func activePart(p FitPerson, say bool) Part {
 			part.Why += ", wrote last on " + day(p.LastWrote)
 		}
 	}
+	part.Mark = mark(part.Points, ActivePoints, true)
 	return part
 }
 
@@ -232,6 +260,7 @@ func nearPart(p FitPerson, say bool) Part {
 			part.Why = fmt.Sprintf("%s, about %.0f km", p.City, p.Km)
 		}
 	}
+	part.Mark = mark(part.Points, NearPoints, p.Home != "" && p.Near)
 	return part
 }
 

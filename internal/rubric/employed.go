@@ -57,11 +57,12 @@ func employedElsewhere(headline string, roles []string, name string) (passage, w
 		all = append(all, h)
 	}
 
-	// Only beside a company known by name: "Inhaberin" over a role as
-	// "Fotografin, Lichtblick" is most likely the same business.
+	// Only beside a company known by name, one they run or one named
+	// after them: "Inhaberin" over a role as "Fotografin, Lichtblick" is
+	// most likely the same business.
 	var owned []string
 	for _, h := range all {
-		if h.org != "" && runsIt(h.title) {
+		if h.org != "" && (runsIt(h.title) || namedAfter(h.org, name)) {
 			owned = append(owned, h.org)
 		}
 	}

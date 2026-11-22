@@ -219,12 +219,12 @@ const walks = [
         if (fits.length < 3) return `only ${fits.length} rows show a fit`
         if (fits.some((f, i) => i && f > fits[i - 1])) return `the fits are not best first: ${fits.join(' ')}`
         await page.locator('.prow').first().click()
-        await page.locator('.fit li').first().waitFor()
+        await page.locator('.fit .part').first().waitFor()
         const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace(/\D/g, ''))))
         const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
         if (parts.length !== 4) return `${parts.length} parts, want 4`
         if (parts.reduce((a, b) => a + b, 0) !== head || head !== fits[0]) return `the parts ${parts.join(' + ')} are not the fit ${head}, the row says ${fits[0]}`
-        const near = await page.locator('.fit li').nth(2).innerText()
+        const near = await page.locator('.fit .part').nth(2).innerText()
         if (!/where you are|km/.test(near)) return `Near you says ${near}`
         return ''
       } finally {
@@ -236,12 +236,19 @@ const walks = [
     // Tim, 22 November 2026: people who founded something but work as an
     // employee elsewhere stood high. Who they are takes points away for
     // that, shown with a minus, and the parts still add up to the fit.
-    name: 'Someone employed elsewhere loses points under Who they are, shown with a minus',
+    name: 'Fit is one list: someone employed elsewhere loses points under Who they are, with a minus and a cross under it',
     async run(page) {
       await page.goto(`${url}/app/people/1009`)
-      await page.locator('.fit li').first().waitFor()
-      const who = await page.locator('.fit li').first().innerText()
+      await page.locator('.fit .part').first().waitFor()
+      const who = await page.locator('.fit .part').first().innerText()
       if (!/^−\d+/.test(who.trim()) || !who.includes('Employed elsewhere')) return `Who they are says ${who}`
+      // Tim, 22 November 2026: one list, not Fit and Why saying the same
+      // twice. The cross and the tick sit under the part they count in.
+      const against = await page.locator('.fit .part').first().locator('li.against').allInnerTexts()
+      if (!against.some((t) => t.includes('Employed elsewhere'))) return `the crosses under Who they are: ${against.join(' | ')}`
+      if (await page.locator('.fit .part').first().locator('li:not(.against):not(.neither)', { hasText: 'Runs their own business' }).count() !== 1) return 'Runs their own business has no tick under Who they are'
+      if (await page.locator('h3', { hasText: /^Why$/ }).count()) return 'Why is still a list of its own'
+      if (await page.locator('.fit .part').nth(1).locator('li').count() !== 1) return 'Active lately shows more than its why'
       const parts = await page.$$eval('.fit li .pts', (els) => els.map((e) => Number(e.textContent.replace('−', '-').replace('+', ''))))
       const head = Number((await page.locator('h3:has-text("Fit") .num').innerText()).trim())
       if (parts.reduce((a, b) => a + b, 0) !== head) return `the parts ${parts.join(' ')} are not the fit ${head}`

@@ -18,14 +18,27 @@ types.
 `GET /api/people?q=lea&sort=young&filter=all`
 
 `sort` is `young` (the default), `new`, `fit` or `name`. `filter` is `all`,
-`young`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
+`new`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
 Someone Tim connected with is only under `connected`, and someone whose
-profile he rejected only under `rejected`. `all` and `young` hold the
-people he has neither connected with nor rejected, so they shrink as he
+profile he rejected only under `rejected`. `all` holds the
+people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
-their profile is rejected.
+their profile is rejected. `new` holds whoever came in during the last 7
+days, found by a search or added from a link, connected or not, never
+someone whose profile he rejected, and always the newest first.
+
+When `q` holds links, like LinkedIn profile links pasted into the search,
+it is no search for words. `links` then says what adding them would do:
+`new` profiles nobody here has, `here` the ids of the people the links
+lead to, and `other` links that are no person's profile, like a company
+page. `people` are those here, under any filter. Without links, `links`
+is null.
+
+```json
+{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1 } }
+```
 
 People whom one of Tim's exclusions leaves out are not in the list or the
 counts, unless Tim connected with them, see [Exclusions](#exclusions).
@@ -52,6 +65,25 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 
 `connected` says whether Tim connected with the person on LinkedIn.
 `linkedin` is null once the profile is rejected.
+
+`read` says where the profile of someone added from a link stands:
+`reading` now, with `read_since` when it began and `read_ms` about how
+long a read takes, measured from the last reads and null until there is
+one, `waiting` its turn in the run, `next` for the next run, which reads
+it, `not_indexed` when Exa's index does not hold it yet, `failed` with
+`read_error` when the last read failed, or empty once read. A run reads
+the profiles before it asks its searches.
+
+`POST /api/people` with `{"text": "…"}` adds the people behind the
+LinkedIn profile links in the text, as connected and named by the handle
+in the link, and has a run read their profiles: the run going, or a run
+of its own that reads only those and asks no search. Words and other
+links in the text are passed over. Someone here already is only marked
+connected. It answers `{"run": 12, "new": [31, 32], "here": [7],
+"other": 1}`. Without the Exa key or budget the people are added all the
+same, `run` is 0, and `wait` says why their profiles wait for the next
+run. 400 when the text holds no profile link. Each read is one call to
+Exa's index, never LinkedIn, counted against the month's budget.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
 `sightings`: each search that found the person, newest first. `draft` is
@@ -90,16 +122,18 @@ own, and answers 202. While a run goes it gets 409.
 
 ## Runs
 
-`POST /api/runs` starts a run of the due searches and answers
+`POST /api/runs` starts a run of the due searches, and of the profiles
+of people added from links that a run before did not read, and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
 false and `run_id` is that run. Without an Exa key, with the key kept
 back by macOS because its password box was closed, with the month's
 budget spent, or with no search due it gets 409 and says which.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
-`progress`: how many searches it asks, how many are done, which ones are
-being asked now and since when, and `seconds_left`, measured from the last
-200 searches asked. `seconds_left` is null until there is something to
+`progress`: how many searches it asks, `checks` and `checks_done`, how
+many profiles it reads, `reads` and `reads_done`, which are being asked or
+read now and since when, and `seconds_left`, measured from the last 200
+searches asked and the last 200 profiles read. `seconds_left` is null until there is something to
 measure.
 
 `POST /api/runs/{id}/stop` stops a going run and answers 204, or 409 when
@@ -109,7 +143,8 @@ that run is not going.
 gives one, with its `checks` and its `failures`.
 
 A run's `state` is `going`, `finished`, `stopped`, or `interrupted` when
-the app was closed while it went.
+the app was closed while it went. A run started by adding links has the `kind`
+`add`. Stopped, the profiles it did not read wait for the next run.
 
 ## Settings and the key
 

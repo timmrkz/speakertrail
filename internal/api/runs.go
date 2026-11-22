@@ -16,8 +16,8 @@ type nowJSON struct {
 	Since time.Time `json:"since"`
 }
 
-// progressJSON says how far a going run is. A run only asks searches, so
-// it has no reads and no lookups.
+// progressJSON says how far a going run is: the searches it asks, the
+// profiles of people added from links it reads, and no lookups.
 type progressJSON struct {
 	Checks          int       `json:"checks"`
 	ChecksDone      int       `json:"checks_done"`
@@ -53,7 +53,7 @@ type runJSON struct {
 // recentChecks is how many of the last checks say how long one takes.
 const recentChecks = 200
 
-func runOf(d *store.Data, r *store.Run, going int64, now map[int64]time.Time) runJSON {
+func runOf(d *store.Data, r *store.Run, going int64, now, reading map[int64]time.Time) runJSON {
 	out := runJSON{ID: r.ID, Kind: r.Kind, StartedAt: r.StartedAt, FinishedAt: ptrTime(r.FinishedAt), State: "finished"}
 	switch {
 	case r.ID == going:
@@ -76,9 +76,14 @@ func runOf(d *store.Data, r *store.Run, going int64, now map[int64]time.Time) ru
 		if p.FirstRunID == r.ID && p.Score > 0 {
 			out.FitsNew++
 		}
+		// People added from links come in with the run that reads them.
+		if p.FirstRunID == r.ID && p.Evidence == store.AddedByHand {
+			out.PeopleNew++
+		}
 	}
 	if out.State == "going" {
-		pr := &progressJSON{Checks: len(r.Searches), ChecksDone: len(r.Checks), Now: []nowJSON{}}
+		pr := &progressJSON{Checks: len(r.Searches), ChecksDone: len(r.Checks), Reads: len(r.Links), ReadsDone: len(r.Reads), Now: []nowJSON{}}
+		pr.ReadsExpected = pr.Reads
 		for id, since := range now {
 			label := ""
 			if s := d.Search(id); s != nil {
@@ -86,18 +91,38 @@ func runOf(d *store.Data, r *store.Run, going int64, now map[int64]time.Time) ru
 			}
 			pr.Now = append(pr.Now, nowJSON{Kind: "check", Label: label, Since: since})
 		}
+		for id, since := range reading {
+			label := ""
+			if p := d.Person(id); p != nil {
+				label = p.Name
+			}
+			pr.Now = append(pr.Now, nowJSON{Kind: "read", Label: label, Since: since})
+		}
 		slices.SortFunc(pr.Now, func(a, b nowJSON) int { return a.Since.Compare(b.Since) })
-		// How long is left, from how long the last checks took, side by
-		// side. Nothing is said until there is something to measure.
-		var total, n int64
-		for i := len(d.Runs) - 1; i >= 0 && n < recentChecks; i-- {
-			for j := len(d.Runs[i].Checks) - 1; j >= 0 && n < recentChecks; j-- {
-				total += d.Runs[i].Checks[j].DurationMS
-				n++
+		// How long is left, from how long the last checks and reads took,
+		// side by side. Nothing is said until there is something to
+		// measure.
+		var check, read, nc, nr int64
+		for i := len(d.Runs) - 1; i >= 0 && (nc < recentChecks || nr < recentChecks); i-- {
+			for j := len(d.Runs[i].Checks) - 1; j >= 0 && nc < recentChecks; j-- {
+				check += d.Runs[i].Checks[j].DurationMS
+				nc++
+			}
+			for j := len(d.Runs[i].Reads) - 1; j >= 0 && nr < recentChecks; j-- {
+				read += d.Runs[i].Reads[j].DurationMS
+				nr++
 			}
 		}
-		if n > 0 {
-			left := int64(pr.Checks-pr.ChecksDone) * (total / n) / engine.SideBySide / 1000
+		checksLeft, readsLeft := int64(pr.Checks-pr.ChecksDone), int64(pr.Reads-pr.ReadsDone)
+		if (checksLeft == 0 || nc > 0) && (readsLeft == 0 || nr > 0) {
+			var ms int64
+			if nc > 0 {
+				ms += checksLeft * (check / nc)
+			}
+			if nr > 0 {
+				ms += readsLeft * (read / nr)
+			}
+			left := ms / engine.SideBySide / 1000
 			pr.SecondsLeft = &left
 		}
 		out.Progress = pr
@@ -107,13 +132,14 @@ func runOf(d *store.Data, r *store.Run, going int64, now map[int64]time.Time) ru
 
 func (a *API) runs(w http.ResponseWriter, r *http.Request) {
 	going, now := a.Engine.Going()
+	reading, _ := a.Engine.Reading()
 	var out struct {
 		Runs []runJSON `json:"runs"`
 	}
 	a.Store.Read(func(d *store.Data) {
 		out.Runs = make([]runJSON, 0, len(d.Runs))
 		for i := len(d.Runs) - 1; i >= 0 && len(out.Runs) < 50; i-- {
-			out.Runs = append(out.Runs, runOf(d, d.Runs[i], going, now))
+			out.Runs = append(out.Runs, runOf(d, d.Runs[i], going, now, reading))
 		}
 	})
 	send(w, http.StatusOK, out)
@@ -121,12 +147,13 @@ func (a *API) runs(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) currentRun(w http.ResponseWriter, r *http.Request) {
 	going, now := a.Engine.Going()
+	reading, _ := a.Engine.Reading()
 	var out struct {
 		Run *runJSON `json:"run"`
 	}
 	a.Store.Read(func(d *store.Data) {
 		if run := d.Run(going); run != nil {
-			v := runOf(d, run, going, now)
+			v := runOf(d, run, going, now, reading)
 			out.Run = &v
 		}
 	})
@@ -183,6 +210,7 @@ func (a *API) run(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	going, now := a.Engine.Going()
+	reading, _ := a.Engine.Reading()
 	var out *struct {
 		Run      runJSON       `json:"run"`
 		Checks   []checkJSON   `json:"checks"`
@@ -197,7 +225,7 @@ func (a *API) run(w http.ResponseWriter, r *http.Request) {
 			Run      runJSON       `json:"run"`
 			Checks   []checkJSON   `json:"checks"`
 			Failures []failureJSON `json:"failures"`
-		}{Run: runOf(d, run, going, now), Checks: []checkJSON{}, Failures: []failureJSON{}}
+		}{Run: runOf(d, run, going, now, reading), Checks: []checkJSON{}, Failures: []failureJSON{}}
 		for i, c := range run.Checks {
 			ref := map[string]any{"id": c.SearchID, "name": "a search since removed", "url": "", "status": "retired"}
 			if s := d.Search(c.SearchID); s != nil {

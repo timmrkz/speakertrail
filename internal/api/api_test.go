@@ -147,7 +147,7 @@ func TestARunFromStartToPeople(t *testing.T) {
 	}
 	// Connected, she leaves All for Connected.
 	call(t, a, "GET", "/api/people?filter=all", "", &people)
-	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["young"] != 0 || people.Counts["connected"] != 1 {
+	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["new"] != 1 || people.Counts["connected"] != 1 {
 		t.Errorf("people once connected = %+v", people)
 	}
 	call(t, a, "GET", "/api/people?filter=connected", "", &people)

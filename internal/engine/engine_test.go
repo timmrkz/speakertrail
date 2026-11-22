@@ -75,11 +75,11 @@ func newEngine(t *testing.T, f *finder) (*Engine, *store.Store) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	e := &Engine{Store: st, Finder: func() Finder {
+	e := &Engine{Store: st, Finder: func() (Finder, error) {
 		if f == nil {
-			return nil
+			return nil, ErrNoKey
 		}
-		return f
+		return f, nil
 	}}
 	return e, st
 }
@@ -142,6 +142,34 @@ func TestNoRunWithoutAKey(t *testing.T) {
 	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrNoKey) {
 		t.Errorf("err = %v, want ErrNoKey", err)
 	}
+}
+
+// A key the keychain kept back, a password box closed, stops the run with
+// why, not as a missing key, and the next start asks for it again.
+func TestARunWhoseKeyWasKeptBackSaysWhyAndStartsNextTime(t *testing.T) {
+	e, st := newEngine(t, &finder{profiles: invented})
+	keptBack := errors.New("the password box was closed, so macOS kept the Exa key back")
+	var asked atomic.Int32
+	found := e.Finder
+	e.Finder = func() (Finder, error) {
+		if asked.Add(1) == 1 {
+			return nil, keptBack
+		}
+		return found()
+	}
+	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrUnread) || !errors.Is(err, keptBack) || err.Error() != keptBack.Error() {
+		t.Fatalf("err = %v, want it kept back, as ErrUnread", err)
+	}
+	id, started, err := e.Start("manual", 0)
+	if err != nil || !started {
+		t.Fatalf("the second start: %v, %v", started, err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); r == nil || r.FinishedAt.IsZero() || len(r.Checks) != 1 || r.Checks[0].Error != "" {
+			t.Errorf("run %+v", r)
+		}
+	})
 }
 
 func TestNoRunWithoutBudget(t *testing.T) {

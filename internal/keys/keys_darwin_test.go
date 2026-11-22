@@ -35,8 +35,8 @@ func TestAKeySavedTheOldWayIsSavedAgainInTheKeychain(t *testing.T) {
 		t.Fatal("a key saved the old way is taken for one saved the new way")
 	}
 	e := &Exa{v: k, env: func(string) string { return "" }}
-	if got := e.Get(); got != "an-invented-key" {
-		t.Fatalf("get %q", got)
+	if got, err := e.Get(); got != "an-invented-key" || err != nil {
+		t.Fatalf("get %q, %v", got, err)
 	}
 	if !k.open() {
 		t.Error("the key was not saved again the new way")

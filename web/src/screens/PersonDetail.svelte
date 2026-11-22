@@ -47,9 +47,15 @@
 
   // A search can find the wrong person's profile. Not this person rejects
   // it, so LinkedIn no longer opens it and the person moves to Rejected.
-  // Undo in the toast, or in the line that stays while it is rejected,
-  // brings it back.
+  // Like Connect, the button stays and the same button again takes it
+  // back (Tim, testing #67 on 22 November 2026). It shows at once and
+  // goes back if the app says no. Undo in the toast sets back what was
+  // there before.
   let reviewing = $state(false)
+  function showReview(of: Profile, next: Review) {
+    if (!person.data) return
+    person.data = { ...person.data, profiles: person.data.profiles.map((x) => (x.id === of.id ? { ...x, review: next } : x)) }
+  }
   async function review(of: Profile, next: Review) {
     await api.patchProfile(of.id, next)
     // The app says what follows from it, the link and the facts.
@@ -57,28 +63,22 @@
     onupdate?.(person.data)
     onmoved?.()
   }
-  async function takeBack() {
-    if (!profile || reviewing) return
-    reviewing = true
-    try {
-      await review(profile, 'open')
-    } catch (e) {
-      fault(e)
-    } finally {
-      reviewing = false
-    }
-  }
-  async function notThem() {
+  async function toggleRejected() {
     if (!profile || reviewing) return
     const of = profile
+    const next: Review = of.review === 'rejected' ? 'confirmed' : 'rejected'
     reviewing = true
+    showReview(of, next)
     try {
-      await review(of, 'rejected')
-      toast.show('LinkedIn profile rejected as not this person', 'plain', {
-        label: 'Undo',
-        run: () => review(of, of.review).catch((e) => fault(e)),
-      })
+      await review(of, next)
+      if (next === 'rejected') {
+        toast.show('LinkedIn profile rejected as not this person', 'plain', {
+          label: 'Undo',
+          run: () => review(of, of.review).catch((e) => fault(e)),
+        })
+      }
     } catch (e) {
+      showReview(of, of.review)
       fault(e)
     } finally {
       reviewing = false
@@ -171,15 +171,18 @@
             title="Open the LinkedIn profile in the browser profile chosen in Settings">
             {#if opening}<Busy />{/if}<Icon name="external" />{opening ? 'Opening' : 'LinkedIn'}
           </a>
-          <button class="btn icon" type="button" disabled={reviewing} onclick={notThem}
-            title="Not this person. The LinkedIn profile the search found is someone else's" aria-label="Not this person">
+        {/if}
+        {#if profile}
+          {@const rejected = profile.review === 'rejected'}
+          <button class="btn icon bad" type="button" aria-pressed={rejected} disabled={reviewing} onclick={toggleRejected}
+            title={rejected ? 'Rejected as not this person. Click again to take it back' : "Not this person. The LinkedIn profile the search found is someone else's"}
+            aria-label="Not this person">
             <Icon name="not-them" />
           </button>
         {/if}
       </div>
       {#if profile?.review === 'rejected'}
-        <p class="rejected small">LinkedIn profile rejected as not this person.
-          <button class="link" type="button" disabled={reviewing} onclick={takeBack}>Undo</button></p>
+        <p class="rejected small">LinkedIn profile rejected as not this person.</p>
       {/if}
       {#if openProblem}
         <p class="open-problem small" role="alert">

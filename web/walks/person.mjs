@@ -92,26 +92,35 @@ const walks = [
   },
   {
     // A search can find someone else's LinkedIn profile. Not this person
-    // rejects it, and the toast's Undo brings it back as it was.
-    name: 'Not this person rejects the LinkedIn profile, and Undo brings it back',
+    // rejects it, and the toast's Undo brings it back as it was. Like
+    // Connect, the button stays, pressed, and the same button again takes
+    // it back. Tim found it gone once pressed, testing #67 on 22 November
+    // 2026, and could not get anyone out of Rejected.
+    name: 'Not this person rejects the LinkedIn profile, stays, and takes it back',
     async run(page) {
       await page.goto(`${url}/app/people/1001`)
       const linkedin = page.locator('.actions a.btn')
+      const notThem = page.getByRole('button', { name: 'Not this person' })
       await linkedin.waitFor()
       const before = await review(page, 1001)
-      await page.getByRole('button', { name: 'Not this person' }).click()
+      if ((await notThem.getAttribute('aria-pressed')) !== 'false') return 'Not this person is pressed before it was pressed'
+      await notThem.click()
       await linkedin.waitFor({ state: 'detached' })
       if ((await review(page, 1001)) !== 'rejected') return 'the profile was not rejected'
+      if (!(await notThem.isVisible())) return 'Not this person is gone once the profile is rejected'
+      if ((await notThem.getAttribute('aria-pressed')) !== 'true') return 'Not this person is not pressed once the profile is rejected'
       await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
       await linkedin.waitFor()
       const after = await review(page, 1001)
       if (after !== before) return `Undo left the profile ${after}, it was ${before}`
-      // Once the toast is gone, the line under the buttons undoes it.
-      await page.getByRole('button', { name: 'Not this person' }).click()
+      // Once the toast is gone, the same button takes it back.
+      await notThem.click()
       await linkedin.waitFor({ state: 'detached' })
-      await page.locator('.who .rejected').getByRole('button', { name: 'Undo' }).click()
+      await page.locator('button[aria-label="Not this person"][aria-pressed="true"]').waitFor()
+      await notThem.click()
       await linkedin.waitFor()
-      if ((await review(page, 1001)) === 'rejected') return 'the line\'s Undo left the profile rejected'
+      if ((await review(page, 1001)) === 'rejected') return 'pressed again, the profile is still rejected'
+      if ((await notThem.getAttribute('aria-pressed')) !== 'false') return 'pressed again, Not this person is still pressed'
       return ''
     },
   },
@@ -197,9 +206,9 @@ const walks = [
     // Tim, 21 November 2026, issue #66: people whose profile he rejected
     // stayed among those he still has to go through. Rejected, a person
     // leaves All for Rejected, the counts follow and the person stays
-    // open. A search by name under All leads there, and Undo brings them
-    // back where they stood.
-    name: 'Not this person moves a person from All to Rejected, and Undo brings them back',
+    // open. A search by name under All leads there, and the same button
+    // brings them back where they stood.
+    name: 'Not this person moves a person from All to Rejected, and pressed again brings them back',
     async run(page) {
       const count = (label) => page.locator('main .filters button', { hasText: label }).locator('.n').innerText().then(Number)
       const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
@@ -224,7 +233,7 @@ const walks = [
       await empty.waitFor()
       await empty.getByRole('button', { name: 'Show under Rejected' }).click()
       await page.locator(`#${id}`).click()
-      await page.locator('.who .rejected').getByRole('button', { name: 'Undo' }).click()
+      await page.locator('.detail-pane').getByRole('button', { name: 'Not this person' }).click()
       await page.locator(`#${id}`).waitFor({ state: 'detached' })
       await page.keyboard.press('Escape')
       await page.getByLabel('Search people').first().fill('')

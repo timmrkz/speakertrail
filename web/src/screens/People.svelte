@@ -399,7 +399,7 @@
   <section class="list-pane" aria-label="People">
     <div class="controls">
       <div class="toolbar tight">
-        <SearchInput bind:value={q} placeholder="Search people or paste LinkedIn links" label="Search people" onsearch={(v) => (query = v)} onenter={enter} />
+        <SearchInput bind:value={q} placeholder="Search or paste LinkedIn links" label="Search people" onsearch={(v) => (query = v)} onenter={enter} />
         <span class="sort">
           <Pick label="Sort by" title="Order" value={sort} options={sorts} onpick={(v) => (sort = v as PeopleSort)} />
         </span>

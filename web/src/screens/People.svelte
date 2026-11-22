@@ -501,5 +501,7 @@
     box-sizing: content-box; height: var(--control-h); padding: var(--gap-page) var(--dx) 0;
   }
   .detail-pane { --dx: max(var(--pad), calc((100% - 640px) / 2)); }
-  .detail-body { padding: var(--gap-control) var(--dx) 64px; }
+  /* Under the last section the same inset as round the rest, so a person
+     who fits never scrolls, issue #77. */
+  .detail-body { padding: var(--gap-control) var(--dx) var(--gap-page); }
 </style>

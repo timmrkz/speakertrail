@@ -21,7 +21,7 @@
     id: number
     onupdate?: (p: PersonDetail) => void
     onmoved?: () => void
-    onname?: (name: string) => void
+    onname?: (id: number, name: string) => void
   } = $props()
 
   const person = new Load<PersonDetail>()
@@ -33,7 +33,9 @@
   function load() {
     person.run(() => api.person(id)).then(() => {
       notes = savedNotes = person.data?.notes ?? ''
-      if (person.data) onname?.(person.data.name)
+      // The person's own id goes with the name, so an answer that comes
+      // after another person opened is told apart.
+      if (person.data) onname?.(person.data.id, person.data.name)
     })
   }
   load()

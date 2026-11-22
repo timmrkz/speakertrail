@@ -17,5 +17,5 @@
   {#snippet head()}
     <h2 class="person-name ellipsis" data-personal title={shown}>{shown}</h2>
   {/snippet}
-  <PersonDetail {id} {onupdate} {onmoved} onname={(n) => (shown = n)} />
+  <PersonDetail {id} {onupdate} {onmoved} onname={(_, n) => (shown = n)} />
 </Sheet>

@@ -85,16 +85,27 @@ const walks = [
       await page.goto(`${url}/app/people/1003`)
       await page.locator('.person .actions a.btn').waitFor()
       await keepDraft(page, 1003, message)
+      // The message was drafted by the model an hour ago.
+      await page.route((u) => u.pathname === '/api/people/1003', async (route) => {
+        if (route.request().method() !== 'GET') return route.continue()
+        const r = await route.fetch()
+        const p = await r.json()
+        return route.fulfill({ response: r, json: { ...p, drafted_at: p.draft ? new Date(Date.now() - 3600e3).toISOString() : p.drafted_at } })
+      })
       await page.reload()
       const box = page.locator('.first-message textarea')
       await box.waitFor()
+      await page.locator('.first-message .state').filter({ hasText: 'Drafted' }).waitFor()
       await box.fill('')
       if (!(await box.count())) return 'the box went away once it was emptied'
       await box.blur()
       await page.waitForFunction(() => document.querySelector('.first-message .state')?.textContent === 'Saved')
       if ((await person(page, 1003)).draft !== '') return 'the emptied message was not kept'
       await box.click()
-      await page.keyboard.type('Hallo Mara, ich schreibe selbst.')
+      await page.keyboard.type('H')
+      const said = await page.locator('.first-message .state').innerText()
+      if (said.startsWith('Drafted')) return `over a message Tim writes himself it says ${said}`
+      await page.keyboard.type('allo Mara, ich schreibe selbst.')
       await box.blur()
       await page.waitForFunction(() => document.querySelector('.first-message .state')?.textContent === 'Saved')
       if ((await person(page, 1003)).draft !== 'Hallo Mara, ich schreibe selbst.') return 'what was written in the empty box was not kept'
@@ -105,6 +116,34 @@ const walks = [
       await page.reload()
       await page.locator('.person .actions a.btn').waitFor()
       if (!(await page.locator('.first-message textarea').count())) return 'a person with no message has no box to write one in'
+      return ''
+    },
+  },
+  {
+    // The review of 22 November 2026: a person opened before answered
+    // late and put their name over the one opened after. Holding an arrow
+    // key through the list does that.
+    name: 'A person answering late never puts their name over the one open now',
+    async run(page) {
+      let release
+      const held = new Promise((r) => (release = r))
+      await page.route((u) => u.pathname === '/api/people/1004', async (route) => {
+        if (route.request().method() === 'GET') await held
+        return route.continue()
+      })
+      await page.goto(`${url}/app/people`)
+      await page.locator('#person-row-1004').waitFor()
+      const want = (await person(page, 1000)).name
+      await page.locator('#person-row-1004').click()
+      await page.locator('#person-row-1000').click()
+      const name = page.locator('.detail-top .person-name')
+      await page.waitForFunction((n) => document.querySelector('.detail-top .person-name')?.textContent === n, want)
+      const late = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/people/1004')
+      release()
+      await late
+      await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+      const shown = await name.innerText()
+      if (shown !== want) return `person 1000 is open under the name ${shown}`
       return ''
     },
   },

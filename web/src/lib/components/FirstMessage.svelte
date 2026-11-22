@@ -119,6 +119,8 @@
   async function keep(value: string) {
     const updated = await api.patchPerson(person.id, { draft: value })
     text = saved = updated.draft
+    // An emptied message was drafted at no time, as the app says.
+    draftedAt = updated.drafted_at
     onsaved?.(updated)
   }
 

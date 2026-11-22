@@ -389,7 +389,7 @@
       </div>
       <div class="detail-body">
         {#key openId}
-          <PersonDetail id={openId} onupdate={updated} onmoved={moved} onname={(n) => (named = { id: openId!, name: n })} />
+          <PersonDetail id={openId} onupdate={updated} onmoved={moved} onname={(id, name) => (named = { id, name })} />
         {/key}
       </div>
     </section>

@@ -119,9 +119,10 @@ const walks = [
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '0') return 'the copy mark shows with the pointer away from the box'
       await box(page).hover()
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the copy mark does not show with the pointer on the box'
+      const asked = page.waitForRequest((r) => r.method() === 'POST' && new URL(r.url()).pathname === '/api/clipboard')
       await mark.click()
       await page.waitForFunction(() => document.querySelector('.first-message button.copy')?.getAttribute('aria-label') === 'Copied')
-      const copied = await page.evaluate(() => fetch('/api/clipboard').then((r) => r.json()).then((c) => c.text))
+      const copied = (await asked).postDataJSON().text
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
       if (await page.locator('.first-message .refused, .toast').count()) return 'a copy that worked says something went wrong'
       // The tick stays while it shows, with the pointer gone.

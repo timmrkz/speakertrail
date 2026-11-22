@@ -375,8 +375,6 @@ function exclusionsOf(s: State) {
 }
 
 const ok = (body: unknown) => ({ status: 200, body })
-// The text last put on the clipboard.
-let clipboard = ''
 const err = (status: number, message: string) => ({ status, body: { error: message } })
 
 const ROUTES: [string, RegExp, Handler][] = [
@@ -432,7 +430,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (typeof b.notes === 'string') p.notes = b.notes
-    if (typeof b.draft === 'string') p.draft = b.draft
+    if (typeof b.draft === 'string') {
+      p.draft = b.draft
+      // An emptied message was drafted at no time, as the app says.
+      if (!b.draft) p.drafted_at = undefined
+    }
     if (typeof b.connected === 'boolean') p.connected = b.connected
     else if (b.connected !== undefined) return err(400, 'connected must be true or false')
     return ok(personDetail(s, p))
@@ -628,13 +630,8 @@ const ROUTES: [string, RegExp, Handler][] = [
     }
   }],
   // The Mac's clipboard, as cmd/speakertrail-app/clipboard.go puts text
-  // on it. The mock keeps the last text, and GET reads it back for the
-  // walks, which the app does not answer.
-  ['POST', /^\/api\/clipboard$/, (_s, _m, _q, b) => {
-    clipboard = String(b.text ?? '')
-    return { status: 204 }
-  }],
-  ['GET', /^\/api\/clipboard$/, () => ok({ text: clipboard })],
+  // on it. The walks read what was copied from the request itself.
+  ['POST', /^\/api\/clipboard$/, () => ({ status: 204 })],
   ['POST', /^\/api\/report\/(open|about)$/, (_s, m, _q, b) => {
     if (m[1] === 'about') report = { text: String(b.text ?? ''), pictures: [], next: report.next }
     return { status: 204 }

@@ -3,9 +3,10 @@ package main
 import "net/http"
 
 // clipboardAPI puts text on the Mac's clipboard for the window. The
-// window's own navigator.clipboard is refused in the app's web view, the
-// page being no secure origin there, so Copy failed with the web view's
-// words, Tim saw it testing #60 on 22 November 2026. The app writes the
+// window's own navigator.clipboard.writeText is refused in the app's web
+// view with a NotAllowedError, so Copy failed with the web view's words,
+// Tim saw it testing #60 on 22 November 2026. WebKit does not say which
+// of its rules for a page writing the clipboard it applied. The app writes the
 // clipboard itself, through Wails, and the window asks over HTTP, the
 // way it asks for everything.
 //

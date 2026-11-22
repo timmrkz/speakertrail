@@ -18,12 +18,14 @@ types.
 `GET /api/people?q=lea&sort=fit&filter=all`
 
 `sort` is `fit` (the default, the best fit first), `young`, `new` or `name`. `filter` is `all`,
-`young` or `connected`. `q` looks in the name, the headline and the city.
+`young`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
-Someone Tim connected with is only under `connected`. `all` and `young`
-hold the people he has not connected with yet, so they shrink as he
-connects.
+Someone Tim connected with is only under `connected`, and someone whose
+profile he rejected only under `rejected`. `all` and `young` hold the
+people he has neither connected with nor rejected, so they shrink as he
+goes through them. Someone connected stays under `connected` even when
+their profile is rejected.
 
 People whom one of Tim's exclusions leaves out are not in the list or the
 counts, unless Tim connected with them, see [Exclusions](#exclusions).
@@ -44,7 +46,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "young": 1, "connected": 0 }
+  "counts": { "all": 1, "young": 1, "connected": 0, "rejected": 0 }
 }
 ```
 

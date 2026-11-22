@@ -95,9 +95,10 @@ practices, most of them between 30 and 50. A founder who writes
   and whoever Tim connected with before, the best fit first, see
   [fit-score.md](fit-score.md). Each row says its fit and
   about how old the person is and when they were last active on
-  LinkedIn. Filters: all, under 30, connected. Someone Tim connected
-  with is only under connected, so all and under 30 shrink to whom he
-  can still reach out to. A person's view has
+  LinkedIn. Filters: all, under 30, connected, rejected. Someone Tim
+  connected with is only under connected, and someone whose profile he
+  rejected as not this person only under rejected, so all and under 30
+  shrink to whom he can still reach out to. A person's view has
   Draft, which writes a first message to them on the Mac.
 - **Searches**, the profile searches. Add one, pause one, see how many
   people each found and how many of them Tim connected with, those that

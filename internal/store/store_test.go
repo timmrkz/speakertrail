@@ -309,6 +309,25 @@ func TestListPeople(t *testing.T) {
 		t.Error("an exclusion should be removed once")
 	}
 	same("without it", list(PeopleQuery{}), dana, unknown, old)
+
+	// Someone whose profile Tim rejected is only under Rejected, and
+	// comes back on Undo. Someone connected stays under Connected.
+	dana.LinkedIn.Review = "rejected"
+	same("rejected leaves all", list(PeopleQuery{}), unknown, old)
+	same("rejected leaves under 30", list(PeopleQuery{Filter: "young"}))
+	same("rejected", list(PeopleQuery{Filter: "rejected"}), dana)
+	same("words of someone rejected", list(PeopleQuery{Q: "dana"}))
+	same("words of someone rejected, under Rejected", list(PeopleQuery{Q: "dana", Filter: "rejected"}), dana)
+	young.LinkedIn.Review = "rejected"
+	same("connected and rejected", list(PeopleQuery{Filter: "connected"}), young)
+	same("connected and rejected, not under Rejected", list(PeopleQuery{Filter: "rejected"}), dana)
+	_, counts, _ = d.ListPeople(PeopleQuery{Now: t0})
+	if counts["all"] != 2 || counts["young"] != 0 || counts["connected"] != 1 || counts["rejected"] != 1 {
+		t.Errorf("counts with someone rejected = %v", counts)
+	}
+	dana.LinkedIn.Review = "open"
+	same("undone", list(PeopleQuery{}), dana, unknown, old)
+	same("undone, not under Rejected", list(PeopleQuery{Filter: "rejected"}))
 }
 
 func TestExclusions(t *testing.T) {

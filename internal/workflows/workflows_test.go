@@ -36,6 +36,7 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 	}
 	var ci struct {
 		Jobs map[string]struct {
+			If      string            `yaml:"if"`
 			Outputs map[string]string `yaml:"outputs"`
 			Steps   []struct {
 				ID   string            `yaml:"id"`
@@ -60,11 +61,19 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 	if len(filters["skills"]) == 0 {
 		t.Fatal("ci.yml's job changes has no filter skills, so a change to a skill starts no Go test")
 	}
-	// A filter only starts the Go job when the job's output go reads it.
-	// Without that line a filter catches its files and starts nothing.
-	for _, f := range []string{"goread", "skills"} {
-		if want := "steps.filter.outputs." + f + " == 'true'"; !strings.Contains(ci.Jobs["changes"].Outputs["go"], want) {
-			t.Errorf("ci.yml's output go of the job changes leaves out %s, so the filter %s starts no Go test. Add it there", want, f)
+	// A filter only starts a job when an output of the job changes reads
+	// it and a job runs on that output. Without both a filter catches its
+	// files and starts nothing.
+	for f, out := range map[string]string{"goread": "go", "skills": "skills"} {
+		if want := "steps.filter.outputs." + f + " == 'true'"; !strings.Contains(ci.Jobs["changes"].Outputs[out], want) {
+			t.Errorf("ci.yml's output %s of the job changes leaves out %s, so the filter %s starts no Go test. Add it there", out, want, f)
+		}
+		runs := false
+		for _, j := range ci.Jobs {
+			runs = runs || strings.Contains(j.If, "needs.changes.outputs."+out+" == 'true'")
+		}
+		if !runs {
+			t.Errorf("no job of ci.yml runs on the output %s of the job changes, so the filter %s starts no Go test", out, f)
 		}
 	}
 	starts := func(file string) bool {

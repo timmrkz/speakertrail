@@ -27,6 +27,7 @@
 #   make unit       the Go tests, under the race detector
 #   make interface  the interface type check
 #   make walks      the interface driven in Chromium, with invented data
+#   make skills     the test that keeps the skills generic, alone
 #   make check      what this machine has and still needs
 #   make clean      remove what make built
 #
@@ -88,7 +89,7 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
+.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks skills check clean help
 
 help:
 	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
@@ -227,6 +228,13 @@ $(GOLANGCI_LINT):
 unit:
 	@$(GO) test -race -count=1 ./...
 	@sh scripts/needs-build-test.sh >/dev/null && printf 'ok  \tscripts/needs-build.sh\n'
+
+# The skills alone, for a pull request that changes nothing else: the
+# test that holds them to naming no person, product or issue, see
+# docs/SKILLS.md. It needs no toolchain beyond Go, so CI runs it in
+# seconds.
+skills:
+	@$(GO) test ./internal/naming/
 
 interface: web/node_modules/.package-lock.json
 	@out=$$(cd web && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }

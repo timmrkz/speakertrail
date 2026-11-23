@@ -12,8 +12,9 @@ there follows it without wondering who or what it means.
 `internal/naming/skills_test.go` holds them to that: a skill that names a
 person, Speaker Trail, FrameFairy, a word only this project uses, a tool
 only this kind of app has, or an issue or a pull request by its number
-fails `make unit`. A change to a skill starts the Go job for it, see CI
-in [BUILD.md](BUILD.md#ci). A name the test does not know is still the
+fails `make skills`, and `make unit` with it. A pull request that
+changes only skills runs just that test in CI, in seconds, see CI in
+[BUILD.md](BUILD.md#ci). A name the test does not know is still the
 review's to catch.
 
 Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
@@ -77,7 +78,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 
 | The skill says | Here it is |
 | --- | --- |
-| one command a developer runs | the parts of `make test`: `make lint`, `make unit`, `make interface` and `make walks` |
+| one command a developer runs | the parts of `make test`: `make lint`, `make unit`, `make interface` and `make walks`, and `make skills` for a change to the skills alone |
 | the path filters, and the test that holds them | the job `changes` in `.github/workflows/ci.yml`, held by `internal/workflows`, see CI in [BUILD.md](BUILD.md#ci) |
 | a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is published and finds the pull requests that conflict |
 | a scarce runner | a Mac, the job `macos` |
@@ -154,6 +155,6 @@ Compare FrameFairy's `.claude/skills/`, its `docs/SKILLS.md`, its
 bring over the lessons, never its facts. A skill FrameFairy has is copied
 as its folder, and the lessons above are put back in. What FrameFairy's
 skills now hold comes out of ours, which point to them instead. Then
-`make unit` runs `internal/naming`. The last copy was from FrameFairy's
+`make skills` runs `internal/naming`. The last copy was from FrameFairy's
 main on 23 November 2026, after its pull request of that day that made
 every skill generic.

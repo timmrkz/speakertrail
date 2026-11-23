@@ -101,13 +101,14 @@ docker volume rm speakertrail_postgres
 | `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
 | `make interface` | a type check of the interface and its tests, with vitest |
 | `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/` |
+| `make skills` | the test that keeps the skills generic, `internal/naming`, alone. `make unit` runs it too |
 | `make check` | what this machine has and still needs |
 | `make clean` | removes what make built. The app's file stays, and so does llama-server in `.build/llama`, which takes minutes to build again |
 | `make help` | this list |
 
 ## CI
 
-`.github/workflows/ci.yml` runs the targets above in three jobs. A pull
+`.github/workflows/ci.yml` runs the targets above in four jobs. A pull
 request starts only the jobs whose code it changed, by the filters of the
 job `changes`, which reads the files GitHub lists for the pull request
 with `dorny/paths-filter`. As in FrameFairy.
@@ -116,7 +117,7 @@ with `dorny/paths-filter`. As in FrameFairy.
 | --- | --- |
 | Go: any file outside `web/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `web/` Go reads, its Go files and `web/dist/.keep`, the filter `goread` | `go`, `make lint` and `make unit`, and `macos`, the app built on a Mac and its Go tests |
 | the interface: `web/`, the Makefile and `.github/workflows/` | `web`, `make interface` and `make walks`, and `macos` |
-| a skill, `.claude/skills/`, the filter `skills` | `go`, whose `internal/naming` holds every skill to naming nothing of ours, see [SKILLS.md](SKILLS.md), and not `macos` |
+| a skill, `.claude/skills/`, the filter `skills` | `skills`, `make skills`, the one test that holds every skill to naming nothing of ours, see [SKILLS.md](SKILLS.md). When Go changed too, `go` runs it with the rest |
 | only the docs, `docs/`, any other `.md`, the rest of `.claude/` | nothing |
 
 A push to main starts every job. No branch rule requires a check, so

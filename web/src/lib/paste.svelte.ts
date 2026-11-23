@@ -9,8 +9,10 @@
 import { api, type Pasted } from './api'
 import { errorText, fault, toast } from './toast.svelte'
 
-// How Tim gives the app a profile Exa lacks, said under the pointer.
-export const PASTE_HINT = 'Open them here, open their profile in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V'
+// What someone Exa has no copy of says, on their row and when they are
+// open: what to do, not why (Tim, 23 November 2026).
+export const PASTE_LINE = 'Paste their LinkedIn page'
+export const PASTE_HINT = 'Exa has no copy of their profile. Open it in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V.'
 
 // A page is text over more than one line with no profile link in it. A
 // search is one line, and links go into the search.
@@ -28,7 +30,7 @@ class Pasting {
       this.changed++
       const undo = { label: 'Undo', run: () => void this.undo(id, r.was) }
       if (r.named) toast.show('Kept the page as their profile', 'plain', undo)
-      else toast.show('Kept the page as their profile. It does not give their name, so check it is theirs', 'bad', undo)
+      else toast.show('Kept the page as their profile. Its name is not the one in their link, so check it is theirs', 'bad', undo)
     } catch (e) {
       toast.show(errorText(e), 'bad')
     }

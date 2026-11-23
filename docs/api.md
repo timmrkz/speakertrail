@@ -105,17 +105,22 @@ namesake. A link with no name in it asks nothing more.
 profile page Tim copied in Chrome, all of it with ⌘A and ⌘C, as the
 person's profile, for someone Exa's index lacks. The app never requests
 LinkedIn: Tim opened the page. The name is the line that spells the name
-in the link, even with a title or more around it, the headline the line
-after it, the city from the first line after it in the shape of a place,
-like "Köln, Nordrhein-Westfalen, Deutschland". LinkedIn's menu before the name, its
-buttons, and the other people the page shows at its end are left out,
-so are email addresses and phone numbers, and the text is cut at 8000
-characters, like Exa's. A read of them Exa is still asked for loses to
+in the link, also without initials or with a title or more around it,
+the headline the line after it, the city from the first line after it
+in the shape of a place, like "Köln, Nordrhein-Westfalen, Deutschland".
+The page is read by its sections: the top, then About, Experience,
+Education and the rest, and the feed of posts, Activity, last, so the
+8000 characters it is cut at, like Exa's text, go to who they are first.
+LinkedIn's menu and buttons, and its blocks of other people, like
+"People who follow … also follow", Highlights, Interests and "People
+also viewed", are left out, so are email addresses and phone numbers. A read of them Exa is still asked for loses to
 it, and a run that had not begun it drops it. It answers `{"person": {…},
 "was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
 ""}, "named": true}`: `person` as `GET /api/people/{id}` gives it,
-`was` what they were before, and `named` whether the page gave their
-name. `{"as": {…}}` with a `was` puts that back, for Undo, and someone
+`was` what they were before, and `named` whether the name on the page
+is the one in their link, which makes sure the page is theirs. A page
+whose name is not is read all the same, its name the line LinkedIn puts
+above "· 1st". `{"as": {…}}` with a `was` puts that back, for Undo, and someone
 added from a link whose text it empties waits for the next run to read
 it from Exa. 400 for a paste with no text, 404 for an id nobody has.
 

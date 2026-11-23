@@ -456,8 +456,9 @@ func (e *Engine) Remove(id int64) error {
 
 // Paste keeps a profile page Tim copied in his browser as the profile of
 // the person id, see search.Pasted and store.Data.Paste, and reports what
-// they were before, for Undo, and whether the page gives their name. A
-// read of them the going run has not begun is dropped. With as, it puts
+// they were before, for Undo, and whether the name on the page is the
+// one in their link. A read of them the going run has not begun is
+// dropped. With as, it puts
 // back what they were and reads nothing from the text.
 func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Pasted, named bool, err error) {
 	e.mu.Lock()
@@ -478,12 +479,12 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 			f = *as
 			f.Text = search.Kept(f.Text)
 		} else {
-			prof := search.Pasted(text, p.LinkedIn.URL)
+			prof, linked := search.Pasted(text, p.LinkedIn.URL)
 			if prof.Text == "" {
 				return ErrNothingPasted
 			}
 			f = store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
-			named = prof.Name != ""
+			named = linked
 			if city := cityOf(prof.Location); city != "" {
 				f.City = city
 			}

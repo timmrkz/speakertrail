@@ -103,7 +103,7 @@ await walk('Enter adds the people, shows them under New on top, fills each row w
   // says so in red.
   await page.locator('main .prow b', { hasText: 'Greta Probe' }).waitFor()
   const missing = page.locator('main .prow', { hasText: 'neu-probe-73' }).locator('.sub')
-  expect(`the one not indexed said "${await missing.textContent()}"`, (await missing.textContent()) === "Not in Exa's index yet, named by its link")
+  expect(`the one not indexed said "${await missing.textContent()}"`, (await missing.textContent()) === 'Paste their LinkedIn page')
   expect('the one not indexed is not in red', await missing.evaluate((e) => e.classList.contains('bad')))
   const settled = await pressed(page).locator('.n').textContent()
   expect(`New counted "${settled}" once the run was done`, /^\d+$/.test(settled))
@@ -155,10 +155,13 @@ await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, a
   // of the paste's.
   await page.locator('.toast-region', { hasText: 'Run done' }).waitFor()
   const row = page.locator('main .prow', { hasText: 'neu-probe-79' })
-  await row.locator('.sub', { hasText: "Not in Exa's index" }).waitFor()
+  await row.locator('.sub', { hasText: 'Paste their LinkedIn page' }).waitFor()
   expect('the row does not say how to give the app the profile', (await row.locator('.sub').getAttribute('title')).includes('⌘V'))
   await row.click()
   await page.waitForURL(/\/app\/people\/\d+$/)
+  // Open, they say how the app gets their profile, until it has it.
+  const hint = page.locator('main .paste-hint')
+  expect(`open, they said "${await hint.textContent()}"`, (await hint.textContent()).includes('⌘A and ⌘C'))
   await page.evaluate(() => {
     document.activeElement?.blur()
     const data = new DataTransfer()
@@ -166,6 +169,7 @@ await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, a
     document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
   })
   await page.locator('main .prow b', { hasText: 'Neu Probe' }).waitFor()
+  await hint.waitFor({ state: 'detached' })
   const line = await page.locator('main .prow', { hasText: 'Neu Probe' }).locator('.sub').textContent()
   expect(`the row said "${line}"`, line.includes('Gründerin | Probe Keramik') && line.includes('Dortmund'))
   expect('the page went into the search', (await search(page).inputValue()) === '')

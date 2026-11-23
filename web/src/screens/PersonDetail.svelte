@@ -8,7 +8,7 @@
   import { untrack, type Snippet } from 'svelte'
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { Load } from '../lib/load.svelte'
-  import { pasting } from '../lib/paste.svelte'
+  import { PASTE_HINT, pasting } from '../lib/paste.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -196,6 +196,11 @@
         {#if profile?.review === 'rejected'}
           <p class="rejected small">LinkedIn profile rejected as not this person.</p>
         {/if}
+        {#if p.read === 'not_indexed'}
+          <!-- Exa has no copy of their profile, so it says how the app
+               gets one, until it has (Tim, 23 November 2026). -->
+          <p class="paste-hint small">{PASTE_HINT}</p>
+        {/if}
         {#if openProblem}
           <p class="open-problem small" role="alert">
             {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
@@ -280,5 +285,6 @@
   .found { font-size: 13px; color: var(--ink-3); }
   .open-problem { color: var(--bad); }
   .rejected { color: var(--ink-3); }
+  .paste-hint { color: var(--bad); }
   .note-state { color: var(--ink-3); }
 </style>

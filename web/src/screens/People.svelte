@@ -5,7 +5,7 @@
   import { fmtLeft, plural } from '../lib/format'
   import { typing } from '../lib/keys'
   import { Load } from '../lib/load.svelte'
-  import { isPage, PASTE_HINT, pasting } from '../lib/paste.svelte'
+  import { isPage, PASTE_HINT, PASTE_LINE, pasting } from '../lib/paste.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import { runCount, runSays, runShare, runWatch } from '../lib/run.svelte'
   import Busy from '../lib/components/Busy.svelte'
@@ -223,7 +223,7 @@
     if (p.read === 'reading') return `Reading the profile from Exa · ${p.read_ms ? fmtLeft((p.read_ms - (now - new Date(p.read_since!).getTime())) / 1000) : 'measuring the time left'}`
     if (p.read === 'waiting') return 'Waits its turn in this run'
     if (p.read === 'next') return p.read_error ? `Read on the next run. ${p.read_error}` : 'Read on the next run'
-    if (p.read === 'not_indexed') return "Not in Exa's index yet, named by its link"
+    if (p.read === 'not_indexed') return PASTE_LINE
     if (p.read === 'failed') return p.read_error || 'The profile could not be read'
     const a = age(p)
     return [p.headline || 'No headline yet', p.city, a ? `about ${a}` : ''].filter(Boolean).join(' · ')
@@ -473,7 +473,7 @@
                   {#if isNew(p)}<span class="dot new" title="Came in with this run"></span><span class="sr-only">, new</span>{/if}
                   {#if !p.read}<span class="fit num" title="Fit {p.fit_score} of 100. The person says why"><span class="sr-only">, fit </span>{p.fit_score}</span>{/if}
                 </span>
-                <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read === 'not_indexed' ? `${line(p)}. ${PASTE_HINT}` : p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
+                <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read === 'not_indexed' ? PASTE_HINT : p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
               </a>
             </li>
           {/each}

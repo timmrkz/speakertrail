@@ -23,8 +23,10 @@ jobs:
   # Makefile or a workflow is Go, and the files of web/ Go reads, goread:
   # the package that embeds the built interface, and dist/.keep, which
   # keeps the folder it embeds there before the interface is built. The
-  # interface is web/, the Makefile and the workflows. See CI in
-  # docs/BUILD.md.
+  # skills are read by the Go test that keeps them generic,
+  # internal/naming, so a change to one starts the Go job, and not the
+  # Mac's. The interface is web/, the Makefile and the workflows. See CI
+  # in docs/BUILD.md.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -32,7 +34,7 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
+      go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.skills == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
       app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
     steps:
@@ -50,6 +52,8 @@ jobs:
               - '!.claude/**'
             goread:
               - 'web/{*.go,dist/.keep}'
+            skills:
+              - '.claude/skills/**'
             interface:
               - '{web/**,.github/workflows/**,Makefile}'
 

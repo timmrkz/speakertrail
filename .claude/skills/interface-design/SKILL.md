@@ -1,6 +1,6 @@
 ---
 name: interface-design
-description: How to build and change the interface of any product, above all when you cannot see it yourself. What earns a place on screen, how a click, a drag and slow work are answered, consistency and design tokens, layout left to the stylesheet, and how to measure and prove a visual fix instead of claiming one. Read it before any change to what a person sees or touches, and before answering a report that something looks or feels wrong.
+description: What the interface of any product should be. What earns a place on screen, how a click, a drag and slow work are answered, where outcomes are said, consistency and design tokens, and layout left to the stylesheet, at every size and with the keyboard. Read it before any change to what a person sees or touches. How to measure and prove a change you cannot see is the interface skill.
 ---
 
 # The interface
@@ -14,9 +14,8 @@ see the architecture skill.
 Two people are named here, as in the other skills. **The user** is the
 person the agent works for, who owns the product and decides what it
 should do. **The people using the product** are the ones it is made
-for. A session usually cannot see the screen the user sees, so this
-skill is as much about proving what is on screen as about what should
-be.
+for. A session usually cannot see the screen the user sees. This skill says
+what should be on screen, and the interface skill how to prove it is.
 
 ## 1. What goes on screen
 
@@ -79,6 +78,8 @@ be.
   a list, so the eye sees one thing change and not one leave and one come.
 - **A list that work fills is filled where it stands.** New rows come in
   without shuffling the rows already there.
+- **How each of these is checked,** frame by frame and step by step, is
+  section 7 of the interface skill.
 
 ## 3. Where outcomes are said
 
@@ -144,66 +145,17 @@ be.
   keyboard, has a name a screen reader reads, and shows where focus is.
   Text and controls meet the contrast of WCAG 2.2 AA. Motion respects
   `prefers-reduced-motion`.
-- **A floating list keeps what it hangs from in place.** A container that
-  opens on hover stays open while a list or a bubble of its own is open,
-  and after it closes asks where the pointer is instead of trusting what
-  it last knew.
 
-## 6. Measure the right thing
+## 6. Measuring and proving it
 
-A session that cannot see the screen still has a browser it can drive.
-It opens the interface there, against a fake server where needed, and
-measures. Decide what kind of bug it is before picking the instrument:
+How an interface nobody can see is rendered, measured and proven, a
+click read on every frame, a drag at each step, the shipped engine, a
+fix put back to see the number change, is the interface skill. A fix
+comes with an end-to-end test written the way the testing skill says.
 
-| The thing is | Measure with |
-| --- | --- |
-| in the wrong place, the wrong size | the layout boxes, `getBoundingClientRect` |
-| the wrong colour, weight, brightness, or not lined up on screen | the pixels of a screenshot |
-| moving when it should not | both, and compare |
-| happening at the wrong time | the state on every frame |
-
-- **A layout box cannot see a painting bug.** An element painted in the
-  wrong place still reports the right box, and a box is not the ink in
-  it: two names can end at the same box edge and a pixel apart on screen.
-  Whether things line up is a question about painted pixels.
-- **While anything glides, the box is the animation, not the value.**
-  Read the style the code set beside the box, or measure once the
-  transition says it has ended, never after a pause.
-- **A moving target is not clicked at a point worked out a moment ago.**
-  Press the element itself when the handler is what is tested.
-- **What happens between frames is read on every frame.** Act inside the
-  page and read the thing on every `requestAnimationFrame` for a second,
-  then print the runs of frames that looked the same. A run of the state
-  before the click is the bug. A screenshot never shows it.
-- **A drag is read at each step,** every part drawn from the dragged
-  thing, before the hand lets go. A number that only changes after the
-  release is the bug.
-- **The fake is as slow as the real thing.** A fake server that answers at
-  once hides exactly the gap a person sees.
-- **The engine people use.** A browser engine of its own, WebKit on
-  Apple's platforms, differs in typing, focus, hover, painting and timing.
-  Run the steps there too before saying it works there, and run a probe
-  there too, not only the tests. A probe that passes in one engine says
-  nothing about a bug a person sees in the other.
-
-## 7. Prove it, do not claim it
-
-1. **Reproduce it first.** If you cannot make the bug happen, you cannot
-   know you fixed it. When it does not reproduce, say so rather than
-   implying a fix.
-2. **Put the old code back and measure again.** A number that changes
-   when the fix is removed is a fix. A number that does not is a
-   coincidence, or a probe that could never reach the broken state. A
-   probe that has never failed is not yet evidence.
-3. **Check against what the person said.** A precise report is evidence,
-   and its pattern, where it happens and where it does not, often finds
-   the cause faster than reading the code.
-4. **The fix comes with an end-to-end test** that does what the person did
-   and checks what they saw, written the way the testing skill says. It
-   fails on main and passes with the fix.
-5. **Visual choices iterate fast.** Render the candidates side by side
-   from the real code, light and dark, at a phone's width and a laptop's,
-   rather than one build per idea, and compare with the version before.
+- **Visual choices iterate fast.** Render the candidates side by side
+  from the real code, light and dark, at a phone's width and a laptop's,
+  rather than one build per idea, and compare with the version before.
 
 ## Before saying done
 
@@ -215,7 +167,7 @@ measures. Decide what kind of bug it is before picking the instrument:
    components.
 4. Layout is the stylesheet's, on whole pixels, at every size, with the
    keyboard and a screen reader.
-5. The bug was reproduced, measured with the right instrument, gone with
-   the fix and back without it.
+5. The bug was reproduced, measured and proven the way the interface
+   skill says.
 6. The reply says what to look at and what should happen, and names what
    could not be verified here.

@@ -116,15 +116,16 @@ with `dorny/paths-filter`. As in FrameFairy.
 | --- | --- |
 | Go: any file outside `web/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `web/` Go reads, its Go files and `web/dist/.keep`, the filter `goread` | `go`, `make lint` and `make unit`, and `macos`, the app built on a Mac and its Go tests |
 | the interface: `web/`, the Makefile and `.github/workflows/` | `web`, `make interface` and `make walks`, and `macos` |
-| only the docs, `docs/`, any `.md`, `.claude/` | nothing |
+| a skill, `.claude/skills/`, the filter `skills` | `go`, whose `internal/naming` holds every skill to naming nothing of ours, see [SKILLS.md](SKILLS.md), and not `macos` |
+| only the docs, `docs/`, any other `.md`, the rest of `.claude/` | nothing |
 
 A push to main starts every job. No branch rule requires a check, so
 a pull request of the docs alone waits on nothing. A Go test that read
 a file of `web/` or of the docs would not run on the pull request that
 changes it, so none does: a file of `web/` a Go test needs goes in
 `goread`, and so does the file that keeps the folder `web/embed.go`
-embeds. `internal/workflows` reads every Go test and `web/embed.go` and
-holds them to that.
+embeds. The skills a Go test reads are in `skills`. `internal/workflows`
+reads every Go test and `web/embed.go` and holds them to that.
 
 ## The speech library
 

@@ -90,20 +90,11 @@ CI run and a build to take, and change nothing being tested.
 
 ## Where the skills come from
 
-The skills in `.claude/skills/` are written for any project. They are
-developed in FrameFairy, at `timmrkz/framefairy`, and copied here made
-generic: no FrameFairy names, paths or product words. `interface-design`
-is FrameFairy's `interface` skill, renamed because `interface` here is
-Speaker Trail's own. The last copy was pull request #13, on 13 November
-2026.
-
-To bring them up to date, compare FrameFairy's `.claude/skills/`, its
-`.github` templates, `CLAUDE.md` and its docs on how it works since the
-last copy, and bring over the lessons, never its facts. Search the result
-for FrameFairy's words before pushing. A lesson learned here first goes
-into the skill here in generic words, and to FrameFairy as a briefing in
-`briefings/` in the project files, since sessions here cannot push to
-it. Until FrameFairy has the lesson, the next copy would undo it.
+The skills in `.claude/skills/` are written for any project. Most are
+FrameFairy's, at `timmrkz/framefairy`, copied as they are, and the rest
+were made here. Which is which, where their words meet this repository,
+the lessons learned here first and how to bring them up to date are in
+[SKILLS.md](SKILLS.md).
 
 ## What is on your Mac
 

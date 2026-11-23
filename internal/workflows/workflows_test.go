@@ -12,16 +12,19 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// read is a path a Go test names to read a file of the interface or the
-// docs, relative to the repository's root however many ../ lead there.
-var read = regexp.MustCompile(`"(?:\.\./)*((?:web|docs)/[^"]+)"`)
+// read is a path a Go test names to read a file of the interface, the
+// docs or the skills, relative to the repository's root however many ../
+// lead there. A folder read whole ends in a slash.
+var read = regexp.MustCompile(`"(?:\.\./)*((?:web|docs|\.claude/skills)/[^"]*)"`)
 
 // A pull request starts the Go tests only when it changes Go, by the
 // filters of the job changes in ci.yml, and Go is no file of web/ and
 // none of the docs. So a Go test that reads one would not run on the pull
 // request that changes it, and main would find out after the merge.
 // Every file of web/ a Go test reads or web/embed.go embeds is in the
-// filter goread, beside go, and no Go test reads the docs.
+// filter goread, beside go, a skill a Go test reads is in the filter
+// skills, which starts the Go job and not the Mac's, and no Go test reads
+// the docs.
 //
 // On the real disk: what is read is the repository's own tests and CI.
 func TestWhatAGoTestReadsStartsIt(t *testing.T) {
@@ -53,8 +56,11 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 	if len(filters["goread"]) == 0 {
 		t.Fatal("ci.yml's job changes has no filter goread, so this test reads it wrong")
 	}
+	if len(filters["skills"]) == 0 {
+		t.Fatal("ci.yml's job changes has no filter skills, so a change to a skill starts no Go test")
+	}
 	starts := func(file string) bool {
-		for _, p := range filters["goread"] {
+		for _, p := range append(filters["goread"], filters["skills"]...) {
 			for _, glob := range braces(p) {
 				if ok, _ := path.Match(glob, file); ok {
 					return true
@@ -110,7 +116,7 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 			case strings.HasPrefix(file, "docs/"):
 				t.Errorf("%s reads %s, and a pull request of the docs starts no Go test", rel, file)
 			case !starts(file):
-				t.Errorf("%s reads %s, which ci.yml's filter goread leaves out: a pull request that changes it starts no Go test. Add it there", rel, file)
+				t.Errorf("%s reads %s, which ci.yml's filters goread and skills leave out: a pull request that changes it starts no Go test. Add it there", rel, file)
 			}
 		}
 		return nil

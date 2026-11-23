@@ -96,9 +96,11 @@
 
   // What adding or a pasted profile changed, or Undo took back, shows at
   // once.
+  // Both are read, so both are followed, and only a change after People
+  // opened counts.
+  const changedAt = runWatch.changed + pasting.changed
   $effect(() => {
-    // Both are read, so both are followed.
-    if (runWatch.changed + pasting.changed === 0) return
+    if (runWatch.changed + pasting.changed === changedAt) return
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 

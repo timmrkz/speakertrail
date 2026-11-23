@@ -129,19 +129,11 @@ func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 // reads nothing live, and it is one more search against the budget. A
 // link with no name in it, like /in/ACoAAB12345, asks nothing.
 func (e *Exa) ProfileByName(ctx context.Context, link string) (Profile, error) {
-	handle := linkName(link)
-	var words []string
-	for w := range strings.SplitSeq(handle, "-") {
-		// LinkedIn adds numbers and letters, like 71 or 7a1b2c3, to tell
-		// people of the same name apart. They are no part of a name.
-		if w != "" && !strings.ContainsAny(w, "0123456789") {
-			words = append(words, w)
-		}
-	}
-	if len(words) == 0 {
+	handle, words := linkName(link), NameIn(link)
+	if words == "" {
 		return Profile{}, ErrNotIndexed
 	}
-	found, err := e.People(ctx, strings.Join(words, " "), 10)
+	found, err := e.People(ctx, words, 10)
 	if err != nil {
 		return Profile{}, err
 	}
@@ -151,6 +143,21 @@ func (e *Exa) ProfileByName(ctx context.Context, link string) (Profile, error) {
 		}
 	}
 	return Profile{}, ErrNotIndexed
+}
+
+// NameIn is the name in a profile's link as words, like "erika beispiel"
+// for /in/erika-beispiel-71, empty for a link with none, like
+// /in/ACoAAB12345.
+func NameIn(link string) string {
+	var words []string
+	for w := range strings.SplitSeq(linkName(link), "-") {
+		// LinkedIn adds numbers and letters, like 71 or 7a1b2c3, to tell
+		// people of the same name apart. They are no part of a name.
+		if w != "" && !strings.ContainsAny(w, "0123456789") {
+			words = append(words, w)
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 // linkName is the name in a profile's link, the part after /in/, in

@@ -59,7 +59,7 @@ type Reader interface {
 // says none is left, which is ErrNoBudget.
 func ReadProfile(ctx context.Context, r Reader, link string, reserve func() (bool, error)) (search.Profile, error) {
 	prof, err := r.Profile(ctx, link)
-	if !errors.Is(err, search.ErrNotIndexed) || ctx.Err() != nil {
+	if !errors.Is(err, search.ErrNotIndexed) || ctx.Err() != nil || search.NameIn(link) == "" {
 		return prof, err
 	}
 	ok, err := reserve()
@@ -476,7 +476,7 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 		f := store.Pasted{}
 		if as != nil {
 			f = *as
-			f.Text = search.WithoutContact(f.Text)
+			f.Text = search.Kept(f.Text)
 		} else {
 			prof := search.Pasted(text, p.LinkedIn.URL)
 			if prof.Text == "" {
@@ -484,11 +484,8 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 			}
 			f = store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
 			named = prof.Name != ""
-			if city, inNRW := place.PlaceInNRW(prof.Location); inNRW && city != "" {
+			if city := cityOf(prof.Location); city != "" {
 				f.City = city
-			} else if prof.Location != "" && !inNRW {
-				city, _, _ = strings.Cut(prof.Location, ",")
-				f.City = strings.TrimSpace(city)
 			}
 		}
 		d.Paste(p, f, now)
@@ -504,6 +501,9 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 	}
 	if g := e.going; g != nil {
 		g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person == id })
+		// A read Exa is still asked for no longer counts, the row says
+		// it is read.
+		delete(g.reading, id)
 	}
 	return was, named, nil
 }
@@ -766,13 +766,9 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 			r.Error = err.Error()
 			p.ReadError = err.Error()
 		default:
-			city, inNRW := place.PlaceInNRW(prof.Location)
-			if !inNRW {
-				city, _, _ = strings.Cut(prof.Location, ",")
-			}
 			born, reason, roles := careerOf(prof, r.At)
 			d.ReadLink(p, store.Found{
-				Name: prof.Name, Headline: prof.Headline, City: strings.TrimSpace(city),
+				Name: prof.Name, Headline: prof.Headline, City: cityOf(prof.Location),
 				BornAbout: born, AgeReason: reason, Roles: roles, LastActive: prof.LastActive, Text: prof.Text,
 			}, r.At)
 			score(p, r.At)
@@ -975,6 +971,17 @@ func linkedIn(raw string) string {
 		return ""
 	}
 	return "https://www.linkedin.com" + path
+}
+
+// cityOf is the city a profile's place gives, in German for one in NRW,
+// like "Köln" for "Cologne, North Rhine-Westphalia, Germany", and the
+// first part for one elsewhere.
+func cityOf(location string) string {
+	city, inNRW := place.PlaceInNRW(location)
+	if !inNRW {
+		city, _, _ = strings.Cut(location, ",")
+	}
+	return strings.TrimSpace(city)
 }
 
 // handleOf is the last part of a profile's link.

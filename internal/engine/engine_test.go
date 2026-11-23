@@ -988,3 +988,27 @@ func TestAPasteWhileExaReadsWins(t *testing.T) {
 		}
 	})
 }
+
+// A link with no name in it is not asked for by name, so it takes no
+// second search from the budget, and with the last search it is told
+// apart as not in the index, not left for next month.
+func TestALinkWithNoNameTakesOneSearch(t *testing.T) {
+	f := &finder{}
+	e, st := newEngine(t, f)
+	_ = st.Update(func(d *store.Data) error {
+		return d.SetSetting(Provider+"_monthly_searches", json.RawMessage("1"), t0)
+	})
+	link := "https://www.linkedin.com/in/ACoAAB12345"
+	if _, err := e.Add(link); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if p := d.PersonByProfile(link); p == nil || p.ToRead || p.ReadError != NotIndexed || d.Used(Provider, t0) != 1 {
+			t.Errorf("read %+v, %d searches", p, d.Used(Provider, t0))
+		}
+	})
+	if len(f.named) != 0 {
+		t.Errorf("asked by name for %q", f.named)
+	}
+}

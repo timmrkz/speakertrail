@@ -45,36 +45,85 @@ func Pasted(text, link string) Profile {
 	var p Profile
 	start := 0
 	if name := spelled(linkName(link)); name != "" {
+		start = -1
+		// The name as the link spells it, or failing that with more
+		// around it, like "Dr. Mara Beispiel, MBA".
 		for i, l := range lines {
 			if spelled(l) == name {
 				p.Name, start = l, i
 				break
 			}
 		}
+		for i, l := range lines {
+			if start >= 0 {
+				break
+			}
+			if len([]rune(l)) <= 80 && strings.Contains(spelled(l), name) {
+				p.Name, start = nameIn(l, name), i
+			}
+		}
+		start = max(start, 0)
 	}
 	lines = lines[start:]
 	if p.Name != "" {
-		for i, l := range lines[1:min(len(lines), 8)] {
+		// The headline is the first line after the name, unless that is
+		// already the place. The place is the first line that has the
+		// shape of one, like "Köln, Nordrhein-Westfalen, Deutschland".
+		first := true
+		for _, l := range lines[1:min(len(lines), 8)] {
 			l = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(l, "Contact info"), "Kontaktinfo"))
 			l = strings.TrimSpace(strings.TrimSuffix(l, "·"))
 			if l == "" || pronouns.MatchString(l) || degree.MatchString(l) {
 				continue
 			}
-			if _, inNRW := place.PlaceInNRW(l); inNRW || germany.MatchString(l) {
+			if isPlace(l) {
 				p.Location = l
 				break
 			}
-			if p.Headline == "" && i < 4 {
+			if first {
 				p.Headline = l
 			}
+			first = false
 		}
 	}
-	out := WithoutContact(strings.TrimSpace(strings.Join(lines, "\n")))
+	p.Text = Kept(strings.Join(lines, "\n"))
+	return p
+}
+
+// Kept is a profile's text as the app keeps it: without email addresses
+// and phone numbers, and at most TextChars long.
+func Kept(text string) string {
+	out := WithoutContact(strings.TrimSpace(text))
 	if r := []rune(out); len(r) > TextChars {
 		out = strings.TrimSpace(string(r[:TextChars]))
 	}
-	p.Text = out
-	return p
+	return out
+}
+
+// isPlace is a line that gives a place the way a profile's top does: a
+// city with its state or country, or a region, never a headline that
+// names a city, like "Fotografin in Köln".
+func isPlace(l string) bool {
+	if regionLine.MatchString(l) {
+		return true
+	}
+	if !strings.Contains(l, ",") {
+		return false
+	}
+	_, inNRW := place.PlaceInNRW(l)
+	return inNRW || germany.MatchString(l)
+}
+
+// nameIn is the name in a line that holds more, like "Mara Beispiel |
+// Coach 🌱": the part before a mark that holds the name, without the
+// marks and pictures after it.
+func nameIn(l, name string) string {
+	for _, sep := range []string{" | ", " · ", " – ", " - "} {
+		if before, _, ok := strings.Cut(l, sep); ok && strings.Contains(spelled(before), name) {
+			l = before
+		}
+	}
+	return strings.TrimRightFunc(l, func(r rune) bool { return !unicode.IsLetter(r) && r != '.' && r != ')' })
 }
 
 var (
@@ -84,6 +133,8 @@ var (
 	degree = regexp.MustCompile(`^·?\s*(?:1st|2nd|3rd\+?|[123]\.)(?:\s.*)?$`)
 	// A place outside NRW still says the country.
 	germany = regexp.MustCompile(`, (?:Germany|Deutschland)$`)
+	// A region on its own, like "Ruhr Region" or "Greater Cologne Area".
+	regionLine = regexp.MustCompile(`^(?:\p{L}+[ -])+(?:Region|Area|Gebiet|Metropolregion)$|^Metropolregion `)
 )
 
 // spelled is the letters of a name or a link name, small, with ä, ö, ü

@@ -105,8 +105,9 @@ namesake. A link with no name in it asks nothing more.
 profile page Tim copied in Chrome, all of it with ⌘A and ⌘C, as the
 person's profile, for someone Exa's index lacks. The app never requests
 LinkedIn: Tim opened the page. The name is the line that spells the name
-in the link, the headline the line after it, the city the first line
-after it that names a place. LinkedIn's menu before the name, its
+in the link, even with a title or more around it, the headline the line
+after it, the city from the first line after it in the shape of a place,
+like "Köln, Nordrhein-Westfalen, Deutschland". LinkedIn's menu before the name, its
 buttons, and the other people the page shows at its end are left out,
 so are email addresses and phone numbers, and the text is cut at 8000
 characters, like Exa's. A read of them Exa is still asked for loses to

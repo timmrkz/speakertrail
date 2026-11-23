@@ -22,11 +22,7 @@ class Pasting {
   // Counts every profile kept or put back, so the person and the list
   // read again.
   changed = $state(0)
-  // The person whose page is being kept now, or null.
-  busy = $state<number | null>(null)
-
   async paste(id: number, text: string): Promise<void> {
-    this.busy = id
     try {
       const r = await api.pasteProfile(id, { text })
       this.changed++
@@ -35,8 +31,6 @@ class Pasting {
       else toast.show('Kept the page as their profile. It does not give their name, so check it is theirs', 'bad', undo)
     } catch (e) {
       toast.show(errorText(e), 'bad')
-    } finally {
-      this.busy = null
     }
   }
 

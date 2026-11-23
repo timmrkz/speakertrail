@@ -519,13 +519,20 @@ func (d *Drafter) read(ctx context.Context, id int64, link string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("their profile could not be read from Exa: %w", err)
 	}
+	text := prof.Text
 	err = d.Store.Update(func(data *store.Data) error {
-		if p := data.Person(id); p != nil {
+		p := data.Person(id)
+		switch {
+		case p == nil:
+		// A page Tim pasted while Exa was asked wins.
+		case p.LinkedIn.Text != "":
+			text = p.LinkedIn.Text
+		default:
 			data.SetProfileText(p, prof.Text, d.now())
 		}
 		return nil
 	})
-	return prof.Text, err
+	return text, err
 }
 
 // expect is how long a draft is expected to take, in seconds, from

@@ -43,8 +43,10 @@
 
   // A LinkedIn page pasted as their profile, or Undo, shows at once,
   // with the name, headline and city the page gave.
+  // Only a change after it opened counts.
+  const pastedAt = pasting.changed
   $effect(() => {
-    if (!pasting.changed) return
+    if (pasting.changed === pastedAt) return
     untrack(() => person.run(() => api.person(id), { quiet: true }).then(() => {
       if (person.data) {
         onname?.(person.data.id, person.data.name)

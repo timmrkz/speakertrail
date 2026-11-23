@@ -67,6 +67,8 @@ export function asShown(html: string): string {
     }
     const ws = n.style.whiteSpace
     const keep = n.tagName === 'PRE' || (ws ? ws.startsWith('pre') || ws === 'break-spaces' : pre)
+    // Cells of a row stand apart by a tab, as in Chrome's plain text.
+    if ((n.tagName === 'TD' || n.tagName === 'TH') && n.previousElementSibling) out += '\t'
     const block = blocks.has(n.tagName)
     if (block) newline()
     const start = out.length

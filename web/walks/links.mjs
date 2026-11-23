@@ -1,6 +1,7 @@
 // Walks adding people from their LinkedIn links on People, against the
 // mock, in Chromium, the way walks/pick.mjs does. Tim agreed the way it
-// works on 22 November 2026, issue #43: links pasted into the search, or
+// works on 22 November 2026, issue #43, and on 23 November how a profile
+// Exa lacks gets in, pasted from Chrome: links pasted into the search, or
 // anywhere on People, turn Run into Add, Add 2 or Open, Enter does the
 // same, links dropped on the window light all of it and are added too,
 // and the people added show under New at once, each row filled while
@@ -143,6 +144,36 @@ await walk('Links pasted on People, not into a field, go into the search', async
   })
   await page.waitForFunction(() => document.querySelector('main button.start')?.textContent.trim() === 'Add')
   expect('the search does not hold the link', (await search(page).inputValue()) === 'https://www.linkedin.com/in/ida-beispiel-74')
+})
+
+await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, and Undo puts back their link name', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/neu-probe-79')
+  await search(page).press('Enter')
+  await done(page)
+  // The toast of the run's end comes first, so it does not take the place
+  // of the paste's.
+  await page.locator('.toast-region', { hasText: 'Run done' }).waitFor()
+  const row = page.locator('main .prow', { hasText: 'neu-probe-79' })
+  await row.locator('.sub', { hasText: "Not in Exa's index" }).waitFor()
+  expect('the row does not say how to give the app the profile', (await row.locator('.sub').getAttribute('title')).includes('⌘V'))
+  await row.click()
+  await page.waitForURL(/\/app\/people\/\d+$/)
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'Startseite\nNeu Probe\nGründerin | Probe Keramik\nDortmund, Nordrhein-Westfalen, Deutschland\nInfo\nIch töpfere.')
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+  })
+  await page.locator('main .prow b', { hasText: 'Neu Probe' }).waitFor()
+  const line = await page.locator('main .prow', { hasText: 'Neu Probe' }).locator('.sub').textContent()
+  expect(`the row said "${line}"`, line.includes('Gründerin | Probe Keramik') && line.includes('Dortmund'))
+  expect('the page went into the search', (await search(page).inputValue()) === '')
+  await page.locator('.toast-region', { hasText: 'Kept the page' }).waitFor()
+  const said = await page.locator('.toast-region').textContent()
+  expect(`the toast said "${said}"`, said.includes('Kept the page as their profile') && !said.includes('Neu Probe'))
+  await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  await page.locator('main .prow b', { hasText: 'neu-probe-79' }).waitFor()
 })
 
 await walk('Links dropped on the window light all of it and are added, from any page', async (browser) => {

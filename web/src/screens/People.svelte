@@ -5,6 +5,7 @@
   import { fmtLeft, plural } from '../lib/format'
   import { typing } from '../lib/keys'
   import { Load } from '../lib/load.svelte'
+  import { isPage, PASTE_HINT, pasting } from '../lib/paste.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import { runCount, runSays, runShare, runWatch } from '../lib/run.svelte'
   import Busy from '../lib/components/Busy.svelte'
@@ -93,9 +94,11 @@
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 
-  // What adding changed, or Undo took back, shows at once.
+  // What adding or a pasted profile changed, or Undo took back, shows at
+  // once.
   $effect(() => {
-    if (!runWatch.changed) return
+    // Both are read, so both are followed.
+    if (runWatch.changed + pasting.changed === 0) return
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 
@@ -193,12 +196,17 @@
   })
 
   // What is pasted on People, not into a field, goes into the search,
-  // links above all.
+  // links above all. A LinkedIn page copied in Chrome while a person is
+  // open becomes their profile, see paste.svelte.ts.
   function paste(e: ClipboardEvent) {
     if (typing()) return
     const text = e.clipboardData?.getData('text/plain')?.trim() ?? ''
     if (!text) return
     e.preventDefault()
+    if (openId !== null && isPage(text)) {
+      void pasting.paste(openId, text)
+      return
+    }
     q = text
     query = text
     document.querySelector<HTMLInputElement>('.list-pane .search input')?.focus()
@@ -463,7 +471,7 @@
                   {#if isNew(p)}<span class="dot new" title="Came in with this run"></span><span class="sr-only">, new</span>{/if}
                   {#if !p.read}<span class="fit num" title="Fit {p.fit_score} of 100. The person says why"><span class="sr-only">, fit </span>{p.fit_score}</span>{/if}
                 </span>
-                <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
+                <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read === 'not_indexed' ? `${line(p)}. ${PASTE_HINT}` : p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
               </a>
             </li>
           {/each}

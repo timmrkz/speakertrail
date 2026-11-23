@@ -56,6 +56,8 @@ interface PersonRow {
   read?: Person['read']
   read_since?: string
   read_error?: string
+  // A LinkedIn page Tim pasted as their profile.
+  text?: string
 }
 
 function createState() {
@@ -436,7 +438,7 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
     : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
   return {
     ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()],
-    draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.linkedin ? hoursAgo(30) : null,
+    draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.text ? new Date().toISOString() : p.linkedin ? hoursAgo(30) : null,
     fit_parts: fitParts(s, personList(s, p)),
   }
 }
@@ -710,6 +712,37 @@ const ROUTES: [string, RegExp, Handler][] = [
     }
     reads.queue = reads.queue.filter((x) => x.id !== p.id)
     return { status: 204 }
+  }],
+  ['PUT', /^\/api\/people\/(\d+)\/profile$/, (s, m, _q, b) => {
+    const p = s.people.find((x) => x.id === Number(m[1]))
+    if (!p) return err(404, 'Not found')
+    const was = { text: p.text ?? '', name: p.name, headline: p.headline, city: p.city }
+    let named = false
+    if (b.as) {
+      const as = b.as as typeof was
+      Object.assign(p, { text: as.text, name: as.name || p.name, headline: as.headline, city: as.city })
+      if (!as.text && p.read !== undefined) p.read = 'next'
+    } else {
+      // Like the app, more or less: the name is the line that spells the
+      // name in the link, the headline the line after it.
+      const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+      if (!lines.length) return err(400, 'The paste holds no text')
+      const spelled = (x: string) => x.toLowerCase().split(/[-\s]+/).filter((w) => !/\d/.test(w)).join('')
+      const handle = spelled((linkOf(p) ?? '').split('/').pop() ?? '')
+      const at = lines.findIndex((l) => spelled(l) === handle)
+      named = at >= 0
+      if (named) {
+        p.name = lines[at]
+        p.headline = lines[at + 1] ?? p.headline
+        const place = lines.slice(at + 1, at + 6).find((l) => /Nordrhein-Westfalen|North Rhine/.test(l))
+        if (place) p.city = place.split(',')[0]
+      }
+      p.text = lines.slice(Math.max(at, 0)).join('\n')
+      if (p.read !== undefined) p.read = ''
+      p.read_error = undefined
+      reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    }
+    return ok({ person: personDetail(s, p), was, named })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))

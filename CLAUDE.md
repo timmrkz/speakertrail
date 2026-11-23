@@ -249,8 +249,9 @@ messages, pull request text, code comments and chat replies.
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.
 - **No LinkedIn, no Instagram.** The app never requests them. Profiles
-  come from Exa's index, asked with `livecrawl` never. Never add a request
-  to either.
+  come from Exa's index, asked with `livecrawl` never, by link and then
+  by the name in it. One Exa lacks Tim copies from Chrome and pastes on
+  the person (23 November 2026, #43). Never add a request to either.
 - **LinkedIn opens in Tim's Chrome profile.** The app never requests
   LinkedIn itself, it hands the link to Chrome with
   `open -n -a "Google Chrome" --args --profile-directory=<folder>`, the

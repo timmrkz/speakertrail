@@ -74,7 +74,8 @@ kept, see [fit-score.md](fit-score.md).
 `reading` now, with `read_since` when it began and `read_ms` about how
 long a read takes, measured from the last reads and null until there is
 one, `waiting` its turn in the run, `next` for the next run, which reads
-it, `not_indexed` when Exa's index does not hold it yet, `failed` with
+it, `not_indexed` when Exa's index does not hold it yet, neither under
+the link nor by the name in the link, `failed` with
 `read_error` when the last read failed, or empty once read. A run reads
 the profiles before it asks its searches.
 
@@ -93,7 +94,29 @@ already, or failed to, waits for the next run too, so no run reads one
 twice. Someone whose profile Exa did not have, or could not give, is
 asked for again when added again. 400 when the text holds no profile
 link. Each read is one call to Exa's index, never LinkedIn, counted
-against the month's budget.
+against the month's budget. When the index has no copy under the link,
+the read asks Exa's people search once more by the name in the link,
+like "erika beispiel" for `/in/erika-beispiel-71`, since the index often
+holds a profile under another link, like de.linkedin.com. That is one
+more search, and only a profile under the same link name counts, never a
+namesake. A link with no name in it asks nothing more.
+
+`PUT /api/people/{id}/profile` with `{"text": "…"}` keeps a LinkedIn
+profile page Tim copied in Chrome, all of it with ⌘A and ⌘C, as the
+person's profile, for someone Exa's index lacks. The app never requests
+LinkedIn: Tim opened the page. The name is the line that spells the name
+in the link, the headline the line after it, the city the first line
+after it that names a place. LinkedIn's menu before the name, its
+buttons, and the other people the page shows at its end are left out,
+so are email addresses and phone numbers, and the text is cut at 8000
+characters, like Exa's. A read of them Exa is still asked for loses to
+it, and a run that had not begun it drops it. It answers `{"person": {…},
+"was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
+""}, "named": true}`: `person` as `GET /api/people/{id}` gives it,
+`was` what they were before, and `named` whether the page gave their
+name. `{"as": {…}}` with a `was` puts that back, for Undo, and someone
+added from a link whose text it empties waits for the next run to read
+it from Exa. 400 for a paste with no text, 404 for an id nobody has.
 
 `DELETE /api/people/{id}` takes out again someone added from a link, for
 Undo, and answers 204. A run that had not read their profile leaves it,
@@ -105,7 +128,7 @@ an id nobody has.
 the first message to them, empty before the first draft, and
 `drafted_at` when the language model wrote it. `profile_read_at` is when
 Exa's index first gave the profile text a draft is written from as it is
-now, null while the
+now, or Tim pasted it, null while the
 app has none and a draft reads it first. See [Drafts](#drafts).
 `fit_parts` are what `fit_score` adds up, in the order the person's Why
 shows them, each with its points and why, like
@@ -418,7 +441,9 @@ A draft is
 ```
 
 `state` is `queued`, `reading` (their profile from Exa, when the app has
-no text of it yet), `loading` (the model, when it is not loaded), `writing`,
+no text of it yet, by the link and then by the name in it, like a run's
+read: a draft whose profile Exa lacks fails and says to paste it, see
+`PUT /api/people/{id}/profile`), `loading` (the model, when it is not loaded), `writing`,
 `done`, `failed` or `cancelled`. `text` is the message, from `writing` on
 with `…` where the model's parts go, and whole once it is done. What the
 model wrote in it is untrusted and shown as text. `problem` is set on a

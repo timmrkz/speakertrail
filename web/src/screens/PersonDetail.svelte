@@ -5,9 +5,10 @@
   // the sheet in a narrow one both show this, so the two never drift
   // apart. The name stands in the row of the cross above it, which the
   // pane and the sheet draw, so onname tells them the name.
-  import type { Snippet } from 'svelte'
+  import { untrack, type Snippet } from 'svelte'
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { Load } from '../lib/load.svelte'
+  import { pasting } from '../lib/paste.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -39,6 +40,18 @@
     })
   }
   load()
+
+  // A LinkedIn page pasted as their profile, or Undo, shows at once,
+  // with the name, headline and city the page gave.
+  $effect(() => {
+    if (!pasting.changed) return
+    untrack(() => person.run(() => api.person(id), { quiet: true }).then(() => {
+      if (person.data) {
+        onname?.(person.data.id, person.data.name)
+        onupdate?.(person.data)
+      }
+    }))
+  })
 
   // The LinkedIn profile the search found, and the link the app opens,
   // which it leaves out once Tim said the profile is not them.

@@ -107,6 +107,31 @@ func (d *Data) RemoveAdded(id int64) error {
 	return nil
 }
 
+// Pasted is a profile Tim pasted from his browser, or what a person was
+// before, which Undo puts back.
+type Pasted struct {
+	Text     string `json:"text"`
+	Name     string `json:"name"`
+	Headline string `json:"headline"`
+	City     string `json:"city"`
+}
+
+// Paste keeps a profile page Tim copied in his browser as a person's
+// profile, for when Exa's index has none, so a first message can be
+// written from it. Their name, headline and city become the page's, a
+// name only when it gives one. Nobody reads their profile from Exa then.
+// An empty text takes the profile away again, and someone Tim added from
+// a link waits for the next run to read it from Exa.
+func (d *Data) Paste(p *Person, f Pasted, at time.Time) {
+	d.SetProfileText(p, f.Text, at)
+	if f.Name != "" {
+		p.Name = f.Name
+	}
+	p.Headline, p.LinkedIn.Headline, p.City = f.Headline, f.Headline, f.City
+	p.UpdatedAt = at
+	p.ToRead, p.ReadError = f.Text == "" && p.Evidence == AddedByHand, ""
+}
+
 // ReadLink fills in someone Tim added from a link with what their profile
 // says, the name too.
 func (d *Data) ReadLink(p *Person, f Found, at time.Time) {

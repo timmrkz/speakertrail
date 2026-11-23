@@ -28,6 +28,7 @@ import (
 
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/language"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -68,6 +69,10 @@ func (j Job) Ended() bool {
 // Finder reads one profile from Exa's index, by its link or the name in
 // it, see engine.ReadProfile.
 type Finder = engine.Reader
+
+// ErrNoCopy is a draft for someone whose profile Exa's index holds
+// neither under their link nor under the name in it. Tim pastes it.
+var ErrNoCopy = errors.New("Exa has no copy of their profile. Open it in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V")
 
 // ErrNoPerson is a draft asked for someone who is not in the file.
 var ErrNoPerson = errors.New("there is no person")
@@ -508,6 +513,9 @@ func (d *Drafter) read(ctx context.Context, id int64, link string) (string, erro
 		return "", engine.ErrNoBudget
 	}
 	prof, err := engine.ReadProfile(ctx, finder, link, reserve)
+	if errors.Is(err, search.ErrNotIndexed) {
+		return "", ErrNoCopy
+	}
 	if err != nil {
 		return "", fmt.Errorf("their profile could not be read from Exa: %w", err)
 	}

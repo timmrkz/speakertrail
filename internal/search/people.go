@@ -53,7 +53,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 	body, _ := json.Marshal(map[string]any{
 		"query": query, "category": "people", "numResults": results,
 		// Enough of the text to reach the activity, which comes last.
-		"contents": map[string]any{"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never"},
+		"contents": map[string]any{"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never"},
 	})
 	var out struct {
 		Results []exaProfile `json:"results"`
@@ -98,7 +98,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 	body, _ := json.Marshal(map[string]any{
 		"urls": []string{link},
-		"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never",
+		"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contentsURL(e.URL), bytes.NewReader(body))
 	if err != nil {

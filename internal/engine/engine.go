@@ -454,6 +454,63 @@ func (e *Engine) Remove(id int64) error {
 	return nil
 }
 
+// Paste keeps a profile page Tim copied in his browser as the profile of
+// the person id, see search.Pasted and store.Data.Paste, and reports what
+// they were before, for Undo, and whether the page gives their name. A
+// read of them the going run has not begun is dropped. With as, it puts
+// back what they were and reads nothing from the text.
+func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Pasted, named bool, err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	var runID int64
+	if g := e.going; g != nil {
+		runID = g.id
+	}
+	err = e.Store.Update(func(d *store.Data) error {
+		p := d.Person(id)
+		if p == nil {
+			return store.ErrNoPerson
+		}
+		was = store.Pasted{Text: p.LinkedIn.Text, Name: p.Name, Headline: p.Headline, City: p.City}
+		now := e.Store.Now()
+		f := store.Pasted{}
+		if as != nil {
+			f = *as
+			f.Text = search.WithoutContact(f.Text)
+		} else {
+			prof := search.Pasted(text, p.LinkedIn.URL)
+			if prof.Text == "" {
+				return ErrNothingPasted
+			}
+			f = store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
+			named = prof.Name != ""
+			if city, inNRW := place.PlaceInNRW(prof.Location); inNRW && city != "" {
+				f.City = city
+			} else if prof.Location != "" && !inNRW {
+				city, _, _ = strings.Cut(prof.Location, ",")
+				f.City = strings.TrimSpace(city)
+			}
+		}
+		d.Paste(p, f, now)
+		score(p, now)
+		// The going run no longer waits for them, nor counts them.
+		if run := d.Run(runID); run != nil && !p.ToRead && !slices.ContainsFunc(run.Reads, func(r store.Read) bool { return r.PersonID == id }) {
+			run.Links = slices.DeleteFunc(run.Links, func(x int64) bool { return x == id })
+		}
+		return nil
+	})
+	if err != nil {
+		return was, false, err
+	}
+	if g := e.going; g != nil {
+		g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person == id })
+	}
+	return was, named, nil
+}
+
+// ErrNothingPasted is a paste that holds no profile, only white space.
+var ErrNothingPasted = errors.New("the paste holds no text")
+
 // Stop ends the going run. What it did not get to waits for the next
 // run. It returns once the run has ended.
 func (e *Engine) Stop(id int64) bool {
@@ -695,7 +752,8 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 	r.DurationMS = r.At.Sub(start).Milliseconds()
 	err = e.Store.Update(func(d *store.Data) error {
 		p := d.Person(id)
-		if p == nil {
+		// Tim pasted their profile while Exa was asked, and his wins.
+		if p == nil || !p.ToRead {
 			return nil
 		}
 		switch {

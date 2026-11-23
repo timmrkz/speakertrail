@@ -951,3 +951,40 @@ func TestRemoveTakesSomeoneAddedOutOfTheRun(t *testing.T) {
 		}
 	})
 }
+
+// A profile Tim pastes while Exa is still asked for it wins over what Exa
+// answers, and pasting from several goroutines while the run reads and
+// is asked how far it is leaves one profile and no read of it.
+func TestAPasteWhileExaReadsWins(t *testing.T) {
+	f := &finder{readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	out, err := e.Add(ida.URL + " linkedin.com/in/neu-hier-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	<-f.started
+	page := "Ida Probe\nGründerin | Probe Werkstatt\nInfo\nIch drechsle."
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if _, _, err := e.Paste(out.New[0], page, nil); err != nil {
+				t.Error(err)
+			}
+			e.Reading()
+		})
+	}
+	wg.Wait()
+	close(f.readHold)
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		p := d.Person(out.New[0])
+		if p.Headline != "Gründerin | Probe Werkstatt" || p.ToRead || p.ReadError != "" || !strings.Contains(p.LinkedIn.Text, "drechsle") {
+			t.Errorf("after the paste %+v", p)
+		}
+		r := d.Run(out.Run)
+		if len(r.Links) != 1 || len(r.Reads) != 1 {
+			t.Errorf("the run counts %d links and %d reads, want the one not pasted", len(r.Links), len(r.Reads))
+		}
+	})
+}

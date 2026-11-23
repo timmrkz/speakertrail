@@ -354,6 +354,15 @@ func (a *API) removePerson(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) sendPerson(w http.ResponseWriter, id int64) {
+	if out := a.detail(id); out != nil {
+		send(w, http.StatusOK, out)
+		return
+	}
+	fail(w, http.StatusNotFound, "Not found")
+}
+
+// detail is everything the app knows about one person, nil for nobody.
+func (a *API) detail(id int64) *personDetail {
 	var out *personDetail
 	reading, waiting := a.Engine.Reading()
 	a.Store.Read(func(d *store.Data) {
@@ -363,11 +372,46 @@ func (a *API) sendPerson(w http.ResponseWriter, id int64) {
 			out = &v
 		}
 	})
+	return out
+}
+
+// pasteProfile keeps a LinkedIn page Tim copied in his browser as a
+// person's profile, see engine.Paste. With as, it puts back what Undo
+// had kept.
+func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Text string        `json:"text"`
+		As   *store.Pasted `json:"as"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	was, named, err := a.Engine.Paste(id, body.Text, body.As)
+	switch {
+	case errors.Is(err, store.ErrNoPerson):
+		fail(w, http.StatusNotFound, "Not found")
+		return
+	case errors.Is(err, engine.ErrNothingPasted):
+		fail(w, http.StatusBadRequest, capital(err.Error()))
+		return
+	case err != nil:
+		a.internal(w, r, err)
+		return
+	}
+	out := a.detail(id)
 	if out == nil {
 		fail(w, http.StatusNotFound, "Not found")
 		return
 	}
-	send(w, http.StatusOK, out)
+	send(w, http.StatusOK, struct {
+		Person *personDetail `json:"person"`
+		Was    store.Pasted  `json:"was"`
+		Named  bool          `json:"named"`
+	}{out, was, named})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

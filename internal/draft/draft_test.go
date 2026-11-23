@@ -35,10 +35,17 @@ func (c *clock) Add(d time.Duration) {
 }
 
 // finder is Exa's index with one invented profile.
-type finder struct{ asked atomic.Int32 }
+type finder struct {
+	asked atomic.Int32
+	// none is an index that holds nobody.
+	none atomic.Bool
+}
 
 func (f *finder) Profile(_ context.Context, link string) (search.Profile, error) {
 	f.asked.Add(1)
+	if f.none.Load() {
+		return search.Profile{}, search.ErrNotIndexed
+	}
 	return search.Profile{URL: link, Name: "Mara Beispiel", Text: "# Mara Beispiel\n\nInhaberin | Beispiel Keramik\n\n## About\n\nIch töpfere in Köln."}, nil
 }
 
@@ -252,6 +259,25 @@ func TestAMissingProfileIsReadFromExa(t *testing.T) {
 		}
 		if d.Used("exa", t0) != 1 {
 			t.Errorf("%d calls to Exa counted", d.Used("exa", t0))
+		}
+	})
+}
+
+// A profile Exa holds neither under its link nor by name is asked for
+// twice, and the draft says how Tim gives it to the app himself.
+func TestADraftOfAProfileExaLacksSaysToPasteIt(t *testing.T) {
+	r := newRig(t)
+	r.finder.none.Store(true)
+	id := r.person(t, "Mara Beispiel", "")
+	r.d.Start(id)
+	r.d.Wait()
+	j := r.d.Jobs()[0]
+	if j.State != "failed" || !strings.Contains(j.Error, "paste it here") || strings.Contains(j.Error, "mara") {
+		t.Errorf("job %+v", j)
+	}
+	r.st.Read(func(d *store.Data) {
+		if d.Used("exa", t0) != 2 {
+			t.Errorf("%d calls to Exa counted, want the link and the name", d.Used("exa", t0))
 		}
 	})
 }

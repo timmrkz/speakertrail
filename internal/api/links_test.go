@@ -1,9 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -175,5 +177,62 @@ func TestUndoAddingPeople(t *testing.T) {
 	})
 	if code := call(t, a, "DELETE", fmt.Sprintf("/api/people/%d", found), "", nil); code != http.StatusConflict {
 		t.Errorf("someone a search found was taken out: %d", code)
+	}
+}
+
+// A LinkedIn page Tim pasted becomes the profile of someone Exa has no
+// copy of, with their name, headline and city, and Undo puts back what
+// they were.
+func TestPastingAProfile(t *testing.T) {
+	a, st, e := newAPI(t)
+	var added struct{ New []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/neu-hier-3"}`, &added)
+	e.Wait()
+	path := fmt.Sprintf("/api/people/%d/profile", added.New[0])
+	page := "Startseite\nNeu Hier\nGründerin | Hier Studio\nDortmund, Nordrhein-Westfalen, Deutschland\nInfo\nIch gründe in Dortmund. neu@hier.example"
+	body, _ := json.Marshal(map[string]string{"text": page})
+	var out struct {
+		Person struct {
+			Name, Headline, City string
+			Read                 string     `json:"read"`
+			ProfileReadAt        *time.Time `json:"profile_read_at"`
+		}
+		Was   store.Pasted
+		Named bool
+	}
+	if code := call(t, a, "PUT", path, string(body), &out); code != http.StatusOK {
+		t.Fatalf("paste: %d", code)
+	}
+	if out.Person.Name != "Neu Hier" || out.Person.Headline != "Gründerin | Hier Studio" || out.Person.City != "Dortmund" || out.Person.ProfileReadAt == nil || !out.Named {
+		t.Errorf("pasted %+v", out)
+	}
+	if out.Person.Read != "" {
+		t.Errorf("still says %q", out.Person.Read)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(added.New[0])
+		if p.ToRead || p.ReadError != "" || strings.Contains(p.LinkedIn.Text, "Startseite") || strings.Contains(p.LinkedIn.Text, "neu@") {
+			t.Errorf("kept %+v, text %q", p, p.LinkedIn.Text)
+		}
+	})
+	if out.Was.Name != "neu-hier-3" || out.Was.Text != "" {
+		t.Errorf("was %+v", out.Was)
+	}
+	// Undo.
+	undo, _ := json.Marshal(map[string]any{"as": out.Was})
+	if code := call(t, a, "PUT", path, string(undo), &out); code != http.StatusOK {
+		t.Fatalf("undo: %d", code)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(added.New[0])
+		if p.Name != "neu-hier-3" || p.City != "" || p.LinkedIn.Text != "" || !p.ToRead {
+			t.Errorf("after Undo %+v", p)
+		}
+	})
+	if code := call(t, a, "PUT", path, `{"text":"  \n "}`, nil); code != http.StatusBadRequest {
+		t.Errorf("an empty paste: %d", code)
+	}
+	if code := call(t, a, "PUT", "/api/people/999999/profile", string(body), nil); code != http.StatusNotFound {
+		t.Errorf("nobody: %d", code)
 	}
 }

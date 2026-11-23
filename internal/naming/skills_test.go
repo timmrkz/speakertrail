@@ -29,6 +29,9 @@ var notSaids = []notSaid{
 	{"a product", regexp.MustCompile(`(?i)speaker[ -]?trail|frame[ -]?fairy|frame ?ferry|My First Memory`)},
 	{"a word of this project", regexp.MustCompile(`(?i)\bExa\b|linkedin|\bNRW\b|north rhine|profile search|first message|\bwalks?\b|RunProgress|Pick\.svelte|app\.css|Morning Mist|Dusk Fog`)},
 	{"a word of this kind of app", regexp.MustCompile(`(?i)\bwails\b|svelte|llama|whisper|podcast|Hugging ?Face`)},
+	// FrameFairy's words, the skills' source, so a lesson brought over
+	// from there names none of its app either.
+	{"a word of FrameFairy's app", regexp.MustCompile(`(?i)range picker|clip timeline|video preview|\bepisodes?\b|ffmpeg|libass|\bgemma\b|parakeet|\bVP9\b|\bOpus\b|H\.264|\bAAC\b|AudioContext|AudioWorklet|sound card|playhead|frame queue|Go side|VideoToolbox|AudioToolbox|GStreamer|AppKit|\bsubtitles?\b|transcri|waveform|\bshorts\b`)},
 }
 
 // numbers finds `#12`, and with it what stands before it, so a link to a
@@ -121,6 +124,12 @@ func TestSaidCatchesWhatItShould(t *testing.T) {
 		{"the page's Wails runtime", true},
 		{"a Svelte component", true},
 		{"llama-server on loopback", true},
+		{"an episode made by ffmpeg", true},
+		{"the playhead and the waveform", true},
+		{"It is VP9 and Opus, not H.264 and AAC.", true},
+		{"the transcript grows", true},
+		{"captions for people who cannot hear, WCAG", false},
+		{"a JSON decoder", false},
 		{"The user decides.", false},
 		{"A timer in a test is a guess.", false},
 		{"one frame in 60, 5 % slower", false},

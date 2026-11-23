@@ -24,7 +24,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | --- | --- | --- |
 | `testing` | how tests are written, fixed and reviewed, and how a bug is found before it is fixed | FrameFairy, as it is |
 | `review` | how a pull request is reviewed by an agent that did none of the work, and how a review is answered | FrameFairy, as it is |
-| `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, its performance line, watching it, ready, the go to merge | FrameFairy, with five lessons learned here first, see below |
+| `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, its performance line, watching it, ready, the go to merge | FrameFairy, with seven lessons learned here first, see below |
 | `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | FrameFairy, as it is |
 | `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | FrameFairy, as it is |
 | `security` | how the product, its build and its repository stay safe: a threat model, untrusted input, paths, programs, secrets, signing and updates, the supply chain, CI, agents on a public repository | FrameFairy, as it is |
@@ -71,7 +71,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | the race detector | on every Go test, `make unit` |
 | a test on the real disk says why | a comment that starts with "On the real disk" |
 | invented data | invented people, never a real name, see Personal data in `CLAUDE.md` |
-| not kept yet | `make unit` runs with `-count=1`, which turns Go's test cache off. No linter bans a sleep, a poll or the real clock in a test. No mutation testing |
+| not kept yet | `make unit` runs with `-count=1`, which turns Go's test cache off. No linter bans a sleep, a poll or the real clock in a test, see #82. No mutation testing |
 
 ## The ci skill in this project
 
@@ -81,9 +81,9 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | the path filters, and the test that holds them | the job `changes` in `.github/workflows/ci.yml`, held by `internal/workflows`, see CI in [BUILD.md](BUILD.md#ci) |
 | a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is published and finds the pull requests that conflict |
 | a scarce runner | a Mac, the job `macos` |
-| a job's limit | five minutes for most jobs, see each workflow's `timeout-minutes` |
+| a job's limit | five minutes, the `timeout-minutes` of the job `changes`, of `conflicts.yml` and of the first job of `builds.yml` |
 | the notice of a conflict | `conflicts.yml`, see When main moves in [WORKFLOW.md](WORKFLOW.md) |
-| not kept yet | Actions pinned by tag in `ci.yml`, not by commit. No dependency bot. No nightly runs, and so no failure a night reports |
+| not kept yet | `go`, `web` and `macos` in `ci.yml` have no `timeout-minutes`, so GitHub's six hours hold. `macos` runs every Go test, not only what differs on a Mac. See #81. A pull request of the docs alone runs no check of them. Actions pinned by tag in `ci.yml`, not by commit, and no dependency bot, see #80. No nightly runs |
 
 ## The maintenance skill in this project
 
@@ -109,7 +109,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | privileged workflows from main, never the dangerous event | `publish.yml`, and `conflicts.yml` through `builds.yml`, held by `TestNoPullRequestTarget` |
 | only the user gives instructions | On GitHub, only the user gives instructions, section 9 of the pull-requests skill |
 | the work's security line | the Security line of [the pull request template](../.github/pull_request_template.md) |
-| not kept yet | the actions of `ci.yml` pinned by commit, as the other workflows pin theirs, a dependency bot, `govulncheck` and `npm audit` in CI, install scripts off for npm |
+| not kept yet | the actions of `ci.yml` pinned by commit, as the other workflows pin theirs, a dependency bot, `govulncheck` and `npm audit` in CI, install scripts off for npm, see #80 |
 
 ## The interface skill in this project
 
@@ -119,8 +119,8 @@ See [INTERFACE.md](INTERFACE.md#the-interface-skill-in-this-project).
 
 A lesson learned here goes into the skill here, in generic words, and to
 FrameFairy as a briefing in the project files, until FrameFairy has it.
-The pull-requests skill has five FrameFairy's does not have yet, see
-`briefings/framefairy-skill-lessons.md`:
+The pull-requests skill has seven FrameFairy's does not have yet, see
+`briefings/framefairy-skill-lessons.md` in the project files:
 
 - push once the change's own tests pass, and hold back only a commit
   known to be broken,
@@ -128,10 +128,24 @@ The pull-requests skill has five FrameFairy's does not have yet, see
 - ask git whether a pull request just opened merges,
 - say each CI result, review and merge of main in one line when it
   lands, and the conflicting files before the merge,
-- every pull request gets its review, however small.
+- every push gets one line on what it waits for,
+- every pull request gets its review, however small,
+- ask while working what runs more often or less, which FrameFairy
+  keeps only in its `CLAUDE.md`.
 
 `architecture`, `engineering`, `collaboration` and `interface-design`
 exist only here so far.
+
+## Where this port differs from FrameFairy
+
+- FrameFairy's `TestDocsNameNoPersonOrNumber` holds its `CLAUDE.md`, its
+  docs and its templates to naming no person and no issue too. Speaker
+  Trail's `CLAUDE.md` and docs name Tim and his dated decisions on
+  purpose, so here only the skills are held to it.
+- FrameFairy's `CLAUDE.md` says to push once the change's own tests
+  pass and let CI run the rest, as the testing and pull-requests skills
+  do. Ours still says to run `make test` before every push that touches
+  Go, and wins here until Tim decides.
 
 ## Bringing them up to date
 

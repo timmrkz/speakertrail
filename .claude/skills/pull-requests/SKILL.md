@@ -103,6 +103,9 @@ the project's template, do not invent a shape:
 - **Every change says faster, slower or the same,** unasked, or CI when
   only tests or the build change. The same means no running work added
   or removed.
+- **Ask it while working:** what runs more often or less, what waits on
+  what, what is read, drawn, decoded or started again, what is held in
+  memory.
 - **Measure a path a person waits on before and after:** the whole wait
   from gesture to result on screen, in a real case, on the head commit,
   not one inner call or step.
@@ -139,8 +142,8 @@ the project's template, do not invent a shape:
 - **But what the user was told is coming gets a line when it lands:** a
   CI result, green or red, even with another run on its way, a review
   that is back, a merge of the main branch with the files that
-  conflicted. What an event starts is said in one line, and again when
-  it is done. Silence reads as lost work, and a checklist notifies no
+  conflicted. Every push gets one line on what it waits for. What an
+  event starts is said in one line, and again when it is done. Silence reads as lost work, and a checklist notifies no
   one.
 - **Red is never ready, whoever caused it.** Carry the fix from an open
   pull request or recent commit, or fix it. Never call a failure a flake

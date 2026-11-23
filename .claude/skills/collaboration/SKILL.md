@@ -22,8 +22,8 @@ skill.
 
 ## 1. Work that can be seen
 
-- **Every piece of work becomes a pull request, always,** opened with the
-  first push. A branch the user has to find is work they cannot see.
+- **Every piece of work becomes a pull request,** the way section 3 of
+  the pull-requests skill says.
 - **Small batches.** Split larger work into batches of a few minutes
   each. Finish, test and report after each one. Never disappear into a
   long stretch of work.
@@ -100,7 +100,8 @@ unless the user puts them in another order. Fresh evidence comes before
 that order, because labels lag behind it: a test that has just failed on
 main, or an issue that comes with its trace or its log, goes before an
 older one with less in hand, see section 1 of the maintenance skill. The
-agent says which it picked and why, and asks before starting it.
+agent says which it picked and why, see section 11 of the pull-requests
+skill.
 
 ## 5. Writing
 

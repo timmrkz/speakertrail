@@ -36,7 +36,8 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 	}
 	var ci struct {
 		Jobs map[string]struct {
-			Steps []struct {
+			Outputs map[string]string `yaml:"outputs"`
+			Steps   []struct {
 				ID   string            `yaml:"id"`
 				With map[string]string `yaml:"with"`
 			} `yaml:"steps"`
@@ -58,6 +59,13 @@ func TestWhatAGoTestReadsStartsIt(t *testing.T) {
 	}
 	if len(filters["skills"]) == 0 {
 		t.Fatal("ci.yml's job changes has no filter skills, so a change to a skill starts no Go test")
+	}
+	// A filter only starts the Go job when the job's output go reads it.
+	// Without that line a filter catches its files and starts nothing.
+	for _, f := range []string{"goread", "skills"} {
+		if want := "steps.filter.outputs." + f + " == 'true'"; !strings.Contains(ci.Jobs["changes"].Outputs["go"], want) {
+			t.Errorf("ci.yml's output go of the job changes leaves out %s, so the filter %s starts no Go test. Add it there", want, f)
+		}
 	}
 	starts := func(file string) bool {
 		for _, p := range append(filters["goread"], filters["skills"]...) {

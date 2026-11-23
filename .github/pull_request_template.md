@@ -19,29 +19,29 @@ Now they wrap inside the screen."
 -->
 
 - **Architecture:** <!-- better, the same or worse -->
-- **Speed:** <!-- faster, slower or the same -->
-- **Security:** <!-- what it lets in and what guards it, or nothing changes -->
+- **Performance:** <!-- faster, slower or the same -->
+- **Security:** <!-- safer, the same or less safe -->
 
 <!--
 The bottom line, always, and nothing else in it. Architecture: one word,
 better, the same or worse, against the architecture as the project
-writes it. Speed: for the product, or for CI when only the tests or the
-build change. One word, and when it is faster or slower, the change in
-percent with its spread, `12 % faster, ± 3 %`, or `one run` in place of
-the spread. It is the change overall, on what a person waits on. A part
-that got slower is said in Proof, and its trade-off waits for the user's
-yes in the reply. The same only when the change adds and takes away no
-work that runs. A measured change is its number, even inside its
-spread, `2 % faster, ± 5 %`. Everything else goes in Proof: what was
-measured, where and how often, the parts, CI when the product changed
-too, what was read from the code, where each new thing went, and what a
-slower part buys. See the engineering skill on speed.
-Security: in a few words, what the change lets the program, a build or a
-person reach that it could not before, and what guards it, for example
-`the build may ask for the microphone, the release check allows only
-that usage key`. When nothing opens, `nothing changes`. What is left open,
-and the test that proves the guard refuses, go in Proof. See the review
-skill on security.
+writes it. Performance: for the product, or for CI when only the tests
+or the build change. One word, and when it is faster or slower, the
+change in percent with its spread, `12 % faster, ± 3 %`, or `one run` in
+place of the spread. It is the change overall, on what a person waits
+on. A part that got slower is said in Proof, and its trade-off waits for
+the user's yes in the reply. The same only when the change adds and
+takes away no work that runs. A measured change is its number, even
+inside its spread, `2 % faster, ± 5 %`. Everything else goes in Proof:
+what was measured, where and how often, the parts, CI when the product
+changed too, what was read from the code, where each new thing went, and
+what a slower part buys. See The performance line in the pull-requests
+skill. Security: one word, safer, the same or less safe, for the
+product, the build and CI. Proof says what the change lets in from
+outside, runs, fetches or lets out, when it does any of that, and the
+test that proves the guard refuses. Less safe is fixed before the merge,
+unless the user says yes to the trade-off in the reply. See the security
+skill.
 -->
 
 ## Root cause
@@ -65,7 +65,7 @@ names in the code. The docs that changed with it.
 
 <!--
 The tests that ensure it, and that they fail on main and pass here. The
-measurements before and after that the speed line stands on, and
+measurements before and after that the Performance line stands on, and
 whether CI passed on the last commit.
 What could not be checked here is said. This section may be as long as
 the proof needs.
@@ -75,13 +75,16 @@ the proof needs.
 
 <!--
 A numbered list of steps the user takes to see the change work, each one
-they can take as it stands, where the change shows: the page, CI, the
-repository. What to do, what to look at and what to verify. When there
-is nothing to test, one line instead of the list: "Nothing to test,
-because" and why, for example that only a test changed and CI runs it.
+they can take as it stands, in the app, in CI or wherever the change
+shows. For the app, the first step is to update to this pull request
+from the Updates page, then what to do, what to look at and what to
+verify. When there is nothing to test, one line instead of the list:
+"Nothing to test, because" and why, for example that only a test changed
+and CI runs it.
 -->
 
-1.
+1. Update the app to this pull request from the Updates page.
+2.
 
 ## Found along the way, not fixed here
 

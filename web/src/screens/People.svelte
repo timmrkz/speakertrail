@@ -1,22 +1,21 @@
 <script lang="ts">
   import { cubicOut } from 'svelte/easing'
   import { untrack } from 'svelte'
-  import { api, type PeopleFilter, type PeopleSort, type Person, type PersonDetail as Detail } from '../lib/api'
-  import { plural } from '../lib/format'
+  import { api, type LinksFound, type PeopleFilter, type PeopleSort, type Person, type PersonDetail as Detail } from '../lib/api'
+  import { fmtLeft, plural } from '../lib/format'
+  import { typing } from '../lib/keys'
   import { Load } from '../lib/load.svelte'
+  import { isPage, PASTE_HINT, PASTE_LINE, pasting } from '../lib/paste.svelte'
   import { navigate, router } from '../lib/router.svelte'
-  import { runShare, runWatch } from '../lib/run.svelte'
+  import { runCount, runSays, runShare, runWatch } from '../lib/run.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Pick from '../lib/components/Pick.svelte'
-  import RunOutcome from '../lib/components/RunOutcome.svelte'
-  import RunProgress from '../lib/components/RunProgress.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import PersonDetail from './PersonDetail.svelte'
   import PersonSheet from './PersonSheet.svelte'
-  import RunSheet from './RunSheet.svelte'
 
   let q = $state('')
   let query = $state('')
@@ -60,9 +59,16 @@
     document.title = 'People · Speaker Trail'
   })
 
+  // What the search holds when it holds links to LinkedIn profiles, as
+  // the app reads them: then the list shows whom they lead to who is here
+  // already, and Run turns into Add.
+  let links = $state<LinksFound | null>(null)
+
   const fetchPeople = (params: { q: string; sort: PeopleSort; filter: PeopleFilter }) => async () => {
     const r = await api.people(params)
     counts = r.counts
+    // An answer to a search since changed says nothing of this one.
+    if (params.q === query) links = r.links
     return r.people
   }
 
@@ -73,17 +79,56 @@
   })
 
   // While a run goes, new people come in without a refresh: the list reads
-  // again every few seconds, and once more when the run ends.
+  // again every few seconds, with every answer while a profile in it is
+  // read, and once more when the run ends.
   $effect(() => runWatch.watch())
   let lastLive = 0
+  let reading = $derived(!!people.data?.some((p) => p.read === 'reading' || p.read === 'waiting'))
   $effect(() => {
     void runWatch.tick
     void runWatch.ended
     if (!runWatch.run && !runWatch.ended) return
     const t = Date.now()
-    if (runWatch.run && t - lastLive < 4000) return
+    if (runWatch.run && t - lastLive < (untrack(() => reading) ? 1500 : 4000)) return
     lastLive = t
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
+  })
+
+  // What adding or a pasted profile changed, or Undo took back, shows at
+  // once.
+  // Both are read, so both are followed, and only a change after People
+  // opened counts.
+  const changedAt = runWatch.changed + pasting.changed
+  $effect(() => {
+    if (runWatch.changed + pasting.changed === changedAt) return
+    untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
+  })
+
+  // People just added from links show under New, newest on top, the
+  // search emptied for them. They may have been dropped on another page.
+  $effect(() => {
+    if (!runWatch.added) return
+    untrack(() => {
+      runWatch.added = null
+      q = ''
+      query = ''
+      filter = 'new'
+      reload++
+    })
+  })
+
+  // The clock the fill of a profile being read follows, between the
+  // answers, only while one is.
+  let now = $state(Date.now())
+  let answeredAt = $state(Date.now())
+  $effect(() => {
+    void runWatch.tick
+    answeredAt = Date.now()
+  })
+  $effect(() => {
+    if (!reading && !runWatch.run) return
+    const t = setInterval(() => (now = Date.now()), 500)
+    return () => clearInterval(t)
   })
 
   // People the going run found, or the one that just ended, are marked new.
@@ -98,29 +143,96 @@
     return m ? Number(m.id) : null
   })
 
+  // New counts how far a going run is, 3 of 12, its searches and the
+  // profiles it reads, as the fill of Stop does, and whom it holds once
+  // the run is done (Tim, 22 November 2026, #43).
+  let count = $derived(runCount(runWatch.run))
   let filters = $derived(
     ([
       { value: 'all', label: 'All' },
-      { value: 'young', label: 'Under 30' },
+      { value: 'new', label: 'New' },
       { value: 'connected', label: 'Connected' },
       { value: 'rejected', label: 'Rejected' },
-    ] as { value: PeopleFilter; label: string }[]).map((f) => ({ ...f, count: counts?.[f.value] })),
+    ] as { value: PeopleFilter; label: string }[]).map((f) => ({
+      ...f,
+      count: f.value === 'new' && count ? `${count.done} of ${count.of}` : counts?.[f.value],
+      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : 'Found or added in the last 7 days, newest first') : undefined,
+    })),
   )
 
-  // The run is started and stopped here, where its people show up.
+  // The run is started and stopped here, where its people show up. While
+  // the search holds links, the same button adds them: Add for profiles
+  // new to the app, Open for the one person a link leads to who is here,
+  // greyed out for a link that leads to nobody. Enter does the same.
   let going = $derived(runWatch.run)
+  let linked = $derived(links && query === q ? links : null)
+  let mode = $derived<'run' | 'add' | 'open' | 'none'>(linked ? linked.act : 'run')
   let runLabel = $derived(
-    runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop' : 'Run',
+    runWatch.busy === 'adding' ? 'Adding' : mode === 'add' ? (linked!.new > 1 ? `Add ${linked!.new}` : 'Add') : mode === 'open' ? 'Open' : mode === 'none' ? 'Add'
+      : runWatch.busy === 'starting' ? 'Starting' : runWatch.busy === 'stopping' ? 'Stopping' : going ? 'Stop' : 'Run',
   )
-  let runOpen = $state<number | null>(null)
+  let runTitle = $derived.by(() => {
+    if (mode === 'add') return `Add ${linked!.new > 1 ? `these ${linked!.new} people` : 'this person'}, marked connected, and read ${linked!.new > 1 ? 'their profiles' : 'the profile'} from Exa${going ? ' in this run' : ''}`
+    if (mode === 'open') return 'Open this person, marked connected'
+    if (mode === 'none') return linked!.here.length ? 'Everyone these links lead to is here already' : "Not a link to a person's LinkedIn profile, like linkedin.com/in/name"
+    if (going) return `${runSays(going, now, answeredAt)}. Stop this run: what is running finishes, the rest waits for the next run`
+    return 'Run the due searches now. Takes about a minute'
+  })
+  function act() {
+    if (mode === 'add' || mode === 'open') void runWatch.add(q)
+    else if (mode === 'run') void (going ? runWatch.stop() : runWatch.start())
+  }
+  // Enter in the search does what the button says, once the app has said
+  // what the search holds. Words are only a search.
+  let entered = $state<string | null>(null)
+  function enter(v: string) {
+    entered = v
+  }
+  $effect(() => {
+    if (entered === null || people.loading || query !== entered) return
+    const v = entered
+    untrack(() => {
+      entered = null
+      if (links && (links.act === 'add' || links.act === 'open')) void runWatch.add(v)
+    })
+  })
+
+  // What is pasted on People, not into a field, goes into the search,
+  // links above all. A LinkedIn page copied in Chrome while a person is
+  // open becomes their profile, see paste.svelte.ts.
+  function paste(e: ClipboardEvent) {
+    if (typing()) return
+    const text = e.clipboardData?.getData('text/plain')?.trim() ?? ''
+    if (!text) return
+    e.preventDefault()
+    if (openId !== null && isPage(text)) {
+      void pasting.paste(openId, text)
+      return
+    }
+    q = text
+    query = text
+    document.querySelector<HTMLInputElement>('.list-pane .search input')?.focus()
+  }
 
   const year = new Date().getFullYear()
   const age = (p: Person) => (p.linkedin?.born_about ? year - p.linkedin.born_about : null)
   // A person's second line, the way a search has one: what they do,
-  // where, and about how old, each only when known.
+  // where, and about how old, each only when known. Someone added from a
+  // link says where reading their profile stands until it is read.
   function line(p: Person) {
+    if (p.read === 'reading') return `Reading the profile from Exa · ${p.read_ms ? fmtLeft((p.read_ms - (now - new Date(p.read_since!).getTime())) / 1000) : 'measuring the time left'}`
+    if (p.read === 'waiting') return 'Waits its turn in this run'
+    if (p.read === 'next') return p.read_error ? `Read on the next run. ${p.read_error}` : 'Read on the next run'
+    if (p.read === 'not_indexed') return PASTE_LINE
+    if (p.read === 'failed') return p.read_error || 'The profile could not be read'
     const a = age(p)
     return [p.headline || 'No headline yet', p.city, a ? `about ${a}` : ''].filter(Boolean).join(' · ')
+  }
+  // How far the read of a profile is, from how long reads took before,
+  // never quite full until it is done, or -1 while that is not known.
+  function readFill(p: Person): number {
+    if (!p.read_ms || !p.read_since) return -1
+    return Math.min(0.95, Math.max(0, (now - new Date(p.read_since).getTime()) / p.read_ms))
   }
 
   // Wide enough for the list and the person beside it, like Mail. Below
@@ -246,11 +358,15 @@
   }
 
   // What an empty list says: why nobody is here, and whom the other
-  // filters hold. Under All and Under 30 that may be someone connected or
+  // filters hold. Under All and New that may be someone connected or
   // rejected, whom a search by name finds only under Connected or
   // Rejected. show is the filter its button leads to.
   const PRESS_RUN = 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'
   let empty = $derived.by((): { title: string; text: string; show?: PeopleFilter } => {
+    if (linked) {
+      if (linked.new) return { title: 'Not in the app yet', text: `${linked.new > 1 ? `${linked.new} people` : 'This person'} ${linked.new > 1 ? 'are' : 'is'} new to the app. Press Add or Enter to add them, marked connected.` }
+      return { title: "Not a person's profile", text: 'Only a link to a LinkedIn profile, like linkedin.com/in/name, adds someone.' }
+    }
     const open = counts?.all ?? 0
     const connected = counts?.connected ?? 0
     const rejected = counts?.rejected ?? 0
@@ -261,7 +377,7 @@
     if (filter === 'rejected') {
       return { title: 'Nobody rejected', text: query ? 'Nobody whose profile you rejected matches this search.' : 'People whose LinkedIn profile you said is not them show here.' }
     }
-    if (open) return { title: 'Nobody under 30 yet', text: `${plural(open, 'person', 'people')} ${found}, none of them likely under 30.` }
+    if (filter === 'new' && open) return { title: 'Nobody new this week', text: `${plural(open, 'person', 'people')} ${found}, none of them found or added in the last 7 days.` }
     const matches = (n: number) => (n === 1 ? 'matches' : 'match')
     if (connected && rejected && query) return { title: 'Only under Connected and Rejected', text: `${plural(connected, 'person', 'people')} you connected with and ${rejected} whose profile you rejected match this search.`, show: 'connected' }
     if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${matches(connected)} this search.`, show: 'connected' }
@@ -269,7 +385,7 @@
     if (connected && !rejected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, show: 'connected' }
     if (rejected && !connected) return { title: 'Nobody left to go through', text: `${plural(rejected, 'person', 'people')} found so far, all of them rejected. Press Run to find more.`, show: 'rejected' }
     if (connected) return { title: 'Nobody left to go through', text: `${plural(connected + rejected, 'person', 'people')} found so far, ${connected} connected and ${rejected} rejected. Press Run to find more.`, show: 'connected' }
-    return { title: filter === 'young' ? 'Nobody under 30 yet' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
+    return { title: filter === 'new' ? 'Nobody new this week' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
   })
 
   // Keep the list in step with changes made in the sheet.
@@ -280,7 +396,7 @@
 
   // Someone connected is only under Connected, and someone whose profile
   // was rejected only under Rejected, so once the app took it the list
-  // reads again: they leave All and Under 30, or come back when taken
+  // reads again: they leave All and New, or come back when taken
   // back, and the counts follow. Where they stood is kept, so the arrow
   // keys go on from there.
   let gone = $state<{ id: number; at: number; name: string } | null>(null)
@@ -300,39 +416,31 @@
 </script>
 
 <svelte:window onkeydown={keydown} />
+<svelte:document onpaste={paste} />
 
 <div class="people" class:wide class:open={wide && openId !== null} class:dragging bind:this={peopleEl} bind:clientWidth={width}
   style:--detail-w="{percent}%">
   <section class="list-pane" aria-label="People">
     <div class="controls">
       <div class="toolbar tight">
-        <SearchInput bind:value={q} placeholder="Search people" label="Search people" onsearch={(v) => (query = v)} />
+        <SearchInput bind:value={q} placeholder="Search or paste LinkedIn links" label="Search people" onsearch={(v) => (query = v)} onenter={enter} />
         <span class="sort">
           <Pick label="Sort by" title="Order" value={sort} options={sorts} onpick={(v) => (sort = v as PeopleSort)} />
         </span>
-        <button class="btn start" class:primary={!going} type="button" onclick={() => (going ? runWatch.stop() : runWatch.start())}
-        disabled={runWatch.busy !== '' || (going !== null && going.id <= 0)}
-        title={going ? 'Stop this run. What is running finishes, the rest waits for the next run' : 'Run the due searches now. Takes about a minute'}>
-        {#if going}<Busy fraction={runShare(going)} />{/if}
-        <Icon name={going ? 'stop' : 'run'} />{runLabel}
+        <button class="btn start" class:primary={!going || mode !== 'run'} type="button" onclick={act}
+          disabled={runWatch.busy !== '' || mode === 'none' || (mode === 'run' && going !== null && going.id <= 0)}
+          title={runTitle}>
+          {#if going}<Busy fraction={runShare(going)} />{/if}
+          <Icon name={mode === 'add' || mode === 'none' ? 'plus' : mode === 'open' ? 'chevron' : going ? 'stop' : 'run'} />{runLabel}
         </button>
       </div>
       <div class="segmented filters" role="group" aria-label="Show">
         {#each filters as f (f.value)}
-          <button type="button" aria-pressed={filter === f.value} onclick={() => (filter = f.value)}>
+          <button type="button" aria-pressed={filter === f.value} onclick={() => (filter = f.value)} title={f.title}>
             {f.label}{#if f.count !== undefined}<span class="n">{f.count}</span>{/if}
           </button>
         {/each}
       </div>
-      {#if runWatch.run}
-        <button class="run-now" type="button" disabled={runWatch.run.id <= 0} onclick={() => (runOpen = runWatch.run?.id ?? null)}>
-          <RunProgress run={runWatch.run} />
-        </button>
-      {:else if runWatch.ended}
-        <button class="run-now" type="button" onclick={() => (runOpen = runWatch.ended?.id ?? null)}>
-          <RunOutcome run={runWatch.ended} />
-        </button>
-      {/if}
     </div>
 
     <div class="rows-wrap">
@@ -358,13 +466,14 @@
         <ul class="list rows" data-personal class:stale={people.loading} aria-label="{plural(people.data.length, 'person', 'people')}">
           {#each people.data as p (p.id)}
             <li>
-              <a class="prow" id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
+              <a class="prow" class:reading={p.read === 'reading'} id="person-row-{p.id}" href="/app/people/{p.id}" aria-current={openId === p.id ? 'true' : undefined}>
+                {#if p.read === 'reading'}<Busy fraction={readFill(p)} />{/if}
                 <span class="who">
                   <b class="ellipsis">{p.name}</b>
-                  {#if isNew(p)}<span class="dot new" title="Found by this run"></span><span class="sr-only">, new</span>{/if}
-                  <span class="fit num" title="Fit {p.fit_score} of 100. The person says why"><span class="sr-only">, fit </span>{p.fit_score}</span>
+                  {#if isNew(p)}<span class="dot new" title="Came in with this run"></span><span class="sr-only">, new</span>{/if}
+                  {#if !p.read}<span class="fit num" title="Fit {p.fit_score} of 100. The person says why"><span class="sr-only">, fit </span>{p.fit_score}</span>{/if}
                 </span>
-                <span class="ellipsis sub" title={age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
+                <span class="ellipsis sub" class:bad={p.read === 'not_indexed' || p.read === 'failed'} title={p.read === 'not_indexed' ? PASTE_HINT : p.read ? line(p) : age(p) ? 'The age is a guess from the LinkedIn profile' : undefined}>{#if p.connected && !p.read}<span class="connected">Connected</span>{' · '}{/if}{line(p)}</span>
               </a>
             </li>
           {/each}
@@ -402,10 +511,6 @@
 {#if openId !== null && !wide}
   {#key openId}
     <PersonSheet id={openId} name={people.data?.find((x) => x.id === openId)?.name ?? (gone?.id === openId ? gone.name : undefined)} onclose={() => navigate('/app/people')} onupdate={updated} onmoved={moved} />
-  {/key}
-{:else if runOpen !== null}
-  {#key runOpen}
-    <RunSheet id={runOpen} onclose={() => (runOpen = null)} />
   {/key}
 {/if}
 
@@ -471,19 +576,16 @@
     .controls .toolbar { flex-wrap: wrap; }
     .controls .toolbar > :global(.search) { flex: 1 1 100%; }
   }
-  .run-now {
-    display: block; width: 100%; text-align: left; font: inherit; color: var(--ink); padding: 12px 14px; cursor: pointer;
-    background: var(--surface-2); border: 0; border-radius: var(--radius);
-  }
-  .run-now:hover:enabled { background: color-mix(in srgb, var(--ink) var(--hover-mix), var(--surface-2)); }
-  .run-now:active:enabled { background: color-mix(in srgb, var(--ink) var(--press-mix), var(--surface-2)); }
-  .run-now:disabled { cursor: default; }
   /* Under the list the page's inset, so a list that fits never scrolls,
      issue #77. */
   .rows-wrap { padding: 0 var(--x) var(--gap-page); display: grid; }
   .stale { opacity: .6; transition: opacity .2s; }
   /* A row as Searches has one: 12 by 16 in, the name over its line. */
   .prow { display: grid; gap: 1px; padding: 12px 16px; color: inherit; text-decoration: none; min-width: 0; }
+  /* A profile being read fills its row the way a clip being worked on
+     fills its card in FrameFairy, several rows at once. The row holds the
+     beam, see Busy, inside the lines between the rows. */
+  .prow.reading { position: relative; isolation: isolate; --beam-edge: 0px; }
   .prow:hover { background: var(--hover); text-decoration: none; }
   .prow:active { background: var(--press); }
   .prow[aria-current="true"] { background: var(--chosen); }
@@ -497,6 +599,10 @@
   .dot.new { width: 7px; height: 7px; background: var(--accent); }
   .sub { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
   .connected { color: var(--good); font-weight: 600; }
+  .sub.bad { color: var(--bad); }
+  /* Over the fill the line takes the colour of the name, so it reads as
+     well as the name does, see walks/look.mjs. */
+  .reading .sub { color: var(--ink); }
   @media (max-width: 520px) { .prow { padding: 12px 14px; } }
   /* The person mirrors the list beside it: the same inset at the sides
      and over the top, the name and the cross on the row of the search

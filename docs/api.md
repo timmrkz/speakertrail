@@ -18,14 +18,29 @@ types.
 `GET /api/people?q=lea&sort=fit&filter=all`
 
 `sort` is `fit` (the default, the best fit first), `young`, `new` or `name`. `filter` is `all`,
-`young`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
+`new`, `connected` or `rejected`. `q` looks in the name, the headline and the city.
 `counts` says how many people each filter would show.
 
 Someone Tim connected with is only under `connected`, and someone whose
-profile he rejected only under `rejected`. `all` and `young` hold the
-people he has neither connected with nor rejected, so they shrink as he
+profile he rejected only under `rejected`. `all` holds the
+people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
-their profile is rejected.
+their profile is rejected. `new` holds whoever came in during the last 7
+days, found by a search or added from a link, connected or not, never
+someone whose profile he rejected, and always the newest first.
+
+When `q` holds links, like LinkedIn profile links pasted into the search,
+it is no search for words. `links` then says what adding them would do:
+`new` profiles nobody here has, `here` the ids of the people the links
+lead to, and `other` links that are no person's profile, like a company
+page. `act` is what Run turns into: `add` while any profile is new,
+`open` for one link of someone here and nothing else, and `none` when
+the links add nobody. `people` are those here, under any filter. Without
+links, `links` is null.
+
+```json
+{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" } }
+```
 
 People whom one of Tim's exclusions leaves out are not in the list or the
 counts, unless Tim connected with them, see [Exclusions](#exclusions).
@@ -46,7 +61,7 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "young": 1, "connected": 0, "rejected": 0 }
+  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 }
 }
 ```
 
@@ -55,12 +70,71 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 kept, see [fit-score.md](fit-score.md).
 `linkedin` is null once the profile is rejected.
 
+`read` says where the profile of someone added from a link stands:
+`reading` now, with `read_since` when it began and `read_ms` about how
+long a read takes, measured from the last reads and null until there is
+one, `waiting` its turn in the run, `next` for the next run, which reads
+it, `not_indexed` when Exa's index does not hold it yet, neither under
+the link nor by the name in the link, `failed` with
+`read_error` when the last read failed, or empty once read. A run reads
+the profiles before it asks its searches.
+
+`POST /api/people` with `{"text": "…"}` adds the people behind the
+LinkedIn profile links in the text, as connected and named by the handle
+in the link, and has a run read their profiles: the run going, or a run
+of its own that reads only those and asks no search. Words and other
+links in the text are passed over. Someone here already is only marked
+connected. It answers `{"run": 12, "new": [31, 32], "here": [7],
+"connected": [7], "other": 1}`: `connected` are those here whom it marked
+connected, and `open` is the one person here when the links lead to that
+person alone. `run` is 0 when there is no profile to read: without the
+Exa key or budget the people are added all the same, and `wait` says why
+their profiles wait for the next run. A profile the going run read
+already, or failed to, waits for the next run too, so no run reads one
+twice. Someone whose profile Exa did not have, or could not give, is
+asked for again when added again. 400 when the text holds no profile
+link. Each read is one call to Exa's index, never LinkedIn, counted
+against the month's budget. When the index has no copy under the link,
+the read asks Exa's people search once more by the name in the link,
+like "erika beispiel" for `/in/erika-beispiel-71`, since the index often
+holds a profile under another link, like de.linkedin.com. That is one
+more search, and only a profile under the same link name counts, never a
+namesake. A link with no name in it asks nothing more.
+
+`PUT /api/people/{id}/profile` with `{"text": "…"}` keeps a LinkedIn
+profile page Tim copied in Chrome, all of it with ⌘A and ⌘C, as the
+person's profile, for someone Exa's index lacks. The app never requests
+LinkedIn: Tim opened the page. The name is the line that spells the name
+in the link, also without initials or with a title or more around it,
+the headline the line after it, the city from the first line after it
+in the shape of a place, like "Köln, Nordrhein-Westfalen, Deutschland".
+The page is read by its sections: the top, then About, Experience,
+Education and the rest, and the feed of posts, Activity, last, so the
+8000 characters it is cut at, like Exa's text, go to who they are first.
+LinkedIn's menu and buttons, and its blocks of other people, like
+"People who follow … also follow", Highlights, Interests and "People
+also viewed", are left out, so are email addresses and phone numbers. A read of them Exa is still asked for loses to
+it, and a run that had not begun it drops it. It answers `{"person": {…},
+"was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
+""}, "named": true}`: `person` as `GET /api/people/{id}` gives it,
+`was` what they were before, and `named` whether the name on the page
+is the one in their link, which makes sure the page is theirs. A page
+whose name is not is read all the same, its name the line LinkedIn puts
+above "· 1st". `{"as": {…}}` with a `was` puts that back, for Undo, and someone
+added from a link whose text it empties waits for the next run to read
+it from Exa. 400 for a paste with no text, 404 for an id nobody has.
+
+`DELETE /api/people/{id}` takes out again someone added from a link, for
+Undo, and answers 204. A run that had not read their profile leaves it,
+one that read it keeps the read. 409 for someone a search found, 404 for
+an id nobody has.
+
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
 `sightings`: each search that found the person, newest first. `draft` is
 the first message to them, empty before the first draft, and
 `drafted_at` when the language model wrote it. `profile_read_at` is when
 Exa's index first gave the profile text a draft is written from as it is
-now, null while the
+now, or Tim pasted it, null while the
 app has none and a draft reads it first. See [Drafts](#drafts).
 `fit_parts` are what `fit_score` adds up, in the order the person's Why
 shows them, each with its points and why, like
@@ -102,16 +176,18 @@ own, and answers 202. While a run goes it gets 409.
 
 ## Runs
 
-`POST /api/runs` starts a run of the due searches and answers
+`POST /api/runs` starts a run of the due searches, and of the profiles
+of people added from links that a run before did not read, and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
 false and `run_id` is that run. Without an Exa key, with the key kept
 back by macOS because its password box was closed, with the month's
 budget spent, or with no search due it gets 409 and says which.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
-`progress`: how many searches it asks, how many are done, which ones are
-being asked now and since when, and `seconds_left`, measured from the last
-200 searches asked. `seconds_left` is null until there is something to
+`progress`: how many searches it asks, `checks` and `checks_done`, how
+many profiles it reads, `reads` and `reads_done`, which are being asked or
+read now and since when, and `seconds_left`, measured from the last 200
+searches asked and the last 200 profiles read. `seconds_left` is null until there is something to
 measure.
 
 `POST /api/runs/{id}/stop` stops a going run and answers 204, or 409 when
@@ -121,7 +197,10 @@ that run is not going.
 gives one, with its `checks` and its `failures`.
 
 A run's `state` is `going`, `finished`, `stopped`, or `interrupted` when
-the app was closed while it went.
+the app was closed while it went. A run started by adding links has the `kind`
+`add`. Stopped, the profiles it did not read wait for the next run.
+`reads_failed` counts the profiles Exa could not give in it. One not in
+Exa's index yet is no failure, its person says so.
 
 ## Settings and the key
 
@@ -368,7 +447,9 @@ A draft is
 ```
 
 `state` is `queued`, `reading` (their profile from Exa, when the app has
-no text of it yet), `loading` (the model, when it is not loaded), `writing`,
+no text of it yet, by the link and then by the name in it, like a run's
+read: a draft whose profile Exa lacks fails and says to paste it, see
+`PUT /api/people/{id}/profile`), `loading` (the model, when it is not loaded), `writing`,
 `done`, `failed` or `cancelled`. `text` is the message, from `writing` on
 with `…` where the model's parts go, and whole once it is done. What the
 model wrote in it is untrusted and shown as text. `problem` is set on a

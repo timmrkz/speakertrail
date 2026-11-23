@@ -1,259 +1,287 @@
 ---
 name: interface
-description: How to change the Speaker Trail interface when you cannot see it. Use for any work in web/, a screen, a control, a colour, and above all when Tim reports that something looks wrong in the app. Covers the mock harness, what to measure, and how to prove a fix rather than claim one.
+description: How to change a user interface you cannot see, in any project with one, a web page, or a web interface inside a desktop app. A harness that renders the real interface, what to measure, how to prove a fix rather than claim it, and what a hand feels, a click answered in its frame, a drag that reshapes all it draws, work shown where it was started. Read it before changing anything a person sees, and above all when the user reports something that looks wrong. Where another interface skill says otherwise, this one wins.
 ---
 
-# Changing the interface without seeing it
+# Changing an interface you cannot see
 
-A cloud session has no screen, and the app's window cannot open there. Tim
-is the only one who looks at the app, on his Mac. Without care a session guesses, reports a fix, and Tim
-finds the same bug still there. That costs him a round of testing each time.
-These lessons come from Frame Fairy, where it happened more than once.
+An agent without a screen cannot look at what it changes. Without care
+it guesses, reports a fix, and the user finds the bug still there, a
+round of their testing lost.
 
-## The harness
+**The user** is the person the agent works for, who decides what the
+product does. **The people using the product** are who it is for. The
+project's instructions say where its harness, its stub, its end-to-end
+tests and its checks are. This skill says how to use them, and what to
+push for where they are missing.
 
-The interface runs on its own against invented data:
+## 1. A harness that shows the real thing
 
-```
-cd web && MOCK=1 npx vite --port 5199 &
-```
+- **Render the real interface in a headless browser,** for example with
+  Playwright, against the real back end where it can be reached and a
+  stub where it cannot. A probe is a few lines: open, bring the state
+  about, measure one thing, close. One-off probes live in a scratch
+  folder, build output is never committed.
+- **A probe waits on a signal, never a timeout:** a "settled" signal
+  once nothing is in flight and the picture stands, or a wait for the
+  thing itself. A probe that hangs waits for a signal that never came,
+  so print every wait (in Playwright, `DEBUG=pw:api`) and the last one is
+  the culprit.
+- **The stub is told what to pretend,** one mode per state, for example
+  a query string. Add a mode when the state you need is missing. A stub
+  that is never busy hides everything that only happens while work runs.
+- **The stub reports the way the back end does.** Where the interface
+  hears of changes only through events, a mode that sends none lets a
+  broken cancel pass, since the item stays "running". Send the events,
+  with every field the real side sends.
+- **The stub's answers are made by the back end's rules, not by hand.**
+  Hand-made data looks fine in a picture and hides bugs: items that
+  cannot be traced back to their source, ranges that overlap where the
+  real side clamps them, two calls that build the same thing two ways.
+  One list, and the real rules on it.
+- **The stub takes as long as the real thing,** and has a mode where
+  every call answers late by a random share, and one where answers
+  arrive out of order. Instant answers make a waiting interface look
+  finished in its first frame.
+- **Test data says what it is.** Each item, row or picture carries its
+  own index where a probe can read it, so a probe reads what was drawn,
+  not the app's word for it. Make "empty" and "blank" differ, since black
+  and nothing look alike.
+- **A page error is a result.** Listen for uncaught errors in every
+  probe. A loop that throws stops while all else looks fine.
+- **One bench page for a shared component** shows every state of it at
+  once: every share of progress, every kind of control, other accent
+  colours. Nothing has to be started or caught, so it is the fastest
+  look. What joins the component joins the bench in the same change.
+- **Nothing checks a call reaches its method** across a boundary typed
+  on one side only. A test that parses both sides and matches every call
+  catches the missing argument every other test passes.
 
-The mock in `web/mock/` answers the API as `docs/api.md` describes, with
-invented people, and no login, like the app. Open it with Playwright,
-which is installed globally, and Chromium from `/opt/pw-browsers/chromium`.
-Never run `playwright install`. To see how WebKit draws something, run
-WebKitGTK's MiniBrowser under `xvfb-run`.
+## 2. Measure the right thing
 
-To see a change against the real backend instead, serve `internal/api` over
-HTTP from a small program in the scratchpad, with the interface from
-`web/dist/`, a store in a temporary folder via `store.Open`, and a fake
-finder that returns invented profiles, the way `internal/api/api_test.go`
-does. Never real names, not even in a scratch file.
+The layout's rect cannot see a painting bug. Decide which kind of bug it
+is before picking an instrument:
 
-What has to keep working is a walk in `web/walks/`, run by `make walks`
-and by CI: it starts the mock itself, drives Chromium, plays what macOS
-and WebKit hand the app, and checks what the interface did, never waiting
-on the clock. The sidebar's walks are ported from FrameFairy's
-`frontend/preview/walks`. A walk is proven by making it fail on the code
-before the fix.
+| the thing is | measure with |
+| --- | --- |
+| in the wrong place, the wrong size | the layout rects |
+| the wrong colour, weight, brightness | the pixels of a screenshot, per row or column |
+| moving when it should not | both, and compare |
+| happening at the wrong time | the state, every animation frame |
 
-Look at every change at 390 by 844, the narrowest window, and at 1280 by 900, in
-light and in dark. Probes and screenshots go in the scratchpad, not in the
-repository.
+- **The box is not the ink.** Two boxes can line up to the hundredth of
+  a pixel while the text in them ends four pixels apart, since an
+  ellipsis fits whole characters. Screenshot it and find the first
+  painted column from the edge.
+- **While anything glides, the rect is the animation.** The style says
+  what the interface decided, the rect what is drawn so far. Measure
+  after `transitionend`, or read both and say which you mean.
+- **A moving target cannot be clicked at a point worked out a moment
+  ago.** To test the handler rather than the hit area, call `el.click()`.
+- **A mark that stands for a point is wider than the point.** Press the
+  middle of its box, not its left edge.
 
-## Prove a fix, do not claim it
+## 3. Prove it, do not claim it
 
-- **First make the bug happen.** A probe that shows the bug on the code
-  before the change, then shows it gone after. A probe that passes on both
-  proves nothing about the fix.
-- **Measure the right thing.** A box's position says where it is, not what
-  is painted there. A button's text says what it says, not whether it
-  responds. Take the measurement that could only come out right if the bug
-  is gone: the pixels in a screenshot, the scroll width of the page, the
-  request the click sent, the answer on screen after it.
-- **A page error is a result.** Attach `page.on("pageerror")` and
-  `page.on("console")` in every probe. A thrown error in a loop can leave
-  the page looking fine while nothing works.
-- **When a screen looks wrong, compare it with a real app.** Tim's sense of
-  wrong comes from the apps he uses every day. Check how a well-made app
-  solves the same thing before inventing a solution.
-- **A rule written in a comment is a claim to check.** Code that says what
-  it guarantees may not guarantee it. Read what it actually does, and test
-  it, before building on it.
-- **The mock has to answer the way the app does.** Data made up by hand
-  looks fine in a picture and hides the bug that only shows with the real
-  shape. When the app's answer changes, change the mock with it, from
-  `docs/api.md`.
+- **Reproduce it first.** When the harness cannot, say so rather than
+  imply a fix, and prove only that the cause is gone.
+- **Put the old code back and measure again.** A number that changes
+  when the fix is removed is a fix, one that does not is a coincidence,
+  or a probe against a stub that never reached the broken state. A probe
+  that has never failed is not yet evidence.
+- **Check against what the user said.** They report precisely, and the
+  pattern is evidence: which places it happened in and which not, and
+  what those share, often finds the cause faster than the code.
+- **Prove it on the path the person takes.** Start where they start, not
+  at the inner call, with a stub as slow and as ordered as the real
+  thing, and measure what they see.
+- **Name every state before drawing work:** running, paused, waiting,
+  done, failed. Look at each. Paused is a state of its own, and still: it
+  keeps its progress and loses what moves.
+- **Stale state waits to be shown.** Something kept for later shows only
+  for what it was made for. Make the stale state happen before trusting
+  a probe that says it is gone.
 
-## Work in hand
+## 4. Two things of the same kind look the same
 
-Tim wants to see at every moment what the engine does. Adopted from Frame
-Fairy's rules, without its styling:
+- **Find the sibling and take its size, colour and spacing.** Two heads
+  of areas that differ read as a hierarchy that is not there.
+- **The same kind of thing is one rule.** Three selection outlines are
+  one class, one animation used twice is one component, never a copy
+  that looks alike and drifts the day either changes.
+- **A handover the eye sees as one thing is one row.** When a
+  placeholder becomes the item, keep its key, or the list blinks between
+  two rows. Hold what must not go in the same pass that builds the list.
+- **A row that work fills is filled where it stands.** Items arriving
+  between rows shuffle the stack. Give running work its places and fill
+  them. Prove it by following each row's element every frame and
+  counting the ones that moved.
+- **A row still to come is already a row,** and answers the pointer.
+- **Two places that show one fact read one value,** and the work that
+  fact stands for waits on that value too, or the two part the moment
+  either lags.
+- **One line of text, one reporter.** Work that owns a status line holds
+  it until done.
+- **A person reads slower than the machine reports.** A new headline
+  stays about 2.5 s, a count going up 1 s, a time left moves in steps of
+  five seconds, while a progress fill moves at once. A step the person
+  does not act on is not a headline.
+- **A colour the person chose never marks a state,** and a dimmed colour
+  is just another colour. Tell state by what cannot clash, brightness, size, a shape. Try it against white, a strong
+  green and a colour near the accent.
+- **Contrast is judged with daylight on the screen.** A faint fill reads
+  as none: measure the share at which it shows in daylight. A state told apart only by a
+  shade of dark grey needs a look in a bright room.
+- **An element the keys never reach takes no focus,** or a click leaves
+  a focus ring on it long after.
 
-- **Say what happens now.** "Checking Startplatz events", "Reading the
-  page of Pitch Abend Köln". Not "Working".
-- **Show how far.** The `.progress` fill in `app.css`, with a band
-  travelling over what is done. Work that cannot say how far it is uses
-  `.progress.unknown`, the shuttle, never a bar stuck at a number it does
-  not have. The fill never jumps back: count what the work will add, like
-  the reads a check queues, before it is queued.
-- **Show time so far and about how long is left.** Time left is measured
-  from how long the same kind of work took before, like the app's
-  `seconds_left`, never guessed. It moves in steps of five seconds and in
-  whole minutes from a minute on, and it counts down between answers.
-  Until there is anything to measure against, it says so.
-- **Work out of sight pulses.** `.dot.busy` on the place that leads to it,
-  like People on the sidebar's rail.
-- **One watch, one state.** The going run comes from `runWatch` in
-  `lib/run.svelte.ts`, for every screen and the dot alike, so no screen
-  shows a state another has left. A screen that shows the run calls
-  `runWatch.watch()` in an effect. Start and Stop go through it and show
-  at once, before the app answers. How a run ended shows through
-  `RunStatePill.svelte` and `RunOutcome.svelte`, everywhere the same.
-- **The beam runs on the line round the control**, not a pixel inside
-  it, with the fill and the motes inside that line. A control holding a
-  beam says how far out its line lies in `--beam-edge`, which is
-  `--line-w` for a `.btn`, and never clips with `overflow`, since that
-  cuts the light off at the inside of its border. `walks/beam.mjs`
-  measures every control that carries one. Tim saw the beam a pixel
-  inside the border testing #24, issue #29, and FrameFairy fixed the same
-  in its #795.
-- **It can be stopped**, in the same place it was started.
-- **One component per kind of work.** A run shows itself through
-  `RunProgress.svelte` in the list and in its sheet alike. A new kind of
-  work gets the same fill, shuttle and pulse, never a new animation.
+## 5. When the window looks wrong, measure it against a real one
 
-Check it in the mock: the mock's run moves through its checks and reads
-every two seconds, like the app's. Probe the step text, the fill width
-and the time left over the whole run and see that the fill only grows and
-the time left only shrinks.
+- **Every other native window on the screen is a control group.** Take
+  one screenshot holding yours and a few others, fix the scale by an
+  object of known size (the macOS window buttons are 14 points across),
+  and write a table of the offsets. "Looks wrong" becomes numbers, and a
+  bug tuned for rounds is fixed in one change.
+- **A constraint in a comment is a claim.** Check it, by how other apps
+  do it, before building on it. **Adapting has no end condition, that is
+  the smell:** when work around something keeps growing, test the thing
+  everybody agreed was fixed. A cause has a fix, a symptom endless
+  mitigation. More opinions do not help while the premise is wrong,
+  since every briefing carries the framing and every answer comes from
+  the same box. A counterexample does.
 
-## The look
+## 6. When it only breaks on one engine
 
-Tim picked Morning Mist on 14 November 2026, with Dusk Fog as its dark
-mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
+- **Try that engine.** A product shipped in a platform's webview runs on
+  that platform's engine, and where it keeps time or paints differently,
+  a probe in another passes on the bug: a paused animation may resume
+  from its last frame in one and from now in the other. Run the probe and
+  the end-to-end test in the shipped engine (Playwright has WebKit,
+  Chromium and Firefox).
+- **A system webview under a virtual display** with a real pointer (for
+  example X11's XTest) shows `:hover`, which a synthetic event from
+  inside the page does not set. Read what is on screen, a transform or a
+  box, not an animation's progress.
+- **Headless may not read a GPU canvas back.** Give probes a switch to a
+  2D canvas. **Read the engine's source before building on what it is
+  said to do.** A rule built on a rumour that a browser clock steps back froze a
+  moving marker, and the source showed an estimate that never goes back.
 
-- **Flat, in solid colours.** Tim asked for it on 21 November 2026,
-  issue #45: no shadows, no frosted glass, no mist behind the window and
-  no bright edge on what is chosen. He disliked the 3D look of the chosen
-  page in the sidebar. A pane, a list, a panel and a control lie on the
-  page in a solid `--surface` or `--side`, set apart by colour and a line.
-  A layer over the page, a list to pick from, a bubble, a dialog, a sheet,
-  has a `--line-strong` edge instead of a shadow. A toast needs none: it
-  is the ink with the page's colour for words, the other way round from
-  the page under it. Where a line must take no room it is an inset
-  box-shadow one pixel wide with no blur in `--line` or `--line-strong`,
-  which the walk counts as a line. The light of work in hand, the beam,
-  glows on purpose and is the one exception. `walks/look.mjs` looks for a
-  shadow, a blur or a filter on People, Searches, Settings, Updates and
-  Report, with a person open, in a sheet, a list open, a toast, an info
-  bubble, the question before removing and a download running.
-- **Every control takes its states from the same tokens.** Under the
-  pointer `--hover`, pressed `--press`, both a little of the ink over what
-  is there, `--hover-mix` and `--press-mix` of it, or `--surface-hover`
-  and `--surface-press` for a control on `--surface`, so the two look
-  alike side by side. A control on another ground mixes the same two
-  shares into it. The primary button moves toward the ink, `--accent-hover`
-  and `--accent-press`, darker in light and lighter in dark. A control in
-  the colour of what it says, a toggle that is on or a button that
-  removes, takes `--tone-hover` and `--tone-press`, a wash of its own
-  words. A field's edge under the pointer is `--line-hover`. A button that
-  cannot be pressed is `--disabled` with `--disabled-ink`, the same grey
-  in every kind, never a paler copy of itself, except one with the beam,
-  which works at full strength. A new control uses these tokens and never
-  a number of its own. The one exception is the action on a toast, which
-  greys out as its own words at less strength, since the grey would not
-  read on the toast's dark ground.
-- **What is chosen is one flat tint.** The page in the sidebar, the
-  filter shown, the theme chosen, a pressed chip and the open person all
-  wear `--chosen`, deeper under the pointer and pressed, with their words
-  in `--chosen-ink`, the accent a shade toward the ink so they read at
-  4.5 to 1 in every state. A list to pick from marks its choice the way
-  a Mac menu does, with a tick and the words in `--chosen-ink`, since a
-  tint there would read as the row under the pointer.
-- **A button in focus wears a ring, a field its edge.** A button, a
-  chip or a switch reached with the keyboard wears FrameFairy's ring,
-  2 px wide and 1 px out from its edge, in the button's own colour,
-  never one colour for all: `currentColor`, the colour of its words, so
-  a plain button's ring is its ink, one that removes is red and a toggle
-  that is on is green. A primary button and a switch that is on set
-  `--ring` to the accent they are filled with, and a button greyed out
-  with `aria-disabled` wears its grey. Tim asked for it testing #46 on
-  21 November 2026, twice: Clear and the plain buttons beside Report
-  wore Report's accent. A list to pick from wears the same ring 1 px
-  inside its edge, as in FrameFairy, and none while it is open. A field
-  in use keeps the grey edge it has under the pointer, `--line-hover`,
-  and nothing more, since the caret says where typing goes. Tim found
-  the accent edge lighting up only once the pointer left a field he
-  was typing in, and asked for it gone from every field on 21 November
-  2026. A row, a
-  page in the sidebar and a segment of a choice show their own colour
-  2 px inside their edge with a faint wash, since a ring would be cut
-  off by the list or pane round them. The wash alone was too faint to
-  find, Tim said on 17 November 2026. `walks/look.mjs` checks every
-  ring's colour against its button's, and `walks/focus.mjs` measures
-  that the ring or the edge changes by 3 to 1 in both themes, see
-  `:focus-visible` in `app.css`.
-  What is selected already, like the open person's row, shows nothing
-  more.
-- **One inset round a page and between its sections.** The space over
-  the first control, at the sides, under the last section, and between
-  the controls and the list or the next section is `--gap-page`, which
-  is `--pad`, on every page, in a pane and in a sheet. More room under
-  the last section scrolls a page whose content fits, which Tim found
-  on the person on 22 November 2026, issue #77, and `walks/person.mjs`
-  measures it.
-  The person beside the list mirrors it: the name and the cross on the
-  row of the search field, the person's buttons on the row of the filter,
-  and the first section on the line the list starts on. Tim marked each
-  place it was off on a screenshot testing #60 on 21 November 2026, and
-  `walks/look.mjs` measures them at 1280 and 390 px.
-- **Every list looks the same.** People, Searches and Settings read in
-  one centred column, `--col-w`, with the controls above a `.list` of
-  rows, each a name over one line of what is known, with what is
-  connected in green at its start. Tim asked for one look for all lists
-  on 14 November 2026.
-- **A control is as wide as what it shows now.** A button fits what it
-  says this moment, never a width guessed in `em` and never room kept
-  for words it may say later: Check grows to Checking while it checks,
-  as in FrameFairy. A list to pick from is as wide as what is picked, up
-  to `--pick-max`, and cuts the rest with an ellipsis. At 390 px the
-  controls that share a line stay as wide as their words too. Tim found
-  Run, Add, Check and the LinkedIn profile list too wide twice testing
-  #46, and `walks/look.mjs` adds up what each button and list on every
-  page shows, at 1280 and 390 px, and fails one that is wider.
-- **Two gaps between controls, and no others.** Two controls side by
-  side or one over the other, the buttons of a row, a field and its
-  button, the search, the order and Run, stand `--gap-control` apart.
-  The items that share one ground, the segments of a choice and the
-  pages in the sidebar, stand `--gap-inset` apart and as far in from
-  their ground's edge, so the one under the pointer never touches the
-  one chosen. Tim found them touching, and buttons 6, 8 or 10 px apart,
-  testing #46, issue #63. Two rows of controls, like the search, the
-  order and Run over the filter on People, stand `--gap-control` apart
-  too. `walks/look.mjs` measures every two neighbouring controls and
-  rows of controls on People, Searches with its exclusions open,
-  Settings with the question before removing, Updates and Report, at
-  1280 and 390 px. A person open is not measured yet. The sidebar's
-  4 px differs from FrameFairy's 2 px on purpose.
-- **Tab goes the way the page is written.** macOS only tabs between
-  buttons when full keyboard access is on, so a window, a sheet and a
-  question move the focus themselves, all through `moveTab` in
-  `lib/keys.ts`, never through a list of their own. Where Tab should
-  take another way than the eye, the page is written in Tab's order and
-  drawn in the other with CSS: Report a Problem's row is written Report,
-  Clear, the info mark, Attach, Dictate and drawn with `row-reverse`, so
-  Enter, Tab, Enter ends a dictation and makes the report (Tim, testing
-  #46). An info mark is help, not a control, and Tab passes it by with
-  `tabindex="-1"`, as Tim asked. A button that cannot be pressed now, in a row Tab walks, is
-  greyed out with `aria-disabled` and keeps its place, and its handler
-  does nothing. One with `disabled` drops out of the order, and Tim
-  found the order changing with an empty field.
-- **There is one list to pick from, `Pick.svelte`.** It is FrameFairy's,
-  built on bits-ui, so a list looks the same in the window on a Mac as it
-  does in the harness, and a row can say more than a name: a size, a
-  group, whether a model is downloaded. Never a native `<select>`, which
-  the Mac draws in its own box. The People order, the LinkedIn profile,
-  the Updates channel and the language model all use it, and
-  `walks/pick.mjs` walks it.
-- **The sidebar wears a dot where something needs a look.** Updates, from
-  where its updates stand, and Settings, from the Exa key and the
-  language model's `standing`: red when runs or drafts cannot work, amber
-  when a download would do, pulsing while the model comes. The app judges
-  it, the window only draws it. Tim asked for the one on Settings on 21
-  November 2026. `walks/draft.mjs` and `walks/pick.mjs` walk its states.
-- **Opening something never relays out what is beside it.** A row has the
-  same lines at any width, so a person opening only narrows the list. A
-  container query on a pane that another pane squeezes brings the shuffle
-  back. `web/walks/person.mjs` checks it.
-- **Every colour has a light and a dark value.** Check both, and check that
-  small text keeps a contrast of at least 4.5 to 1 on `--bg` and `--surface`,
-  in every state. `walks/look.mjs` measures the words of the controls at
-  rest, under the pointer and pressed, that a run's fill stands out from
-  its track by 3 to 1, and that the band travelling over it, `--sheen`,
-  shows on the fill by 1.5 to 1 and stays on it.
+## 7. What a hand feels
 
-## What to report
+- **A click is answered in the frame it lands in.** Everything the click
+  changes shows it in the same frame, the control and every place that
+  shows the same work, saying what is under way (Stopping, Starting) and
+  standing still until the back end's answer replaces it. Never wait for
+  an event or a timer to show what the click already knows. Only a change
+  the system makes by itself may wait, so a step that lasted a moment
+  does not flash. A screenshot never catches it, the end state is right
+  and the in between wrong. Click inside the page and read every frame:
 
-What changed, the screenshots before and after, the measurement that proves
-it, and exactly what Tim should look at in the app and what he should see.
+  ```js
+  const seen = await page.evaluate(() => new Promise((done) => {
+    const read = () => document.querySelector(".status")?.textContent.trim() ?? "(none)";
+    const out = [];
+    document.querySelector("button.start").click();
+    const tick = () => { out.push(read()); out.length < 60 ? requestAnimationFrame(tick) : done(out); };
+    requestAnimationFrame(tick);
+  }));
+  ```
+
+  A run of `(none)`, or of the state before the click, is the bug.
+- **A drag reshapes everything drawn from it while it moves.** List
+  everything drawn from the dragged thing and make each follow the draft,
+  not the saved state. When the back end works it out, ask it on the way,
+  one question at a time, always about where the hand is now, and keep
+  the last answer until the saved state returns, so nothing jumps on
+  release. Better, one answer holds everything drawn from the thing, in
+  the shape the saved state is sent in, so no part is missed. Test with
+  the button held, moving in steps and reading every part after each. A
+  number that changes only after the release is the bug. Then read every
+  frame across the release, as for a click.
+- **Work a click starts is shown where it will live,** from the moment it
+  is asked for. The control shows it is busy, and what it makes is
+  chosen, scrolled into view, and filled in as each part becomes known. The finished thing replaces it with no jump. Nothing
+  appears whole after seconds of nothing. Check it with the view scrolled
+  elsewhere and a stub as slow as the real thing, start-up included.
+- **Decide by state, not by distance.** What a gesture is about is a
+  state the gesture sets, not how near a clock or a position is to
+  something: a distance can round back to where it started. Compare in
+  the units the screen has, a pixel, a step, a row, not in a continuous
+  value. A value taken through two conversions comes back a hair off, so
+  a jump meant to land inside something aims one step in from its edge,
+  never at the edge.
+- **Answers do not come back in the order they were asked for.** Async
+  work that paints carries a ticket, and an answer older than the newest
+  one used is dropped. Compare against what is on screen, not what was
+  last asked for, or A, B, A quickly skips the last A.
+- **Never read back a value a call can have changed through a
+  listener.** Keep it in a local. **A timer in a reactive effect on often
+  replaced data never fires,** as the effect is rebuilt. Start it once,
+  on mount, and let it ask when it fires.
+- **A drag takes the pointer, and every click with it.** With pointer
+  capture, a child's click handler never runs. What answers a click on a
+  drag surface is decided by the surface. And `preventDefault` on the
+  way down stops the text caret as well as a selection.
+
+## 8. Layout and pixels
+
+- **A layout that measures itself never settles.** Every size is one
+  stylesheet expression from the window and the tokens. Script reads a
+  size, never writes one back.
+- **Whole pixels.** Rows are whole pixels high, an element as tall as
+  itself and not its line of text. Something on a half pixel moves the
+  moment opacity, a transform or a filter puts it on its own surface,
+  which starts on a whole pixel. Measure what is painted, not the box
+  the layout reports: an odd-sized mark centred in an even box lands on a
+  half pixel, so fixes that trusted the box moved nothing. On a canvas, half a pixel is half the
+  colour: draw in device pixels and round.
+- **Two things that move together move by the same means.** An animated
+  `left` runs on the main thread, a `transform` on the compositor, so
+  side by side one steps while the other glides.
+- **The box that is trimmed is the box that is clipped.** Trimming a
+  text box to its letters and clipping it for an ellipsis cuts every
+  descender. Trim, then pad back out evenly.
+- **A number that stands for a position is not published as zero.** When
+  it is unknown, leave it out so the stylesheet's fallback answers.
+- **A floating thing is measured before the stylesheet has finished with
+  it.** A placement library picks a side from a width the rules then
+  change. Give it a width the placement does not write, like
+  `max-content`.
+- **A floating thing is read whole, or it was not placed.** Open every
+  popup at several window sizes, small ones above all, and compare its
+  box with `innerWidth` and `innerHeight`. `scrollHeight` above
+  `clientHeight` means clipped only where `overflow` is not `visible`, or
+  a hover bridge past the box reads as hidden text.
+- **A floating list keeps what it hangs from in place.** A container
+  that opens on hover stays open while a list or bubble of its own is
+  open, since moving onto the list is leaving the container. When the
+  list closes, the container asks where the pointer is rather than trust
+  the old answer, and Escape closes one layer per press. Check it
+  unpinned: hover it open, open the list, move onto a row step by step,
+  and read the container's width at every step. Then every way a list
+  closes, with the pointer on the trigger,
+  the container and outside.
+
+## 9. Before saying it is done
+
+- An end-to-end test that does what the user did fails without the fix
+  and passes with it, written as the testing skill says.
+- The type check and the interface's own unit tests pass.
+- The full end-to-end suite runs in CI. A single test runs alone in the
+  session only to write or fix it.
+- Build the harness, and the bench page when its component changed.
+- Push, let CI run the rest, and hear how it went from its events.
+- Say what to look at and what should happen, in the order the user
+  would do it.
+- Name what could not be verified. A fix reported as certain and found
+  broken costs more than one reported as unverified.
+
+## 10. Where other advice says otherwise
+
+| Common advice | Why not | Instead |
+| --- | --- | --- |
+| wait for `networkidle` or a fixed timeout in a probe | passes before the picture stands, or hangs | a settled signal or the thing itself, section 1 |
+| a screenshot as proof | catches the end state, not the frames between | read every frame, section 7 |
+| judge alignment by the layout's boxes | the box is not what is painted | measure the painted pixels, sections 2 and 8 |
+| test in Chromium only | the product ships another engine | test in the shipped engine, section 6 |

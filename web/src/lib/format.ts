@@ -101,15 +101,6 @@ export function fmtAgo(v: string | Date | null | undefined, now = new Date()): s
   return fmtDay(v)
 }
 
-// "1.8 s", "420 ms"
-export function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms} ms`
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)} s`
-  const m = Math.floor(ms / 60000)
-  const s = Math.round((ms % 60000) / 1000)
-  return `${m} min ${s} s`
-}
-
 const numFmt = new Intl.NumberFormat('en-GB')
 export function fmtNum(n: number): string {
   return numFmt.format(n)
@@ -136,14 +127,6 @@ export const ROLE_LABEL: Record<string, string> = {
   pitch: 'pitch',
   host: 'host',
   moderator: 'moderator',
-}
-
-export const STATUS_LABEL: Record<string, string> = {
-  active: 'Active',
-  probation: 'Probation',
-  candidate: 'Candidate',
-  manual: 'Manual',
-  retired: 'Retired',
 }
 
 export const KIND_LABEL: Record<string, string> = {

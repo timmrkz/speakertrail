@@ -417,72 +417,39 @@ for (const theme of ['light', 'dark']) {
   })
   walks.push({
     theme,
-    name: `In ${theme}, the fill of a run stands out from its track, the band over it shows, and the band stays on the fill`,
+    name: `In ${theme}, a profile being read fills its row, the fill shows, and the name and its line read over it`,
     async run(page) {
+      // Tim asked on 22 November 2026, #43, for the row of someone added
+      // from a link to fill while Exa reads their profile, the way a clip
+      // fills its card in FrameFairy. The fill lies under the words, so
+      // they have to read over its strongest end as well as its faintest.
       await page.goto(`${url}/app/people`)
-      const start = page.locator('main button.start')
-      await start.click()
-      const fill = page.locator('.progress > i').first()
+      await page.locator('main .search input').fill(`https://www.linkedin.com/in/look-probe-${theme}`)
+      await page.locator('main .search input').press('Enter')
+      const fill = page.locator('main .prow.reading .fill i').first()
       await fill.waitFor()
       await page.evaluate(helpers)
       const m = await fill.evaluate((i) => {
         const { bytes, over, ground, contrast } = window.look
-        const track = ground(i.parentElement)
-        const done = over(bytes(getComputedStyle(i).backgroundColor), track)
-        // The strongest point of the band that travels over the fill is
-        // the middle stop of its gradient.
-        const stops = getComputedStyle(i, '::after').backgroundImage.match(/(rgba?|color)\([^)]*\)/g) ?? []
-        const band = stops.length >= 3 ? over(bytes(stops[1]), done) : done
-        return { fill: contrast(done, track), band: contrast(band, done), bandTrack: contrast(band, track) }
-      })
-      // The run is stopped again, so the walks after this one find the
-      // mock at rest.
-      await start.click()
-      await page.locator('main button.start', { hasText: /^\s*Run\s*$/ }).waitFor()
-      const wrong = []
-      if (m.fill < 3) wrong.push(`the fill stands out from its track at ${m.fill.toFixed(2)} to 1`)
-      if (m.band < 1.5) wrong.push(`the band shows on the fill at ${m.band.toFixed(2)} to 1`)
-      if (m.bandTrack < 3) wrong.push(`under the band the fill stands out from its track at ${m.bandTrack.toFixed(2)} to 1`)
-      // The band travels over what is done and never on past it onto the
-      // track. A bar a third done is laid on the page where nothing else
-      // moves, every animation on it is held at points along the band's
-      // way, and the track just past the fill is read off the screen at
-      // each.
-      await page.evaluate(() => {
-        const box = document.createElement('div')
-        box.id = 'look-third'
-        box.style.cssText = 'position: fixed; left: 40px; top: 40px; width: 300px; padding: 16px; background: var(--surface); z-index: 1000'
-        box.innerHTML = '<div class="progress"><i style="width: 33%"></i></div>'
-        document.body.append(box)
-        return new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())))
-      })
-      const own = page.locator('#look-third .progress > i')
-      for (const at of [0.5, 0.7, 0.9]) {
-        const strip = await own.evaluate((i, at) => {
-          for (const a of i.getAnimations({ subtree: true })) {
-            a.pause()
-            const d = a.effect?.getComputedTiming().duration
-            if (typeof d === 'number' && Number.isFinite(d)) a.currentTime = d * at
-          }
-          const f = i.getBoundingClientRect()
-          const t = i.parentElement.getBoundingClientRect()
-          return { x: Math.ceil(f.right) + 2, y: Math.round(t.top + t.height / 2), width: 40, track: window.look.ground(i.parentElement).slice(0, 3) }
-        }, at)
-        const png = await page.screenshot({ clip: { x: strip.x, y: strip.y, width: strip.width, height: 1 }, caret: 'hide' })
-        const lit = await page.evaluate(async ({ b64, track }) => {
-          const bitmap = await createImageBitmap(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/png' }))
-          const c = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d')
-          c.drawImage(bitmap, 0, 0)
-          const d = c.getImageData(0, 0, bitmap.width, bitmap.height).data
-          let most = 0
-          for (let k = 0; k < d.length; k += 4) most = Math.max(most, ...[0, 1, 2].map((n) => Math.abs(d[k + n] - track[n])))
-          return most
-        }, { b64: png.toString('base64'), track: strip.track })
-        if (lit > 4) {
-          wrong.push(`the band runs on past the fill onto the track, ${Math.round(at * 100)} % of the way through it changes the track by ${lit} of 255`)
-          break
+        const row = i.closest('.prow')
+        const under = ground(row)
+        const stops = (getComputedStyle(i).backgroundImage.match(/(rgba?|color)\([^)]*\)/g) ?? []).map((c) => over(bytes(c), under))
+        const name = bytes(getComputedStyle(row.querySelector('b')).color)
+        const line = bytes(getComputedStyle(row.querySelector('.sub')).color)
+        return {
+          stops: stops.length,
+          fill: Math.min(...stops.map((c) => contrast(c, under))),
+          name: Math.min(...stops.map((c) => contrast(name, c))),
+          line: Math.min(...stops.map((c) => contrast(line, c))),
         }
-      }
+      })
+      // The run ends, so the walks after this one find the mock at rest.
+      await page.locator('main button.start', { hasText: /^\s*Run\s*$/ }).waitFor({ timeout: 30000 })
+      const wrong = []
+      if (m.stops < 2) wrong.push(`the fill has ${m.stops} colours`)
+      if (m.fill < 1.15) wrong.push(`the fill stands out from the row at ${m.fill.toFixed(2)} to 1`)
+      if (m.name < 4.5) wrong.push(`the name reads over the fill at ${m.name.toFixed(2)} to 1`)
+      if (m.line < 4.5) wrong.push(`its line reads over the fill at ${m.line.toFixed(2)} to 1`)
       return wrong.join(', ')
     },
   })

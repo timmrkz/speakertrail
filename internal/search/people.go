@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -53,7 +53,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 	body, _ := json.Marshal(map[string]any{
 		"query": query, "category": "people", "numResults": results,
 		// Enough of the text to reach the activity, which comes last.
-		"contents": map[string]any{"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never"},
+		"contents": map[string]any{"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never"},
 	})
 	var out struct {
 		Results []exaProfile `json:"results"`
@@ -98,7 +98,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 	body, _ := json.Marshal(map[string]any{
 		"urls": []string{link},
-		"text": map[string]any{"maxCharacters": 8000}, "livecrawl": "never",
+		"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contentsURL(e.URL), bytes.NewReader(body))
 	if err != nil {
@@ -117,8 +117,69 @@ func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 			return p, nil
 		}
 	}
-	return Profile{}, fmt.Errorf("Exa's index holds no profile at %s", link)
+	// Said without the link, which is personal data and reaches the log.
+	return Profile{}, ErrNotIndexed
 }
+
+// ProfileByName asks Exa's people search for a LinkedIn profile by the
+// name in its link, like "erika beispiel" for /in/erika-beispiel-71, for
+// a profile the index holds under another link than the one Tim has,
+// such as de.linkedin.com or one with other capitals. Only a profile
+// under the same link name is taken, never a namesake. Like Profile it
+// reads nothing live, and it is one more search against the budget. A
+// link with no name in it, like /in/ACoAAB12345, asks nothing.
+func (e *Exa) ProfileByName(ctx context.Context, link string) (Profile, error) {
+	handle, words := linkName(link), NameIn(link)
+	if words == "" {
+		return Profile{}, ErrNotIndexed
+	}
+	found, err := e.People(ctx, words, 10)
+	if err != nil {
+		return Profile{}, err
+	}
+	for _, p := range found {
+		if p.Text != "" && linkName(p.URL) == handle {
+			return p, nil
+		}
+	}
+	return Profile{}, ErrNotIndexed
+}
+
+// NameIn is the name in a profile's link as words, like "erika beispiel"
+// for /in/erika-beispiel-71, empty for a link with none, like
+// /in/ACoAAB12345.
+func NameIn(link string) string {
+	var words []string
+	for w := range strings.SplitSeq(linkName(link), "-") {
+		// LinkedIn adds numbers and letters, like 71 or 7a1b2c3, to tell
+		// people of the same name apart. They are no part of a name.
+		if w != "" && !strings.ContainsAny(w, "0123456789") {
+			words = append(words, w)
+		}
+	}
+	return strings.Join(words, " ")
+}
+
+// linkName is the name in a profile's link, the part after /in/, in
+// small letters and with its escapes read, so that
+// de.linkedin.com/in/J%C3%B6rg-Probe/ and www.linkedin.com/in/jörg-probe
+// have the same.
+func linkName(link string) string {
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return ""
+	}
+	path := strings.Trim(u.Path, "/")
+	name, ok := strings.CutPrefix(path, "in/")
+	if !ok || strings.Contains(name, "/") {
+		return ""
+	}
+	return strings.ToLower(name)
+}
+
+// ErrNotIndexed is a profile Exa's index does not hold yet, like one
+// made lately.
+var ErrNotIndexed = errors.New("Exa's index holds no profile")
 
 // contentsURL is where Exa's contents API is, beside its search, whose
 // address a test may change.

@@ -14,7 +14,7 @@
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
-  import { pasteAsShown } from '../paste'
+  import { pasteAsShown } from '../pastedlines'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
@@ -175,7 +175,7 @@
   }
 
   // The clock ticks here, between the app's tells, and the time left
-  // counts down from the last one, as RunProgress does.
+  // counts down from the last one, as a run does on its Stop button.
   let now = $state(Date.now())
   let toldAt = $state(Date.now())
   $effect(() => {

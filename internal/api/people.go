@@ -1,10 +1,12 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
@@ -43,6 +45,16 @@ type personJSON struct {
 	Profiles       []profileJSON  `json:"profiles"`
 	Activity       any            `json:"activity"`
 	LinkedIn       *linkedInJSON  `json:"linkedin"`
+	// Read says where the profile of someone added from a link stands:
+	// reading now, waiting its turn in the run, next for a run that
+	// reads it later, not_indexed when Exa's index does not hold it yet,
+	// failed when the last read failed, or empty once read. ReadSince is
+	// when the read began, and ReadMS about how long one takes, measured
+	// from the last reads, so the row can fill as it goes.
+	Read      string     `json:"read"`
+	ReadSince *time.Time `json:"read_since"`
+	ReadMS    *int64     `json:"read_ms"`
+	ReadError string     `json:"read_error,omitempty"`
 }
 
 type sightingJSON struct {
@@ -142,6 +154,52 @@ func listPerson(p *store.Person, fit int) personJSON {
 	return out
 }
 
+// reads is where the reads of the going run stand, see personJSON.Read.
+type reads struct {
+	reading map[int64]time.Time
+	waiting []int64
+	ms      *int64
+}
+
+// readsNow is whose profiles the engine reads and whose wait, as it said
+// before the store was read, with how long a read takes, measured from
+// the last ones. The engine is asked first and never inside Store.Read,
+// since Engine.Add holds its own lock while it updates the store.
+func readsNow(d *store.Data, reading map[int64]time.Time, waiting []int64) reads {
+	out := reads{reading: reading, waiting: waiting}
+	var total, n int64
+	for i := len(d.Runs) - 1; i >= 0 && n < recentChecks; i-- {
+		for j := len(d.Runs[i].Reads) - 1; j >= 0 && n < recentChecks; j-- {
+			total += d.Runs[i].Reads[j].DurationMS
+			n++
+		}
+	}
+	if n > 0 {
+		ms := total / n
+		out.ms = &ms
+	}
+	return out
+}
+
+// mark says where a person's profile read stands.
+func (r reads) mark(p *store.Person, out *personJSON) {
+	out.ReadError = p.ReadError
+	if since, ok := r.reading[p.ID]; ok {
+		out.Read, out.ReadSince, out.ReadMS = "reading", ptrTime(since), r.ms
+		return
+	}
+	switch {
+	case slices.Contains(r.waiting, p.ID):
+		out.Read = "waiting"
+	case p.ToRead:
+		out.Read = "next"
+	case p.ReadError == engine.NotIndexed:
+		out.Read = "not_indexed"
+	case p.ReadError != "":
+		out.Read = "failed"
+	}
+}
+
 func detailPerson(d *store.Data, p *store.Person, now time.Time) personDetail {
 	fit, parts := d.Fit(p, now)
 	out := personDetail{personJSON: listPerson(p, fit), Appearances: []any{}, Affiliations: []any{},
@@ -162,21 +220,71 @@ func detailPerson(d *store.Data, p *store.Person, now time.Time) personDetail {
 	return out
 }
 
+// linksJSON is what a search for links holds: how many profiles are new
+// to the app, who is here already, by id, and how many other links,
+// like a company page.
+type linksJSON struct {
+	New   int     `json:"new"`
+	Here  []int64 `json:"here"`
+	Other int     `json:"other"`
+	// Act is what Run turns into: add for profiles new to the app, open
+	// for the one person a link leads to who is here, none for links that
+	// add nobody, see actOf.
+	Act string `json:"act"`
+}
+
+// actOf is what adding links does, the same for the search that holds
+// them and for Add.
+func actOf(isNew int, here []int64, other int) string {
+	switch {
+	case isNew > 0:
+		return "add"
+	case len(here) == 1 && other == 0:
+		return "open"
+	}
+	return "none"
+}
+
 func (a *API) people(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	var out struct {
 		People []personJSON   `json:"people"`
 		Counts map[string]int `json:"counts"`
+		// Links is set when the search holds links, see linksJSON. The
+		// people are then whom the links lead to, under any filter.
+		Links *linksJSON `json:"links"`
 	}
 	var err error
+	profiles, other := engine.Links(q.Get("q"))
+	reading, waiting := a.Engine.Reading()
 	a.Store.Read(func(d *store.Data) {
 		var people []*store.Person
 		now := a.Store.Now()
-		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: q.Get("q"), Sort: q.Get("sort"), Filter: q.Get("filter"), Now: now})
+		words := q.Get("q")
+		if len(profiles) > 0 || other > 0 {
+			words = ""
+		}
+		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: words, Sort: q.Get("sort"), Filter: q.Get("filter"), Now: now})
+		if len(profiles) > 0 || other > 0 {
+			out.Links = &linksJSON{Here: []int64{}, Other: other}
+			people = people[:0]
+			for _, link := range profiles {
+				if p := d.PersonByProfile(link); p != nil {
+					out.Links.Here = append(out.Links.Here, p.ID)
+					people = append(people, p)
+				} else {
+					out.Links.New++
+				}
+			}
+			out.Links.Act = actOf(out.Links.New, out.Links.Here, other)
+		}
+		rs := readsNow(d, reading, waiting)
 		out.People = make([]personJSON, 0, len(people))
 		fitOf := d.Fitter(now)
 		for _, p := range people {
-			out.People = append(out.People, listPerson(p, fitOf(p)))
+			pj := listPerson(p, fitOf(p))
+			rs.mark(p, &pj)
+			out.People = append(out.People, pj)
 		}
 	})
 	if err != nil {
@@ -189,19 +297,121 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusOK, out)
 }
 
+// addPeople adds the people behind the LinkedIn links in a text, as
+// connected, and has a run read their profiles. Without a key or budget
+// they are added all the same, and wait says why their profiles wait
+// for the next run.
+func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text string `json:"text"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	added, err := a.Engine.Add(in.Text)
+	out := struct {
+		engine.Added
+		// Open is the one person the links lead to who was here
+		// already, for People to open, when they add nobody new.
+		Open int64  `json:"open,omitempty"`
+		Wait string `json:"wait,omitempty"`
+	}{Added: added}
+	if actOf(len(added.New), added.Here, added.Other) == "open" {
+		out.Open = added.Here[0]
+	}
+	switch {
+	case errors.Is(err, engine.ErrNoLinks):
+		fail(w, http.StatusBadRequest, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrClosed):
+		fail(w, http.StatusConflict, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrNoKey), errors.Is(err, engine.ErrUnread), errors.Is(err, engine.ErrNoBudget):
+		out.Wait = capital(err.Error())
+	case err != nil:
+		a.internal(w, r, err)
+		return
+	}
+	send(w, http.StatusOK, out)
+}
+
+// removePerson takes out someone added from a link, for Undo.
+func (a *API) removePerson(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	switch err := a.Engine.Remove(id); {
+	case errors.Is(err, store.ErrNoPerson):
+		fail(w, http.StatusNotFound, "Not found")
+	case errors.Is(err, store.ErrNotAdded):
+		fail(w, http.StatusConflict, capital(err.Error()))
+	case err != nil:
+		a.internal(w, r, err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func (a *API) sendPerson(w http.ResponseWriter, id int64) {
+	if out := a.detail(id); out != nil {
+		send(w, http.StatusOK, out)
+		return
+	}
+	fail(w, http.StatusNotFound, "Not found")
+}
+
+// detail is everything the app knows about one person, nil for nobody.
+func (a *API) detail(id int64) *personDetail {
 	var out *personDetail
+	reading, waiting := a.Engine.Reading()
 	a.Store.Read(func(d *store.Data) {
 		if p := d.Person(id); p != nil {
 			v := detailPerson(d, p, a.Store.Now())
+			readsNow(d, reading, waiting).mark(p, &v.personJSON)
 			out = &v
 		}
 	})
+	return out
+}
+
+// pasteProfile keeps a LinkedIn page Tim copied in his browser as a
+// person's profile, see engine.Paste. With as, it puts back what Undo
+// had kept.
+func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body struct {
+		Text string        `json:"text"`
+		As   *store.Pasted `json:"as"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	was, named, err := a.Engine.Paste(id, body.Text, body.As)
+	switch {
+	case errors.Is(err, store.ErrNoPerson):
+		fail(w, http.StatusNotFound, "Not found")
+		return
+	case errors.Is(err, engine.ErrNothingPasted):
+		fail(w, http.StatusBadRequest, capital(err.Error()))
+		return
+	case err != nil:
+		a.internal(w, r, err)
+		return
+	}
+	out := a.detail(id)
 	if out == nil {
 		fail(w, http.StatusNotFound, "Not found")
 		return
 	}
-	send(w, http.StatusOK, out)
+	send(w, http.StatusOK, struct {
+		Person *personDetail `json:"person"`
+		Was    store.Pasted  `json:"was"`
+		Named  bool          `json:"named"`
+	}{out, was, named})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

@@ -6,16 +6,17 @@ about: Something that went wrong, the cause behind several of them, or work that
 <!--
 Sessions open issues through the API, which shows no template, so a
 session reads this file and writes the issue the way it lays it out.
-Plain words, short sentences, no semicolons. See the collaboration
-skill in .claude/skills/ for how issues are labelled, ordered and
-looked over.
+Plain words, short sentences, no semicolons. See the maintenance
+skill in .claude/skills/ for how issues are written, closed and looked
+over, and the collaboration skill for how they are labelled and
+ordered.
 
 WHEN TO OPEN AN ISSUE, AND WHEN NOT
 
 - Not for what the pull request you are on caused, or a small thing on
   the code it touches. Fix it there, as a commit of its own, see Clean
-  up now, not later, in the collaboration skill. An issue starts a whole
-  new round of work.
+  up now, not later, in section 7 of the maintenance skill. An issue
+  starts a whole new round of work.
 - Only for what someone saw happen: the user, a person using the
   product, or a test. Say which. When only a test's environment causes
   it, a CI runner's virtual hardware, a stand-in or a file made for the
@@ -23,8 +24,9 @@ WHEN TO OPEN AN ISSUE, AND WHEN NOT
   An order of events in our own code that a test can make happen, a
   page closed in the middle of a save for example, counts even if nobody
   has seen it happen yet.
-- Search the open and the closed issues first. The same failure as an
-  open issue goes into that issue.
+- Search the open and the closed issues first, the way Problems that
+  come back in the maintenance skill says. The same failure as an open
+  issue goes into that issue.
 
 THE THREE KINDS
 
@@ -83,5 +85,5 @@ the code, or "Not known yet" and what would find it, the trace first.
 <!--
 At most 30 words: the change that takes the cause away, in one place,
 and when it is done. Never a workaround, see Root causes only in the
-engineering skill.
+maintenance skill.
 -->

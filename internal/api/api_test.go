@@ -42,6 +42,22 @@ func (finder) People(ctx context.Context, query string, results int) ([]search.P
 	}}, nil
 }
 
+// ProfileByName finds nobody by name.
+func (finder) ProfileByName(context.Context, string) (search.Profile, error) {
+	return search.Profile{}, search.ErrNotIndexed
+}
+
+// Profile reads one invented profile, and no other link is in the index.
+func (finder) Profile(ctx context.Context, link string) (search.Profile, error) {
+	if link != "https://www.linkedin.com/in/ida-probe" {
+		return search.Profile{}, search.ErrNotIndexed
+	}
+	return search.Profile{
+		URL: link, Name: "Ida Probe", Headline: "Inhaberin, Probe Studio", Location: "Essen, Germany", LastActive: t0.AddDate(0, -1, 0),
+		Text: "Ida Probe\nInhaberin, Probe Studio",
+	}, nil
+}
+
 func newAPI(t *testing.T) (*API, *store.Store, *engine.Engine) {
 	t.Helper()
 	st, err := store.Open(t.TempDir(), func() time.Time { return t0 })
@@ -144,7 +160,7 @@ func TestARunFromStartToPeople(t *testing.T) {
 	}
 	// Connected, she leaves All for Connected.
 	call(t, a, "GET", "/api/people?filter=all", "", &people)
-	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["young"] != 0 || people.Counts["connected"] != 1 {
+	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["new"] != 1 || people.Counts["connected"] != 1 {
 		t.Errorf("people once connected = %+v", people)
 	}
 	call(t, a, "GET", "/api/people?filter=connected", "", &people)

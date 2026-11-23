@@ -34,44 +34,33 @@ Start with [README.md](README.md). In short:
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
-| interface, Svelte 5 | `web/` | `.claude/skills/interface/` |
+| interface, Svelte 5 | `web/` | [docs/INTERFACE.md](docs/INTERFACE.md) |
 | build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md), [docs/fit-score.md](docs/fit-score.md) |
 | working with Claude, telling a pull request that conflicts with main | `.github/workflows/conflicts.yml`, `cmd/speakertrail-release/conflicts.go` | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 
 ## The skills
 
-How we work is in the skills in `.claude/skills/`. Most are written for
-any project, so their rules name nothing of ours. Read the one for the
-work before starting it. Where a generic skill and this file differ, this
-file wins. They come from FrameFairy, made generic, see Where the skills
-come from in [docs/WORKFLOW.md](docs/WORKFLOW.md).
+How we work is in the skills in `.claude/skills/`. Every one is written
+for any project, so it names nothing of ours. Read the one for the work before starting it. Where a
+skill and this file differ, this file wins. Most come from FrameFairy as
+they are, see [docs/SKILLS.md](docs/SKILLS.md), which also says where
+each skill's words meet this repository: the user is Tim, a review goes
+in `/mnt/project-files/reviews/`, and so on.
 
 | Skill | For |
 | --- | --- |
+| [engineering](.claude/skills/engineering/SKILL.md) | the first principles of any change, and which skill holds which part |
 | [architecture](.claude/skills/architecture/SKILL.md) | where a change goes, the server and client split, changing the design |
-| [engineering](.claude/skills/engineering/SKILL.md) | how any change is made, root causes, build, CI, speed, measurements |
+| [maintenance](.claude/skills/maintenance/SKILL.md) | evidence before work, root causes, problems that come back, issues and triage |
 | [testing](.claude/skills/testing/SKILL.md) | how every test is written, fixed and reviewed, and how a bug is found |
-| [pull-requests](.claude/skills/pull-requests/SKILL.md) | how a pull request is opened, sized, described, watched and made ready |
+| [ci](.claude/skills/ci/SKILL.md) | which jobs a change starts, caches, limits, measuring CI |
+| [security](.claude/skills/security/SKILL.md) | untrusted input, paths, programs, secrets, signing, the supply chain, workflows |
+| [pull-requests](.claude/skills/pull-requests/SKILL.md) | how a pull request is opened, sized, described, watched, made ready and merged |
 | [review](.claude/skills/review/SKILL.md) | how a pull request is reviewed by an agent that did none of the work |
-| [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, proving a visual fix |
-| [collaboration](.claude/skills/collaboration/SKILL.md) | replies, what goes in the repository instead of memory, issues with a priority and a size, writing rules |
-| [interface](.claude/skills/interface/SKILL.md) | this repository's interface: the mock harness, Tim's phone, `RunProgress` |
-
-Where the generic skills meet this repository:
-
-| The skills say | Here it is |
-| --- | --- |
-| the user | Tim |
-| the people using the product | Tim, in the app on his Mac |
-| the product's goals | The project above, and the issue the pull request names |
-| the architecture as the project writes it | Where things are above and [README.md](README.md) for now, and the records in [docs/decisions/](docs/decisions/README.md) |
-| the place the project names for a review | a file in `/mnt/project-files/reviews/`, named after the pull request, never committed and never posted on GitHub |
-| logged | a GitHub issue, laid out the way [the issue template](.github/ISSUE_TEMPLATE/issue.md) says |
-| how a pull request is described | [the pull request template](.github/pull_request_template.md) |
-| a path a person waits on | opening a screen of the app, a run, and an update |
-| a trade-off the user accepted | Tim's yes in the thread of the session |
-| a briefing for the source project's sessions | a file in `/mnt/project-files/briefings/`, since sessions here cannot push to FrameFairy |
+| [interface-design](.claude/skills/interface-design/SKILL.md) | what goes on screen, how actions are answered, one look, layout |
+| [interface](.claude/skills/interface/SKILL.md) | how an interface nobody can see is changed and proven, see [docs/INTERFACE.md](docs/INTERFACE.md) for ours |
+| [collaboration](.claude/skills/collaboration/SKILL.md) | small batches, replies, the repository instead of memory, priority and size, writing |
 
 `.claude/settings.json` raises the room Claude Code gives the list of
 skills, `SLASH_COMMAND_TOOL_CHAR_BUDGET`, to 80000 characters. Below
@@ -157,7 +146,8 @@ messages, pull request text, code comments and chat replies.
   each **part** of the **template** in Settings, picked at random, and the
   **hook**, the portrait, reason and reaction the **language model**
   wrote. A **run** is
-  one pass over the due searches, started by hand. A **check** is one search asked once in a
+  one pass over the due searches and the profiles of links Tim added,
+  started by hand or by adding links. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. A **channel** is what the app
@@ -198,9 +188,11 @@ messages, pull request text, code comments and chat replies.
 - **Work never runs silently.** Anything that takes more than a moment
   says what it does now, how far it is, how long it has run and about how
   long is left, measured from earlier work rather than guessed, and it can
-  be stopped. It looks the same everywhere: the fill, the shuttle and the
-  pulsing dot in `app.css`, and `RunProgress.svelte` for a run. See the
-  interface skill.
+  be stopped. It looks the same everywhere: the beam and the fill of
+  `Busy.svelte` on the control that started it and on the row of what
+  it works on, and the pulsing dot in `app.css`. No line of progress
+  under a toolbar (Tim, 22 November 2026, #43). See
+  [docs/INTERFACE.md](docs/INTERFACE.md#work-in-hand).
 - **Short runs, often.** Tim runs the engine by hand on his Mac. A run
   stays short enough to watch, and what does not fit waits for the next.
 - **The sidebar is FrameFairy's.** A rail of icons until the pointer
@@ -220,7 +212,7 @@ messages, pull request text, code comments and chat replies.
 - **Quiet marks.** No lines or patterns in the background. A button in
   focus wears a ring in its own colour, a field in use keeps the grey
   edge it has under the pointer, never the accent (Tim, 21 November
-  2026). See the interface skill.
+  2026). See [docs/INTERFACE.md](docs/INTERFACE.md#the-look).
 
 ## Engineering rules
 
@@ -247,8 +239,9 @@ messages, pull request text, code comments and chat replies.
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.
 - **No LinkedIn, no Instagram.** The app never requests them. Profiles
-  come from Exa's index, asked with `livecrawl` never. Never add a request
-  to either.
+  come from Exa's index, asked with `livecrawl` never, by link and then
+  by the name in it. One Exa lacks Tim copies from Chrome and pastes on
+  the person (23 November 2026, #43). Never add a request to either.
 - **LinkedIn opens in Tim's Chrome profile.** The app never requests
   LinkedIn itself, it hands the link to Chrome with
   `open -n -a "Google Chrome" --args --profile-directory=<folder>`, the
@@ -268,6 +261,10 @@ messages, pull request text, code comments and chat replies.
   Go test runs under the race detector, and anything asynchronous, a run
   above all, has a test that uses it from several goroutines at once.
   A fix starts as a test that fails on the code before it.
+- **Text runs nothing in CI.** A change only to Markdown, the docs and
+  the skills, starts no job, and no test reads them for their words.
+  Tim, 23 November 2026: updating Markdown files should not run
+  anything, unless a check is very fast and very important.
 - **Tests** need no network and never call Exa. Answers go in the test,
   with invented people. Run `make test` before every push that
   touches Go. A change only to `web/` or `docs/` runs `make interface`
@@ -296,8 +293,8 @@ for the window.
 - The network is limited to an allowlist set in the environment. Exa may
   not be on it, and tests never call it anyway.
 - There is no screen, and the window cannot open. Interface work goes
-  through the skill in `.claude/skills/interface/`. Read it before changing
-  anything in `web/`.
+  through the interface skill and [docs/INTERFACE.md](docs/INTERFACE.md),
+  which has the harness. Read both before changing anything in `web/`.
 - Hugging Face is not on the allowlist, so no real speech or language
   model runs in a session. Tim tries those on his Mac.
 - A real build is read from the `dev` release, whose assets are public,

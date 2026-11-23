@@ -155,7 +155,7 @@ for (const theme of ['light', 'dark']) {
       const weak = await measure(page, people)
       if (weak) return weak
       // The open person's row is marked already. Arrow keys move it, and
-      // the keyboard on it adds no edge, see the interface skill.
+      // the keyboard on it adds no edge, see docs/INTERFACE.md.
       await row.click()
       await page.keyboard.press('ArrowDown')
       await page.waitForFunction(() => {
@@ -172,7 +172,7 @@ for (const theme of ['light', 'dark']) {
     theme,
     // Tim typed in a field, took the pointer off it, and its edge lit up
     // in the accent, 21 November 2026. A field in use keeps the grey edge
-    // it has under the pointer, see the interface skill.
+    // it has under the pointer, see docs/INTERFACE.md.
     name: `In ${theme}, a text field in use keeps its grey edge with the pointer on it or away`,
     async run(page) {
       await page.goto(`${url}/app/people/1003`)

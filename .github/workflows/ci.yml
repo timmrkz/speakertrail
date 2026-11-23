@@ -23,10 +23,8 @@ jobs:
   # Makefile or a workflow is Go, and the files of web/ Go reads, goread:
   # the package that embeds the built interface, and dist/.keep, which
   # keeps the folder it embeds there before the interface is built. The
-  # skills are read by the Go test that keeps them generic,
-  # internal/naming, so a change to one starts the job skills, which runs
-  # only that test, when the Go job does not run anyway. The interface is web/, the Makefile and the workflows. See CI
-  # in docs/BUILD.md.
+  # interface is web/, the Makefile and the workflows. See CI in
+  # docs/BUILD.md.
   changes:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -35,7 +33,6 @@ jobs:
       pull-requests: read
     outputs:
       go: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' }}
-      skills: ${{ steps.filter.outputs.skills == 'true' }}
       interface: ${{ github.event_name == 'push' || steps.filter.outputs.interface == 'true' }}
       app: ${{ github.event_name == 'push' || steps.filter.outputs.go == 'true' || steps.filter.outputs.goread == 'true' || steps.filter.outputs.interface == 'true' }}
     steps:
@@ -53,27 +50,8 @@ jobs:
               - '!.claude/**'
             goread:
               - 'web/{*.go,dist/.keep}'
-            skills:
-              - '.claude/skills/**'
             interface:
               - '{web/**,.github/workflows/**,Makefile}'
-
-  # The skills alone, when nothing else changed for the Go job to run,
-  # which runs this test with every other. Seconds, where the Go job
-  # takes minutes.
-  skills:
-    needs: changes
-    if: needs.changes.outputs.skills == 'true' && needs.changes.outputs.go != 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Skills
-        run: make skills
 
   web:
     needs: changes

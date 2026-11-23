@@ -42,8 +42,7 @@ Start with [README.md](README.md). In short:
 ## The skills
 
 How we work is in the skills in `.claude/skills/`. Every one is written
-for any project, so it names nothing of ours, and `internal/naming`
-holds it to that. Read the one for the work before starting it. Where a
+for any project, so it names nothing of ours. Read the one for the work before starting it. Where a
 skill and this file differ, this file wins. Most come from FrameFairy as
 they are, see [docs/SKILLS.md](docs/SKILLS.md), which also says where
 each skill's words meet this repository: the user is Tim, a review goes
@@ -258,6 +257,10 @@ messages, pull request text, code comments and chat replies.
   Go test runs under the race detector, and anything asynchronous, a run
   above all, has a test that uses it from several goroutines at once.
   A fix starts as a test that fails on the code before it.
+- **Text runs nothing in CI.** A change only to Markdown, the docs and
+  the skills, starts no job, and no test reads them for their words.
+  Tim, 23 November 2026: updating Markdown files should not run
+  anything, unless a check is very fast and very important.
 - **Tests** need no network and never call Exa. Answers go in the test,
   with invented people. Run `make test` before every push that
   touches Go. A change only to `web/` or `docs/` runs `make interface`

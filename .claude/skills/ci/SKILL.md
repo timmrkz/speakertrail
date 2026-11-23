@@ -43,7 +43,8 @@ tests are run.
 
 - **Coarse path filters, from the CI tool itself.** Backend changes start
   backend tests, interface changes interface tests, end-to-end tests
-  start for either. A doc-only change runs the doc checks and the build.
+  start for either. A change only to text, docs and skills, runs
+  nothing, unless a check is very fast and very important.
 - **Measure what selection buys.** Sixteen scripts choosing tests per
   file bought 4 % over path filters and the runner's cache, inside the
   noise.

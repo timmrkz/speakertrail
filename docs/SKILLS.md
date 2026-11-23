@@ -9,13 +9,10 @@ decides what happens, and **the people using the product**. So the folder
 of each can be copied into another repository as it is, and an agent
 there follows it without wondering who or what it means.
 
-`internal/naming/skills_test.go` holds them to that: a skill that names a
-person, Speaker Trail, FrameFairy, a word only this project uses, a tool
-only this kind of app has, or an issue or a pull request by its number
-fails `make skills`, and `make unit` with it. A pull request that
-changes only skills runs just that test in CI, in seconds, see CI in
-[BUILD.md](BUILD.md#ci). A name the test does not know is still the
-review's to catch.
+The review holds them to that, and so does whoever brings in a lesson:
+a skill names no person, no product, no word only this project uses and
+no issue or pull request by its number. No test checks it, and a change
+to Markdown alone runs nothing in CI (Tim, 23 November 2026).
 
 Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 
@@ -26,7 +23,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | `testing` | how tests are written, fixed and reviewed, and how a bug is found before it is fixed | FrameFairy, as it is |
 | `review` | how a pull request is reviewed by an agent that did none of the work, and how a review is answered | FrameFairy, as it is |
 | `pull-requests` | how a change travels from the first line to the merge: sizing, opening early, the description, its performance line, watching it, ready, the go to merge | FrameFairy, with seven lessons learned here first, see below |
-| `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | FrameFairy, as it is |
+| `ci` | how CI stays fast, trustworthy and cheap: which jobs a change starts, caches, scarce runners, nightly runs, measuring CI | FrameFairy, with one line changed: text runs nothing, see below |
 | `maintenance` | how a code base stays easy to change: evidence before work, root causes, problems that come back, issues and triage, keeping the architecture | FrameFairy, as it is |
 | `security` | how the product, its build and its repository stay safe: a threat model, untrusted input, paths, programs, secrets, signing and updates, the supply chain, CI, agents on a public repository | FrameFairy, as it is |
 | `interface` | how an interface nobody can see is changed: a harness that renders it, what to measure, proving a fix rather than claiming it, and what a hand feels | FrameFairy, as it is |
@@ -78,13 +75,13 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 
 | The skill says | Here it is |
 | --- | --- |
-| one command a developer runs | the parts of `make test`: `make lint`, `make unit`, `make interface` and `make walks`, and `make skills` for a change to the skills alone |
+| one command a developer runs | the parts of `make test`: `make lint`, `make unit`, `make interface` and `make walks` |
 | the path filters, and the test that holds them | the job `changes` in `.github/workflows/ci.yml`, held by `internal/workflows`, see CI in [BUILD.md](BUILD.md#ci) |
 | a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is published and finds the pull requests that conflict |
 | a scarce runner | a Mac, the job `macos` |
 | a job's limit | five minutes, the `timeout-minutes` of the job `changes`, of `conflicts.yml` and of the first job of `builds.yml` |
 | the notice of a conflict | `conflicts.yml`, see When main moves in [WORKFLOW.md](WORKFLOW.md) |
-| not kept yet | `go`, `web` and `macos` in `ci.yml` have no `timeout-minutes`, so GitHub's six hours hold. `macos` runs every Go test, not only what differs on a Mac. See #81. A pull request of the docs alone runs no check of them. Actions pinned by tag in `ci.yml`, not by commit, and no dependency bot, see #80. No nightly runs |
+| not kept yet | `go`, `web` and `macos` in `ci.yml` have no `timeout-minutes`, so GitHub's six hours hold. `macos` runs every Go test, not only what differs on a Mac. See #81. A pull request of Markdown alone runs nothing, on purpose, see `CLAUDE.md`. Actions pinned by tag in `ci.yml`, not by commit, and no dependency bot, see #80. No nightly runs |
 
 ## The maintenance skill in this project
 
@@ -134,15 +131,20 @@ The pull-requests skill has seven FrameFairy's does not have yet, see
 - ask while working what runs more often or less, which FrameFairy
   keeps only in its `CLAUDE.md`.
 
+The ci skill says in section 2 that a change only to text, docs and
+skills, runs nothing, where FrameFairy's runs the doc checks and the
+build (Tim, 23 November 2026).
+
 `architecture`, `engineering`, `collaboration` and `interface-design`
 exist only here so far.
 
 ## Where this port differs from FrameFairy
 
-- FrameFairy's `TestDocsNameNoPersonOrNumber` holds its `CLAUDE.md`, its
-  docs and its templates to naming no person and no issue too. Speaker
-  Trail's `CLAUDE.md` and docs name Tim and his dated decisions on
-  purpose, so here only the skills are held to it.
+- FrameFairy's `internal/naming` tests the skills, and its `CLAUDE.md`,
+  docs and templates, for names and issue numbers. Speaker Trail has no
+  such test: Tim found it pointless, since text needs no CI run (23
+  November 2026). Our `CLAUDE.md` and docs name Tim and his dated
+  decisions on purpose. Only the skills stay generic, by review.
 - FrameFairy's `CLAUDE.md` says to push once the change's own tests
   pass and let CI run the rest, as the testing and pull-requests skills
   do. Ours still says to run `make test` before every push that touches
@@ -155,6 +157,6 @@ Compare FrameFairy's `.claude/skills/`, its `docs/SKILLS.md`, its
 bring over the lessons, never its facts. A skill FrameFairy has is copied
 as its folder, and the lessons above are put back in. What FrameFairy's
 skills now hold comes out of ours, which point to them instead. Then
-`make skills` runs `internal/naming`. The last copy was from FrameFairy's
+search what came over for our names and FrameFairy's. The last copy was from FrameFairy's
 main on 23 November 2026, after its pull request of that day that made
 every skill generic.

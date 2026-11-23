@@ -121,6 +121,55 @@ func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 	return Profile{}, ErrNotIndexed
 }
 
+// ProfileByName asks Exa's people search for a LinkedIn profile by the
+// name in its link, like "erika beispiel" for /in/erika-beispiel-71, for
+// a profile the index holds under another link than the one Tim has,
+// such as de.linkedin.com or one with other capitals. Only a profile
+// under the same link name is taken, never a namesake. Like Profile it
+// reads nothing live, and it is one more search against the budget. A
+// link with no name in it, like /in/ACoAAB12345, asks nothing.
+func (e *Exa) ProfileByName(ctx context.Context, link string) (Profile, error) {
+	handle := linkName(link)
+	var words []string
+	for w := range strings.SplitSeq(handle, "-") {
+		// LinkedIn adds numbers and letters, like 71 or 7a1b2c3, to tell
+		// people of the same name apart. They are no part of a name.
+		if w != "" && !strings.ContainsAny(w, "0123456789") {
+			words = append(words, w)
+		}
+	}
+	if len(words) == 0 {
+		return Profile{}, ErrNotIndexed
+	}
+	found, err := e.People(ctx, strings.Join(words, " "), 10)
+	if err != nil {
+		return Profile{}, err
+	}
+	for _, p := range found {
+		if p.Text != "" && linkName(p.URL) == handle {
+			return p, nil
+		}
+	}
+	return Profile{}, ErrNotIndexed
+}
+
+// linkName is the name in a profile's link, the part after /in/, in
+// small letters and with its escapes read, so that
+// de.linkedin.com/in/J%C3%B6rg-Probe/ and www.linkedin.com/in/jörg-probe
+// have the same.
+func linkName(link string) string {
+	u, err := url.Parse(strings.TrimSpace(link))
+	if err != nil {
+		return ""
+	}
+	path := strings.Trim(u.Path, "/")
+	name, ok := strings.CutPrefix(path, "in/")
+	if !ok || strings.Contains(name, "/") {
+		return ""
+	}
+	return strings.ToLower(name)
+}
+
 // ErrNotIndexed is a profile Exa's index does not hold yet, like one
 // made lately.
 var ErrNotIndexed = errors.New("Exa's index holds no profile")

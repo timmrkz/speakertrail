@@ -42,6 +42,11 @@ func (finder) People(ctx context.Context, query string, results int) ([]search.P
 	}}, nil
 }
 
+// ProfileByName finds nobody by name.
+func (finder) ProfileByName(context.Context, string) (search.Profile, error) {
+	return search.Profile{}, search.ErrNotIndexed
+}
+
 // Profile reads one invented profile, and no other link is in the index.
 func (finder) Profile(ctx context.Context, link string) (search.Profile, error) {
 	if link != "https://www.linkedin.com/in/ida-probe" {

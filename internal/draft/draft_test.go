@@ -42,6 +42,11 @@ func (f *finder) Profile(_ context.Context, link string) (search.Profile, error)
 	return search.Profile{URL: link, Name: "Mara Beispiel", Text: "# Mara Beispiel\n\nInhaberin | Beispiel Keramik\n\n## About\n\nIch töpfere in Köln."}, nil
 }
 
+// ProfileByName finds nobody by name.
+func (f *finder) ProfileByName(context.Context, string) (search.Profile, error) {
+	return search.Profile{}, search.ErrNotIndexed
+}
+
 type rig struct {
 	st     *store.Store
 	clock  *clock

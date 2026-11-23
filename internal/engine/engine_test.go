@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +39,20 @@ type finder struct {
 	// readHold, when set, holds Profile in place of hold, so a read and a
 	// search can be let go one apart from the other.
 	readHold chan struct{}
+	// byName are the profiles ProfileByName finds, by link, and named the
+	// links it was asked for.
+	byName map[string]search.Profile
+	named  []string
+}
+
+func (f *finder) ProfileByName(ctx context.Context, link string) (search.Profile, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.named = append(f.named, link)
+	if prof, ok := f.byName[link]; ok {
+		return prof, nil
+	}
+	return search.Profile{}, search.ErrNotIndexed
 }
 
 func (f *finder) Profile(ctx context.Context, link string) (search.Profile, error) {
@@ -628,12 +643,14 @@ func TestAddReadsTheProfilesOfTheLinks(t *testing.T) {
 				t.Errorf("a read's error names the link: %q", read.Error)
 			}
 		}
-		if d.Used(Provider, t0) != 2 {
-			t.Errorf("used %d Exa calls, want 2", d.Used(Provider, t0))
+		// One for each link, and one more asking for the one not in the
+		// index by name.
+		if d.Used(Provider, t0) != 3 {
+			t.Errorf("used %d Exa calls, want 3", d.Used(Provider, t0))
 		}
 	})
-	if len(f.queries) != 0 {
-		t.Errorf("adding links asked the searches %q", f.queries)
+	if len(f.queries) != 0 || fmt.Sprint(f.named) != "[https://www.linkedin.com/in/neu-hier-3]" {
+		t.Errorf("adding links asked the searches %q, by name %q", f.queries, f.named)
 	}
 	// The same link again only marks them connected, nobody is added.
 	_ = st.Update(func(d *store.Data) error { d.PersonByProfile(ida.URL).Connect(false, t0); return nil })
@@ -648,6 +665,44 @@ func TestAddReadsTheProfilesOfTheLinks(t *testing.T) {
 	})
 	if _, err := e.Add("Yogalehrerin Köln"); !errors.Is(err, ErrNoLinks) {
 		t.Errorf("words alone: %v, want ErrNoLinks", err)
+	}
+}
+
+// A profile Exa holds under another link than Tim's is found by the name
+// in the link, and read as if under his. Without a search left for that
+// this month, the person waits for the next run.
+func TestAProfileNotUnderItsLinkIsAskedForByName(t *testing.T) {
+	link := "https://www.linkedin.com/in/jule-probe-75"
+	jule := search.Profile{URL: "https://de.linkedin.com/in/jule-probe-75", Name: "Jule Probe", Headline: "Inhaberin, Probe Atelier", Location: "Münster, Germany", Text: "# Jule Probe\n\nInhaberin, Probe Atelier"}
+	f := &finder{byName: map[string]search.Profile{link: jule}}
+	e, st := newEngine(t, f)
+	if _, err := e.Add(link); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		p := d.PersonByProfile(link)
+		if p == nil || p.Name != "Jule Probe" || p.ToRead || p.ReadError != "" || p.City != "Münster" || p.LinkedIn.URL != link || p.LinkedIn.Text == "" {
+			t.Errorf("read %+v", p)
+		}
+	})
+	// The month has one search left, enough for the link but not the name.
+	_ = st.Update(func(d *store.Data) error {
+		return d.SetSetting(Provider+"_monthly_searches", json.RawMessage(strconv.Itoa(d.Used(Provider, t0)+1)), t0)
+	})
+	other := "https://www.linkedin.com/in/olaf-probe-78"
+	if _, err := e.Add(other); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		p := d.PersonByProfile(other)
+		if p == nil || !p.ToRead || p.ReadError != "" {
+			t.Errorf("without a search left %+v", p)
+		}
+	})
+	if len(f.named) != 1 {
+		t.Errorf("asked by name for %q", f.named)
 	}
 }
 

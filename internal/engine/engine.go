@@ -42,7 +42,34 @@ const SideBySide = 4
 // profile by its link. search.Exa is one, tests have their own.
 type Finder interface {
 	People(ctx context.Context, query string, results int) ([]search.Profile, error)
+	Reader
+}
+
+// Reader reads one profile from Exa's index by its link, or by the name
+// in its link when the index holds it under another.
+type Reader interface {
 	Profile(ctx context.Context, link string) (search.Profile, error)
+	ProfileByName(ctx context.Context, link string) (search.Profile, error)
+}
+
+// ReadProfile reads a profile by its link, and when Exa's index has no
+// copy under the link, asks Exa once more by the name in it, since the
+// index often holds a profile under another, like de.linkedin.com. That
+// is one more search, and reserve takes it from the month's budget, or
+// says none is left, which is ErrNoBudget.
+func ReadProfile(ctx context.Context, r Reader, link string, reserve func() (bool, error)) (search.Profile, error) {
+	prof, err := r.Profile(ctx, link)
+	if !errors.Is(err, search.ErrNotIndexed) || ctx.Err() != nil {
+		return prof, err
+	}
+	ok, err := reserve()
+	switch {
+	case err != nil:
+		return search.Profile{}, err
+	case !ok:
+		return search.Profile{}, ErrNoBudget
+	}
+	return r.ProfileByName(ctx, link)
 }
 
 // Errors a run can start with.
@@ -647,10 +674,21 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 	var prof search.Profile
 	finder, err := e.Finder()
 	if err == nil {
-		prof, err = finder.Profile(ctx, link)
+		prof, err = ReadProfile(ctx, finder, link, func() (bool, error) {
+			var ok bool
+			err := e.Store.Update(func(d *store.Data) error {
+				ok = d.Reserve(Provider, e.Store.Now())
+				return nil
+			})
+			return ok, err
+		})
 	}
 	if ctx.Err() != nil {
 		g.log.Debug("a read was stopped", "run", g.id, "person", id)
+		return
+	}
+	if errors.Is(err, ErrNoBudget) {
+		g.log.Info("a profile waits, no Exa searches left this month to ask for it by name", "run", g.id, "person", id)
 		return
 	}
 	r := store.Read{PersonID: id, At: e.Store.Now()}

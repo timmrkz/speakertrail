@@ -8,6 +8,7 @@
   import type { Snippet } from 'svelte'
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { Load } from '../lib/load.svelte'
+  import { pasteAsShown } from '../lib/paste'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -232,7 +233,7 @@
           {noteState === 'saving' ? 'Saving' : noteState === 'saved' ? 'Saved' : noteState === 'error' ? 'Not saved' : ''}
         </span>
       </div>
-      <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} oninput={() => (noteState = 'idle')} onblur={saveNotes}
+      <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
         placeholder="Where you met, what to ask"></textarea>
     </section>
   </article>

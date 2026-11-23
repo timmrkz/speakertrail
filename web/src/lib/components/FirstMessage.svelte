@@ -14,6 +14,7 @@
   import { draftWatch, underWay } from '../drafts.svelte'
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
+  import { pasteAsShown } from '../paste'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
@@ -253,7 +254,7 @@
   </div>
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-      bind:this={field} use:fit aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
       ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}

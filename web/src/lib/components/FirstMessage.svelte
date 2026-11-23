@@ -174,7 +174,7 @@
   }
 
   // The clock ticks here, between the app's tells, and the time left
-  // counts down from the last one, as RunProgress does.
+  // counts down from the last one, as a run does on its Stop button.
   let now = $state(Date.now())
   let toldAt = $state(Date.now())
   $effect(() => {

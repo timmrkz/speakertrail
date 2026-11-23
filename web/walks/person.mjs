@@ -321,7 +321,7 @@ const walks = [
   },
   {
     // Tim, 21 November 2026: people he connected with stayed in All and
-    // Under 30, so he scrolled past them to find someone open. Connected,
+    // Under 30, now New, so he scrolled past them to find someone open. Connected,
     // a person leaves both for Connected, the counts follow, the person
     // stays open, and Down goes to whom took their place.
     name: 'Connecting a person moves them from All to Connected, and taking it back brings them back',

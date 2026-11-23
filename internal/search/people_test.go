@@ -2,6 +2,7 @@ package search_test
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -163,5 +164,70 @@ func TestExaProfile(t *testing.T) {
 	}
 	if s.Load() != 0 || c.Load() != 1 {
 		t.Errorf("%d searches, %d contents calls", s.Load(), c.Load())
+	}
+}
+
+// A profile Exa's index does not hold is ErrNotIndexed, said without the
+// link, since a link is personal data and the error reaches the log.
+func TestExaProfileNotIndexedNamesNoLink(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	_, err := exa.Profile(t.Context(), "https://www.linkedin.com/in/erika-beispiel")
+	if !errors.Is(err, search.ErrNotIndexed) {
+		t.Fatalf("err = %v", err)
+	}
+	if strings.Contains(err.Error(), "erika-beispiel") {
+		t.Errorf("the error names the link: %v", err)
+	}
+}
+
+// A profile Exa holds under another link, like de.linkedin.com, is found
+// by the name in its link. A namesake under another link name is never
+// taken, and the people search reads nothing live.
+func TestExaProfileByName(t *testing.T) {
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Query    string `json:"query"`
+			Category string `json:"category"`
+			Contents struct {
+				Livecrawl string `json:"livecrawl"`
+			} `json:"contents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		if r.URL.Path != "/search" || body.Category != "people" || body.Contents.Livecrawl != "never" {
+			t.Errorf("exa %s %+v", r.URL.Path, body)
+		}
+		asked = append(asked, body.Query)
+		fmt.Fprint(w, `{"results":[
+			{"title":"Jörg Probe","url":"https://www.linkedin.com/in/joerg-probe","text":"# Jörg Probe\n\nSchreiner"},
+			{"title":"Jörg Probe","url":"https://de.linkedin.com/in/J%C3%B6rg-Probe-7a1b2c3/","text":"# Jörg Probe\n\nInhaber | Probe Möbel\n\nBielefeld, North Rhine-Westphalia, Germany (DE)"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	p, err := exa.ProfileByName(t.Context(), "https://www.linkedin.com/in/jörg-probe-7a1b2c3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Headline != "Inhaber | Probe Möbel" {
+		t.Errorf("took %+v", p)
+	}
+	if fmt.Sprint(asked) != "[jörg probe]" {
+		t.Errorf("asked %q", asked)
+	}
+	// Only the namesake: nobody.
+	_, err = exa.ProfileByName(t.Context(), "https://www.linkedin.com/in/joerg-probe-99")
+	if !errors.Is(err, search.ErrNotIndexed) || strings.Contains(err.Error(), "probe") {
+		t.Errorf("a namesake: err = %v", err)
+	}
+	// A link with no name in it asks nothing.
+	asked = nil
+	if _, err := exa.ProfileByName(t.Context(), "https://www.linkedin.com/in/ACoAAB12345"); !errors.Is(err, search.ErrNotIndexed) || asked != nil {
+		t.Errorf("a link with no name: err = %v, asked %q", err, asked)
 	}
 }

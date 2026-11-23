@@ -238,13 +238,14 @@ func TestListPeople(t *testing.T) {
 		p.Connect(connected, seen)
 		return p
 	}
-	old := add("Bea", 1980, 3, false, t0)
+	old := add("Bea", 1980, 3, false, t0.Add(-10*24*time.Hour))
 	young := add("Cem", 2001, 1, true, t0.Add(time.Hour))
 	dana := add("Dana", 2003, 2, false, t0.Add(2*time.Hour))
 	unknown := add("Ann", 0, 2, false, t0.Add(3*time.Hour))
 
+	now := t0.Add(4 * time.Hour)
 	list := func(q PeopleQuery) []*Person {
-		q.Now = t0
+		q.Now = now
 		out, _, err := d.ListPeople(q)
 		if err != nil {
 			t.Fatal(err)
@@ -263,8 +264,9 @@ func TestListPeople(t *testing.T) {
 			}
 		}
 	}
-	// Someone Tim connected with is only under Connected, so All and
-	// Under 30 hold whom he can still reach out to.
+	// Someone Tim connected with is only under Connected, so All holds
+	// whom he can still reach out to. New holds whoever came in during
+	// the last week, connected too, the newest first, whatever the order.
 	// The best fit first: with nothing else known, the youngest, then
 	// whose age is not known.
 	same("best fit first", list(PeopleQuery{}), dana, unknown, old)
@@ -272,17 +274,18 @@ func TestListPeople(t *testing.T) {
 	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, old)
 	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, dana)
 	same("fit", list(PeopleQuery{Sort: "fit"}), dana, unknown, old)
-	same("under 30", list(PeopleQuery{Filter: "young"}), dana)
+	same("new", list(PeopleQuery{Filter: "new"}), unknown, dana, young)
+	same("new, whatever the order", list(PeopleQuery{Filter: "new", Sort: "name"}), unknown, dana, young)
 	same("connected", list(PeopleQuery{Filter: "connected"}), young)
 	same("words", list(PeopleQuery{Q: "dana"}), dana)
 	same("words of someone connected", list(PeopleQuery{Q: "cem"}))
 	same("words of someone connected, under Connected", list(PeopleQuery{Q: "cem", Filter: "connected"}), young)
 
-	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: t0})
-	if counts["all"] != 3 || counts["young"] != 1 || counts["connected"] != 1 {
+	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: now})
+	if counts["all"] != 3 || counts["new"] != 3 || counts["connected"] != 1 {
 		t.Errorf("counts = %v", counts)
 	}
-	for _, f := range []string{"founder", "kept", "skipped"} {
+	for _, f := range []string{"founder", "kept", "skipped", "young"} {
 		if _, _, err := d.ListPeople(PeopleQuery{Filter: f}); err == nil {
 			t.Errorf("the filter %s was taken", f)
 		}
@@ -301,8 +304,8 @@ func TestListPeople(t *testing.T) {
 	if h := d.Hidden(); len(h) != 1 || h[dana.ID] != "online marketing" {
 		t.Errorf("hidden = %v", h)
 	}
-	_, counts, _ = d.ListPeople(PeopleQuery{Now: t0})
-	if counts["all"] != 2 || counts["young"] != 0 || counts["connected"] != 1 {
+	_, counts, _ = d.ListPeople(PeopleQuery{Now: now})
+	if counts["all"] != 2 || counts["new"] != 2 || counts["connected"] != 1 {
 		t.Errorf("counts with an exclusion = %v", counts)
 	}
 	if !d.DeleteExclusion(x.ID) || d.DeleteExclusion(x.ID) {
@@ -314,20 +317,50 @@ func TestListPeople(t *testing.T) {
 	// comes back on Undo. Someone connected stays under Connected.
 	dana.LinkedIn.Review = "rejected"
 	same("rejected leaves all", list(PeopleQuery{}), unknown, old)
-	same("rejected leaves under 30", list(PeopleQuery{Filter: "young"}))
+	same("rejected leaves new", list(PeopleQuery{Filter: "new"}), unknown, young)
 	same("rejected", list(PeopleQuery{Filter: "rejected"}), dana)
 	same("words of someone rejected", list(PeopleQuery{Q: "dana"}))
 	same("words of someone rejected, under Rejected", list(PeopleQuery{Q: "dana", Filter: "rejected"}), dana)
 	young.LinkedIn.Review = "rejected"
 	same("connected and rejected", list(PeopleQuery{Filter: "connected"}), young)
 	same("connected and rejected, not under Rejected", list(PeopleQuery{Filter: "rejected"}), dana)
-	_, counts, _ = d.ListPeople(PeopleQuery{Now: t0})
-	if counts["all"] != 2 || counts["young"] != 0 || counts["connected"] != 1 || counts["rejected"] != 1 {
+	_, counts, _ = d.ListPeople(PeopleQuery{Now: now})
+	if counts["all"] != 2 || counts["new"] != 2 || counts["connected"] != 1 || counts["rejected"] != 1 {
 		t.Errorf("counts with someone rejected = %v", counts)
 	}
 	dana.LinkedIn.Review = "open"
 	same("undone", list(PeopleQuery{}), dana, unknown, old)
 	same("undone, not under Rejected", list(PeopleQuery{Filter: "rejected"}))
+}
+
+// Someone Tim added from a link is connected and named by the handle
+// until their profile is read. A link to someone here already only marks
+// them connected.
+func TestAddLink(t *testing.T) {
+	d := &Data{}
+	d.fill()
+	p, isNew, _ := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 5, t0)
+	if !isNew || p.Name != "ida-probe-7f" || !p.Connected || !p.ToRead || p.Evidence != AddedByHand || p.FirstRunID != 5 {
+		t.Fatalf("added %+v", p)
+	}
+	again, isNew, connected := d.AddLink("https://www.linkedin.com/in/ida-probe-7f", "ida-probe-7f", 6, t0.Add(time.Hour))
+	if isNew || connected || again != p || len(d.People) != 1 {
+		t.Fatalf("the same link added %+v again, new %v, connected now %v", again, isNew, connected)
+	}
+	// A profile Exa did not have is asked for again when added again.
+	p.ToRead, p.ReadError = false, "Not in Exa's index yet"
+	if d.AddLink(p.LinkedIn.URL, "ida-probe-7f", 6, t0.Add(time.Hour)); !p.ToRead {
+		t.Error("a profile not in the index is not read again when added again")
+	}
+	d.ReadLink(p, Found{Name: "Ida Probe", Headline: "Inhaberin, Probe Studio", City: "Essen", Text: "Ida Probe\nInhaberin"}, t0.Add(time.Minute))
+	if p.Name != "Ida Probe" || p.Headline != "Inhaberin, Probe Studio" || p.City != "Essen" || p.ToRead || p.LinkedIn.Text == "" {
+		t.Errorf("read %+v", p)
+	}
+	s, _ := d.AddSearch("Gründer Köln", 0, t0)
+	found, _ := d.AddFound(Found{URL: "https://www.linkedin.com/in/jo-muster", Name: "Jo Muster"}, s, 1, t0)
+	if p, isNew, connected := d.AddLink(found.LinkedIn.URL, "jo-muster", 7, t0.Add(time.Hour)); isNew || !connected || p != found || !p.Connected || p.ToRead || p.Name != "Jo Muster" {
+		t.Errorf("someone a search found, added from a link: %+v, new %v, connected now %v", p, isNew, connected)
+	}
 }
 
 func TestExclusions(t *testing.T) {

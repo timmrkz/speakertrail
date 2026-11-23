@@ -66,10 +66,13 @@ func (j Job) Ended() bool {
 	return j.State == "done" || j.State == "failed" || j.State == "cancelled"
 }
 
-// Finder reads one profile from Exa's index, see search.Exa.Profile.
-type Finder interface {
-	Profile(ctx context.Context, link string) (search.Profile, error)
-}
+// Finder reads one profile from Exa's index, by its link or the name in
+// it, see engine.ReadProfile.
+type Finder = engine.Reader
+
+// ErrNoCopy is a draft for someone whose profile Exa's index holds
+// neither under their link nor under the name in it. Tim pastes it.
+var ErrNoCopy = errors.New("Exa has no copy of their profile. Open it in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V")
 
 // ErrNoPerson is a draft asked for someone who is not in the file.
 var ErrNoPerson = errors.New("there is no person")
@@ -495,26 +498,41 @@ func (d *Drafter) read(ctx context.Context, id int64, link string) (string, erro
 	case err != nil:
 		return "", fmt.Errorf("the app reads their profile text from Exa first, and %w", err)
 	}
-	err = d.Store.Update(func(data *store.Data) error {
-		if !data.Reserve(engine.Provider, d.now()) {
-			return engine.ErrNoBudget
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
+	reserve := func() (bool, error) {
+		var ok bool
+		err := d.Store.Update(func(data *store.Data) error {
+			ok = data.Reserve(engine.Provider, d.now())
+			return nil
+		})
+		return ok, err
 	}
-	prof, err := finder.Profile(ctx, link)
+	switch ok, err := reserve(); {
+	case err != nil:
+		return "", err
+	case !ok:
+		return "", engine.ErrNoBudget
+	}
+	prof, err := engine.ReadProfile(ctx, finder, link, reserve)
+	if errors.Is(err, search.ErrNotIndexed) {
+		return "", ErrNoCopy
+	}
 	if err != nil {
 		return "", fmt.Errorf("their profile could not be read from Exa: %w", err)
 	}
+	text := prof.Text
 	err = d.Store.Update(func(data *store.Data) error {
-		if p := data.Person(id); p != nil {
+		p := data.Person(id)
+		switch {
+		case p == nil:
+		// A page Tim pasted while Exa was asked wins.
+		case p.LinkedIn.Text != "":
+			text = p.LinkedIn.Text
+		default:
 			data.SetProfileText(p, prof.Text, d.now())
 		}
 		return nil
 	})
-	return prof.Text, err
+	return text, err
 }
 
 // expect is how long a draft is expected to take, in seconds, from

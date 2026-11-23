@@ -7,7 +7,9 @@
     placeholder = 'Search',
     label = 'Search',
     onsearch,
-  }: { value?: string; placeholder?: string; label?: string; onsearch?: (v: string) => void } = $props()
+    onenter,
+    title,
+  }: { value?: string; placeholder?: string; label?: string; onsearch?: (v: string) => void; onenter?: (v: string) => void; title?: string } = $props()
 
   let timer: ReturnType<typeof setTimeout> | undefined
 
@@ -20,5 +22,13 @@
 
 <div class="search">
   <Icon name="search" />
-  <input class="input" type="search" {placeholder} aria-label={label} {value} oninput={input} autocomplete="off" spellcheck="false" />
+  <input class="input" type="search" {placeholder} aria-label={label} {title} {value} oninput={input} autocomplete="off" spellcheck="false"
+    onkeydown={(e) => {
+      // Enter does what the search holds, see People, at once.
+      if (e.key !== 'Enter' || !onenter || e.isComposing) return
+      e.preventDefault()
+      clearTimeout(timer)
+      onsearch?.(value)
+      onenter(value)
+    }} />
 </div>

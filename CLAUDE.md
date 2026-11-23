@@ -146,7 +146,8 @@ messages, pull request text, code comments and chat replies.
   each **part** of the **template** in Settings, picked at random, and the
   **hook**, the portrait, reason and reaction the **language model**
   wrote. A **run** is
-  one pass over the due searches, started by hand. A **check** is one search asked once in a
+  one pass over the due searches and the profiles of links Tim added,
+  started by hand or by adding links. A **check** is one search asked once in a
   run. A **person** is connected or not, never kept or skipped: Tim marks
   whom he connected with on LinkedIn, and the rest is simply open. A
   **profile** is confirmed or rejected. A **channel** is what the app
@@ -187,8 +188,10 @@ messages, pull request text, code comments and chat replies.
 - **Work never runs silently.** Anything that takes more than a moment
   says what it does now, how far it is, how long it has run and about how
   long is left, measured from earlier work rather than guessed, and it can
-  be stopped. It looks the same everywhere: the fill, the shuttle and the
-  pulsing dot in `app.css`, and `RunProgress.svelte` for a run. See
+  be stopped. It looks the same everywhere: the beam and the fill of
+  `Busy.svelte` on the control that started it and on the row of what
+  it works on, and the pulsing dot in `app.css`. No line of progress
+  under a toolbar (Tim, 22 November 2026, #43). See
   [docs/INTERFACE.md](docs/INTERFACE.md#work-in-hand).
 - **Short runs, often.** Tim runs the engine by hand on his Mac. A run
   stays short enough to watch, and what does not fit waits for the next.
@@ -236,8 +239,9 @@ messages, pull request text, code comments and chat replies.
   window against GTK 4 and WebKitGTK 6 and run every test there. CI's
   `macos` job proves the Mac build, the bundle and the keychain.
 - **No LinkedIn, no Instagram.** The app never requests them. Profiles
-  come from Exa's index, asked with `livecrawl` never. Never add a request
-  to either.
+  come from Exa's index, asked with `livecrawl` never, by link and then
+  by the name in it. One Exa lacks Tim copies from Chrome and pastes on
+  the person (23 November 2026, #43). Never add a request to either.
 - **LinkedIn opens in Tim's Chrome profile.** The app never requests
   LinkedIn itself, it hands the link to Chrome with
   `open -n -a "Google Chrome" --args --profile-directory=<folder>`, the

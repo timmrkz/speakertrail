@@ -23,7 +23,7 @@ export type SourceLists = 'events' | 'startups' | 'businesses'
 export type FetchMode = 'auto' | 'http' | 'browser'
 export type Health = 'ok' | 'warning' | 'error' | 'never'
 export type PeopleSort = 'fit' | 'young' | 'new' | 'next' | 'name'
-export type PeopleFilter = 'all' | 'young' | 'connected' | 'rejected' | 'fits' | 'upcoming' | 'profile' | 'founder'
+export type PeopleFilter = 'all' | 'new' | 'connected' | 'rejected' | 'fits' | 'upcoming' | 'profile' | 'founder'
 
 export interface EventPerson {
   id?: number
@@ -169,6 +169,56 @@ export interface Person {
   activity: { state: Activity; since: string | null; note: string; company: string } | null
   // What the confirmed LinkedIn profile says. Null without one.
   linkedin: LinkedInFacts | null
+  // Where the profile of someone added from a link stands: being read now
+  // since read_since, a read taking about read_ms, waiting its turn in the
+  // run, read by the next run, not in Exa's index yet, or empty once
+  // read. See docs/api.md.
+  read: '' | 'reading' | 'waiting' | 'next' | 'not_indexed' | 'failed'
+  read_since: string | null
+  read_ms: number | null
+  read_error?: string
+}
+
+// What a search that holds links would add: profiles new to the app, the
+// people here already by id, and other links, like a company page. act
+// is what Run turns into, as the app decides: Add, Open the one person
+// here, or a greyed Add for links that add nobody.
+// What a person was before a page was pasted as their profile.
+export interface Pasted {
+  text: string
+  name: string
+  headline: string
+  city: string
+}
+
+// The answer to a paste: the person now, what they were, and whether the
+// page gave their name.
+export interface PastedProfile {
+  person: PersonDetail
+  was: Pasted
+  named: boolean
+}
+
+export interface LinksFound {
+  new: number
+  here: number[]
+  other: number
+  act: 'add' | 'open' | 'none'
+}
+
+// What came of adding links. wait says why the profiles wait for the
+// next run, like a missing Exa key.
+export interface Added {
+  run: number
+  new: number[]
+  here: number[]
+  // Those here already whom adding marked connected, for Undo.
+  connected: number[]
+  other: number
+  // The one person here the links lead to, to open, when they add
+  // nobody new.
+  open?: number
+  wait?: string
 }
 
 export interface LinkedInFacts {
@@ -317,8 +367,9 @@ export type RunState = 'going' | 'finished' | 'stopped' | 'interrupted'
 
 export interface Run {
   id: number
-  // nightly, manual for a run started by hand, check for Check now
-  kind: 'nightly' | 'manual' | 'check'
+  // manual for a run started by hand, add for one that reads the profiles
+  // of links Tim added, check for Check now
+  kind: 'nightly' | 'manual' | 'add' | 'check'
   state: RunState
   // Event pages the language model read in this run, and how many of
   // those reads failed.
@@ -730,8 +781,14 @@ export const api = {
   // Every file of the log goes, after Settings asked. It gives the log as
   // it is then: the one line that says so.
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
-  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number> }>('GET', `/api/people${qs(q)}`),
+  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null }>('GET', `/api/people${qs(q)}`),
+  addPeople: (text: string) => request<Added>('POST', '/api/people', { text }),
+  // Takes out again someone added from a link, for Undo.
+  removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
+  // Keeps a LinkedIn page Tim copied in Chrome as a person's profile, or
+  // with as puts back what they were, for Undo.
+  pasteProfile: (id: number, body: { text: string } | { as: Pasted }) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, body),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
@@ -846,6 +903,3 @@ export function onQuit(fn: (q: Quitting) => void): () => void {
   return Events.On('quit', (ev) => fn(ev.data as Quitting))
 }
 
-export function fetchUrl(fetchId: number, kind: 'text' | 'html' | 'screenshot'): string {
-  return `/api/fetches/${fetchId}/${kind}`
-}

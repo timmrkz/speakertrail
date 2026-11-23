@@ -221,6 +221,46 @@ const walks = [
     },
   },
   {
+    // Every other page pastes as before, as Chrome's plain text has it:
+    // paragraphs with a gap under or over them, a page built like a
+    // document editor's, a heading, a list, a table, a line break inside
+    // a paragraph, and text kept as it is written. Only a page that
+    // writes empty lines as empty paragraphs is read anew (review of #84).
+    name: 'A paste from any other page goes into Notes as a plain text field takes it',
+    async run(page) {
+      const pages = {
+        'paragraphs with a gap under them': '<p>Erster Absatz.</p><p>Zweiter Absatz.</p>',
+        'paragraphs with a gap over them': '<style>p { margin: 0 } p + p { margin-top: 1em }</style><p>Erster Absatz.</p><p>Zweiter Absatz.</p>',
+        'a document editor': '<b style="font-weight: normal"><p dir="ltr" style="margin: 0 0 12pt"><span>A</span></p><p dir="ltr" style="margin: 0"><span>B</span></p><p dir="ltr" style="margin: 0"><span>C</span></p></b>',
+        'a heading': '<h2>Überschrift</h2><p>Text darunter.</p>',
+        'a list and a table': '<ul><li>eins</li><li>zwei</li></ul><table><tr><td>a</td><td>b</td></tr></table>',
+        'a line break inside a paragraph': '<p>Zeile eins<br>Zeile zwei</p><p>Danach.</p>',
+        'text kept as written': '<pre>  eingerückt\n\n\n  drei Umbrüche</pre>',
+      }
+      const site = await page.context().newPage()
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('#notes-1003')
+      for (const [what, html] of Object.entries(pages)) {
+        await site.setContent(`<meta charset="utf-8">${html}`)
+        await site.keyboard.press('Control+A')
+        await site.keyboard.press('Control+C')
+        await site.setContent('<textarea></textarea>')
+        await site.locator('textarea').click()
+        await site.keyboard.press('Control+V')
+        const want = await site.locator('textarea').inputValue()
+        await notes.fill('')
+        await notes.click()
+        await page.keyboard.press('Control+V')
+        const got = await notes.inputValue()
+        if (got !== want) return `from ${what} Notes took ${JSON.stringify(got)}, a plain field ${JSON.stringify(want)}`
+      }
+      await site.close()
+      await notes.fill('')
+      await notes.blur()
+      return ''
+    },
+  },
+  {
     // The review of 22 November 2026: a person opened before answered
     // late and put their name over the one opened after. Holding an arrow
     // key through the list does that.

@@ -97,6 +97,27 @@ const walks = [
     },
   },
   {
+    // While the model writes, the box takes nothing, a paste from a page
+    // like LinkedIn's message field neither (review of #84).
+    name: 'A paste goes nowhere while the model writes the message',
+    async run(page) {
+      await page.setContent('<meta charset="utf-8"><style>p { margin: 0 }</style><div contenteditable="true"><p>Hallo,</p><p><br></p><p>bis bald</p></div>')
+      await page.locator('[contenteditable]').click()
+      await page.keyboard.press('Control+A')
+      await page.keyboard.press('Control+C')
+      await open(page, 1003)
+      await act(page).click()
+      await page.locator('.first-message .step').waitFor()
+      await say(page, job(1003, 2, { state: 'writing', text: ' Hallo Mara,', fraction: 0.6, seconds_left: 4 }))
+      await page.waitForFunction(() => document.querySelector('.first-message textarea')?.value === 'Hallo Mara,')
+      await box(page).click()
+      await page.keyboard.press('Control+V')
+      const value = await box(page).inputValue()
+      if (value !== 'Hallo Mara,') return `a paste while the model writes made it ${JSON.stringify(value)}`
+      return ''
+    },
+  },
+  {
     name: 'The message is Tim’s to change, a double click selects all of it, and the copy mark copies it',
     async run(page) {
       // The app's web view refuses the window's own clipboard, as Tim saw

@@ -98,9 +98,9 @@ docker volume rm speakertrail_postgres
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `lint`, `unit`, `interface` and `walks` |
 | `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |
-| `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh` |
+| `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh`. Go's test cache is on, so what did not change is not tested again |
 | `make interface` | a type check of the interface and its tests, with vitest |
-| `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/` |
+| `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/`, side by side |
 | `make check` | what this machine has and still needs |
 | `make clean` | removes what make built. The app's file stays, and so does llama-server in `.build/llama`, which takes minutes to build again |
 | `make help` | this list |
@@ -117,6 +117,13 @@ with `dorny/paths-filter`. As in FrameFairy.
 | Go: any file outside `web/`, the docs and `.claude/`, a script, the Makefile and the workflows among them, and the files of `web/` Go reads, its Go files and `web/dist/.keep`, the filter `goread` | `go`, `make lint` and `make unit`, and `macos`, the app built on a Mac and its Go tests |
 | the interface: `web/`, the Makefile and `.github/workflows/` | `web`, `make interface` and `make walks`, and `macos` |
 | only the docs, `docs/`, any `.md`, `.claude/` | nothing |
+
+Every job has a limit, five minutes, and `macos` 30 for the time a new
+llama-server takes to build. Go's modules are kept in GitHub's cache by
+`go.sum`, and what Go built and tested, and what golangci-lint found, by
+main's last run that passed: a pull request starts from there and builds
+and tests again only the packages it changed. Only main saves them. The
+walks need Playwright's headless shell of Chromium alone.
 
 A push to main starts every job. No branch rule requires a check, so
 a pull request of the docs alone waits on nothing. A Go test that read

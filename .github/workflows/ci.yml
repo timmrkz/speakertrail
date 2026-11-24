@@ -57,12 +57,13 @@ jobs:
     needs: changes
     if: needs.changes.outputs.interface == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -72,21 +73,46 @@ jobs:
         run: make interface
       - name: Build
         run: npm run build
+      # The walks launch Chromium headless, which is Playwright's headless
+      # shell alone, not the whole browser beside it, 114 MiB less to
+      # download on every run.
       - name: Chromium for the walks
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps --only-shell chromium
       - name: Walks
         working-directory: .
         run: make walks
 
+  # Go's modules are kept by go.sum. What Go built and tested, and what
+  # golangci-lint found, are kept from the last run on main, so a pull
+  # request builds and tests again only the packages it changed, and those
+  # whose files read by a test changed. Only main saves them, and only
+  # after every step passed. Not setup-go's own cache, which is kept by
+  # go.sum alone and so holds a build ever further behind main, and which
+  # publish.yml's jobs that write restore, see #55. See CI in
+  # docs/BUILD.md.
   go:
     needs: changes
     if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
+      - id: modules
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-built-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-built-${{ runner.os }}-
       # The app's window is a webview, which on Linux is GTK and WebKit.
       - name: GTK and WebKit
         run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
@@ -94,23 +120,49 @@ jobs:
         run: make lint
       - name: Test
         run: make unit
+      - if: github.ref == 'refs/heads/main' && steps.modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/.cache/golangci-lint
+          key: go-built-${{ runner.os }}-${{ github.sha }}
 
   # The app on the machine it is for. Tim's Mac is Apple silicon, and so is
-  # this runner.
+  # this runner. Its limit leaves room for building llama-server, minutes,
+  # when scripts/build-llama.sh changed and the cache below has none. Go
+  # is kept the way the go job keeps it.
   macos:
     needs: changes
     if: needs.changes.outputs.app == 'true'
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v5
+          cache: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - id: modules
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/go-build
+          key: go-built-${{ runner.os }}-${{ github.sha }}
+          restore-keys: go-built-${{ runner.os }}-
       # The llama-server the app carries takes minutes to build, so it is
       # kept until scripts/build-llama.sh changes, the rule make llama
       # follows too. See docs/BUILD.md.
@@ -154,5 +206,15 @@ jobs:
           APPLE_CAS=1
           go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/speakertrail-release/
       - name: Tests
-        run: go test -count=1 ./...
+        run: go test -timeout 2m ./...
+      - if: github.ref == 'refs/heads/main' && steps.modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/go/pkg/mod
+          key: go-modules-${{ runner.os }}-${{ hashFiles('go.sum') }}
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/go-build
+          key: go-built-${{ runner.os }}-${{ github.sha }}
 

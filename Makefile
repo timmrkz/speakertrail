@@ -204,7 +204,7 @@ lint: toolchain golangci-lint
 	@$(GO) vet ./...
 	@printf 'ok  \tgo vet\n'
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
-	@printf 'ok  \tour code logs into the app log\n'
+	@printf 'ok  \tgolangci-lint: our code logs into the app log, and no test waits on the clock\n'
 
 # The release golangci-lint builds and checks against its own checksums,
 # as its install.sh does. Not install.sh itself, which asks github.com's
@@ -223,9 +223,13 @@ $(GOLANGCI_LINT):
 		status=$$?; rm -rf $$tmp; exit $$status
 
 # The race detector is always on: runs ask several searches side by side,
-# and a race there only shows on someone else's machine.
+# and a race there only shows on someone else's machine. Go's test cache
+# is on, so a package whose code, and the files and environment its tests
+# read, did not change is not tested again, see the testing skill. A
+# package whose tests take longer than two minutes is stopped with every
+# goroutine's stack, well inside the limit of CI's go job.
 unit:
-	@$(GO) test -race -count=1 ./...
+	@$(GO) test -race -timeout 2m ./...
 	@sh scripts/needs-build-test.sh >/dev/null && printf 'ok  \tscripts/needs-build.sh\n'
 
 interface: web/node_modules/.package-lock.json

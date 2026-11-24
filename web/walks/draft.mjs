@@ -153,6 +153,39 @@ const walks = [
     },
   },
   {
+    // Tim, 24 November 2026: a double click whose second press is held
+    // and dragged picks a phrase word by word, as everywhere on the Mac,
+    // and the select all of a plain double click must not take it over.
+    name: 'A double click held and dragged selects word by word, not all of the message',
+    async run(page) {
+      await open(page, 1009)
+      await drafted(page, 1009, 1, first)
+      const b = await box(page).boundingBox()
+      const pad = await box(page).evaluate((t) => parseFloat(getComputedStyle(t).paddingLeft))
+      // Into "Hallo", the first word, then across "Mara," and a little
+      // into "danke", all on the first line.
+      const x = b.x + pad + 8
+      const y = b.y + 14
+      await page.mouse.move(x, y)
+      await page.mouse.down({ clickCount: 1 })
+      await page.mouse.up({ clickCount: 1 })
+      await page.mouse.down({ clickCount: 2 })
+      await page.mouse.move(x + 110, y, { steps: 8 })
+      await page.mouse.up({ clickCount: 2 })
+      const [start, end, value] = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value])
+      if (start === 0 && end === value.length) return 'a double click held and dragged selects all of the message'
+      if (start !== 0) return `the drag from "Hallo" starts its selection at ${start}`
+      const picked = value.slice(start, end)
+      if (!/^Hallo Mara, danke\b/.test(picked) && !/^Hallo Mara\b/.test(picked)) return `a drag over three words selects ${JSON.stringify(picked)}`
+      if (/\w/.test(value[end] ?? '')) return `the selection ends inside a word, at ${JSON.stringify(picked)}`
+      // A plain double click afterwards still takes all of it.
+      await box(page).dblclick()
+      const sel = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value.length])
+      if (sel[0] !== 0 || sel[1] !== sel[2]) return `a double click after a drag selects ${sel[0]} to ${sel[1]} of ${sel[2]}`
+      return ''
+    },
+  },
+  {
     // Tim saw the box keep its first size while the model wrote and jump
     // once it was done, 22 November 2026. It grows with every piece.
     name: 'The box grows with the draft as the model writes it',

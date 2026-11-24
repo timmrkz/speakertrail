@@ -716,17 +716,12 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['PUT', /^\/api\/people\/(\d+)\/profile$/, (s, m, _q, b) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'Not found')
-    const was = { text: p.text ?? '', name: p.name, headline: p.headline, city: p.city }
     let named = false
-    if (b.as) {
-      const as = b.as as typeof was
-      Object.assign(p, { text: as.text, name: as.name || p.name, headline: as.headline, city: as.city })
-      if (!as.text && p.read !== undefined) p.read = 'next'
-    } else {
-      // Like the app, more or less: the name is the line that spells the
-      // name in the link, the headline the line after it.
-      const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
-      if (!lines.length) return err(400, 'The paste holds no text')
+    // Like the app, more or less: the name is the line that spells the
+    // name in the link, the headline the line after it.
+    const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    if (!lines.length) return err(400, 'The paste holds no text')
+    edit(p, () => {
       const spelled = (x: string) => x.toLowerCase().split(/[-\s]+/).filter((w) => !/\d/.test(w)).join('')
       const handle = spelled((linkOf(p) ?? '').split('/').pop() ?? '')
       const at = lines.findIndex((l) => spelled(l) === handle)
@@ -740,9 +735,9 @@ const ROUTES: [string, RegExp, Handler][] = [
       p.text = lines.slice(Math.max(at, 0)).join('\n')
       if (p.read !== undefined) p.read = ''
       p.read_error = undefined
-      reads.queue = reads.queue.filter((x) => x.id !== p.id)
-    }
-    return ok({ person: personDetail(s, p), was, named })
+    })
+    reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    return ok({ person: personDetail(s, p), named })
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -751,23 +746,31 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['PATCH', /^\/api\/people\/(\d+)$/, (s, m, _q, b) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
-    if (typeof b.notes === 'string') p.notes = b.notes
-    if (typeof b.draft === 'string') {
-      p.draft = b.draft
-      // An emptied message was drafted at no time, as the app says.
-      if (!b.draft) p.drafted_at = undefined
-    }
-    if (typeof b.connected === 'boolean') p.connected = b.connected
-    else if (b.connected !== undefined) return err(400, 'connected must be true or false')
+    if (b.connected !== undefined && typeof b.connected !== 'boolean') return err(400, 'connected must be true or false')
+    edit(p, () => {
+      if (typeof b.notes === 'string') p.notes = b.notes
+      if (typeof b.draft === 'string') {
+        p.draft = b.draft
+        // An emptied message was drafted at no time, as the app says.
+        if (!b.draft) p.drafted_at = undefined
+      }
+      if (typeof b.connected === 'boolean') p.connected = b.connected
+    })
     return ok(personDetail(s, p))
   }],
   ['PATCH', /^\/api\/profiles\/(\d+)$/, (s, m, _q, b) => {
-    const prof = s.people.flatMap((p) => p.profiles).find((x) => x.id === Number(m[1]))
-    if (!prof) return err(404, 'No such profile')
+    const p = s.people.find((x) => x.profiles.some((y) => y.id === Number(m[1])))
+    const prof = p?.profiles.find((x) => x.id === Number(m[1]))
+    if (!p || !prof) return err(404, 'No such profile')
     if (b.review !== 'open' && b.review !== 'confirmed' && b.review !== 'rejected') return err(400, 'review must be open, confirmed or rejected')
-    prof.review = b.review
+    edit(p, () => {
+      p.profiles = p.profiles.map((x) => (x === prof ? { ...x, review: b.review as Profile['review'] } : x))
+    })
     return { status: 204 }
   }],
+  // Undo and Redo in the Edit menu, like internal/store/history.go.
+  ['POST', /^\/api\/undo$/, (s) => undoStep(s, true)],
+  ['POST', /^\/api\/redo$/, (s) => undoStep(s, false)],
   ['GET', /^\/api\/sources$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
     const status = q.get('status')
@@ -1322,6 +1325,57 @@ function seeded(seed: number): () => number {
   }
 }
 
+// Undo and Redo, like internal/store/history.go: a change Tim makes to a
+// person is one step, the fields it changed as they were before and
+// after. An undo puts back only those, and refuses when one changed since.
+type Fields = Record<string, string | undefined>
+interface UndoStep {
+  id: number
+  before: Fields
+  after: Fields
+}
+const undoSteps = { undo: [] as UndoStep[], redo: [] as UndoStep[] }
+function fieldsOf(p: PersonRow): Fields {
+  const out: Fields = {}
+  for (const [k, v] of Object.entries(p)) out[k] = JSON.stringify(v)
+  return out
+}
+function edit(p: PersonRow, fn: () => void) {
+  const before = fieldsOf(p)
+  fn()
+  const after = fieldsOf(p)
+  const step: UndoStep = { id: p.id, before: {}, after: {} }
+  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+    if (before[k] === after[k]) continue
+    step.before[k] = before[k]
+    step.after[k] = after[k]
+  }
+  if (!Object.keys(step.after).length) return
+  undoSteps.undo = [...undoSteps.undo, step].slice(-200)
+  undoSteps.redo = []
+}
+function undoStep(s: State, back: boolean) {
+  const from = back ? 'undo' : 'redo'
+  const to = back ? 'redo' : 'undo'
+  const step = undoSteps[from].at(-1)
+  if (!step) return ok({ done: false })
+  const [want, put] = back ? [step.after, step.before] : [step.before, step.after]
+  const p = s.people.find((x) => x.id === step.id)
+  const now = p && fieldsOf(p)
+  if (!p || !now || Object.keys(want).some((k) => now[k] !== want[k])) {
+    undoSteps[from] = []
+    return err(409, 'This has changed since, so it cannot be taken back')
+  }
+  const row = p as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(put)) {
+    if (v === undefined) delete row[k]
+    else row[k] = JSON.parse(v)
+  }
+  undoSteps[from] = undoSteps[from].slice(0, -1)
+  undoSteps[to] = [...undoSteps[to], step]
+  return ok({ done: true, shows: { kind: 'person', id: p.id } })
+}
+
 // A first message being drafted, worked out from the clock.
 type MockDraft = { id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean }
 const DRAFT_LOAD_MS = 3000
@@ -1353,8 +1407,10 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   if (ran >= whole) {
     if (!d.kept && p) {
       d.kept = true
-      p.draft = text
-      p.drafted_at = new Date(d.from + whole).toISOString()
+      edit(p, () => {
+        p.draft = text
+        p.drafted_at = new Date(d.from + whole).toISOString()
+      })
     }
     return { ...base, state: 'done', text, fraction: 1, seconds_left: 0 }
   }

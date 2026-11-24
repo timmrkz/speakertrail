@@ -183,20 +183,18 @@ export interface Person {
 // people here already by id, and other links, like a company page. act
 // is what Run turns into, as the app decides: Add, Open the one person
 // here, or a greyed Add for links that add nobody.
-// What a person was before a page was pasted as their profile.
-export interface Pasted {
-  text: string
-  name: string
-  headline: string
-  city: string
-}
-
-// The answer to a paste: the person now, what they were, and whether the
-// page gave their name.
+// The answer to a paste: the person now, and whether the page gave
+// their name.
 export interface PastedProfile {
   person: PersonDetail
-  was: Pasted
   named: boolean
+}
+
+// What Undo or Redo in the Edit menu did: whether there was anything to
+// take, and what it changed, see docs/api.md, Undo.
+export interface Undone {
+  done: boolean
+  shows?: { kind: 'person'; id: number }
 }
 
 export interface LinksFound {
@@ -786,9 +784,11 @@ export const api = {
   // Takes out again someone added from a link, for Undo.
   removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
-  // Keeps a LinkedIn page Tim copied in Chrome as a person's profile, or
-  // with as puts back what they were, for Undo.
-  pasteProfile: (id: number, body: { text: string } | { as: Pasted }) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, body),
+  // Keeps a LinkedIn page Tim copied in Chrome as a person's profile.
+  pasteProfile: (id: number, text: string) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, { text }),
+  // Undo and Redo in the Edit menu, for every change Tim makes.
+  undo: () => request<Undone>('POST', '/api/undo', {}),
+  redo: () => request<Undone>('POST', '/api/redo', {}),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),

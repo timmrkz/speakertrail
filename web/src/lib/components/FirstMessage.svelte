@@ -51,8 +51,6 @@
   // Cancel pressed, which takes a moment to reach the model.
   let starting = $state(false)
   let cancelling = $state(false)
-  // The message before Draft again, so the new one can be undone.
-  let before: string | undefined
 
   // A draft that ends done is kept by the app: take it from there, the
   // way it was saved.
@@ -63,21 +61,15 @@
     seen = now
     if (!busy) cancelling = false
     if (job?.state === 'done') take()
-    else if (job && !busy) before = undefined
   })
 
   async function take() {
     try {
       const p = await api.person(person.id)
-      const was = before
-      before = undefined
       text = saved = p.draft
       draftedAt = p.drafted_at
       saveState = 'idle'
       onsaved?.(p)
-      if (was && was !== p.draft) {
-        toast.show('Drafted again', 'plain', { label: 'Undo', run: () => keep(was).catch((e) => fault(e)) })
-      }
     } catch (e) {
       fault(e)
     }
@@ -89,15 +81,13 @@
       navigate('/app/settings#language')
       return
     }
-    // What is typed and not yet saved is saved first, so Undo can bring
-    // it back.
+    // What is typed and not yet saved is saved first, so Undo in the Edit
+    // menu can bring it back.
     await save()
-    before = saved
     starting = true
     try {
       draftWatch.put(await api.startDraft(person.id))
     } catch (e) {
-      before = undefined
       fault(e)
     } finally {
       starting = false

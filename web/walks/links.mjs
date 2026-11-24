@@ -41,6 +41,9 @@ function expect(what, ok) {
   if (!ok) throw new Error(what)
 }
 
+// Undo or Redo from the Edit menu, which the app hands the page as the
+// event undo, see menu.go.
+const menu = (page, how) => page.evaluate((how) => window._wails.dispatchWailsEvent({ name: 'undo', data: how }), how)
 const search = (page) => page.locator('main .search input')
 const start = (page) => page.locator('main button.start')
 const said = async (page) => (await start(page).textContent()).trim()
@@ -146,7 +149,7 @@ await walk('Links pasted on People, not into a field, go into the search', async
   expect('the search does not hold the link', (await search(page).inputValue()) === 'https://www.linkedin.com/in/ida-beispiel-74')
 })
 
-await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, and Undo puts back their link name', async (browser) => {
+await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, and Undo in the Edit menu puts back their link name', async (browser) => {
   const page = await people(browser)
   await search(page).fill('https://www.linkedin.com/in/neu-probe-79')
   await search(page).press('Enter')
@@ -176,8 +179,10 @@ await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, a
   await page.locator('.toast-region', { hasText: 'Kept the page' }).waitFor()
   const said = await page.locator('.toast-region').textContent()
   expect(`the toast said "${said}"`, said.includes('Kept the page as their profile') && !said.includes('Neu Probe'))
-  await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  expect('the toast offers Undo, which the Edit menu has now', !(await page.locator('.toast-region button', { hasText: 'Undo' }).count()))
+  await menu(page, 'undo')
   await page.locator('main .prow b', { hasText: 'neu-probe-79' }).waitFor()
+  await hint.waitFor()
 })
 
 await walk('Links dropped on the window light all of it and are added, from any page', async (browser) => {

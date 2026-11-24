@@ -18,6 +18,9 @@ const url = server.resolvedUrls.local[0].replace(/\/$/, '')
 
 const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.profiles[0].review), id)
 
+// Undo or Redo from the Edit menu, which the app hands the page as the
+// event undo, see menu.go.
+const menu = (page, how) => page.evaluate((how) => window._wails.dispatchWailsEvent({ name: 'undo', data: how }), how)
 const person = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()), id)
 const keepDraft = (page, id, draft) =>
   page.evaluate(([id, draft]) => fetch(`/api/people/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }) }), [id, draft])
@@ -361,7 +364,7 @@ const walks = [
   },
   {
     // A search can find someone else's LinkedIn profile. Not this person
-    // rejects it, and the toast's Undo brings it back as it was. Like
+    // rejects it, and Undo in the Edit menu brings it back as it was. Like
     // Connect, the button stays, pressed, and the same button again takes
     // it back. Tim found it gone once pressed, testing #67 on 22 November
     // 2026, and could not get anyone out of Rejected.
@@ -378,11 +381,12 @@ const walks = [
       if ((await review(page, 1001)) !== 'rejected') return 'the profile was not rejected'
       if (!(await notThem.isVisible())) return 'Not this person is gone once the profile is rejected'
       if ((await notThem.getAttribute('aria-pressed')) !== 'true') return 'Not this person is not pressed once the profile is rejected'
-      await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
+      if (await page.locator('.toast').getByRole('button', { name: 'Undo' }).count()) return 'a toast offers Undo, which the Edit menu has now'
+      await menu(page, 'undo')
       await linkedin.waitFor()
       const after = await review(page, 1001)
       if (after !== before) return `Undo left the profile ${after}, it was ${before}`
-      // Once the toast is gone, the same button takes it back.
+      // The same button takes it back too.
       await notThem.click()
       await linkedin.waitFor({ state: 'detached' })
       await page.locator('button[aria-label="Not this person"][aria-pressed="true"]').waitFor()
@@ -469,6 +473,38 @@ const walks = [
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`taken back, the list is ${await rows()}, was ${before}`)
       if ((await count('All')) !== all) wrong.push(`taken back, All counts ${await count('All')}, want ${all}`)
       return wrong.join('\n\t')
+    },
+  },
+  {
+    // Tim, 22 November 2026, #71: every change undone and redone from the
+    // Edit menu, the way FrameFairy does. Taking it back opens whom it
+    // changed, and a field being typed in keeps its own undo.
+    name: 'Undo and Redo in the Edit menu take back Connect and open the person, and a field being typed in undoes its own text',
+    async run(page) {
+      const connected = () => person(page, 1002).then((p) => p.connected)
+      await page.goto(`${url}/app/people/1002`)
+      const connect = page.locator('.detail-pane button.connect')
+      await connect.waitFor()
+      const was = await connected()
+      await connect.click()
+      await page.waitForFunction(async (was) => (await fetch('/api/people/1002').then((r) => r.json())).connected !== was, was)
+      await page.goto(`${url}/app/searches`)
+      await page.locator('main').waitFor()
+      await menu(page, 'undo')
+      await page.waitForURL('**/app/people/1002')
+      await page.locator(`.detail-pane button.connect[aria-pressed="${was}"]`).waitFor()
+      if ((await connected()) !== was) return 'Undo did not take Connect back'
+      await menu(page, 'redo')
+      await page.locator(`.detail-pane button.connect[aria-pressed="${!was}"]`).waitFor()
+      if ((await connected()) === was) return 'Redo did not connect again'
+      // Typing in the notes, Undo is the field's.
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.click()
+      await page.keyboard.type('abc')
+      await menu(page, 'undo')
+      await page.waitForFunction(() => document.activeElement?.value !== undefined && !document.activeElement.value.endsWith('abc'))
+      if ((await connected()) === was) return 'Undo while typing took Connect back'
+      return ''
     },
   },
   {

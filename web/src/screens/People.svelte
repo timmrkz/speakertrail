@@ -6,6 +6,7 @@
   import { typing } from '../lib/keys'
   import { Load } from '../lib/load.svelte'
   import { isPage, PASTE_HINT, PASTE_LINE, pasting } from '../lib/paste.svelte'
+  import { undoHistory } from '../lib/history.svelte'
   import { navigate, router } from '../lib/router.svelte'
   import { runCount, runSays, runShare, runWatch } from '../lib/run.svelte'
   import Busy from '../lib/components/Busy.svelte'
@@ -94,13 +95,13 @@
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 
-  // What adding or a pasted profile changed, or Undo took back, shows at
-  // once.
-  // Both are read, so both are followed, and only a change after People
+  // What adding or a pasted profile changed, or Undo and Redo in the Edit
+  // menu took back or did again, shows at once.
+  // All are read, so all are followed, and only a change after People
   // opened counts.
-  const changedAt = runWatch.changed + pasting.changed
+  const changedAt = runWatch.changed + pasting.changed + undoHistory.changed
   $effect(() => {
-    if (runWatch.changed + pasting.changed === changedAt) return
+    if (runWatch.changed + pasting.changed + undoHistory.changed === changedAt) return
     untrack(() => people.run(fetchPeople({ q: query, sort, filter }), { quiet: true }))
   })
 

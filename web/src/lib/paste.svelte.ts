@@ -3,11 +3,12 @@
 // person's profile, for someone Exa's index has no copy of. The app reads
 // their name, headline and city from it and writes the first message from
 // it. It never requests LinkedIn itself: Tim opened the page. A toast
-// says it was kept, with Undo. The toast never names the person, since
-// every toast goes into the app's log.
+// says it was kept, and Undo in the Edit menu takes it back, see
+// history.svelte.ts. The toast never names the person, since every toast
+// goes into the app's log.
 
-import { api, type Pasted } from './api'
-import { errorText, fault, toast } from './toast.svelte'
+import { api } from './api'
+import { errorText, toast } from './toast.svelte'
 
 // What someone Exa has no copy of says, on their row and when they are
 // open: what to do, not why (Tim, 23 November 2026).
@@ -21,28 +22,16 @@ export function isPage(text: string): boolean {
 }
 
 class Pasting {
-  // Counts every profile kept or put back, so the person and the list
-  // read again.
+  // Counts every profile kept, so the person and the list read again.
   changed = $state(0)
   async paste(id: number, text: string): Promise<void> {
     try {
-      const r = await api.pasteProfile(id, { text })
+      const r = await api.pasteProfile(id, text)
       this.changed++
-      const undo = { label: 'Undo', run: () => void this.undo(id, r.was) }
-      if (r.named) toast.show('Kept the page as their profile', 'plain', undo)
-      else toast.show('Kept the page as their profile. Its name is not the one in their link, so check it is theirs', 'bad', undo)
+      if (r.named) toast.show('Kept the page as their profile')
+      else toast.show('Kept the page as their profile. Its name is not the one in their link, so check it is theirs', 'bad')
     } catch (e) {
       toast.show(errorText(e), 'bad')
-    }
-  }
-
-  private async undo(id: number, was: Pasted) {
-    try {
-      await api.pasteProfile(id, { as: was })
-    } catch (e) {
-      fault(e)
-    } finally {
-      this.changed++
     }
   }
 }

@@ -9,8 +9,9 @@
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { Load } from '../lib/load.svelte'
   import { PASTE_HINT, pasting } from '../lib/paste.svelte'
+  import { undoHistory } from '../lib/history.svelte'
   import { pasteAsShown } from '../lib/pastedlines'
-  import { errorText, fault, toast } from '../lib/toast.svelte'
+  import { errorText, fault } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
@@ -42,17 +43,34 @@
   }
   load()
 
-  // A LinkedIn page pasted as their profile, or Undo, shows at once,
-  // with the name, headline and city the page gave.
-  // Only a change after it opened counts.
+  // A LinkedIn page pasted as their profile shows at once, with the
+  // name, headline and city the page gave. Only a change after it opened
+  // counts.
   const pastedAt = pasting.changed
   $effect(() => {
     if (pasting.changed === pastedAt) return
-    untrack(() => person.run(() => api.person(id), { quiet: true }).then(() => {
+    untrack(() => reread())
+  })
+  function reread() {
+    return person.run(() => api.person(id), { quiet: true }).then(() => {
       if (person.data) {
         onname?.(person.data.id, person.data.name)
         onupdate?.(person.data)
       }
+    })
+  }
+
+  // Undo and Redo in the Edit menu may have changed anything about them,
+  // so the notes are read again as well, and the first message starts
+  // again from what the app holds now, once it is read.
+  const undoneAt = undoHistory.changed
+  let undone = $state(0)
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => reread().then(() => {
+      notes = savedNotes = person.data?.notes ?? ''
+      noteState = 'idle'
+      undone++
     }))
   })
 
@@ -65,8 +83,8 @@
   // it, so LinkedIn no longer opens it and the person moves to Rejected.
   // Like Connect, the button stays and the same button again takes it
   // back (Tim, testing #67 on 22 November 2026). It shows at once and
-  // goes back if the app says no. Undo in the toast sets back what was
-  // there before.
+  // goes back if the app says no. Undo in the Edit menu takes it back
+  // too.
   let reviewing = $state(false)
   function showReview(of: Profile, next: Review) {
     if (!person.data) return
@@ -87,12 +105,6 @@
     showReview(of, next)
     try {
       await review(of, next)
-      if (next === 'rejected') {
-        toast.show('LinkedIn profile rejected as not this person', 'plain', {
-          label: 'Undo',
-          run: () => review(of, of.review).catch((e) => fault(e)),
-        })
-      }
     } catch (e) {
       showReview(of, of.review)
       fault(e)
@@ -211,7 +223,9 @@
     {/snippet}
 
     {#if linkedin}
-      <FirstMessage person={p} {row} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />
+      <!-- Started again after Undo or Redo in the Edit menu, which may
+           have changed the message it holds. -->
+      {#key undone}<FirstMessage person={p} {row} onsaved={(u) => { if (person.data) person.data = { ...person.data, draft: u.draft, drafted_at: u.drafted_at, profile_read_at: u.profile_read_at } }} />{/key}
     {:else}
       {@render row()}
     {/if}

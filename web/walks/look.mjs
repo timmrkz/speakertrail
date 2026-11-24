@@ -6,20 +6,7 @@
 // everywhere. The light of work in hand, the beam of Busy.svelte, glows
 // on purpose and is left out. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 // The helpers the page needs, put on window once it has loaded: a colour
 // in any CSS syntax as the four bytes a canvas paints it with, the solid
@@ -142,6 +129,16 @@ async function greyed(page, controls) {
   if (grounds.size > 1) wrong.push(`buttons greyed out have ${grounds.size} different grounds`)
   return wrong
 }
+
+// Once what moves on the page has come to rest, as the list narrows for
+// a person and the sheet slides in, so what is measured is where things
+// stop. The next frame first, where a transition just asked for starts,
+// then the end of every animation that ends, since the pulse of work in
+// hand never does.
+const still = (page) => page.evaluate(async () => {
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  await Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {})))
+})
 
 const walks = []
 for (const theme of ['light', 'dark']) {
@@ -594,6 +591,7 @@ walks.push({
       if (size.width === 1280) {
         await page.locator('.prow').first().click()
         await page.locator('.person .connect').waitFor()
+        await still(page)
         // With a person open the list is narrower than its column, so
         // it stands --pad in, as the person does.
         const narrowed = await box('.list-pane')
@@ -611,6 +609,7 @@ walks.push({
       } else {
         await page.locator('.prow').first().click()
         await page.locator('.sheet .person .connect').waitFor()
+        await still(page)
         const sheet = await box('.sheet')
         const bar = await box('.sheet-bar')
         const row = await box('.sheet .person .actions')

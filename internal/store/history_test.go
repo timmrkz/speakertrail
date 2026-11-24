@@ -260,3 +260,25 @@ func TestHistoryFromSeveralGoroutines(t *testing.T) {
 		}
 	}
 }
+
+// Every run scores everyone again, so the fit a paste worked out has
+// changed by the time Tim takes the paste back. That is no reason to
+// refuse it.
+func TestAnUndoIsNotRefusedForAFitWorkedOutAgain(t *testing.T) {
+	s, id := withPerson(t, t.TempDir())
+	_ = s.Edit(func(d *Data) error {
+		p := d.Person(id)
+		d.Paste(p, Pasted{Text: "Ada Beispiel\nYogalehrerin", Name: "Ada Beispiel", Headline: "Yogalehrerin", City: "Bonn"}, t0)
+		p.Score, p.Signals = 40, []Signal{{Key: "founder", For: true}}
+		return nil
+	}, PersonThing(id))
+	_ = s.Update(func(d *Data) error {
+		d.Person(id).Score = 35
+		return nil
+	})
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if p := s.person(t, id); p.LinkedIn.Text != "" || p.Score != 0 || len(p.Signals) != 0 {
+		t.Errorf("after undo: text %q, score %d, signals %v", p.LinkedIn.Text, p.Score, p.Signals)
+	}
+}

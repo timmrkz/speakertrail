@@ -151,6 +151,9 @@ func (s *Store) step(back bool) (Undone, error) {
 				return ErrChangedSince
 			}
 			for k, v := range want {
+				if derived[k] {
+					continue
+				}
 				if !bytes.Equal(now[k], v) {
 					return ErrChangedSince
 				}
@@ -229,6 +232,13 @@ func (d *Data) setFields(t Thing, put fields, now time.Time) error {
 	}
 	return fmt.Errorf("no history for a %q", t.Kind)
 }
+
+// derived are the fields worked out from the others, the fit's signals
+// and score, which every run works out again for everyone. They go back
+// with the step, but a run that worked them out since does not make an
+// undo refuse, as FrameFairy leaves what follows from a clip out of its
+// changes. The next run works them out again.
+var derived = map[string]bool{"signals": true, "score": true, "rubric": true}
 
 // linkedInPrefix marks the fields of a person's LinkedIn profile, so a
 // change to one of them is a change to that field alone.

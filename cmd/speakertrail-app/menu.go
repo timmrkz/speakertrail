@@ -13,8 +13,9 @@ import (
 // about text being typed, and on macOS the menu takes Cmd+Z before the
 // page ever sees it. Report a Problem keeps its own undo, since a
 // dictation writes into its field and Clear empties it, see
-// web/src/screens/Report.svelte. These send the window in front an event
-// called undo, and its page decides: in a field being typed in it undoes
+// web/src/screens/Report.svelte. These send an event called undo, which
+// Wails hands every window, and only the page Tim is in takes it, see
+// onUndo in web/src/lib/api.ts. It decides: in a field being typed in it undoes
 // the field the way the stock one did, anywhere else it takes back the
 // last change Tim made, see internal/store/history.go.
 func appMenu(app *application.App) *application.Menu {

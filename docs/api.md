@@ -562,8 +562,9 @@ model wrote down as `dictation`.
 ## Undo
 
 Edit, Undo (Cmd+Z) and Redo (Cmd+Y) in the app's menu do not reach the
-page as keys. The app sends the window in front the Wails event `undo`,
-`"undo"` or `"redo"`, and the page decides: Report a Problem undoes its
+page as keys. The app sends the Wails event `undo`, `"undo"` or
+`"redo"`, which reaches every window, and only the page that has the
+focus takes it. It decides: Report a Problem undoes its
 own steps, a text field anywhere undoes what was typed, and anywhere
 else the app takes back the last change Tim made. See
 `cmd/speakertrail-app/menu.go` and `internal/store/history.go`.

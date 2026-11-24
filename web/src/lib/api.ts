@@ -645,10 +645,14 @@ export function onReportDraft(fn: (d: ReportDraft) => void): () => void {
   return Events.On('report-draft', (ev) => fn(ev.data as ReportDraft))
 }
 
-// Undo or Redo in the Edit menu, sent to the window in front, see
-// menu.go. The menu takes Cmd+Z before the page sees it.
+// Undo or Redo in the Edit menu, see menu.go. The menu takes Cmd+Z
+// before the page sees it. The event goes to every window, and only the
+// one Tim is in takes it: Cmd+Z typing in Report a Problem must not take
+// back a change in the app's window behind it. Ported from FrameFairy.
 export function onUndo(fn: (how: 'undo' | 'redo') => void): () => void {
-  return Events.On('undo', (ev) => fn(ev.data === 'redo' ? 'redo' : 'undo'))
+  return Events.On('undo', (ev) => {
+    if (document.hasFocus()) fn(ev.data === 'redo' ? 'redo' : 'undo')
+  })
 }
 
 export function pictureUrl(id: string): string {

@@ -497,6 +497,14 @@ const walks = [
       await menu(page, 'redo')
       await page.locator(`.detail-pane button.connect[aria-pressed="${!was}"]`).waitFor()
       if ((await connected()) === was) return 'Redo did not connect again'
+      // Only the window Tim is in takes it: Report a Problem gets the
+      // same event, and Cmd+Z there takes nothing back here.
+      await page.evaluate(() => { window.hadFocus = document.hasFocus; document.hasFocus = () => false })
+      await menu(page, 'undo')
+      await page.evaluate(() => fetch('/api/people/1002'))
+      await page.waitForLoadState('networkidle')
+      if ((await connected()) === was) return 'Undo in a window without the focus took Connect back'
+      await page.evaluate(() => { document.hasFocus = window.hadFocus })
       // Typing in the notes, Undo is the field's.
       const notes = page.locator('.detail-pane textarea').last()
       await notes.click()

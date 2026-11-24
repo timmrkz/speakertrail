@@ -435,7 +435,7 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if !a.update(w, r, func(d *store.Data) error {
+	if !a.edit(w, r, store.PersonThing(id), func(d *store.Data) error {
 		p := d.Person(id)
 		if p == nil {
 			return errNotFound
@@ -479,7 +479,7 @@ func (a *API) patchProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "review must be open, confirmed or rejected")
 		return
 	}
-	if a.update(w, r, func(d *store.Data) error {
+	if a.edit(w, r, store.PersonThing(id), func(d *store.Data) error {
 		p := d.Person(id)
 		if p == nil || p.LinkedIn.URL == "" {
 			return errNotFound

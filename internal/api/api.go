@@ -85,6 +85,8 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("GET /api/drafts", a.drafts)
 	m.HandleFunc("POST /api/people/{id}/draft", a.startDraft)
 	m.HandleFunc("POST /api/people/{id}/draft/cancel", a.cancelDraft)
+	m.HandleFunc("POST /api/undo", a.undo)
+	m.HandleFunc("POST /api/redo", a.redo)
 	m.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) { fail(w, http.StatusNotFound, "No such endpoint") })
 	return a
 }
@@ -141,7 +143,18 @@ var errNotFound = errors.New("not found")
 // update runs fn on the store and answers a failure: 404 for errNotFound,
 // 400 for errBad, 500 for the rest. It reports whether fn succeeded.
 func (a *API) update(w http.ResponseWriter, r *http.Request, fn func(d *store.Data) error) bool {
-	err := a.Store.Update(fn)
+	return a.answered(w, r, a.Store.Update(fn))
+}
+
+// edit is update for a change Tim makes to what, which Undo in the Edit
+// menu can take back, see store.Edit.
+func (a *API) edit(w http.ResponseWriter, r *http.Request, what store.Thing, fn func(d *store.Data) error) bool {
+	return a.answered(w, r, a.Store.Edit(fn, what))
+}
+
+// answered answers the failure of an update, if it failed, and reports
+// whether it succeeded.
+func (a *API) answered(w http.ResponseWriter, r *http.Request, err error) bool {
 	var bad errBad
 	switch {
 	case err == nil:

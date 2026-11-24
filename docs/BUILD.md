@@ -122,8 +122,11 @@ Every job has a limit, five minutes, and `macos` 30 for the time a new
 llama-server takes to build. Go's modules are kept in GitHub's cache by
 `go.sum`, and what Go built and tested, and what golangci-lint found, by
 main's last run that passed: a pull request starts from there and builds
-and tests again only the packages it changed. Only main saves them. The
-walks need Playwright's headless shell of Chromium alone.
+and tests again only the packages it changed, and those with a test that
+reads a file of the repository, since Go knows a file by when it changed
+and a checkout makes every file new. Only main saves them. `macos` runs
+the keychain's tests every time, because the cache cannot see the Mac's
+keychain. The walks need Playwright's headless shell of Chromium alone.
 
 A push to main starts every job. No branch rule requires a check, so
 a pull request of the docs alone waits on nothing. A Go test that read

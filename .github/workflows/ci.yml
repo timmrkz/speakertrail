@@ -74,7 +74,7 @@ jobs:
       - name: Build
         run: npm run build
       # The walks launch Chromium headless, which is Playwright's headless
-      # shell alone, not the whole browser beside it, 114 MiB less to
+      # shell alone, not the whole browser beside it, 186.8 MiB less to
       # download on every run.
       - name: Chromium for the walks
         run: npx playwright install --with-deps --only-shell chromium
@@ -85,7 +85,9 @@ jobs:
   # Go's modules are kept by go.sum. What Go built and tested, and what
   # golangci-lint found, are kept from the last run on main, so a pull
   # request builds and tests again only the packages it changed, and those
-  # whose files read by a test changed. Only main saves them, and only
+  # with a test that reads a file of the repository, since Go knows a file
+  # by when it changed and a checkout makes every file new. Only main saves
+  # them, and only
   # after every step passed. Not setup-go's own cache, which is kept by
   # go.sum alone and so holds a build ever further behind main, and which
   # publish.yml's jobs that write restore, see #55. See CI in
@@ -207,6 +209,10 @@ jobs:
           go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/speakertrail-release/
       - name: Tests
         run: go test -timeout 2m ./...
+      # The keychain is the Mac's own, which the test cache cannot see, so
+      # its tests run every time.
+      - name: The keychain, uncached
+        run: go test -count=1 -timeout 2m ./internal/keys/
       - if: github.ref == 'refs/heads/main' && steps.modules.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

@@ -242,17 +242,12 @@ interface: web/node_modules/.package-lock.json
 # FrameFairy's walks drive its own, see web/walks/. Every file there is
 # one, a new one runs by being there. Node's own test runner runs them
 # side by side, each file in a process of its own with its own mock and
-# Chromium, as many at once as the machine has cores but one. The longest
-# start first, so the short ones fill in beside them. A file that takes
-# longer than WALK_LIMIT is stopped and fails, well inside the limit of
-# CI's web job.
-WALKS_FIRST := look person links focus template draft report
-WALKS := $(WALKS_FIRST:%=walks/%.mjs) $(filter-out $(WALKS_FIRST:%=walks/%.mjs),$(patsubst web/%,%,$(wildcard web/walks/*.mjs)))
+# Chromium, as many at once as the machine has cores but one, in the
+# order of their names. A file that takes longer than WALK_LIMIT is
+# stopped and fails, well inside the limit of CI's web job.
 WALK_LIMIT := 120000
-WALKS_GONE := $(filter-out $(wildcard web/walks/*.mjs),$(WALKS_FIRST:%=web/walks/%.mjs))
 walks: web/node_modules/.package-lock.json
-	@$(if $(WALKS_GONE),echo "WALKS_FIRST names walks that are not there: $(WALKS_GONE)" && exit 1,:)
-	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) $(WALKS)
+	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) walks/*.mjs
 
 check:
 	@sh scripts/check.sh || true

@@ -141,9 +141,12 @@ func braces(glob string) []string {
 // On the real disk: what is read is the repository's own workflows.
 func TestEveryJobHasALimit(t *testing.T) {
 	t.Parallel()
-	files, err := filepath.Glob(filepath.Join("..", "..", ".github", "workflows", "*.yml"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("found no workflows: %v", err)
+	dir := filepath.Join("..", "..", ".github", "workflows")
+	files, err := filepath.Glob(filepath.Join(dir, "*.yml"))
+	yamls, err2 := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	files = append(files, yamls...)
+	if err != nil || err2 != nil || len(files) == 0 {
+		t.Fatalf("found no workflows: %v %v", err, err2)
 	}
 	jobs := 0
 	for _, f := range files {

@@ -135,17 +135,10 @@ func TestPeopleListedWhileLinksAreAddedFromSeveralGoroutines(t *testing.T) {
 			}
 		})
 	}
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		e.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("listing and adding wait on each other")
-	}
+	// Should listing and adding wait on each other, go test's -timeout
+	// ends the test with the stack of every goroutine.
+	wg.Wait()
+	e.Wait()
 	var list linksPeople
 	call(t, a, "GET", "/api/people?filter=new", "", &list)
 	if list.Counts["new"] != 80 {

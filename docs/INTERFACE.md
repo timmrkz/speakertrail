@@ -57,6 +57,15 @@ on the clock. The sidebar's walks are ported from FrameFairy's
 `frontend/preview/walks`. A walk is proven by making it fail on the code
 before the fix.
 
+Every walk file starts the mock through `web/walks/lib/mock.mjs`, where
+the mock answers at once, not a little later as in `make mock`. A walk
+that has to see an answer on its way holds that request with
+`page.route` and lets it go, and one that waits for an answer starts
+listening before the step that asks. `make walks` runs the files side
+by side, each with a mock of its own, so the walks of one file share a
+mock and leave it as the next one expects. Run one file with
+`cd web && node walks/look.mjs`.
+
 Look at every change at 390 by 844, the narrowest window, and at 1280 by 900, in
 light and in dark. Probes and screenshots go in the scratchpad, not in the
 repository.

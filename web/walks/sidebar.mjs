@@ -7,23 +7,7 @@
 // No walk waits on the clock: each takes a step and waits for the
 // sidebar to be still, its transitions finished, before it looks.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-// Without Playwright's Chromium there is nothing to walk in. Say so in one
-// line rather than in a stack trace. CI installs it, a cloud session gets
-// it from scripts/cloud-setup.sh.
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 // On the rail, under the title bar, and well off it over the page.
 const RAIL = [20, 500]

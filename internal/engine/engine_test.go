@@ -1012,3 +1012,74 @@ func TestALinkWithNoNameTakesOneSearch(t *testing.T) {
 		t.Errorf("asked by name for %q", f.named)
 	}
 }
+
+// A page pasted anywhere finds whose it is: by the link it holds most
+// often, by a link it holds less often whose name it shows, by its name,
+// or as the open person's. Asked from several goroutines while pages
+// are pasted, it answers the same (Tim, 24 November 2026, #89).
+func TestWhoseIsAPastedPage(t *testing.T) {
+	e, st := newEngine(t, &finder{})
+	add := func(link, name string) int64 {
+		var id int64
+		_ = st.Update(func(d *store.Data) error {
+			s, _ := d.AddSearch("Keramik "+name, 0, t0)
+			p, _ := d.AddFound(store.Found{URL: link, Name: name}, s, 1, t0)
+			id = p.ID
+			return nil
+		})
+		return id
+	}
+	mara := add("https://www.linkedin.com/in/mara-s-beispiel", "Mara Beispiel")
+	otto := add("https://www.linkedin.com/in/otto-muster-5b", "Otto Muster")
+	jonas := add("https://www.linkedin.com/in/ACoAAB12345", "Jonas Probe")
+	lena1 := add("https://www.linkedin.com/in/lena-probe", "Lena Probe")
+	lena2 := add("https://www.linkedin.com/in/lena-probe-2", "Lena Probe")
+
+	page := func(name string) string {
+		return "Home\nMy Network\n\n" + name + "\n· 1st\n\nGründerin\n\nAbout\nIch töpfere."
+	}
+	// Mara's page, with her links and Otto under People also viewed.
+	maraLinks := []string{
+		"https://www.linkedin.com/in/mara-s-beispiel/overlay/contact-info/", "/in/mara-s-beispiel/recent-activity/all/",
+		"https://de.linkedin.com/in/mara-s-beispiel/details/experience/", "https://www.linkedin.com/in/otto-muster-5b/",
+		"https://www.linkedin.com/in/tom-beobachter/", "https://example.com/in/mara-s-beispiel",
+	}
+	for _, c := range []struct {
+		what  string
+		text  string
+		links []string
+		open  int64
+		want  int64
+		err   error
+	}{
+		{"her links", page("Mara Beispiel"), maraLinks, 0, mara, nil},
+		{"her links, Otto open", page("Mara Beispiel"), maraLinks, otto, mara, nil},
+		{"Otto shown on another's page", page("Ida Neu"), []string{"/in/ida-neu/", "/in/ida-neu/details/", "/in/otto-muster-5b/"}, 0, 0, ErrNobodyPasted},
+		{"Otto's link once, and his name", page("Otto Muster"), []string{"/in/otto-muster-5b/", "/in/tom-beobachter/", "/in/tom-beobachter/x"}, 0, otto, nil},
+		{"text alone, by name", page("Mara Beispiel"), nil, 0, mara, nil},
+		{"a link with no name in it, by name", page("Jonas Probe"), nil, 0, jonas, nil},
+		{"two of that name", page("Lena Probe"), nil, 0, 0, ErrManyPasted},
+		{"two of that name, one open", page("Lena Probe"), nil, lena2, lena2, nil},
+		{"two of that name, her link", page("Lena Probe"), []string{"/in/lena-probe/", "/in/lena-probe/overlay/"}, 0, lena1, nil},
+		{"nobody's name, someone open", page("Ida Neu"), nil, otto, otto, nil},
+		{"nobody's name", page("Ida Neu"), nil, 0, 0, ErrNobodyPasted},
+		{"nothing", " \n ", nil, mara, 0, ErrNothingPasted},
+	} {
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				got, err := e.Whose(c.text, c.links, c.open)
+				if got != c.want || !errors.Is(err, c.err) {
+					t.Errorf("%s: %d, %v, want %d, %v", c.what, got, err, c.want, c.err)
+				}
+				// Her own page again, so the names the cases ask by stay.
+				if got == mara {
+					if _, _, err := e.Paste(got, c.text, nil); err != nil {
+						t.Error(err)
+					}
+				}
+			})
+		}
+		wg.Wait()
+	}
+}

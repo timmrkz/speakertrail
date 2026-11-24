@@ -390,7 +390,45 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	was, named, err := a.Engine.Paste(id, body.Text, body.As)
+	a.paste(w, r, id, body.Text, body.As)
+}
+
+// pastePage keeps a LinkedIn page Tim pasted anywhere in the window as
+// the profile of the person it belongs to, see engine.Whose. links are
+// the links in the page's HTML, open the person open, or 0.
+func (a *API) pastePage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text  string   `json:"text"`
+		Links []string `json:"links"`
+		Open  int64    `json:"open"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	id, err := a.Engine.Whose(body.Text, body.Links, body.Open)
+	switch {
+	case errors.Is(err, engine.ErrNothingPasted):
+		fail(w, http.StatusBadRequest, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrNobodyPasted):
+		fail(w, http.StatusNotFound, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrManyPasted):
+		fail(w, http.StatusConflict, capital(err.Error()))
+		return
+	case err != nil:
+		a.internal(w, r, err)
+		return
+	}
+	a.paste(w, r, id, body.Text, nil)
+}
+
+// paste keeps text as the profile of person id, or puts back as, and
+// answers with the person, what they were for Undo, whether the name on
+// the page is the one in their link, and whether the first message is
+// being drafted from it, see draft.Drafter.Pasted. Undo drafts nothing.
+func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, as *store.Pasted) {
+	was, named, err := a.Engine.Paste(id, text, as)
 	switch {
 	case errors.Is(err, store.ErrNoPerson):
 		fail(w, http.StatusNotFound, "Not found")
@@ -402,16 +440,21 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
+	drafting := false
+	if as == nil && a.Drafts != nil {
+		_, drafting = a.Drafts.Pasted(id)
+	}
 	out := a.detail(id)
 	if out == nil {
 		fail(w, http.StatusNotFound, "Not found")
 		return
 	}
 	send(w, http.StatusOK, struct {
-		Person *personDetail `json:"person"`
-		Was    store.Pasted  `json:"was"`
-		Named  bool          `json:"named"`
-	}{out, was, named})
+		Person   *personDetail `json:"person"`
+		Was      store.Pasted  `json:"was"`
+		Named    bool          `json:"named"`
+		Drafting bool          `json:"drafting"`
+	}{out, was, named, drafting})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

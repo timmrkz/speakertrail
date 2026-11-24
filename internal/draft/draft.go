@@ -194,6 +194,37 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 	return out, nil
 }
 
+// Pasted starts the draft a page Tim pasted as a person's profile was
+// missing for, so a paste does the whole thing (Tim's report of 24
+// November 2026, #88): for someone with no first message yet whose
+// draft failed because Exa has no copy, or who is connected, since a
+// draft is what Tim does next for them. ok says one started, or was
+// under way. Without a model none starts, and Draft says why.
+func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
+	empty, connected := false, false
+	d.Store.Read(func(data *store.Data) {
+		if p := data.Person(personID); p != nil {
+			empty, connected = p.Draft == "", p.Connected
+		}
+	})
+	d.mu.Lock()
+	was, there := d.jobs[personID]
+	var out Job
+	if there {
+		out = *was
+	}
+	d.mu.Unlock()
+	if there && !out.Ended() {
+		return out, true
+	}
+	noCopy := there && out.State == "failed" && out.Error == Sentence(ErrNoCopy.Error())
+	if !empty || !connected && !noCopy {
+		return Job{}, false
+	}
+	j, err := d.Start(personID)
+	return j, err == nil
+}
+
 // Cancel stops a person's draft, queued or under way. What the model
 // wrote so far is dropped, and the draft there was before stays.
 func (d *Drafter) Cancel(personID int64) error {

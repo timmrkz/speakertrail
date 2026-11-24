@@ -79,3 +79,54 @@ func TestDraftAFirstMessage(t *testing.T) {
 		t.Errorf("nobody: %d", code)
 	}
 }
+
+// A LinkedIn page pasted with nobody open finds whose it is by the links
+// Chrome copied with it, keeps it as their profile, and drafts the first
+// message of someone connected who has none, and Undo drafts nothing
+// (Tim's report of 24 November 2026, #88 and #89).
+func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
+	a, st, e := newAPI(t)
+	var added struct{ New []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/mara-s-beispiel"}`, &added)
+	e.Wait()
+	id := added.New[0]
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	a.Drafts = &draft.Drafter{Store: st, Host: host,
+		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		Ask: func(context.Context, *language.Server, []language.Message, json.RawMessage, func(string)) (language.Answer, error) {
+			return language.Answer{Text: `{"reason":"du töpferst.","reaction":"","portrait":"Töpferin"}`, Finish: "stop"}, nil
+		},
+		Pick: func(int) int { return 0 },
+	}
+	page := "Home\nMara Beispiel\n· 1st\nGründerin | Probe Keramik\nDortmund, North Rhine-Westphalia, Germany\nAbout\nIch töpfere."
+	body, _ := json.Marshal(map[string]any{"text": page, "links": []string{"/in/mara-s-beispiel/overlay/contact-info/", "/in/mara-s-beispiel/details/"}})
+	var out struct {
+		Person   personDetail
+		Was      store.Pasted
+		Named    bool
+		Drafting bool
+	}
+	if code := call(t, a, "POST", "/api/people/profile", string(body), &out); code != http.StatusOK || out.Person.ID != id || !out.Named || !out.Drafting {
+		t.Fatalf("paste: %d %+v", code, out)
+	}
+	a.Drafts.Wait()
+	var p personDetail
+	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+	if p.Name != "Mara Beispiel" || !strings.Contains(p.Draft, "weil du töpferst.") {
+		t.Errorf("person %q, draft %q", p.Name, p.Draft)
+	}
+	undo, _ := json.Marshal(map[string]any{"as": out.Was})
+	if code := call(t, a, "PUT", "/api/people/"+itoa(id)+"/profile", string(undo), &out); code != http.StatusOK || out.Drafting {
+		t.Errorf("undo: %d, drafting %v", code, out.Drafting)
+	}
+	var refused map[string]string
+	other, _ := json.Marshal(map[string]any{"text": "Ida Neu\n· 2nd\nCoach"})
+	if code := call(t, a, "POST", "/api/people/profile", string(other), &refused); code != http.StatusNotFound || !strings.HasPrefix(refused["error"], "Nobody in the app has this profile") {
+		t.Errorf("nobody: %d %v", code, refused)
+	}
+	if code := call(t, a, "POST", "/api/people/profile", `{"text":" "}`, nil); code != http.StatusBadRequest {
+		t.Errorf("an empty paste: %d", code)
+	}
+}

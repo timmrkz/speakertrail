@@ -512,6 +512,66 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 // ErrNothingPasted is a paste that holds no profile, only white space.
 var ErrNothingPasted = errors.New("the paste holds no text")
 
+// ErrNobodyPasted is a page whose person is not in the app.
+var ErrNobodyPasted = errors.New("nobody in the app has this profile. Paste the link to it in the search to add them")
+
+// ErrManyPasted is a page whose name more than one person here has, and
+// whose links lead to none of them.
+var ErrManyPasted = errors.New("more than one person here has this name. Open the one the page belongs to and paste it again")
+
+// Whose finds the person a LinkedIn page Tim pasted belongs to, wherever
+// he pasted it, so he never has to find them first (Tim, 24 November
+// 2026, #89). hrefs are the links in the page's HTML, see
+// search.PageLinks, and open is the person open in the window, or 0.
+//
+// A person whose link the page holds most often is theirs, since the
+// page's own link stands in many of its links and other people's in a
+// few. So is a person whose link it holds less often when the name on
+// the page is theirs. Else the
+// name on the page tells: the person open when it is theirs, or the one
+// person here with that name. Else the page is the open person's, as
+// it always was, and Paste says when its name is not the one in their
+// link.
+func (e *Engine) Whose(text string, hrefs []string, open int64) (int64, error) {
+	if strings.TrimSpace(text) == "" {
+		return 0, ErrNothingPasted
+	}
+	links := search.PageLinks(hrefs)
+	name := search.PageName(text)
+	var id int64
+	var err error
+	e.Store.Read(func(d *store.Data) {
+		best := -1
+		var named []int64
+		for _, p := range d.People {
+			same := search.SameName(name, p.Name, p.LinkedIn.URL)
+			// A link the page holds less often than another is someone
+			// it shows, like under People also viewed, unless the name
+			// is theirs too.
+			if at := search.LinkNamed(p.LinkedIn.URL, links); at >= 0 && (at == 0 || same) && (best < 0 || at < best) {
+				best, id = at, p.ID
+			}
+			if same {
+				named = append(named, p.ID)
+			}
+		}
+		switch {
+		case best >= 0:
+		case slices.Contains(named, open):
+			id = open
+		case len(named) == 1:
+			id = named[0]
+		case len(named) > 1:
+			err = ErrManyPasted
+		case open != 0 && d.Person(open) != nil:
+			id = open
+		default:
+			err = ErrNobodyPasted
+		}
+	})
+	return id, err
+}
+
 // Stop ends the going run. What it did not get to waits for the next
 // run. It returns once the run has ended.
 func (e *Engine) Stop(id int64) bool {

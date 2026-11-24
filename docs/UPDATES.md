@@ -37,14 +37,17 @@ then on every build comes from GitHub.
 
 1. `.github/workflows/builds.yml` builds the app on a macOS runner, for
    the push's channel: `main`, or `pr-9` for the open pull request of the
-   branch pushed. A branch with no open pull request builds nothing. A
+   branch pushed. A branch with no open pull request builds nothing, so
+   opening or reopening a pull request builds it too: its branch is
+   pushed before it is opened, and a pull request of that one push had
+   no build and was not on the Updates page, as #93 was. A
    commit that only changes the docs against the build there is gets no
    build of its own, see `scripts/needs-build.sh`. The build leaves a zip
    and nothing else. It gets no secret, because a branch runs its own
    copy of this file.
 2. `.github/workflows/publish.yml` runs from main whenever a build starts
    or ends, whatever branch was built. It takes only runs of `builds.yml`
-   started by a push. It works out the channel, commit and version again
+   started by a push or by a pull request opened or reopened. It works out the channel, commit and version again
    from GitHub's own record of the run, and refuses a commit that is not
    in the history of main or of the pull request it is for. It checks
    what the app links and asks for with `cmd/speakertrail-release check`,

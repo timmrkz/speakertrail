@@ -118,13 +118,16 @@ jobs:
             gh run cancel "$run" || true
           done
 
-  # Only a run of builds.yml itself, started by a push. A workflow is
-  # matched above by its name, and any file can take that name.
+  # Only a run of builds.yml itself, started by a push or by a pull
+  # request opened or reopened. A workflow is matched above by its name,
+  # and any file can take that name. A run of a pull request is the
+  # branch's code as a push's is, and its commit goes through the same
+  # check of history below, so it is published the same way.
   publish:
     if: >-
       github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request') &&
       github.event.workflow_run.path == '.github/workflows/builds.yml' &&
       github.event.workflow_run.head_repository.full_name == github.repository
     # On a Mac, for codesign and the keychain, see "Sign it with the
@@ -438,8 +441,8 @@ jobs:
             -f state=success -f context="Ready to update to" \
             -f description="On the Updates page as $CHANNEL" >/dev/null
 
-  # Also when publish was skipped, for a run that was no push of
-  # builds.yml: the close of a pull request is how it leaves the list.
+  # Also when publish was skipped, for a run that built nothing: the close
+  # of a pull request is how it leaves the list.
   list:
     needs: publish
     if: >-

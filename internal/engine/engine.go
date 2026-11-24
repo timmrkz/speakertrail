@@ -455,39 +455,31 @@ func (e *Engine) Remove(id int64) error {
 }
 
 // Paste keeps a profile page Tim copied in his browser as the profile of
-// the person id, see search.Pasted and store.Data.Paste, and reports what
-// they were before, for Undo, and whether the name on the page is the
-// one in their link. A read of them the going run has not begun is
-// dropped. With as, it puts
-// back what they were and reads nothing from the text.
-func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Pasted, named bool, err error) {
+// the person id, see search.Pasted and store.Data.Paste, and reports
+// whether the name on the page is the one in their link. A read of them
+// the going run has not begun is dropped. It is a change Tim makes, so
+// Undo in the Edit menu takes it back, see store.Edit.
+func (e *Engine) Paste(id int64, text string) (named bool, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var runID int64
 	if g := e.going; g != nil {
 		runID = g.id
 	}
-	err = e.Store.Update(func(d *store.Data) error {
+	err = e.Store.Edit(func(d *store.Data) error {
 		p := d.Person(id)
 		if p == nil {
 			return store.ErrNoPerson
 		}
-		was = store.Pasted{Text: p.LinkedIn.Text, Name: p.Name, Headline: p.Headline, City: p.City}
 		now := e.Store.Now()
-		f := store.Pasted{}
-		if as != nil {
-			f = *as
-			f.Text = search.Kept(f.Text)
-		} else {
-			prof, linked := search.Pasted(text, p.LinkedIn.URL)
-			if prof.Text == "" {
-				return ErrNothingPasted
-			}
-			f = store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
-			named = linked
-			if city := cityOf(prof.Location); city != "" {
-				f.City = city
-			}
+		prof, linked := search.Pasted(text, p.LinkedIn.URL)
+		if prof.Text == "" {
+			return ErrNothingPasted
+		}
+		f := store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
+		named = linked
+		if city := cityOf(prof.Location); city != "" {
+			f.City = city
 		}
 		d.Paste(p, f, now)
 		score(p, now)
@@ -496,9 +488,9 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 			run.Links = slices.DeleteFunc(run.Links, func(x int64) bool { return x == id })
 		}
 		return nil
-	})
+	}, store.PersonThing(id))
 	if err != nil {
-		return was, false, err
+		return false, err
 	}
 	if g := e.going; g != nil {
 		g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person == id })
@@ -506,7 +498,7 @@ func (e *Engine) Paste(id int64, text string, as *store.Pasted) (was store.Paste
 		// it is read.
 		delete(g.reading, id)
 	}
-	return was, named, nil
+	return named, nil
 }
 
 // ErrNothingPasted is a paste that holds no profile, only white space.

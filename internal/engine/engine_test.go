@@ -968,7 +968,7 @@ func TestAPasteWhileExaReadsWins(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
-			if _, _, err := e.Paste(out.New[0], page, nil); err != nil {
+			if _, err := e.Paste(out.New[0], page); err != nil {
 				t.Error(err)
 			}
 			e.Reading()

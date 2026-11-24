@@ -7,15 +7,16 @@ import (
 )
 
 // appMenu is the menu Wails gives every app, with one change: Undo and
-// Redo in Edit belong to the page. Ported from FrameFairy's menu.go.
+// Redo in Edit belong to the app. Ported from FrameFairy's menu.go.
 //
 // The stock ones hand the keys to the web view, whose undo only knows
 // about text being typed, and on macOS the menu takes Cmd+Z before the
 // page ever sees it. Report a Problem keeps its own undo, since a
 // dictation writes into its field and Clear empties it, see
 // web/src/screens/Report.svelte. These send the window in front an event
-// called undo, and its page decides: in a field of its own it undoes the
-// field the way the stock one did.
+// called undo, and its page decides: in a field being typed in it undoes
+// the field the way the stock one did, anywhere else it takes back the
+// last change Tim made, see internal/store/history.go.
 func appMenu(app *application.App) *application.Menu {
 	menu := application.NewMenu()
 	if runtime.GOOS != "windows" {
@@ -29,8 +30,9 @@ func appMenu(app *application.App) *application.Menu {
 		}
 	}
 	edit.Add("Undo").SetAccelerator("CmdOrCtrl+z").OnClick(func(*application.Context) { tell("undo") })
-	// Redo is Shift+Cmd+Z, as in every text field on a Mac.
-	edit.Add("Redo").SetAccelerator("CmdOrCtrl+Shift+z").OnClick(func(*application.Context) { tell("redo") })
+	// Redo is Cmd+Y, the key most people know it by, and Ctrl+Y on Linux,
+	// as in FrameFairy and as Tim asked, #71. Shift+Cmd+Z is not bound.
+	edit.Add("Redo").SetAccelerator("CmdOrCtrl+y").OnClick(func(*application.Context) { tell("redo") })
 	edit.AddSeparator()
 	edit.AddRole(application.Cut)
 	edit.AddRole(application.Copy)

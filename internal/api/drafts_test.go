@@ -72,6 +72,14 @@ func TestDraftAFirstMessage(t *testing.T) {
 	if p.Draft != "" || p.DraftedAt != nil {
 		t.Errorf("emptied draft %q drafted at %v", p.Draft, p.DraftedAt)
 	}
+	// Undo in the Edit menu takes each back, the drafted message too.
+	for _, want := range []string{"Hallo Mara, danke!", "Hallo Mara,\n\nsuper cool", ""} {
+		call(t, a, "POST", "/api/undo", "{}", nil)
+		call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+		if !strings.HasPrefix(p.Draft, want) || (want == "") != (p.DraftedAt == nil) {
+			t.Errorf("after undo the draft is %q drafted at %v, want %q", p.Draft, p.DraftedAt, want)
+		}
+	}
 	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft/cancel", "{}", nil); code != http.StatusConflict {
 		t.Errorf("cancel with nothing under way: %d", code)
 	}

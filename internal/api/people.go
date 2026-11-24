@@ -376,21 +376,20 @@ func (a *API) detail(id int64) *personDetail {
 }
 
 // pasteProfile keeps a LinkedIn page Tim copied in his browser as a
-// person's profile, see engine.Paste. With as, it puts back what Undo
-// had kept.
+// person's profile, see engine.Paste. Undo in the Edit menu takes it
+// back.
 func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Text string        `json:"text"`
-		As   *store.Pasted `json:"as"`
+		Text string `json:"text"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	was, named, err := a.Engine.Paste(id, body.Text, body.As)
+	named, err := a.Engine.Paste(id, body.Text)
 	switch {
 	case errors.Is(err, store.ErrNoPerson):
 		fail(w, http.StatusNotFound, "Not found")
@@ -409,9 +408,8 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	send(w, http.StatusOK, struct {
 		Person *personDetail `json:"person"`
-		Was    store.Pasted  `json:"was"`
 		Named  bool          `json:"named"`
-	}{out, was, named})
+	}{out, named})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

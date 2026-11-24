@@ -465,7 +465,9 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		hook = Hook{}
 	}
 	written := message.with(hook)
-	err = d.Store.Update(func(data *store.Data) error {
+	// Tim pressed Draft, so the message is his change, and Undo in the
+	// Edit menu puts back the one before. How long it took is not.
+	err = d.Store.Edit(func(data *store.Data) error {
 		p := data.Person(id)
 		if p == nil {
 			return errors.New("they were removed while the message was written")
@@ -473,7 +475,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		p.Draft, p.DraftedAt, p.UpdatedAt = written, d.now(), d.now()
 		data.Drafted(took)
 		return nil
-	})
+	}, store.PersonThing(id))
 	if err != nil {
 		return err
 	}

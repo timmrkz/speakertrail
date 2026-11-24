@@ -150,6 +150,117 @@ const walks = [
     },
   },
   {
+    // Tim, 23 November 2026, #83: the message he sent, copied from
+    // LinkedIn's message field in Chrome, came into Notes with three
+    // empty lines where it had one. That field writes a line as a
+    // paragraph and an empty line as an empty paragraph, and Chrome's
+    // plain text ends each paragraph with an empty line. The copy here is
+    // Chromium's own, from a field built the same way.
+    name: 'A message copied from a web page pastes into Notes and the first message with its empty lines as they were',
+    async run(page) {
+      const sent = 'Hallo Mara,\n\nschön mit dir vernetzt zu sein.\nDu bist mir aufgefallen.\n\nLiebe Grüße, Tim'
+      const site = await page.context().newPage()
+      await site.setContent(`<meta charset="utf-8"><style>p { margin: 0 }</style><div contenteditable="true" role="textbox">${sent.split('\n').map((l) => `<p>${l || '<br>'}</p>`).join('')}</div>`)
+      await site.locator('[contenteditable]').click()
+      await site.keyboard.press('Control+A')
+      await site.keyboard.press('Control+C')
+      await site.close()
+      await page.goto(`${url}/app/people/1003`)
+      await page.locator('.person .actions a.btn').waitFor()
+      await keepDraft(page, 1003, '')
+      await page.reload()
+      const notes = page.locator('#notes-1003')
+      await notes.click()
+      await page.keyboard.press('Control+V')
+      let got = await notes.inputValue()
+      if (got !== sent) return `Notes took ${JSON.stringify(got)}, want ${JSON.stringify(sent)}`
+      await notes.blur()
+      await page.locator('.note-state').filter({ hasText: 'Saved' }).waitFor()
+      if ((await person(page, 1003)).notes !== sent) return `Notes kept ${JSON.stringify((await person(page, 1003)).notes)}`
+      // A paste is undone as one, as every paste on a Mac is.
+      await notes.click()
+      await page.keyboard.press('Control+End')
+      await page.keyboard.press('Control+V')
+      await page.keyboard.press('Control+Z')
+      got = await notes.inputValue()
+      if (got !== sent) return `Cmd+Z after a paste left ${JSON.stringify(got)}`
+      const box = page.locator('.first-message textarea')
+      await box.click()
+      await page.keyboard.press('Control+V')
+      got = await box.inputValue()
+      if (got !== sent) return `the first message took ${JSON.stringify(got)}, want ${JSON.stringify(sent)}`
+      await box.blur()
+      await page.waitForFunction(() => document.querySelector('.first-message .state')?.textContent === 'Saved')
+      if ((await person(page, 1003)).draft !== sent) return 'the pasted first message was not kept as it was'
+      await keepDraft(page, 1003, '')
+      await page.evaluate(() => fetch('/api/people/1003', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: '' }) }))
+      return ''
+    },
+  },
+  {
+    // Text with no page around it, copied from a field or another app,
+    // goes in as it was copied, empty lines and all.
+    name: 'Text copied from a text field pastes into Notes as it was',
+    async run(page) {
+      const copied = 'Erste Zeile\n\n\nnach drei Umbrüchen\n  eingerückt'
+      const site = await page.context().newPage()
+      await site.setContent('<textarea></textarea>')
+      await site.locator('textarea').fill(copied)
+      await site.locator('textarea').press('Control+A')
+      await site.locator('textarea').press('Control+C')
+      await site.close()
+      await page.goto(`${url}/app/people/1003`)
+      await page.evaluate(() => fetch('/api/people/1003', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes: '' }) }))
+      await page.reload()
+      const notes = page.locator('#notes-1003')
+      await notes.click()
+      await page.keyboard.press('Control+V')
+      const got = await notes.inputValue()
+      if (got !== copied) return `Notes took ${JSON.stringify(got)}, want ${JSON.stringify(copied)}`
+      return ''
+    },
+  },
+  {
+    // Every other page pastes as before, as Chrome's plain text has it:
+    // paragraphs with a gap under or over them, a page built like a
+    // document editor's, a heading, a list, a table, a line break inside
+    // a paragraph, and text kept as it is written. Only a page that
+    // writes empty lines as empty paragraphs is read anew (review of #84).
+    name: 'A paste from any other page goes into Notes as a plain text field takes it',
+    async run(page) {
+      const pages = {
+        'paragraphs with a gap under them': '<p>Erster Absatz.</p><p>Zweiter Absatz.</p>',
+        'paragraphs with a gap over them': '<style>p { margin: 0 } p + p { margin-top: 1em }</style><p>Erster Absatz.</p><p>Zweiter Absatz.</p>',
+        'a document editor': '<b style="font-weight: normal"><p dir="ltr" style="margin: 0 0 12pt"><span>A</span></p><p dir="ltr" style="margin: 0"><span>B</span></p><p dir="ltr" style="margin: 0"><span>C</span></p></b>',
+        'a heading': '<h2>Überschrift</h2><p>Text darunter.</p>',
+        'a list and a table': '<ul><li>eins</li><li>zwei</li></ul><table><tr><td>a</td><td>b</td></tr></table>',
+        'a line break inside a paragraph': '<p>Zeile eins<br>Zeile zwei</p><p>Danach.</p>',
+        'text kept as written': '<pre>  eingerückt\n\n\n  drei Umbrüche</pre>',
+      }
+      const site = await page.context().newPage()
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('#notes-1003')
+      for (const [what, html] of Object.entries(pages)) {
+        await site.setContent(`<meta charset="utf-8">${html}`)
+        await site.keyboard.press('Control+A')
+        await site.keyboard.press('Control+C')
+        await site.setContent('<textarea></textarea>')
+        await site.locator('textarea').click()
+        await site.keyboard.press('Control+V')
+        const want = await site.locator('textarea').inputValue()
+        await notes.fill('')
+        await notes.click()
+        await page.keyboard.press('Control+V')
+        const got = await notes.inputValue()
+        if (got !== want) return `from ${what} Notes took ${JSON.stringify(got)}, a plain field ${JSON.stringify(want)}`
+      }
+      await site.close()
+      await notes.fill('')
+      await notes.blur()
+      return ''
+    },
+  },
+  {
     // The review of 22 November 2026: a person opened before answered
     // late and put their name over the one opened after. Holding an arrow
     // key through the list does that.
@@ -523,7 +634,10 @@ const walks = [
 const browser = await chromium.launch()
 let failed = 0
 for (const w of walks) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 860 } })
+  // A context of its own, so a walk can open a second page beside it to
+  // copy from.
+  const context = await browser.newContext({ viewport: { width: 1440, height: 860 } })
+  const page = await context.newPage()
   const errors = []
   page.on('pageerror', (e) => errors.push(e.message))
   let wrong
@@ -535,7 +649,7 @@ for (const w of walks) {
   if (!wrong && errors.length) wrong = `the page threw: ${errors.join(', ')}`
   console.log(`${wrong ? 'FAIL' : 'ok  '}\t${w.name}${wrong ? `\n\t${wrong}` : ''}`)
   if (wrong) failed++
-  await page.close()
+  await context.close()
 }
 await browser.close()
 await server.close()

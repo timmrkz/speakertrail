@@ -5,28 +5,16 @@
 // the app gives what the speech model wrote down. `make walks` runs
 // them, and so does CI.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 // The report window, at its own size, with the draft the last walk left
-// sent off, so every walk starts from an empty report.
+// sent off before it opens, so every walk starts from an empty report.
+// Not sent from the window: a window that goes keeps its words in the
+// draft, so a reload after the send put the last walk's words back.
 async function openReport(page) {
   await page.setViewportSize({ width: 560, height: 640 })
+  await page.request.post(`${url}/api/report/send`, { data: {} })
   await page.goto(`${url}/report`)
-  await page.evaluate(() => fetch('/api/report/send', { method: 'POST', body: '{}' }))
-  await page.reload()
   await page.locator('textarea.telling').waitFor()
 }
 
@@ -52,8 +40,9 @@ const walks = [
       await dictate.click()
       if ((await dictate.getAttribute('aria-label')) !== 'Stop') return `Dictate says ${await dictate.getAttribute('aria-label')} while it listens`
       await listening
+      const stopped = page.waitForResponse((r) => r.url().endsWith('/api/listen/stop'))
       await page.keyboard.press('Enter')
-      await page.waitForResponse((r) => r.url().endsWith('/api/listen/stop'))
+      await stopped
       await page.waitForFunction(() => document.querySelector('button.dictate')?.getAttribute('aria-label') === 'Dictate')
       const text = await field.inputValue()
       if (text !== 'It froze. The run stopped at the third search.') return `the field reads ${JSON.stringify(text)}`
@@ -116,8 +105,9 @@ const walks = [
       if (between !== 1) return `the answer to the remove left ${between} pictures while the put back was on its way`
       if ((await page.locator('.pictures figure').count()) !== 1) return 'the picture put back is gone'
       await page.locator('button.clear').click()
+      const cleared = page.waitForResponse((r) => r.url().endsWith('/api/report/clear'))
       await page.locator('dialog[open] button.danger').click()
-      await page.waitForResponse((r) => r.url().endsWith('/api/report/clear'))
+      await cleared
       if ((await page.locator('.pictures figure').count()) !== 0) return 'Clear left a picture'
       const back = page.waitForResponse((r) => r.url().endsWith('/api/report/put-back'))
       await page.keyboard.press('ControlOrMeta+z')
@@ -148,8 +138,9 @@ const walks = [
       await button.click()
       await page.locator('button.make .beam').waitFor()
       const during = (await button.textContent()).trim()
+      const sent = page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
       make()
-      await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
+      await sent
       await page.waitForFunction(() => document.querySelector('textarea.telling').value === '')
       if (during !== 'Making…') return `Report says ${JSON.stringify(during)} while making`
       return ''
@@ -202,8 +193,9 @@ const walks = [
       const listening = page.waitForResponse((r) => r.url().endsWith('/api/listen'))
       await page.locator('button.dictate').click()
       await listening
+      const stopped = page.waitForResponse((r) => r.url().endsWith('/api/listen/stop'))
       await page.keyboard.press('Enter')
-      await page.waitForResponse((r) => r.url().endsWith('/api/listen/stop'))
+      await stopped
       await page.waitForFunction(() => document.querySelector('button.dictate')?.getAttribute('aria-label') === 'Dictate')
       await page.keyboard.press('Tab')
       if ((await where()) !== 'Report') return `after dictating Tab went to ${await where()}, want Report`
@@ -246,8 +238,9 @@ const walks = [
       await people.click()
       await page.locator('button.make').click()
       await page.locator('button.make .beam').waitFor()
+      const sent = page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
       hold()
-      await page.waitForResponse((r) => r.url().endsWith('/api/report/send'))
+      await sent
       if (order.join(',') !== 'kept,send') return `Report did not wait for People: ${order.join(',')}`
       await page.waitForFunction(() => document.querySelector('button.people')?.getAttribute('aria-pressed') === 'false')
       return ''

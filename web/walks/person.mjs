@@ -1,20 +1,7 @@
 // Walks through the person view against the mock, in Chromium, the way
 // walks/sidebar.mjs does. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.profiles[0].review), id)
 
@@ -418,7 +405,9 @@ const walks = [
     async run(page) {
       await page.goto(`${url}/app/people`)
       await page.locator('main .filters button', { hasText: 'Connected' }).click()
-      const name = await page.locator('.prow b').first().innerText()
+      // The list under Connected, not the one under All still shown
+      // until it is in.
+      const name = await page.locator('.prow', { has: page.locator('.connected') }).first().locator('b').innerText()
       await page.locator('main .filters button', { hasText: 'All' }).click()
       await page.getByRole('searchbox', { name: 'Search people' }).or(page.getByLabel('Search people')).first().fill(name)
       const empty = page.locator('.rows-wrap', { hasText: 'Only under Connected' })
@@ -441,7 +430,7 @@ const walks = [
       const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
       await page.goto(`${url}/app/people`)
       await page.locator('.prow').first().waitFor()
-      await page.waitForLoadState('networkidle')
+      await page.locator('main .filters button', { hasText: 'Connected' }).locator('.n').waitFor()
       const before = await rows()
       if (await page.locator('.prow', { hasText: 'Connected' }).count()) return 'someone connected is listed under All'
       const all = await count('All')
@@ -466,6 +455,10 @@ const walks = [
       await page.locator(`#${id}`).waitFor({ state: 'detached' })
       await page.locator('main .filters button', { hasText: 'All' }).click()
       await page.locator(`#${id}`).waitFor()
+      // The emptied search is asked a moment after the last key, so the
+      // list of the search can show first. The whole list is back once
+      // it has as many rows as before.
+      await page.locator('.prow').nth(before.length - 1).waitFor()
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`taken back, the list is ${await rows()}, was ${before}`)
       if ((await count('All')) !== all) wrong.push(`taken back, All counts ${await count('All')}, want ${all}`)
       return wrong.join('\n\t')
@@ -561,6 +554,10 @@ const walks = [
       await page.getByLabel('Search people').first().fill('')
       await page.locator('main .filters button', { hasText: 'All' }).click()
       await page.locator(`#${id}`).waitFor()
+      // The emptied search is asked a moment after the last key, so the
+      // list of the search can show first. The whole list is back once
+      // it has as many rows as before.
+      await page.locator('.prow').nth(before.length - 1).waitFor()
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`undone, the list is ${await rows()}, was ${before}`)
       if ((await count('Rejected')) !== rejected) wrong.push(`undone, Rejected counts ${await count('Rejected')}, want ${rejected}`)
       return wrong.join('\n\t')

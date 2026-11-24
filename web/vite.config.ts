@@ -23,7 +23,7 @@ export default defineConfig(async ({ command, mode }) => {
   const plugins: PluginOption[] = [svelte(), keepFile()]
   if (mock) {
     const { mockApi } = await import('./mock/plugin.ts')
-    plugins.push(mockApi())
+    plugins.push(mockApi(env.MOCK_DELAY_MS ? { delayMs: Number(env.MOCK_DELAY_MS) } : {}))
   }
   const proxy = mock ? undefined : { '/api': env.API_URL || 'http://localhost:8080' }
   const host = env.SPEAKERTRAIL_IN_DOCKER === '1' ? '0.0.0.0' : undefined

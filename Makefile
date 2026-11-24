@@ -204,7 +204,7 @@ lint: toolchain golangci-lint
 	@$(GO) vet ./...
 	@printf 'ok  \tgo vet\n'
 	@out=$$($(GOLANGCI_LINT) run ./... 2>&1) || { echo "$$out"; exit 1; }
-	@printf 'ok  \tour code logs into the app log\n'
+	@printf 'ok  \tgolangci-lint: our code logs into the app log, and no test waits on the clock\n'
 
 # The release golangci-lint builds and checks against its own checksums,
 # as its install.sh does. Not install.sh itself, which asks github.com's
@@ -223,9 +223,13 @@ $(GOLANGCI_LINT):
 		status=$$?; rm -rf $$tmp; exit $$status
 
 # The race detector is always on: runs ask several searches side by side,
-# and a race there only shows on someone else's machine.
+# and a race there only shows on someone else's machine. Go's test cache
+# is on, so a package whose code, and the files and environment its tests
+# read, did not change is not tested again, see the testing skill. A
+# package whose tests take longer than two minutes is stopped with every
+# goroutine's stack, well inside the limit of CI's go job.
 unit:
-	@$(GO) test -race -count=1 ./...
+	@$(GO) test -race -timeout 2m ./...
 	@sh scripts/needs-build-test.sh >/dev/null && printf 'ok  \tscripts/needs-build.sh\n'
 
 interface: web/node_modules/.package-lock.json
@@ -235,9 +239,15 @@ interface: web/node_modules/.package-lock.json
 	@printf 'ok  \tinterface tests\n'
 
 # The walks drive the interface with invented data in Chromium, the way
-# FrameFairy's walks drive its own, see web/walks/.
+# FrameFairy's walks drive its own, see web/walks/. Every file there is
+# one, a new one runs by being there. Node's own test runner runs them
+# side by side, each file in a process of its own with its own mock and
+# Chromium, as many at once as the machine has cores but one, in the
+# order of their names. A file that takes longer than WALK_LIMIT is
+# stopped and fails, well inside the limit of CI's web job.
+WALK_LIMIT := 120000
 walks: web/node_modules/.package-lock.json
-	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/links.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/draft.mjs && node walks/template.mjs && node walks/focus.mjs && node walks/beam.mjs && node walks/pick.mjs && node walks/updates.mjs && node walks/look.mjs
+	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) walks/*.mjs
 
 check:
 	@sh scripts/check.sh || true

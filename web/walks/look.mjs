@@ -6,20 +6,7 @@
 // everywhere. The light of work in hand, the beam of Busy.svelte, glows
 // on purpose and is left out. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 // The helpers the page needs, put on window once it has loaded: a colour
 // in any CSS syntax as the four bytes a canvas paints it with, the solid
@@ -143,6 +130,16 @@ async function greyed(page, controls) {
   return wrong
 }
 
+// Once what moves on the page has come to rest, as the list narrows for
+// a person and the sheet slides in, so what is measured is where things
+// stop. The next frame first, where a transition just asked for starts,
+// then the end of every animation that ends, since the pulse of work in
+// hand never does.
+const still = (page) => page.evaluate(async () => {
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
+  await Promise.all(document.getAnimations().filter((a) => a.effect?.getComputedTiming().endTime !== Infinity).map((a) => a.finished.catch(() => {})))
+})
+
 const walks = []
 for (const theme of ['light', 'dark']) {
   walks.push({
@@ -150,10 +147,11 @@ for (const theme of ['light', 'dark']) {
     name: `In ${theme}, no screen casts a shadow or blurs what is behind it`,
     async run(page) {
       const found = []
-      for (const path of ['/app/people', '/app/searches', '/app/settings', '/app/updates', '/report']) {
+      // Each page with what it shows once its answers are in, the last
+      // thing it draws.
+      for (const [path, ready] of [['/app/people', '.prow'], ['/app/searches', 'main button.toggle'], ['/app/settings', '#linkedin-profile:enabled'], ['/app/updates', 'main button.act'], ['/report', 'textarea.telling']]) {
         await page.goto(`${url}${path}`)
-        await page.locator('main, .report').first().waitFor()
-        await page.waitForLoadState('networkidle')
+        await page.locator(ready).first().waitFor()
         found.push(...(await deep(page)).map((f) => `${path}: ${f}`))
       }
       // A person in a sheet, in a narrow window.
@@ -270,8 +268,7 @@ for (const theme of ['light', 'dark']) {
     name: `In ${theme}, the controls of Settings and Searches read in every state, and chosen is the same tint as in People`,
     async run(page) {
       await page.goto(`${url}/app/settings`)
-      await page.locator('main button', { hasText: 'System' }).waitFor()
-      await page.waitForLoadState('networkidle')
+      await page.locator('#linkedin-profile:enabled').waitFor()
       await page.evaluate(helpers)
       const wrong = []
       const controls = [
@@ -415,44 +412,6 @@ for (const theme of ['light', 'dark']) {
       return wrong.join('\n\t')
     },
   })
-  walks.push({
-    theme,
-    name: `In ${theme}, a profile being read fills its row, the fill shows, and the name and its line read over it`,
-    async run(page) {
-      // Tim asked on 22 November 2026, #43, for the row of someone added
-      // from a link to fill while Exa reads their profile, the way a clip
-      // fills its card in FrameFairy. The fill lies under the words, so
-      // they have to read over its strongest end as well as its faintest.
-      await page.goto(`${url}/app/people`)
-      await page.locator('main .search input').fill(`https://www.linkedin.com/in/look-probe-${theme}`)
-      await page.locator('main .search input').press('Enter')
-      const fill = page.locator('main .prow.reading .fill i').first()
-      await fill.waitFor()
-      await page.evaluate(helpers)
-      const m = await fill.evaluate((i) => {
-        const { bytes, over, ground, contrast } = window.look
-        const row = i.closest('.prow')
-        const under = ground(row)
-        const stops = (getComputedStyle(i).backgroundImage.match(/(rgba?|color)\([^)]*\)/g) ?? []).map((c) => over(bytes(c), under))
-        const name = bytes(getComputedStyle(row.querySelector('b')).color)
-        const line = bytes(getComputedStyle(row.querySelector('.sub')).color)
-        return {
-          stops: stops.length,
-          fill: Math.min(...stops.map((c) => contrast(c, under))),
-          name: Math.min(...stops.map((c) => contrast(name, c))),
-          line: Math.min(...stops.map((c) => contrast(line, c))),
-        }
-      })
-      // The run ends, so the walks after this one find the mock at rest.
-      await page.locator('main button.start', { hasText: /^\s*Run\s*$/ }).waitFor({ timeout: 30000 })
-      const wrong = []
-      if (m.stops < 2) wrong.push(`the fill has ${m.stops} colours`)
-      if (m.fill < 1.15) wrong.push(`the fill stands out from the row at ${m.fill.toFixed(2)} to 1`)
-      if (m.name < 4.5) wrong.push(`the name reads over the fill at ${m.name.toFixed(2)} to 1`)
-      if (m.line < 4.5) wrong.push(`its line reads over the fill at ${m.line.toFixed(2)} to 1`)
-      return wrong.join(', ')
-    },
-  })
 }
 
 // The gaps are the same in both themes, so this walk runs once.
@@ -594,6 +553,7 @@ walks.push({
       if (size.width === 1280) {
         await page.locator('.prow').first().click()
         await page.locator('.person .connect').waitFor()
+        await still(page)
         // With a person open the list is narrower than its column, so
         // it stands --pad in, as the person does.
         const narrowed = await box('.list-pane')
@@ -611,6 +571,7 @@ walks.push({
       } else {
         await page.locator('.prow').first().click()
         await page.locator('.sheet .person .connect').waitFor()
+        await still(page)
         const sheet = await box('.sheet')
         const bar = await box('.sheet-bar')
         const row = await box('.sheet .person .actions')
@@ -633,6 +594,47 @@ walks.push({
     return wrong.join('\n\t')
   },
 })
+
+// Last, since each starts a run that goes on after it, while the walks
+// before them want the mock at rest. Nothing waits for the runs to end.
+for (const theme of ['light', 'dark']) {
+  walks.push({
+    theme,
+    name: `In ${theme}, a profile being read fills its row, the fill shows, and the name and its line read over it`,
+    async run(page) {
+      // Tim asked on 22 November 2026, #43, for the row of someone added
+      // from a link to fill while Exa reads their profile, the way a clip
+      // fills its card in FrameFairy. The fill lies under the words, so
+      // they have to read over its strongest end as well as its faintest.
+      await page.goto(`${url}/app/people`)
+      await page.locator('main .search input').fill(`https://www.linkedin.com/in/look-probe-${theme}`)
+      await page.locator('main .search input').press('Enter')
+      const fill = page.locator('main .prow.reading .fill i').first()
+      await fill.waitFor()
+      await page.evaluate(helpers)
+      const m = await fill.evaluate((i) => {
+        const { bytes, over, ground, contrast } = window.look
+        const row = i.closest('.prow')
+        const under = ground(row)
+        const stops = (getComputedStyle(i).backgroundImage.match(/(rgba?|color)\([^)]*\)/g) ?? []).map((c) => over(bytes(c), under))
+        const name = bytes(getComputedStyle(row.querySelector('b')).color)
+        const line = bytes(getComputedStyle(row.querySelector('.sub')).color)
+        return {
+          stops: stops.length,
+          fill: Math.min(...stops.map((c) => contrast(c, under))),
+          name: Math.min(...stops.map((c) => contrast(name, c))),
+          line: Math.min(...stops.map((c) => contrast(line, c))),
+        }
+      })
+      const wrong = []
+      if (m.stops < 2) wrong.push(`the fill has ${m.stops} colours`)
+      if (m.fill < 1.15) wrong.push(`the fill stands out from the row at ${m.fill.toFixed(2)} to 1`)
+      if (m.name < 4.5) wrong.push(`the name reads over the fill at ${m.name.toFixed(2)} to 1`)
+      if (m.line < 4.5) wrong.push(`its line reads over the fill at ${m.line.toFixed(2)} to 1`)
+      return wrong.join(', ')
+    },
+  })
+}
 
 const browser = await chromium.launch()
 let failed = 0

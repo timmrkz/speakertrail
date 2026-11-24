@@ -208,7 +208,10 @@ func testUpdating(t *testing.T, cs *channelServer, busy bool, own, stored string
 	if cs.client != nil {
 		client = cs.client
 	}
-	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: client}
+	// A list that answers 404 is asked again three times, as the app
+	// does, with no wait between, since the app's waits add up to seven
+	// seconds of a test's time and its tries are what is tested.
+	src := &updates.Source{URL: cs.srv.URL + "/channels.json", Client: client, Retries: make([]time.Duration, 3)}
 	c.setUp(updater.New(quietHost{}), cs.publicKey(), src, inApp, "darwin")
 	if c.state.Off != "" {
 		t.Fatalf("off: %s", c.state.Off)

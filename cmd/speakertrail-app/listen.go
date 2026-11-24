@@ -660,6 +660,10 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			return
 		}
 		samples, base := r.recorded()
+		// Words the window settled are matched to an earlier hearing,
+		// which never lies before what the recording holds, but nothing
+		// here may read before it.
+		settled = max(settled, base)
 		deaf := ""
 		if len(samples) >= listenUnheard && silent(samples) {
 			deaf = heardNothing()
@@ -826,8 +830,10 @@ func (l *listening) finish(r *recording, rec speech.Recognizer, said []string, s
 	}
 	hearing := time.Now()
 	// What was said and a pause after it, not the silence beyond, see
-	// write.
-	samples = samples[:min(len(samples), r.spoken()+speech.SettleSamples-base)]
+	// write. A recording that let go of everything up to past the last
+	// word, after new lines typed long after it, has nothing more.
+	samples = samples[:max(min(len(samples), r.spoken()+speech.SettleSamples-base), 0)]
+	settled = max(settled, base)
 	if _, rest := heardAround(rec, samples, settled-base, settled-base); rest != "" {
 		said = append(said, rest)
 	}

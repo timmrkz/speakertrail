@@ -204,6 +204,43 @@ func TestAnOlderMeasurementNeverOvertakesANewerOne(t *testing.T) {
 	}
 }
 
+// A measurement that was the newest when it was used is told before any
+// later one is used, so it can never be told after a newer one. While
+// the page is being told, no other measurement may be used, and the test
+// holds the telling back and tries the lock that keeps that true, the
+// other half of issue #20.
+func TestNothingIsUsedWhileThePageIsBeingTold(t *testing.T) {
+	t.Parallel()
+	telling, release := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var told []Chrome
+	c := &chromeWatch{
+		ask: func(*application.WebviewWindow) chromeRaw { return chromeRaw{bar: 52, left: 20, right: 92} },
+		tell: func(now Chrome) {
+			mu.Lock()
+			first := len(told) == 0
+			told = append(told, now)
+			mu.Unlock()
+			if first {
+				close(telling)
+				<-release
+			}
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.publish()
+	}()
+	<-telling
+	if c.telling.TryLock() {
+		c.telling.Unlock()
+		t.Error("while the page was being told, another measurement could have been used and told before it")
+	}
+	close(release)
+	<-done
+}
+
 // The page asks /api/chrome while window events are measured too. An
 // answer measured before a newer one was taken is not given, the newer
 // one is.

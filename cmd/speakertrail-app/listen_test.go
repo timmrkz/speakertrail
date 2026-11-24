@@ -732,6 +732,48 @@ func TestTalkingForLongerThanARecordingHoldsGoesOn(t *testing.T) {
 	}
 }
 
+// Typing at the end of what was said while nobody speaks cuts the
+// recording again and again, and the recording lets go of what lies
+// before the cuts, past the last word. Stop then still gives what was
+// said. The review of #86 found it failing with "the speech model
+// stopped unexpectedly".
+func TestStopAfterTypingLongAfterTheLastWord(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
+			l.most = 8 * speech.SampleRate
+			l.behind = listenAround
+		})
+		mic.say(tone(1.2))
+		recording := awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" }).Recording
+		// Ten seconds nobody speaks in, with a new line typed every two.
+		for n := 1; n <= 5; n++ {
+			mic.say(hush(2))
+			f.BreakListening(recording, n-1)
+			awaitTold(t, told, func(d Dictation) bool { return d.Asked == n })
+		}
+		f.mu.Lock()
+		r := f.now
+		f.mu.Unlock()
+		if r == nil {
+			t.Fatal("the recording is no longer in hand")
+		}
+		r.mu.Lock()
+		from, spoke := r.from, r.spokeTo
+		r.mu.Unlock()
+		if from <= spoke {
+			t.Fatalf("the recording still holds the last word, from %d, spoken to %d, so this shows nothing", from, spoke)
+		}
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stopped.Said) == 0 || stopped.Said[0] != "wort wort" {
+			t.Errorf("Stop gave %q, want the two words first", stopped.Said)
+		}
+	})
+}
+
 // Stop pressed while a recording that stopped by itself is still being
 // written down waits for it and gives every word, rather than nothing.
 // The review of #190 found the last piece lost that way.

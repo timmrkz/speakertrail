@@ -34,7 +34,7 @@ func Pasted(text, link string) (p Profile, linked bool) {
 	start := 0
 	i, linked := nameLine(top, link)
 	if i >= 0 {
-		p.Name, start = nameIn(top[i], spelled(linkName(link))), i
+		p.Name, start = nameIn(top[i], linkNames(link)), i
 		top = top[start:]
 		p.Headline, p.Location = topLines(top[1:])
 	}
@@ -94,11 +94,19 @@ func sectioned(text string) (top []string, sections map[string][]string) {
 		}
 		*at = append(*at, l)
 	}
-	for _, l := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	for i, l := range lines {
 		l = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(l), "… more"))
 		lower := strings.ToLower(l)
 		if h, ok := headings[lower]; ok {
 			cur, skip = h, h == ""
+			continue
+		}
+		// LinkedIn's footer, and the message window over the page, are
+		// left out up to the next heading. Tim's own name stands in the
+		// message window, and theirs as someone to write to.
+		if footer(lower, lines[i+1:]) || strings.Contains(lower, "you are on the messaging overlay") {
+			skip = true
 			continue
 		}
 		if slices.ContainsFunc(otherPeople, func(h string) bool { return strings.HasPrefix(lower, h) }) {
@@ -113,6 +121,21 @@ func sectioned(text string) (top []string, sections map[string][]string) {
 	return top, sections
 }
 
+// footer says whether a line starts LinkedIn's footer: Accessibility,
+// and Talent Solutions as the next line that is not empty. A skill
+// called Accessibility has no Talent Solutions after it.
+func footer(lower string, rest []string) bool {
+	if lower != "accessibility" && lower != "barrierefreiheit" {
+		return false
+	}
+	for _, l := range rest {
+		if l = strings.TrimSpace(l); l != "" {
+			return strings.EqualFold(l, "Talent Solutions")
+		}
+	}
+	return false
+}
+
 // nameLine is where the name stands in the top of a page: the line that
 // spells the name in the link, also without initials, as "Mara S.
 // Beispiel" under /in/marabeispiel, or that holds it among more, like
@@ -120,8 +143,7 @@ func sectioned(text string) (top []string, sections map[string][]string) {
 // it is the line right above how near Tim is to them, "· 1st", where
 // LinkedIn puts the name. -1 when it is none of these.
 func nameLine(top []string, link string) (at int, linked bool) {
-	name := spelled(linkName(link))
-	if name != "" {
+	for _, name := range linkNames(link) {
 		for i, l := range top {
 			if spelled(l) == name || spelled(withoutInitials(l)) == name {
 				return i, true
@@ -144,6 +166,22 @@ func nameLine(top []string, link string) (at int, linked bool) {
 		}
 	}
 	return -1, false
+}
+
+// linkNames are the ways the name in a link is spelled, see spelled:
+// whole, and without the initials in it, so mara-s-beispiel is "Mara
+// Beispiel" on her page too (Tim's report of 24 November 2026). None
+// for a link without a name.
+func linkNames(link string) []string {
+	whole := spelled(linkName(link))
+	if whole == "" {
+		return nil
+	}
+	names := []string{whole}
+	if short := spelled(withoutInitials(strings.ReplaceAll(linkName(link), "-", " "))); short != "" && short != whole {
+		names = append(names, short)
+	}
+	return names
 }
 
 // withoutInitials is a name without its initials, "Mara Beispiel" for
@@ -206,11 +244,12 @@ func isPlace(l string) bool {
 }
 
 // nameIn is the name in a line that holds more, like "Mara Beispiel |
-// Coach 🌱": the part before a mark that holds the name, without the
-// marks and pictures after it.
-func nameIn(l, name string) string {
+// Coach 🌱": the part before a mark that holds one of names, or any
+// part before a mark for a link without a name, without the marks and
+// pictures after it.
+func nameIn(l string, names []string) string {
 	for _, sep := range []string{" | ", " · ", " – ", " - "} {
-		if before, _, ok := strings.Cut(l, sep); ok && strings.Contains(spelled(before), name) {
+		if before, _, ok := strings.Cut(l, sep); ok && (len(names) == 0 || slices.ContainsFunc(names, func(n string) bool { return strings.Contains(spelled(before), n) })) {
 			l = before
 		}
 	}

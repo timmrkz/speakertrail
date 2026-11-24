@@ -430,7 +430,7 @@ const walks = [
       const rows = () => page.locator('.prow').evaluateAll((rs) => rs.map((r) => r.id))
       await page.goto(`${url}/app/people`)
       await page.locator('.prow').first().waitFor()
-      await page.waitForLoadState('networkidle')
+      await page.locator('main .filters button', { hasText: 'Connected' }).locator('.n').waitFor()
       const before = await rows()
       if (await page.locator('.prow', { hasText: 'Connected' }).count()) return 'someone connected is listed under All'
       const all = await count('All')

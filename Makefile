@@ -235,9 +235,20 @@ interface: web/node_modules/.package-lock.json
 	@printf 'ok  \tinterface tests\n'
 
 # The walks drive the interface with invented data in Chromium, the way
-# FrameFairy's walks drive its own, see web/walks/.
+# FrameFairy's walks drive its own, see web/walks/. Every file there is
+# one, a new one runs by being there. Node's own test runner runs them
+# side by side, each file in a process of its own with its own mock and
+# Chromium, as many at once as the machine has cores but one. The longest
+# start first, so the short ones fill in beside them. A file that takes
+# longer than WALK_LIMIT is stopped and fails, well inside the limit of
+# CI's web job.
+WALKS_FIRST := look person links focus template draft report
+WALKS := $(WALKS_FIRST:%=walks/%.mjs) $(filter-out $(WALKS_FIRST:%=walks/%.mjs),$(patsubst web/%,%,$(wildcard web/walks/*.mjs)))
+WALK_LIMIT := 120000
+WALKS_GONE := $(filter-out $(wildcard web/walks/*.mjs),$(WALKS_FIRST:%=web/walks/%.mjs))
 walks: web/node_modules/.package-lock.json
-	@cd web && node walks/sidebar.mjs && node walks/person.mjs && node walks/links.mjs && node walks/titlebar.mjs && node walks/logs.mjs && node walks/report.mjs && node walks/quit.mjs && node walks/speech.mjs && node walks/draft.mjs && node walks/template.mjs && node walks/focus.mjs && node walks/beam.mjs && node walks/pick.mjs && node walks/updates.mjs && node walks/look.mjs
+	@$(if $(WALKS_GONE),echo "WALKS_FIRST names walks that are not there: $(WALKS_GONE)" && exit 1,:)
+	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) $(WALKS)
 
 check:
 	@sh scripts/check.sh || true

@@ -191,12 +191,14 @@ export interface Pasted {
   city: string
 }
 
-// The answer to a paste: the person now, what they were, and whether the
-// page gave their name.
+// The answer to a paste: the person now, what they were, whether the
+// page gave their name, and whether the paste started their first
+// message, as Draft does.
 export interface PastedProfile {
   person: PersonDetail
   was: Pasted
   named: boolean
+  drafting: boolean
 }
 
 export interface LinksFound {
@@ -789,6 +791,7 @@ export const api = {
   // Keeps a LinkedIn page Tim copied in Chrome as a person's profile, or
   // with as puts back what they were, for Undo.
   pasteProfile: (id: number, body: { text: string } | { as: Pasted }) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, body),
+  pastePage: (body: { text: string; links: string[]; open: number }) => request<PastedProfile>('POST', '/api/people/profile', body),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),

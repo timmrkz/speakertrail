@@ -233,6 +233,27 @@ const walks = [
     },
   },
   {
+    name: 'A draft that failed for want of a copy says nothing once the page is pasted',
+    async run(page) {
+      // Tim's report of 24 November 2026, #88: Draft said Exa has no
+      // copy, he pasted the page, and the line still said so.
+      const noCopy = 'Exa has no copy of their profile. Open it in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V.'
+      await page.route('**/api/drafts', (route) => route.fulfill({ json: [job(1009, 1, { state: 'failed', error: noCopy })] }))
+      await page.goto(`${url}/app/people/1009`)
+      const line = page.locator('.first-message .failed')
+      await line.filter({ hasText: 'Exa has no copy' }).waitFor()
+      await page.evaluate(() => {
+        document.activeElement?.blur()
+        const data = new DataTransfer()
+        data.setData('text/plain', 'Mara Beispiel\n· 1st\nGründerin\nAbout\nIch töpfere.')
+        document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+      })
+      await page.locator('.toast-region', { hasText: 'Kept the page' }).waitFor()
+      await line.waitFor({ state: 'detached' })
+      return ''
+    },
+  },
+  {
     name: 'The drafts read as a person opens leave a newer end alone',
     async run(page) {
       // The window asks for the drafts as a person opens, and the app

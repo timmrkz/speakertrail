@@ -519,7 +519,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
   const run: Run = {
     id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind, state: 'going', started_at: new Date().toISOString(), finished_at: null,
     sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
-    people_new: 0, fits_new: 0, errors: 0,
+    people_new: 0, errors: 0,
     progress: { checks, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 0, lookups: 0, lookups_done: 0, lookups_expected: 0, now: [], seconds_left: null },
   }
   s.runs.unshift(run)

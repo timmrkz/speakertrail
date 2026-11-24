@@ -378,8 +378,6 @@ export interface Run {
   // Startups whose imprint this run looked up, and the lookups that failed.
   startups_looked_up: number
   lookups_failed: number
-  // New people who fit, like founders.
-  fits_new: number
   // How far a going run is. Null once it has ended.
   progress: RunProgress | null
   started_at: string

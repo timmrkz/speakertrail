@@ -41,9 +41,11 @@ on:
 # branch. The hidden mark in each comment, the pull request's commit and
 # main's, keeps a run that was stopped halfway from telling a pull request
 # twice about the same two commits. The event is in the group, so
-# a build of main, which this skips, stops no run of main.
+# a build of main, which this skips, stops no run of main. So is the
+# event that started the build, so the build of a pull request's opening,
+# which this skips too, stops no check of the push before it.
 concurrency:
-  group: conflicts-${{ github.event_name }}-${{ github.event.workflow_run.head_branch || github.ref }}
+  group: conflicts-${{ github.event_name }}-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch || github.ref }}
   cancel-in-progress: true
 
 permissions:

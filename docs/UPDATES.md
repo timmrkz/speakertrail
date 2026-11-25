@@ -42,7 +42,10 @@ then on every build comes from GitHub.
    pushed before it is opened, and a pull request of that one push had
    no build and was not on the Updates page, as #93 was. A push builds
    only for a pull request open before it, and one opened at or after
-   the push is built by its opening, so a commit is built once. A
+   the push is built by its opening, so a commit is built once,
+   `speakertrail-release which`. A pull request opened in conflict with
+   main, and a second commit pushed in the same second as the opening,
+   wait for the next push. A
    commit that only changes the docs against the build there is gets no
    build of its own, see `scripts/needs-build.sh`. The build leaves a zip
    and nothing else. It gets no secret, because a branch runs its own

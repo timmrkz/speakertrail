@@ -57,14 +57,18 @@ func TestAPullRequestIsBuiltWhenItOpens(t *testing.T) {
 	if err := yaml.Unmarshal(b, &steps); err != nil {
 		t.Fatal(err)
 	}
+	// What is decided is speakertrail-release which's, with its tests in
+	// cmd/speakertrail-release/which_test.go. Here, only that the
+	// workflow hands it the push's time.
 	pushed := false
 	for _, s := range steps.Jobs["which"].Steps {
-		if s.ID == "which" && s.Env["PUSHED"] == "${{ github.event.repository.pushed_at }}" && strings.Contains(s.Run, "createdAt") {
+		if s.ID == "which" && s.Env["PUSHED"] == "${{ github.event.repository.pushed_at }}" &&
+			strings.Contains(s.Run, "go run ./cmd/speakertrail-release which") && strings.Contains(s.Run, `-pushed "$PUSHED"`) {
 			pushed = true
 		}
 	}
 	if !pushed {
-		t.Error("builds.yml's which does not weigh when the push happened against when the pull request was opened, so a push and an opening can build one commit twice")
+		t.Error("builds.yml's which does not hand speakertrail-release which the push's time, so a push and an opening can build one commit twice, or none")
 	}
 
 	b, err = os.ReadFile(filepath.Join(dir, "publish.yml"))

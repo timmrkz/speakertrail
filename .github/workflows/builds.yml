@@ -28,15 +28,19 @@
 # branch is pushed first and its pull request opened after, often seconds
 # later, so that push finds no pull request and builds nothing. A pull
 # request of that one commit then had no build at all, and #93 never
-# showed on the Updates page. Each commit is built by one of the two: a
-# push builds only for a pull request that was open before it, and a
-# pull request opened at or after the push is built by its opening. So
-# a push and an opening in the same second, as Dependabot does them,
-# build once, and leave no build stopped by the other, FrameFairy #642,
-# which is why FrameFairy builds on the push alone. A pull request opened
-# in conflict with main runs nothing, and its next push builds it. The close builds nothing
-# and only has publish.yml write the list again without it. The build is of the branch as it is, not merged with main, so a
-# conflict does not make it wrong to test.
+# showed on the Updates page. A commit is built by its push or by the
+# opening, never by both: a push builds only for a pull request that was
+# open before it, and a pull request opened at or after the push is
+# built by its opening. So a push and an opening in the same second, as
+# Dependabot does them, build once, and leave no build stopped by the
+# other, FrameFairy #642, which is why FrameFairy builds on the push
+# alone. speakertrail-release which decides it, see which.go. Two rare
+# cases wait for the next push: a pull request opened in conflict with
+# main, since GitHub runs nothing for its opening, and a second commit
+# pushed in the same second as the opening. The close builds nothing
+# and only has publish.yml write the list again without it. The build is
+# of the branch as it is, not merged with main, so a conflict does not
+# make it wrong to test.
 #
 # A commit that is built already, or that only changes the docs against
 # the build there is, gets no build of its own. scripts/needs-build.sh
@@ -44,8 +48,8 @@
 #
 # Two jobs:
 #
-# 0. which, what a push or a pull request is a build of: main, the open pull
-#    request of the branch pushed or opened, or nothing.
+# 0. which, on Linux, what a push or a pull request is a build of: main,
+#    the open pull request of the branch pushed or opened, or nothing.
 # 1. build, on macOS, per channel. A second push to a pull request stops the
 #    build of the first, whose result nobody wants any more. It leaves the
 #    zip as an artifact called build, and nothing else.
@@ -79,12 +83,23 @@ jobs:
       number: ${{ steps.which.outputs.number }}
       sha: ${{ steps.which.outputs.sha }}
       build: ${{ steps.which.outputs.build }}
+    # A close builds nothing, so nothing here runs for it, and build stays
+    # empty. The checkout is the commit pushed, or for a pull request the
+    # merge GitHub made, whose workflow this is, so the tool and this file
+    # are always of one commit.
     steps:
+      - if: github.event.action != 'closed'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - if: github.event.action != 'closed'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
       - id: which
+        if: github.event.action != 'closed'
         name: What this is a build of
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
           EVENT: ${{ github.event_name }}
           ACTION: ${{ github.event.action }}
           BRANCH: ${{ github.ref_name }}
@@ -93,45 +108,10 @@ jobs:
           # When the push happened, in seconds since 1970, as GitHub's own
           # record of the push says it.
           PUSHED: ${{ github.event.repository.pushed_at }}
-        # A branch's pull request is only one opened from this repository:
-        # a fork can have a branch of the same name. A pull request opened
-        # at or after the push is built by its opening, so the push leaves
-        # it alone, and the commit is built once. A time that is no number
-        # builds, since a doubt builds.
-        run: |
-          build=true
-          if [ "$EVENT" = pull_request ]; then
-            if [ "$ACTION" = closed ]; then build=false; fi
-          elif [ "$BRANCH" = main ]; then
-            NUMBER=
-          else
-            found=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository,createdAt \
-              --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
-            if [ -z "$found" ]; then
-              echo "::notice::$BRANCH has no open pull request, so it has no channel to build for."
-              exit 0
-            fi
-            NUMBER=$(printf '%s' "$found" | jq -r .number)
-            opened=$(printf '%s' "$found" | jq -r '.createdAt | fromdate')
-            echo "pushed at $PUSHED, pull request $NUMBER opened at $opened"
-            case $PUSHED in
-            '' | *[!0-9]*) ;;
-            *)
-              if [ "$opened" -ge "$PUSHED" ]; then
-                echo "::notice::Pull request $NUMBER was opened after this push, so its opening builds it."
-                exit 0
-              fi
-              ;;
-            esac
-          fi
-          if [ -n "$NUMBER" ]; then channel="pr-$NUMBER"; else channel=main; fi
-          {
-            echo "channel=$channel"
-            echo "number=$NUMBER"
-            echo "sha=$SHA"
-            echo "build=$build"
-          } >> "$GITHUB_OUTPUT"
-          echo "$SHA is a build of $channel"
+        run: >-
+          go run ./cmd/speakertrail-release which
+          -event "$EVENT" -action "$ACTION" -branch "$BRANCH"
+          -sha "$SHA" -number "$NUMBER" -pushed "$PUSHED"
 
   build:
     needs: which

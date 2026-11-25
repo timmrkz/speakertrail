@@ -171,13 +171,22 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 		return Job{}, err
 	}
 	d.mu.Lock()
-	if d.jobs == nil {
-		d.jobs, d.cancel = map[int64]*Job{}, map[int64]context.CancelFunc{}
-	}
 	if j, ok := d.jobs[personID]; ok && !j.Ended() {
 		out := *j
 		d.mu.Unlock()
 		return out, nil
+	}
+	out := d.queued(personID)
+	d.mu.Unlock()
+	d.tell()
+	return out, nil
+}
+
+// queued puts a new draft of a person in the queue, while d.mu is held,
+// and gives it. The caller tells it once it lets go.
+func (d *Drafter) queued(personID int64) Job {
+	if d.jobs == nil {
+		d.jobs, d.cancel = map[int64]*Job{}, map[int64]context.CancelFunc{}
 	}
 	d.n++
 	j := &Job{ID: "draft-" + strconv.Itoa(d.n), PersonID: personID, State: "queued", StartedAt: d.now(), Fraction: -1}
@@ -188,10 +197,7 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 		d.idle = make(chan struct{})
 		go d.work()
 	}
-	out := d.changed(j)
-	d.mu.Unlock()
-	d.tell()
-	return out, nil
+	return d.changed(j)
 }
 
 // Pasted starts the draft a page Tim pasted as a person's profile was
@@ -207,22 +213,32 @@ func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
 			empty, connected = p.Draft == "", p.Connected
 		}
 	})
-	d.mu.Lock()
-	was, there := d.jobs[personID]
-	var out Job
-	if there {
-		out = *was
-	}
-	d.mu.Unlock()
-	if there && !out.Ended() {
-		return out, true
-	}
-	noCopy := there && out.State == "failed" && out.Error == Sentence(ErrNoCopy.Error())
-	if !empty || !connected && !noCopy {
+	if _, _, err := d.Model(); errors.Is(err, ErrNoModel) {
 		return Job{}, false
 	}
-	j, err := d.Start(personID)
-	return j, err == nil
+	// What the draft there is says, and the new one starts, under one
+	// hold, so pastes at once start one draft, and none after a draft
+	// that just wrote a message.
+	d.mu.Lock()
+	was, there := d.jobs[personID]
+	switch {
+	case there && !was.Ended():
+		out := *was
+		d.mu.Unlock()
+		return out, true
+	case there && was.State == "done":
+		d.mu.Unlock()
+		return Job{}, false
+	}
+	noCopy := there && was.State == "failed" && was.Error == Sentence(ErrNoCopy.Error())
+	if !empty || !connected && !noCopy {
+		d.mu.Unlock()
+		return Job{}, false
+	}
+	out := d.queued(personID)
+	d.mu.Unlock()
+	d.tell()
+	return out, true
 }
 
 // Cancel stops a person's draft, queued or under way. What the model

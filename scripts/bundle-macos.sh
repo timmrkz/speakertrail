@@ -54,7 +54,9 @@ fi
 # ffmpeg and ffprobe, which read a screen recording handed to Report a
 # Problem, beside the program, the only place the app takes them from.
 # The LGPL asks for its licence to go with every copy, in Resources like
-# llama-server's. make builds them, see cmd/speakertrail-release/ffmpeg.go.
+# llama-server's, and BUILD-ffmpeg.txt beside it names the commit of
+# ffmpeg's source it was built from and its configure line. make builds
+# them, see cmd/speakertrail-release/ffmpeg.go.
 for tool in ffmpeg ffprobe; do
 	if [ ! -x "$BINDIR/$tool" ]; then
 		echo "bundle-macos.sh: no $tool in $BINDIR, and a report could take no recording. Build it with make." >&2
@@ -62,7 +64,7 @@ for tool in ffmpeg ffprobe; do
 	fi
 	cp "$BINDIR/$tool" "$APP/Contents/MacOS/$tool"
 done
-cp "$BINDIR/LICENSE-ffmpeg.txt" "$APP/Contents/Resources/"
+cp "$BINDIR/LICENSE-ffmpeg.txt" "$BINDIR/BUILD-ffmpeg.txt" "$APP/Contents/Resources/"
 
 # The speech library Dictate hears with. carry-libs.sh has already pointed
 # the program at @executable_path/../Frameworks, which from

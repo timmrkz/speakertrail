@@ -216,7 +216,9 @@ reads each program back and stops when one says GPL, has libx264, reads
 through any other protocol or format of that kind, or needs a library of
 the Mac that built it. The LGPL's text travels with them as
 `LICENSE-ffmpeg.txt` in the bundle's Resources, and `BUILD-ffmpeg.txt`
-in `.build/ffmpeg/bin` says what the build is, read off the binary.
+beside it says what the build is, read off the binary: the commit of
+ffmpeg's source and the configure line. FrameFairy also puts an archive
+of that source on its release, which Speaker Trail does not yet.
 
 make builds them into `.build/ffmpeg` once, and again only when
 `ffmpeg.go` changed, by the checksum the stamp `.build/ffmpeg/built`

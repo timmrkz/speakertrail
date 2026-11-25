@@ -170,7 +170,7 @@ ffmpeg:
 ifeq ($(UNAME),Darwin)
 app: toolchain llama ffmpeg $(EXE)
 	@cp $(LLAMA) $(LLAMA_DIR)/bin/LICENSE-llama.cpp $(BIN)/
-	@cp $(FFMPEG_DIR)/bin/ffmpeg $(FFMPEG_DIR)/bin/ffprobe $(FFMPEG_DIR)/bin/LICENSE-ffmpeg.txt $(BIN)/
+	@cp $(FFMPEG_DIR)/bin/ffmpeg $(FFMPEG_DIR)/bin/ffprobe $(FFMPEG_DIR)/bin/LICENSE-ffmpeg.txt $(FFMPEG_DIR)/bin/BUILD-ffmpeg.txt $(BIN)/
 	@sh scripts/bundle-macos.sh $(BIN) "$(VERSION)"
 else
 app: toolchain $(EXE)

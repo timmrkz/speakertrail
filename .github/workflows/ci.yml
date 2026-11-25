@@ -75,12 +75,29 @@ jobs:
         run: npm run build
       # The walks launch Chromium headless, which is Playwright's headless
       # shell alone, not the whole browser beside it, 186.8 MiB less to
-      # download on every run.
-      - name: Chromium for the walks
-        run: npx playwright install --with-deps --only-shell chromium
+      # download on every run. The system packages it needs are kept the
+      # way the go job keeps GTK's, see there.
+      - id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - id: debs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/debs
+          key: debs-chromium-${{ steps.image.outputs.version }}-${{ hashFiles('web/package-lock.json') }}
+      - name: Chromium for the walks, its packages from apt
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: sudo apt-get clean && npx playwright install --with-deps --only-shell chromium && mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
+      - name: Chromium for the walks, its packages kept
+        if: steps.debs.outputs.cache-hit == 'true'
+        run: sudo dpkg -i ~/debs/*.deb && npx playwright install --only-shell chromium
       - name: Walks
         working-directory: .
         run: make walks
+      - if: github.ref == 'refs/heads/main' && steps.debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/debs
+          key: debs-chromium-${{ steps.image.outputs.version }}-${{ hashFiles('web/package-lock.json') }}
 
   # Go's modules are kept by go.sum. What Go built and tested, and what
   # golangci-lint found, are kept from the last run on main, so a pull
@@ -116,8 +133,24 @@ jobs:
           key: go-built-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-built-${{ runner.os }}-
       # The app's window is a webview, which on Linux is GTK and WebKit.
+      # Ubuntu's mirror took 30 s to over 3 minutes to hand them over, see
+      # #97, so what apt fetched is kept in GitHub's cache and installed
+      # from there with dpkg, with no mirror asked. What apt fetches
+      # depends on what the runner's image has installed already, so the
+      # cache is kept by the image's version, which the runner names in
+      # ImageOS and ImageVersion. Only main saves it, as for Go.
+      - id: image
+        run: echo "version=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - id: debs
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/debs
+          key: debs-gtk-4-webkitgtk-6.0-${{ steps.image.outputs.version }}
+      - name: GTK and WebKit from apt
+        if: steps.debs.outputs.cache-hit != 'true'
+        run: sudo apt-get clean && sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends --download-only libgtk-4-dev libwebkitgtk-6.0-dev && mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
       - name: GTK and WebKit
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
+        run: sudo dpkg -i ~/debs/*.deb
       - name: Lint
         run: make lint
       - name: Test
@@ -134,6 +167,11 @@ jobs:
             ~/.cache/go-build
             ~/.cache/golangci-lint
           key: go-built-${{ runner.os }}-${{ github.sha }}
+      - if: github.ref == 'refs/heads/main' && steps.debs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/debs
+          key: debs-gtk-4-webkitgtk-6.0-${{ steps.image.outputs.version }}
 
   # The app on the machine it is for. Tim's Mac is Apple silicon, and so is
   # this runner. Its limit leaves room for building llama-server, minutes,

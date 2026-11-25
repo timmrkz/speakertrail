@@ -1,0 +1,145 @@
+# Invented names in the forms LinkedIn profiles use, one per line: the name,
+# the part of the profile's link after /in/ or nothing, the first name a
+# greeting uses and the last word of the family name. Empty where the name
+# holds none for sure, ? where the test does not ask. See docs/names.md.
+Mara Beispiel	mara-beispiel	Mara	Beispiel
+Mara Beispiel	marabeispiel	Mara	Beispiel
+Mara Beispiel	mara-beispiel-4b1a2c93	Mara	Beispiel
+Dr. med. Louis Beispiel	louis-beispiel-12ab	Louis	Beispiel
+Dr. med. Louis Beispiel	dr-med-louis-beispiel	Louis	Beispiel
+Dr. med. Louis Beispiel		Louis	Beispiel
+Dr. med Louis Beispiel		Louis	Beispiel
+Dr med Louis Beispiel		Louis	Beispiel
+Dr. med. dent. Jana Testfrau	jana-testfrau	Jana	Testfrau
+Dr. med. univ. Jana Testfrau		Jana	Testfrau
+Dr. rer. nat. Tom Testmann		Tom	Testmann
+Dr. rer. medic. Tom Testmann		Tom	Testmann
+Dr. phil. Mara Beispiel		Mara	Beispiel
+Dr. jur. Tom Testmann		Tom	Testmann
+Dr.-Ing. Tom Testmann		Tom	Testmann
+Dr.-Ing Tom Testmann		Tom	Testmann
+Dr.Tom Testmann		Tom	Testmann
+Dr Tom Testmann		Tom	Testmann
+DR. TOM TESTMANN		Tom	TESTMANN
+Prof. Dr. Mara Beispiel		Mara	Beispiel
+Prof. Dr. med. Mara Beispiel		Mara	Beispiel
+Prof. Dr. med. habil. Mara Beispiel		Mara	Beispiel
+Univ.-Prof. Dr. Tom Testmann		Tom	Testmann
+apl. Prof. Dr. Tom Testmann		Tom	Testmann
+PD Dr. Tom Testmann		Tom	Testmann
+Priv.-Doz. Dr. Tom Testmann		Tom	Testmann
+Dipl.-Ing. Tom Testmann		Tom	Testmann
+Dipl.-Psych. Mara Beispiel		Mara	Beispiel
+Dipl.-Kfm. Tom Testmann		Tom	Testmann
+Dipl.-Kffr. Mara Beispiel		Mara	Beispiel
+Dipl. Psych. Mara Beispiel		Mara	Beispiel
+Dipl.-Betriebsw. (FH) Tom Testmann		Tom	Testmann
+Mag. Mara Beispiel		Mara	Beispiel
+Mag.a Mara Beispiel		Mara	Beispiel
+M.Sc. Mara Beispiel		Mara	Beispiel
+M.A. Mara Beispiel		Mara	Beispiel
+B.Sc. Tom Testmann		Tom	Testmann
+MBA Tom Testmann		Tom	Testmann
+RA Tom Testmann		Tom	Testmann
+RAin Mara Beispiel		Mara	Beispiel
+StB Tom Testmann		Tom	Testmann
+Herr Tom Testmann		Tom	Testmann
+Frau Mara Beispiel		Mara	Beispiel
+Mara Beispiel, MBA		Mara	Beispiel
+Mara Beispiel MBA		Mara	Beispiel
+Mara Beispiel, PhD		Mara	Beispiel
+Mara Beispiel PhD		Mara	Beispiel
+Tom Testmann M.Sc.		Tom	Testmann
+Tom Testmann, M.Sc.		Tom	Testmann
+Tom Testmann, LL.M.		Tom	Testmann
+Mara Beispiel, ICF ACC		Mara	Beispiel
+Mara Beispiel, ICF PCC		Mara	Beispiel
+Mara Beispiel, M.A., MBA		Mara	Beispiel
+Mara Beispiel (sie/ihr)		Mara	Beispiel
+Mara Beispiel (she/her)		Mara	Beispiel
+Mara Beispiel [sie/ihr]		Mara	Beispiel
+Mara (Mimi) Beispiel		Mara	Beispiel
+Mara "Mimi" Beispiel		Mara	Beispiel
+Mara Beispiel | Coach für Stimme		Mara	Beispiel
+Mara Beispiel - Coach		Mara	Beispiel
+Mara Beispiel – Coach für Führung		Mara	Beispiel
+Mara Beispiel · Yoga		Mara	Beispiel
+Mara Beispiel: Coach		Mara	Beispiel
+Mara Beispiel-Expertin für Ärztinnen		Mara	?
+🎤 Mara Beispiel		Mara	Beispiel
+Mara Beispiel 🚀		Mara	Beispiel
+Mara 🌿 Beispiel		Mara	?
+✨Mara Beispiel✨		Mara	Beispiel
+𝗠𝗮𝗿𝗮 𝗕𝗲𝗶𝘀𝗽𝗶𝗲𝗹		Mara	Beispiel
+𝑀𝑎𝑟𝑎 𝐵𝑒𝑖𝑠𝑝𝑖𝑒𝑙		Mara	Beispiel
+Ｍａｒａ Ｂｅｉｓｐｉｅｌ		Mara	Beispiel
+MARA BEISPIEL		Mara	BEISPIEL
+mara beispiel		Mara	beispiel
+Mara BEISPIEL		Mara	BEISPIEL
+Hans-Peter Testmann		Hans-Peter	Testmann
+Anna-Lena Beispiel	anna-lena-beispiel	Anna-Lena	Beispiel
+Anna Lena Beispiel		Anna	Beispiel
+Maria Luisa Beispiel		Maria	Beispiel
+Hans-J. Testmann		Hans-J.	Testmann
+Mara B.		Mara	
+Mara B. Beispiel		Mara	Beispiel
+M. Beispiel			Beispiel
+J. Mara Beispiel		Mara	Beispiel
+Nicole M. Testfrau		Nicole	Testfrau
+Mara von Beispiel		Mara	Beispiel
+Mara van der Beispiel		Mara	Beispiel
+Tom de Testmann		Tom	Testmann
+Mara Beispiel geb. Muster		Mara	Beispiel
+Mara Beispiel-Muster		Mara	Beispiel-Muster
+Ayşe Örnekoğlu		Ayşe	Örnekoğlu
+Ayşe Nur Örnekoğlu		Ayşe	Örnekoğlu
+Çağla Örnekçi		Çağla	Örnekçi
+Łukasz Przykładowski		Łukasz	Przykładowski
+Małgorzata Przykładowa		Małgorzata	Przykładowa
+Jörg Probe	jörg-probe	Jörg	Probe
+Jörg Probe	joerg-probe	Jörg	Probe
+Jörg Probe	jorg-probe	Jörg	Probe
+Zoë Beispiel		Zoë	Beispiel
+Mohammed Al-Testi		Mohammed	Al-Testi
+Fatma El Testi		Fatma	Testi
+Ngọc Anh Mẫu		Ngọc	Mẫu
+Ingo Testmann		Ingo	Testmann
+Ing Testmann		Ing	Testmann
+Phil Testmann		Phil	Testmann
+Nat Testmann		Nat	Testmann
+Ira Testmann		Ira	Testmann
+Ma Beispiel		Ma	Beispiel
+Mara		Mara	
+Beispiel		Beispiel	
+Dr. Beispiel			Beispiel
+Dr. med.			
+Prof. Dr. Testmann			Testmann
+Coach Mara Beispiel	mara-beispiel	Mara	Beispiel
+Mara Beispiel Coaching		Mara	?
+Beispiel, Mara		Mara	Beispiel
+BEISPIEL, Mara		Mara	BEISPIEL
+Beispiel Mara	mara-beispiel	Mara	Mara
+Mara Beispiel Dr.		Mara	Beispiel
+Mara Beispiel, Dr. med.		Mara	Beispiel
+Mara Beispiel, Dipl.-Psych.		Mara	Beispiel
+Tom Testmann Jr.		Tom	Testmann
+Sir Tom Testmann		Tom	Testmann
+Mr. Tom Testmann		Tom	Testmann
+Ms. Mara Beispiel		Mara	Beispiel
+Mrs Mara Beispiel		Mara	Beispiel
+Dott. Mara Beispiel		Mara	Beispiel
+Ing. Tom Testmann		Tom	Testmann
+Mara Beispiel ✓		Mara	Beispiel
+Mara Beispiel #OpenToWork		Mara	Beispiel
+Mara Beispiel 👉 Coach		Mara	Beispiel
+Mara Beispiel / Coach		Mara	Beispiel
+Mara Beispiel ・ Coach		Mara	Beispiel
+  Mara   Beispiel  		Mara	Beispiel
+Dr. Mara Beispiel-Testfrau, MBA		Mara	Beispiel-Testfrau
+Dr. med. Mara (Mimi) Beispiel		Mara	Beispiel
+Prof. Dr.-Ing. Dr. h.c. Tom Testmann		Tom	Testmann
+Dr. Dr. Tom Testmann		Tom	Testmann
+Dres. Tom Testmann		Tom	Testmann
+# Known misses, not tested: a name inside a sentence, like "Yoga mit
+# Mara", is read as "Yoga". A family name followed by a word of the
+# business, like "Mara Beispiel Coaching", ends with that word.

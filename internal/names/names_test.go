@@ -1,79 +1,93 @@
 package names_test
 
 import (
+	"bufio"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/names"
 )
 
-// The names are invented, the titles, degrees and marks around them are
-// the kinds LinkedIn shows.
-var cases = []struct {
-	name, first, family string
-}{
-	{"Mara Beispiel", "Mara", "Beispiel"},
-	{"Dr. med. Louis Beispiel", "Louis", "Beispiel"},
-	{"Dr. Mara Beispiel", "Mara", "Beispiel"},
-	{"Dr Mara Beispiel", "Mara", "Beispiel"},
-	{"Prof. Dr. Mara Beispiel", "Mara", "Beispiel"},
-	{"Prof. Dr.-Ing. Mara Beispiel", "Mara", "Beispiel"},
-	{"Dr.-Ing Mara Beispiel", "Mara", "Beispiel"},
-	{"Dipl.-Ing. Mara Beispiel", "Mara", "Beispiel"},
-	{"Dipl.-Kfm. Tom Testmann", "Tom", "Testmann"},
-	{"Dr. rer. nat. Tom Testmann", "Tom", "Testmann"},
-	{"Dr. med. dent. Tom Testmann", "Tom", "Testmann"},
-	{"Univ.-Prof. Dr. Tom Testmann", "Tom", "Testmann"},
-	{"Mag. Tom Testmann", "Tom", "Testmann"},
-	{"Mag.a Mara Beispiel", "Mara", "Beispiel"},
-	{"Mara Beispiel, MBA", "Mara", "Beispiel"},
-	{"Mara Beispiel MBA", "Mara", "Beispiel"},
-	{"Mara Beispiel, PhD", "Mara", "Beispiel"},
-	{"Tom Testmann M.Sc.", "Tom", "Testmann"},
-	{"Tom Testmann, LL.M.", "Tom", "Testmann"},
-	{"Mara Beispiel (sie/ihr)", "Mara", "Beispiel"},
-	{"Mara Beispiel | Coach für Stimme", "Mara", "Beispiel"},
-	{"Mara Beispiel – Coach", "Mara", "Beispiel"},
-	{"🎤 Mara Beispiel 🚀", "Mara", "Beispiel"},
-	{"Hans-Peter Testmann", "Hans-Peter", "Testmann"},
-	{"Mara von Beispiel", "Mara", "Beispiel"},
-	{"Mara B.", "Mara", ""},
-	{"Mara", "Mara", ""},
-	{"  Mara   Beispiel  ", "Mara", "Beispiel"},
-	{"Mara\nBeispiel", "Mara", "Beispiel"},
-	{"Dr. med Mara Beispiel", "Mara", "Beispiel"},
-	{"Dr med Mara Beispiel", "Mara", "Beispiel"},
-	{"Dr. rer nat Tom Testmann", "Tom", "Testmann"},
-	{"Dr. phil. Mara Beispiel", "Mara", "Beispiel"},
-	{"RA Tom Testmann", "Tom", "Testmann"},
-	{"StB Dipl.-Kfm. Tom Testmann", "Tom", "Testmann"},
-	{"Phil Testmann", "Phil", "Testmann"},
-	{"Nat Testmann", "Nat", "Testmann"},
-	{"Hans-J. Testmann", "Hans-J.", "Testmann"},
-	{"Hans-J. Peter Testmann", "Hans-J.", "Testmann"},
-	{"Ing-Marie Beispiel", "Ing-Marie", "Beispiel"},
-	{"Mara (Mimi) Beispiel", "Mara", "Beispiel"},
-	{"Mara Beispiel: Coach", "Mara", "Beispiel"},
-	{"Mara Beispiel (sie", "Mara", "Beispiel"},
-	{"J. Mara Beispiel", "Mara", "Beispiel"},
-	// A title and one name leave no first name to be sure of, only the
-	// family's.
-	{"Dr. Beispiel", "", "Beispiel"},
-	{"Dr. med.", "", ""},
-	{"", "", ""},
+// row is one line of testdata/names.tsv.
+type row struct {
+	name, handle, first, family string
+}
+
+// rows reads the invented names in testdata/names.tsv.
+func rows(t *testing.T) []row {
+	t.Helper()
+	f, err := os.Open("testdata/names.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	var out []row
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		line := s.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		c := strings.Split(line, "\t")
+		if len(c) != 4 {
+			t.Fatalf("%q has %d columns, want 4", line, len(c))
+		}
+		out = append(out, row{c[0], c[1], c[2], c[3]})
+	}
+	if err := s.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(out) < 100 {
+		t.Fatalf("only %d names", len(out))
+	}
+	return out
+}
+
+func link(handle string) string {
+	if handle == "" {
+		return ""
+	}
+	return "https://www.linkedin.com/in/" + handle
 }
 
 func TestFirst(t *testing.T) {
-	for _, c := range cases {
-		if got := names.First(c.name); got != c.first {
-			t.Errorf("First(%q) = %q, want %q", c.name, got, c.first)
+	for _, r := range rows(t) {
+		if got := names.First(r.name, link(r.handle)); got != r.first {
+			t.Errorf("First(%q, %q) = %q, want %q", r.name, r.handle, got, r.first)
 		}
 	}
 }
 
 func TestFamily(t *testing.T) {
-	for _, c := range cases {
-		if got := names.Family(c.name); got != c.family {
-			t.Errorf("Family(%q) = %q, want %q", c.name, got, c.family)
+	for _, r := range rows(t) {
+		if r.family == "?" {
+			continue
+		}
+		if got := names.Family(r.name); got != r.family {
+			t.Errorf("Family(%q) = %q, want %q", r.name, got, r.family)
+		}
+	}
+}
+
+// The link says the order of a name only where it joins two of its
+// words, so a link made from a business that holds one of them changes
+// nothing.
+func TestALinkWithOneWordOfTheNameSaysNothing(t *testing.T) {
+	for handle, want := range map[string]string{
+		"beispiel-coaching":     "Mara",
+		"coach-mara":            "Mara",
+		"mara-beispiel":         "Mara",
+		"beispiel-mara-1a2b3c4": "Beispiel",
+		"%C3%B6rnek-mara":       "Mara",
+	} {
+		if got := names.First("Mara Beispiel", link(handle)); got != want {
+			t.Errorf("Mara Beispiel at /in/%s: %q, want %q", handle, got, want)
+		}
+	}
+	for _, l := range []string{"", "not a link", "https://www.linkedin.com/company/beispiel", "https://www.linkedin.com/in/"} {
+		if got := names.First("Mara Beispiel", l); got != "Mara" {
+			t.Errorf("Mara Beispiel at %q: %q", l, got)
 		}
 	}
 }

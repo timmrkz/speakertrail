@@ -375,7 +375,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	}
 	// The message is put together before the model writes, so it is on
 	// screen at once, with … where the model's part goes.
-	message := d.put(template, name)
+	message := d.put(template, name, link)
 	m, path, err := d.Model()
 	if err != nil {
 		return err
@@ -447,7 +447,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	}
 	// What the model writes so far is JSON, which is nothing to read, so
 	// the window sees only that it grows.
-	answer, err := ask(ctx, s, Messages(prompt, name, notes, text), json.RawMessage(HookSchema), func(string) {
+	answer, err := ask(ctx, s, Messages(prompt, name, link, notes, text), json.RawMessage(HookSchema), func(string) {
 		d.update(id, progress)
 	})
 	if err != nil {
@@ -583,15 +583,16 @@ const (
 type message string
 
 // put puts a message together from the template, with the variations
-// picked at random, and marks where the model's part goes.
-func (d *Drafter) put(t store.Template, name string) message {
+// picked at random, and marks where the model's part goes. The link is
+// the person's profile, which says the order of their name.
+func (d *Drafter) put(t store.Template, name, link string) message {
 	pick := d.Pick
 	if pick == nil {
 		pick = rand.IntN
 	}
 	// Where the name holds no first name for sure, … stands for Tim to
 	// write, as it does for the model's part.
-	first := names.First(name)
+	first := names.First(name, link)
 	if first == "" {
 		first = Missing
 	}
@@ -625,7 +626,7 @@ func (m message) with(h Hook) string {
 // keeps a checkpoint where the last user turn starts, so the next draft
 // reads only the person's part again, whatever the model's sliding window
 // let go of. A prompt that starts with a field is one user turn.
-func Messages(prompt, name, notes, profile string) []language.Message {
+func Messages(prompt, name, link, notes, profile string) []language.Message {
 	first := len(prompt)
 	for _, f := range []string{"{{name}}", "{{first_name}}", "{{notes}}", store.ProfileField} {
 		if i := strings.Index(prompt, f); i >= 0 && i < first {
@@ -634,7 +635,7 @@ func Messages(prompt, name, notes, profile string) []language.Message {
 	}
 	cut := max(strings.LastIndex(prompt[:first], "\n\n"), 0)
 	system := strings.TrimSpace(prompt[:cut])
-	user := Fill(strings.TrimSpace(prompt[cut:]), name, notes, profile)
+	user := Fill(strings.TrimSpace(prompt[cut:]), name, link, notes, profile)
 	if system == "" {
 		return []language.Message{{Role: "user", Content: user}}
 	}
@@ -643,10 +644,11 @@ func Messages(prompt, name, notes, profile string) []language.Message {
 
 // Fill puts a person into the prompt: {{profile}}, {{name}},
 // {{first_name}} and {{notes}}. The profile goes in last, so nothing it
-// says is read as a field. Where the name holds no first name for sure,
-// the model gets the whole name.
-func Fill(prompt, name, notes, profile string) string {
-	first := names.First(name)
+// says is read as a field. The first name is read with the profile's
+// link, and where the name holds none for sure, the model gets the whole
+// name.
+func Fill(prompt, name, link, notes, profile string) string {
+	first := names.First(name, link)
 	if first == "" {
 		first = strings.TrimSpace(name)
 	}

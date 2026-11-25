@@ -26,6 +26,12 @@ class Kept {
   private seen: string
   private put: string
   private alone = false
+  // How many Cmd+Z this field handed on to the app that Cmd+Y has not
+  // done again, so Cmd+Y goes to the app first, in the order Cmd+Z took
+  // them back: Connect pressed, notes typed, Cmd+Z twice takes the typing
+  // and then Connect back, and Cmd+Y twice brings Connect and then the
+  // typing back. Typing starts it again, as it empties every Redo.
+  private handed = 0
 
   constructor(private field: Field) {
     this.seen = this.put = field.value
@@ -38,12 +44,13 @@ class Kept {
     this.seen = this.put = this.field.value
   }
 
-  // before comes before an edit, and when the focus comes in, since a
-  // paste the page puts in with execCommand, see pastedlines.ts, comes
-  // with no beforeinput.
+  // before comes before an edit, and before a paste, since one the page
+  // puts in with execCommand, see pastedlines.ts, comes with no
+  // beforeinput in Chromium.
   before(e?: InputEvent) {
     this.fresh()
     if (!e) return
+    this.handed = 0
     // A paste or a drop is a step of its own, as on a Mac.
     this.alone = e.inputType.startsWith('insertFrom')
   }
@@ -63,6 +70,7 @@ class Kept {
   // keeps the key: when it took a step, or holds typing of its own.
   step(how: 'undo' | 'redo'): boolean {
     this.fresh()
+    if (how === 'redo' && this.handed > 0 && this.field.value === this.put) return false
     const c = how === 'undo' ? this.steps.undo(this.field.value) : this.steps.redo(this.field.value)
     if (!c) return this.field.value !== this.put
     this.field.setRangeText(c[2], c[0], c[1], 'end')
@@ -70,6 +78,12 @@ class Kept {
     // The field's owner hears of it as of any edit.
     this.field.dispatchEvent(new Event('input', { bubbles: true }))
     return true
+  }
+
+  // passed hears what came of a key the field handed on to the app.
+  passed(how: 'undo' | 'redo', done: boolean) {
+    if (how === 'undo') this.handed += done ? 1 : 0
+    else this.handed = done ? Math.max(0, this.handed - 1) : 0
   }
 }
 
@@ -114,17 +128,17 @@ export function keepUndo(onkey: (how: 'undo' | 'redo') => void): () => void {
     const field = textField(e.target)
     if (field) kept.get(field)?.input()
   }
-  const focus = (e: Event) => {
+  const paste = (e: Event) => {
     const field = textField(e.target)
-    if (field) keeper(field).before()
+    if (field) keeper(field).before(new InputEvent('beforeinput', { inputType: 'insertFromPaste' }))
   }
   document.addEventListener('beforeinput', before, true)
   document.addEventListener('input', input, true)
-  document.addEventListener('focusin', focus, true)
+  document.addEventListener('paste', paste, true)
   return () => {
     document.removeEventListener('beforeinput', before, true)
     document.removeEventListener('input', input, true)
-    document.removeEventListener('focusin', focus, true)
+    document.removeEventListener('paste', paste, true)
   }
 }
 
@@ -134,4 +148,10 @@ export function keepUndo(onkey: (how: 'undo' | 'redo') => void): () => void {
 export function fieldStep(on: Element | null, how: 'undo' | 'redo'): boolean {
   const field = textField(on)
   return field ? keeper(field).step(how) : false
+}
+
+// handedOn tells the field what came of the key it handed on to the app.
+export function handedOn(on: Element | null, how: 'undo' | 'redo', done: boolean) {
+  const field = textField(on)
+  if (field) kept.get(field)?.passed(how, done)
 }

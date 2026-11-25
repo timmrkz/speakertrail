@@ -578,6 +578,39 @@ const walks = [
     },
   },
   {
+    // One order across the field's steps and the app's: Cmd+Z in the
+    // notes takes the typing back, then Connect, and Cmd+Y brings Connect
+    // back first, then the typing (review of #87, 25 November 2026).
+    name: 'Cmd+Z twice in the notes takes back the typing and then Connect, and Cmd+Y twice brings both back in order',
+    async run(page) {
+      const connected = () => person(page, 1006).then((p) => p.connected)
+      await page.goto(`${url}/app/people/1006`)
+      const connect = page.locator('.detail-pane button.connect')
+      await connect.waitFor()
+      const was = await connected()
+      await connect.click()
+      await page.waitForFunction(async (was) => (await fetch('/api/people/1006').then((r) => r.json())).connected !== was, was)
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.click()
+      const before = await notes.inputValue()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' met at the fair')
+      const typed = await notes.inputValue()
+      const pressed = (state) => page.locator(`.detail-pane button.connect[aria-pressed="${state}"]`).waitFor({ timeout: 3000 })
+      await menu(page, 'undo')
+      if ((await notes.inputValue()) !== before) return `the first Cmd+Z left the notes ${JSON.stringify(await notes.inputValue())}`
+      await menu(page, 'undo')
+      await pressed(was).catch(() => { throw new Error('the second Cmd+Z did not take Connect back') })
+      await menu(page, 'redo')
+      await pressed(!was).catch(() => { throw new Error('the first Cmd+Y did not bring Connect back') })
+      if ((await notes.inputValue()) !== before) return `the first Cmd+Y changed the notes to ${JSON.stringify(await notes.inputValue())}`
+      await menu(page, 'redo')
+      if ((await notes.inputValue()) !== typed) return `the second Cmd+Y left the notes ${JSON.stringify(await notes.inputValue())}, want the typing back`
+      if ((await connected()) === was) return 'Connect did not stay'
+      return ''
+    },
+  },
+  {
     // Tim, 21 November 2026: he picks the best fit from the top, and every
     // point of the fit has a reason he can read, docs/fit-score.md.
     name: 'People puts the best fit first, and a person says what their fit adds up to',

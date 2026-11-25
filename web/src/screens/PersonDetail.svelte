@@ -68,9 +68,11 @@
   $effect(() => {
     if (undoHistory.changed === undoneAt) return
     untrack(() => reread().then(async () => {
-      // A field the caret was in keeps it, the first message too, which
-      // starts again.
-      const held = document.activeElement?.id
+      // A field the caret was in keeps it where it was, the first message
+      // too, which starts again.
+      const on = document.activeElement
+      const held = on?.id
+      const [from, to] = on instanceof HTMLTextAreaElement ? [on.selectionStart, on.selectionEnd] : [0, 0]
       notes = savedNotes = person.data?.notes ?? ''
       noteState = 'idle'
       undone++
@@ -78,7 +80,7 @@
       const back = held ? document.getElementById(held) : null
       if (back instanceof HTMLTextAreaElement && document.activeElement !== back) {
         back.focus()
-        back.setSelectionRange(back.value.length, back.value.length)
+        back.setSelectionRange(Math.min(from, back.value.length), Math.min(to, back.value.length))
       }
     }))
   })

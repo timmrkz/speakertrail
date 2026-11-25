@@ -16,20 +16,23 @@ class UndoHistory {
   // twice before the first answer is back.
   private busy = false
 
-  async step(how: 'undo' | 'redo'): Promise<void> {
+  // step says whether it took a step.
+  async step(how: 'undo' | 'redo'): Promise<boolean> {
     // Nothing changes behind the box asking something.
-    if (this.busy || document.querySelector('dialog[open]')) return
+    if (this.busy || document.querySelector('dialog[open]')) return false
     this.busy = true
     try {
       const done = how === 'undo' ? await api.undo() : await api.redo()
-      if (!done.done) return
+      if (!done.done) return false
       if (done.shows?.kind === 'person') {
         const to = `/app/people/${done.shows.id}`
         if (router.path !== to) navigate(to)
       }
       this.changed++
+      return true
     } catch (e) {
       toast.show(errorText(e), 'bad')
+      return false
     } finally {
       this.busy = false
     }

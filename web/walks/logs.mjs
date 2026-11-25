@@ -8,11 +8,18 @@ import { url, server } from './lib/mock.mjs'
 const heard = (page) => page.evaluate(() => fetch('/api/log/heard').then((r) => r.json()))
 // Waits until the log heard what is asked, since the window sends its
 // lines within a quarter of a second.
+// The wait for the next line starts before the mock is asked, since a
+// line answered between the two was waited for in vain, for 30 s, in 2
+// runs of 7 of make walks on #87.
 async function until(page, ok) {
   for (;;) {
+    const next = page.waitForResponse((r) => r.url().includes('/api/log/') && r.request().method() === 'POST')
     const h = await heard(page)
-    if (ok(h)) return h
-    await page.waitForResponse((r) => r.url().includes('/api/log/'))
+    if (ok(h)) {
+      next.catch(() => {})
+      return h
+    }
+    await next
   }
 }
 

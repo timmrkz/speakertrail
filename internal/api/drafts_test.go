@@ -121,10 +121,22 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	if code := call(t, a, "PUT", "/api/people/"+itoa(id)+"/profile", string(undo), &out); code != http.StatusOK || out.Drafting {
 		t.Errorf("undo: %d, drafting %v", code, out.Drafting)
 	}
+	// The page of someone new adds them under the link in it, connected
+	// as it says, drafts their first message, and Undo takes them out.
+	newPage, _ := json.Marshal(map[string]any{"text": "Ida Neu\n· 1st\nCoach in Bonn\nAbout\nIch coache.", "links": []string{"/in/ida-neu-9/", "/in/ida-neu-9/details/"}, "open": id})
+	if code := call(t, a, "POST", "/api/people/profile", string(newPage), &out); code != http.StatusOK || out.Person.ID == id || out.Person.Name != "Ida Neu" || !out.Person.Connected || !out.Drafting || !out.Named {
+		t.Fatalf("someone new: %d %+v", code, out)
+	}
+	a.Drafts.Wait()
+	if code := call(t, a, "DELETE", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNoContent {
+		t.Errorf("undo someone new: %d", code)
+	}
+	// Pasted as text alone, Exa is asked for the link by the name and
+	// headline, and knows only another name, so it says what is missing.
 	var refused map[string]string
 	other, _ := json.Marshal(map[string]any{"text": "Ida Neu\n· 2nd\nCoach"})
-	if code := call(t, a, "POST", "/api/people/profile", string(other), &refused); code != http.StatusNotFound || !strings.HasPrefix(refused["error"], "Nobody in the app has this profile") {
-		t.Errorf("nobody: %d %v", code, refused)
+	if code := call(t, a, "POST", "/api/people/profile", string(other), &refused); code != http.StatusUnprocessableEntity || !strings.HasPrefix(refused["error"], "The page came without the link to their profile") {
+		t.Errorf("no link: %d %v", code, refused)
 	}
 	if code := call(t, a, "POST", "/api/people/profile", `{"text":" "}`, nil); code != http.StatusBadRequest {
 		t.Errorf("an empty paste: %d", code)

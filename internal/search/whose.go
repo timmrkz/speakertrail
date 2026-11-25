@@ -80,3 +80,48 @@ func SameName(page, name, link string) bool {
 	}
 	return false
 }
+
+// OwnLink is the link of the profile a page shows, from the links in its
+// HTML: the one in the name on the page, or else the one it holds most
+// often, written the way an added link is, https://www.linkedin.com/in/
+// and the name in it. Empty when the HTML holds no profile link, as
+// when only its text was pasted.
+func OwnLink(hrefs []string, name string) string {
+	names := PageLinks(hrefs)
+	if len(names) == 0 {
+		return ""
+	}
+	own := names[0]
+	for _, n := range names {
+		if SameName(name, "", "https://www.linkedin.com/in/"+n) {
+			own = n
+			break
+		}
+	}
+	// The name as the link spells it, in its own capitals.
+	for _, h := range hrefs[:min(len(hrefs), 5000)] {
+		u, err := url.Parse(strings.TrimSpace(h))
+		if err != nil {
+			continue
+		}
+		if rest, ok := strings.CutPrefix(u.Path, "/in/"); ok {
+			if n, _, _ := strings.Cut(rest, "/"); strings.ToLower(n) == own {
+				return "https://www.linkedin.com/in/" + n
+			}
+		}
+	}
+	return ""
+}
+
+// FirstDegree says whether a page shows Tim connected with them: "· 1st"
+// or "· 1." under the name, as LinkedIn writes it for a connection.
+func FirstDegree(text string) bool {
+	top, _ := sectioned(text)
+	for _, l := range top {
+		if degree.MatchString(l) {
+			d := strings.TrimSpace(strings.TrimLeft(l, "·• "))
+			return strings.HasPrefix(d, "1st") || strings.HasPrefix(d, "1.")
+		}
+	}
+	return false
+}

@@ -199,6 +199,8 @@ export interface PastedProfile {
   was: Pasted
   named: boolean
   drafting: boolean
+  // The page added them, someone new.
+  added: boolean
 }
 
 export interface LinksFound {

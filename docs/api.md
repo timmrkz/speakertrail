@@ -119,7 +119,7 @@ on, and the message window open over the page, with Tim's own name in
 it, and so are email addresses and phone numbers. A read of them Exa is still asked for loses to
 it, and a run that had not begun it drops it. It answers `{"person": {…},
 "was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
-""}, "named": true, "drafting": true}`: `person` as `GET /api/people/{id}` gives it,
+""}, "named": true, "drafting": true, "added": false}`: `person` as `GET /api/people/{id}` gives it,
 `was` what they were before, and `named` whether the name on the page
 is the one in their link, which makes sure the page is theirs. A page
 whose name is not is read all the same, its name the line LinkedIn puts
@@ -141,10 +141,20 @@ holds most often, since its own link stands in many of its links, like
 it holds less often counts when the name on the page is theirs too.
 Without such a link the name on the page tells, against the name the app
 has and the name in each link: the open person when it is theirs, else
-the one person of that name. Else it is the open person's, as with the
-call above. 404 when nobody here has it, 409 when more than one person
-has its name and no link tells them apart, 400 for a paste with no
-text.
+the one person of that name. Else a page without its own link is the
+open person's, as with the call above.
+
+A page nobody here has adds them, as a link does, and answers the same
+with `"added": true`, which Undo takes back with `DELETE
+/api/people/{id}`. Their link is the page's own in `links`: the one in
+the name on the page, else the one it holds most often. A page pasted
+as text alone has none, so Exa is asked once for a LinkedIn profile by
+the name and headline on it, a search from the month's budget, and only
+a profile whose name is the page's counts. They are connected when the
+page says "· 1st". 422 when the link stays missing, or the page shows
+no name above how Tim is connected to them, 409 when more than one
+person has its name and no link tells them apart, or no Exa search is
+left this month, 400 for a paste with no text.
 
 `DELETE /api/people/{id}` takes out again someone added from a link, for
 Undo, and answers 204. A run that had not read their profile leaves it,

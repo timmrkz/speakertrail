@@ -4,7 +4,8 @@
 // index has no copy of. The app finds whose it is by the links Chrome
 // copies with the page, else by the name on it, and the window opens
 // them, so Tim never has to find them first (Tim, 24 November 2026,
-// #89). The app reads their name, headline and city from it and, for
+// #89). Someone nobody here has is added from it, as a link adds them
+// (25 November). The app reads their name, headline and city from it and, for
 // someone who is waiting for a first message, starts it (#88). It never
 // requests LinkedIn itself: Tim opened the page. A toast says it was
 // kept, with Undo. The toast never names the person, since every toast
@@ -13,6 +14,7 @@
 import { api, type Pasted } from './api'
 import { draftWatch } from './drafts.svelte'
 import { navigate, router } from './router.svelte'
+import { said } from './said'
 import { errorText, fault, toast } from './toast.svelte'
 
 // What someone Exa has no copy of says, on their row and when they are
@@ -69,20 +71,42 @@ class Pasting {
   }
 
   async page(text: string, html: string): Promise<void> {
+    const links = pageLinks(html)
+    // How the paste came, never what it said, so a report shows whether
+    // Chrome's HTML came with it.
+    said(`paste: a page of ${text.length} characters, ${html ? `with HTML and ${links.length} profile links` : 'as text alone'}`)
     try {
-      const r = await api.pastePage({ text, links: pageLinks(html), open: openPerson() })
+      const r = await api.pastePage({ text, links, open: openPerson() })
       const id = r.person.id
       this.changed++
       if (openPerson() !== id) navigate(`/app/people/${id}`)
       // The draft it started shows at once on the person, before the
       // app's first word of it.
       if (r.drafting) void draftWatch.read()
-      const undo = { label: 'Undo', run: () => void this.undo(id, r.was, r.drafting) }
       const drafting = r.drafting ? ', and drafting the first message' : ''
+      if (r.added) {
+        // Someone new, whom Undo takes out again, as for a link.
+        toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id, r.drafting) })
+        return
+      }
+      const undo = { label: 'Undo', run: () => void this.undo(id, r.was, r.drafting) }
       if (r.named) toast.show(`Kept the page as their profile${drafting}`, 'plain', undo)
       else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad', undo)
     } catch (e) {
       toast.show(errorText(e), 'bad')
+    }
+  }
+
+  // Undo of someone the page added takes them out, the draft first.
+  private async unadd(id: number, drafting: boolean) {
+    try {
+      if (drafting) await api.cancelDraft(id).catch(() => {})
+      await api.removePerson(id)
+      if (openPerson() === id) navigate('/app/people')
+    } catch (e) {
+      fault(e)
+    } finally {
+      this.changed++
     }
   }
 

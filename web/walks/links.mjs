@@ -221,15 +221,32 @@ await walk('A LinkedIn page pasted on another page, or into the search, opens wh
   await page.waitForURL(opened)
   expect('the page went into the search', (await search(page).inputValue()) === '')
 
-  // A page of someone the app does not have says so, and opens nobody.
+  // A page of someone the app does not have, with its link in the HTML,
+  // adds them and opens them, and Undo takes them out again (Tim, 25
+  // November 2026).
   await page.goto(`${url}/app/people`)
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'Ida Unbekannt\n· 1st\nCoach\nAbout\nIch coache.')
+    data.setData('text/html', '<a href="/in/ida-unbekannt-81/">Ida</a><a href="/in/ida-unbekannt-81/overlay/contact-info/">Contact info</a>')
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+  })
+  await page.locator('main article.person[aria-label="Ida Unbekannt"]').waitFor()
+  await page.locator('.toast-region', { hasText: 'Added them from the page' }).waitFor()
+  await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  await page.waitForURL(/\/app\/people$/)
+  const gone = await page.evaluate(() => fetch('/api/people?filter=connected&q=Unbekannt').then((r) => r.json()))
+  expect('Undo left her in the app', gone.people.length === 0)
+
+  // As text alone, with no link to add her under, it says what is missing.
   await page.evaluate(() => {
     document.activeElement?.blur()
     const data = new DataTransfer()
     data.setData('text/plain', 'Ida Unbekannt\n· 2nd\nCoach\nAbout\nIch coache.')
     document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
   })
-  await page.locator('.toast-region', { hasText: 'Nobody in the app has this profile' }).waitFor()
+  await page.locator('.toast-region', { hasText: 'without the link to their profile' }).waitFor()
   expect('a person opened', !/\/app\/people\/\d+$/.test(page.url()))
 })
 

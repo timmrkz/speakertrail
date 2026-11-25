@@ -390,7 +390,7 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	a.paste(w, r, id, body.Text, body.As)
+	a.paste(w, r, id, body.Text, body.As, false)
 }
 
 // pastePage keeps a LinkedIn page Tim pasted anywhere in the window as
@@ -406,28 +406,35 @@ func (a *API) pastePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := a.Engine.Whose(body.Text, body.Links, body.Open)
+	added := false
+	// Someone new is added from the page, as a link adds them.
+	if errors.Is(err, engine.ErrNobodyPasted) {
+		id, added, err = a.Engine.AddPage(r.Context(), body.Text, body.Links)
+	}
 	switch {
 	case errors.Is(err, engine.ErrNothingPasted):
 		fail(w, http.StatusBadRequest, capital(err.Error()))
 		return
-	case errors.Is(err, engine.ErrNobodyPasted):
-		fail(w, http.StatusNotFound, capital(err.Error()))
-		return
-	case errors.Is(err, engine.ErrManyPasted):
+	case errors.Is(err, engine.ErrManyPasted), errors.Is(err, engine.ErrNoBudget):
 		fail(w, http.StatusConflict, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrNoPageLink), errors.Is(err, engine.ErrNoPageName):
+		fail(w, http.StatusUnprocessableEntity, capital(err.Error()))
 		return
 	case err != nil:
 		a.internal(w, r, err)
 		return
 	}
-	a.paste(w, r, id, body.Text, nil)
+	a.paste(w, r, id, body.Text, nil, added)
 }
 
 // paste keeps text as the profile of person id, or puts back as, and
 // answers with the person, what they were for Undo, whether the name on
-// the page is the one in their link, and whether the first message is
-// being drafted from it, see draft.Drafter.Pasted. Undo drafts nothing.
-func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, as *store.Pasted) {
+// the page is the one in their link, whether the first message is
+// being drafted from it, see draft.Drafter.Pasted, and whether the page
+// added them, which Undo takes back by taking them out. Undo drafts
+// nothing.
+func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, as *store.Pasted, added bool) {
 	was, named, err := a.Engine.Paste(id, text, as)
 	switch {
 	case errors.Is(err, store.ErrNoPerson):
@@ -454,7 +461,8 @@ func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text strin
 		Was      store.Pasted  `json:"was"`
 		Named    bool          `json:"named"`
 		Drafting bool          `json:"drafting"`
-	}{out, was, named, drafting})
+		Added    bool          `json:"added"`
+	}{out, was, named, drafting, added})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

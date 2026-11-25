@@ -742,8 +742,21 @@ const ROUTES: [string, RegExp, Handler][] = [
       ?? (named.length === 1 ? named[0] : undefined)
       ?? (named.length > 1 ? null : s.people.find((x) => x.id === open))
     if (p === null) return err(409, 'More than one person here has this name. Open the one the page belongs to and paste it again')
-    if (!p) return err(404, 'Nobody in the app has this profile. Paste the link to it in the search to add them')
-    return pasteOn(s, p, b)
+    if (p) return pasteOn(s, p, b)
+    // Someone new is added from the page, like engine.AddPage: under the
+    // link in its HTML, connected when it says 1st. The mock has no Exa
+    // to ask for the link of a page pasted as text alone.
+    if (at <= 0) return err(422, 'The page shows no name above how you are connected, so it is not a LinkedIn profile as the app knows one')
+    if (!top) return err(422, 'The page came without the link to their profile, and Exa knows nobody by its name and headline. Paste the link to their profile, then the page again')
+    const id = Math.max(...s.people.map((x) => x.id)) + 1
+    const added: PersonRow = {
+      id, name: lines[at - 1], headline: '', city: '', fit: 'other', first_seen: new Date().toISOString(), notes: '',
+      profiles: [{ id: 50000 + id, platform: 'linkedin', url: `https://www.linkedin.com/in/${top}`, review: 'confirmed' }], affiliations: [],
+      connected: /^[·•]?\s*(1st|1\.)$/.test(lines[at]), read: '',
+    }
+    s.people.push(added)
+    const r = pasteOn(s, added, b)
+    return { ...r, body: { ...(r.body as object), added: true } }
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -1378,7 +1391,7 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>) {
       drafting = true
     }
   }
-  return ok({ person: personDetail(s, p), was, named, drafting })
+  return ok({ person: personDetail(s, p), was, named, drafting, added: false })
 }
 
 // A first message being drafted, worked out from the clock.

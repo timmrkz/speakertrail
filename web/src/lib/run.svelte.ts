@@ -224,7 +224,7 @@ function placeholder(): Run {
   return {
     id: 0, kind: 'manual', state: 'going', started_at: now, finished_at: null,
     sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0,
-    startups_looked_up: 0, lookups_failed: 0, people_new: 0, fits_new: 0, errors: 0,
+    startups_looked_up: 0, lookups_failed: 0, people_new: 0, errors: 0,
     progress: { checks: 0, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 0, lookups: 0, lookups_done: 0, lookups_expected: 0, now: [], seconds_left: null },
   }
 }

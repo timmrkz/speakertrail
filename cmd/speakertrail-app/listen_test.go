@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -631,9 +632,9 @@ func room(t *testing.T, mic *talkingMicrophone) {
 
 // A recording nobody talks into any more stops by itself and keeps what
 // was said, while the room goes on sending its noise, and so does one
-// that has reached the longest a recording can be, rather than going on
-// listening and hearing nothing, which is what Tim found after ten
-// minutes. Stop pressed after that gives the same, once.
+// that holds as much as a recording can, which only a speech model that
+// fell far behind the voice reaches. Tim once came back to one that had
+// heard nothing for minutes. Stop pressed after that gives the same, once.
 //
 // The bubble's clock is fake, so the quiet passes the moment everything
 // waits on it, on any machine. It is three passes long rather than two
@@ -642,7 +643,7 @@ func room(t *testing.T, mic *talkingMicrophone) {
 func TestListeningStopsByItself(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		// The longest a recording can be is short too, so a quiet stop
+		// The most a recording holds is short too, so a quiet stop
 		// that is broken fails at once, on the wrong reason, rather than
 		// after ten minutes of the bubble's clock.
 		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
@@ -672,6 +673,104 @@ func TestListeningStopsByItself(t *testing.T) {
 			t.Errorf("listening again: %v", err)
 		}
 		f.CancelListening()
+	})
+}
+
+// Somebody who talks for longer than the longest a recording can hold,
+// with the pauses anybody makes, is heard to the end. Tim dictated a long
+// report and found half of it lost: the recording had stopped by itself
+// after ten minutes while he talked on, issue #58. What was written down
+// for good is let go of, so the recording holds only what it still needs.
+func TestTalkingForLongerThanARecordingHoldsGoesOn(t *testing.T) {
+	t.Parallel()
+	// Six sentences with a pause after each, over 13 s, written down by a
+	// recording that holds 8 s and by one that holds it all. Both keep the
+	// 5 s before what the speech model writes down, so both write down
+	// the same.
+	dictate := func(t *testing.T, most int) (Dictation, int) {
+		var stopped Dictation
+		held := 0
+		synctest.Test(t, func(t *testing.T) {
+			f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
+				l.most = most
+				l.behind = listenAround
+			})
+			for n := 1; n <= 6; n++ {
+				mic.say(tone(1.2), hush(1))
+				d := awaitTold(t, told, func(d Dictation) bool { return len(d.Said) == n || d.Ended != "" })
+				if d.Ended != "" {
+					t.Fatalf("after %d sentences the recording %s", n, d.Ended)
+				}
+			}
+			f.mu.Lock()
+			r := f.now
+			f.mu.Unlock()
+			if r == nil {
+				t.Fatal("the recording is no longer in hand")
+			}
+			r.mu.Lock()
+			held = len(r.samples)
+			r.mu.Unlock()
+			var err error
+			if stopped, err = f.StopListening(); err != nil {
+				t.Fatal(err)
+			}
+		})
+		return stopped, held
+	}
+	most := 8 * speech.SampleRate
+	all, _ := dictate(t, 40*speech.SampleRate)
+	got, held := dictate(t, most)
+	if held > most {
+		t.Errorf("the recording holds %d samples, more than the %d it may", held, most)
+	}
+	if len(all.Said) < 6 {
+		t.Fatalf("a recording that holds it all gave %q, want a piece for each sentence", all.Said)
+	}
+	if got.Ended != "" || !slices.Equal(got.Said, all.Said) {
+		t.Errorf("Stop gave %q, ended %q, want %q", got.Said, got.Ended, all.Said)
+	}
+}
+
+// Typing at the end of what was said while nobody speaks cuts the
+// recording again and again, and the recording lets go of what lies
+// before the cuts, past the last word. Stop then still gives what was
+// said. The review of #86 found it failing with "the speech model
+// stopped unexpectedly".
+func TestStopAfterTypingLongAfterTheLastWord(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		f, mic, told := dictatingTo(t, &voices{}, func(l *listening) {
+			l.most = 8 * speech.SampleRate
+			l.behind = listenAround
+		})
+		mic.say(tone(1.2))
+		recording := awaitTold(t, told, func(d Dictation) bool { return d.Hearing != "" }).Recording
+		// Ten seconds nobody speaks in, with a new line typed every two.
+		for n := 1; n <= 5; n++ {
+			mic.say(hush(2))
+			f.BreakListening(recording, n-1)
+			awaitTold(t, told, func(d Dictation) bool { return d.Asked == n })
+		}
+		f.mu.Lock()
+		r := f.now
+		f.mu.Unlock()
+		if r == nil {
+			t.Fatal("the recording is no longer in hand")
+		}
+		r.mu.Lock()
+		from, spoke := r.from, r.spokeTo
+		r.mu.Unlock()
+		if from <= spoke {
+			t.Fatalf("the recording still holds the last word, from %d, spoken to %d, so this shows nothing", from, spoke)
+		}
+		stopped, err := f.StopListening()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(stopped.Said) == 0 || stopped.Said[0] != "wort wort" {
+			t.Errorf("Stop gave %q, want the two words first", stopped.Said)
+		}
 	})
 }
 
@@ -1118,7 +1217,8 @@ func TestNobodySpeakingIsWrittenDownAsNothing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if heard := len(r.recorded()); heard != len(room) {
+		if samples, from := r.recorded(); from+len(samples) != len(room) {
+			heard := from + len(samples)
 			t.Fatalf("%d samples of the room were heard, want all %d", heard, len(room))
 		}
 		if len(d.Said) != 0 {

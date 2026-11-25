@@ -39,7 +39,6 @@ type runJSON struct {
 	ReadsFailed      int           `json:"reads_failed"`
 	StartupsLookedUp int           `json:"startups_looked_up"`
 	LookupsFailed    int           `json:"lookups_failed"`
-	FitsNew          int           `json:"fits_new"`
 	Progress         *progressJSON `json:"progress"`
 	StartedAt        time.Time     `json:"started_at"`
 	FinishedAt       *time.Time    `json:"finished_at"`
@@ -80,9 +79,6 @@ func runOf(d *store.Data, r *store.Run, going int64, now, reading map[int64]time
 		}
 	}
 	for _, p := range d.People {
-		if p.FirstRunID == r.ID && p.Score > 0 {
-			out.FitsNew++
-		}
 		// People added from links come in with the run that reads them.
 		if p.FirstRunID == r.ID && p.Evidence == store.AddedByHand {
 			out.PeopleNew++

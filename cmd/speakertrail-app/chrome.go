@@ -4,7 +4,8 @@ package main
 // is. The interface asks over /api/chrome rather than through a Wails
 // binding, and hears the event called chrome, the way it hears updates.
 // The report window asks /api/chrome?window=report and hears
-// chrome-report.
+// chrome-report. Unlike FrameFairy, a measurement that ends after a newer
+// one is never used or told, issue #20.
 
 import (
 	"math"
@@ -77,6 +78,18 @@ type chromeWatch struct {
 	// What the interface was last told, so nothing is said twice.
 	said Chrome
 	told bool
+	// Every measurement takes a number as it starts, from asked. Wails
+	// runs each window event on a goroutine of its own, so a measurement
+	// can end after a later one, issue #20. One whose number is below
+	// fresh is older than what is known already and is never used:
+	// otherwise a resize measured while the app was still fullscreen
+	// would put it back into fullscreen after it left. latest is the
+	// newest measurement used, what a page that asks is given meanwhile.
+	asked, fresh uint64
+	latest       Chrome
+	// telling keeps using a measurement and telling the page about it
+	// together, so what is told last is the newest measurement.
+	telling sync.Mutex
 }
 
 // askSystem asks the system where the furniture of window is.
@@ -92,21 +105,38 @@ func askSystem(window *application.WebviewWindow) chromeRaw {
 }
 
 // measure asks where the furniture is and puts the answer on whole pixels.
+// A measurement that ends after a newer one gives the newer one.
 func (c *chromeWatch) measure() Chrome {
-	now, _ := c.measured()
+	now, _ := c.use(c.take())
 	return now
 }
 
-// measured is measure with what the system answered beside it.
-func (c *chromeWatch) measured() (Chrome, chromeRaw) {
+// take asks the system where the furniture is, with the number the
+// measurement took as it started.
+func (c *chromeWatch) take() (uint64, chromeRaw) {
 	ask := c.ask
 	if ask == nil {
 		ask = askSystem
 	}
-	raw := ask(c.window)
+	c.mu.Lock()
+	n := c.asked
+	c.asked++
+	c.mu.Unlock()
+	return n, ask(c.window)
+}
+
+// use settles the measurement numbered n and keeps it as the newest, and
+// says so. One older than what is known already changes nothing and
+// gives the newest in its place.
+func (c *chromeWatch) use(n uint64, raw chromeRaw) (Chrome, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.settle(raw), raw
+	if n < c.fresh {
+		return c.latest, false
+	}
+	c.fresh = n + 1
+	c.latest = c.settle(raw)
+	return c.latest, true
 }
 
 // settle turns one answer into what the interface is told. It is the whole
@@ -143,8 +173,19 @@ func px(v float64) int {
 // publish measures and tells the interface, but only when the answer is
 // not what it was told last time. Dragging the app by its corner raises
 // one of these a frame, and almost none of them change anything.
+//
+// The measuring runs outside telling, since it waits for the main
+// thread, and only one that is still the newest is used and told, under
+// telling. So the last thing the page is told is always the newest
+// measurement, issue #20.
 func (c *chromeWatch) publish() {
-	now, raw := c.measured()
+	n, raw := c.take()
+	c.telling.Lock()
+	defer c.telling.Unlock()
+	now, newest := c.use(n, raw)
+	if !newest {
+		return
+	}
 	c.mu.Lock()
 	same := c.told && c.said == now
 	c.said = now
@@ -211,9 +252,12 @@ func watchChrome(tell func(Chrome), window *application.WebviewWindow) *chromeWa
 
 // set says whether the app is fullscreen, which the events know before
 // a measurement can.
+// Every measurement still being taken started before the change and is
+// not used, since it may say the opposite.
 func (c *chromeWatch) set(full bool) {
 	c.mu.Lock()
 	c.full = full
+	c.fresh = c.asked
 	c.mu.Unlock()
 }
 

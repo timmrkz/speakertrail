@@ -7,13 +7,15 @@ import { url, server } from './lib/mock.mjs'
 // What the mock heard from the window for the app's log.
 const heard = (page) => page.evaluate(() => fetch('/api/log/heard').then((r) => r.json()))
 // Waits until the log heard what is asked, since the window sends its
-// lines within a quarter of a second. It listens for the next line before
-// it looks, never after: a line answered while the look was on its way
-// was otherwise missed, and the walk waited for one that never came, as
-// it did in CI on 25 November 2026.
+// lines within a quarter of a second. The wait for the window's next
+// line starts before the mock is asked, never after: a line sent while
+// the answer was on its way would otherwise be missed, and the wait
+// would last until the walk timed out, as it did in CI on #98 with the
+// walks run side by side.
 async function until(page, ok) {
   for (;;) {
     const next = page.waitForResponse((r) => r.url().includes('/api/log/') && !r.url().endsWith('/api/log/heard'))
+    // A wait no longer needed ends with the page, and says nothing.
     next.catch(() => {})
     const h = await heard(page)
     if (ok(h)) return h

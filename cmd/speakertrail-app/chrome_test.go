@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 
@@ -127,6 +128,148 @@ func TestTheWindowIsToldOnlyWhatChanged(t *testing.T) {
 	c.publish()
 	if len(told) != 2 || told[1] != (Chrome{Bar: 28, Left: 20, Right: 92}) {
 		t.Errorf("an app that changed told %+v, wanted the new bar once more", told)
+	}
+}
+
+// Wails runs each window event on a goroutine of its own, so a resize
+// measured while the app is still fullscreen can end after the app has
+// left it, before or after the event for leaving is measured. Either way
+// the page is told the newest measurement last, and the old one never
+// puts the app back into fullscreen, issue #20. The test holds the
+// resize back on purpose, so the order is the same on every run.
+func TestAnOlderMeasurementNeverOvertakesANewerOne(t *testing.T) {
+	t.Parallel()
+	for _, resizeEnds := range []string{"after the app is measured out", "before the app is measured out"} {
+		t.Run(resizeEnds, func(t *testing.T) {
+			t.Parallel()
+			asked, release := make(chan struct{}), make(chan struct{})
+			var mu sync.Mutex
+			var told []Chrome
+			first := true
+			c := &chromeWatch{
+				ask: func(*application.WebviewWindow) chromeRaw {
+					mu.Lock()
+					held := first
+					first = false
+					mu.Unlock()
+					if held {
+						// The resize, measured while the app was fullscreen.
+						close(asked)
+						<-release
+						return chromeRaw{fullscreen: true}
+					}
+					return chromeRaw{bar: 52, left: 20, right: 92}
+				},
+				tell: func(now Chrome) {
+					mu.Lock()
+					defer mu.Unlock()
+					told = append(told, now)
+				},
+			}
+			c.settle(chromeRaw{bar: 52, left: 20, right: 92})
+			c.set(true)
+
+			resized := make(chan struct{})
+			go func() {
+				defer close(resized)
+				c.publish()
+			}()
+			<-asked
+			// The event for leaving fullscreen, while the resize is
+			// still being measured: it says so, then measures.
+			c.set(false)
+			if resizeEnds == "before the app is measured out" {
+				close(release)
+				<-resized
+				c.publish()
+			} else {
+				c.publish()
+				close(release)
+				<-resized
+			}
+
+			mu.Lock()
+			got := slices.Clone(told)
+			mu.Unlock()
+			want := Chrome{Bar: 52, Left: 20, Right: 92}
+			if len(got) == 0 || got[len(got)-1] != want {
+				t.Fatalf("the page was told %+v, wanted %+v last", got, want)
+			}
+			// The next event measures the same window and still finds
+			// the buttons, so nothing stuck the app in fullscreen.
+			if now := c.measure(); now != want {
+				t.Errorf("the next measurement gave %+v, wanted %+v", now, want)
+			}
+		})
+	}
+}
+
+// A measurement that was the newest when it was used is told before any
+// later one is used, so it can never be told after a newer one. While
+// the page is being told, no other measurement may be used, and the test
+// holds the telling back and tries the lock that keeps that true, the
+// other half of issue #20.
+func TestNothingIsUsedWhileThePageIsBeingTold(t *testing.T) {
+	t.Parallel()
+	telling, release := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var told []Chrome
+	c := &chromeWatch{
+		ask: func(*application.WebviewWindow) chromeRaw { return chromeRaw{bar: 52, left: 20, right: 92} },
+		tell: func(now Chrome) {
+			mu.Lock()
+			first := len(told) == 0
+			told = append(told, now)
+			mu.Unlock()
+			if first {
+				close(telling)
+				<-release
+			}
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.publish()
+	}()
+	<-telling
+	if c.telling.TryLock() {
+		c.telling.Unlock()
+		t.Error("while the page was being told, another measurement could have been used and told before it")
+	}
+	close(release)
+	<-done
+}
+
+// The page asks /api/chrome while window events are measured too. An
+// answer measured before a newer one was taken is not given, the newer
+// one is.
+func TestThePageIsNeverAnsweredAnOlderMeasurement(t *testing.T) {
+	t.Parallel()
+	asked, release := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	first := true
+	c := &chromeWatch{
+		ask: func(*application.WebviewWindow) chromeRaw {
+			mu.Lock()
+			held := first
+			first = false
+			mu.Unlock()
+			if held {
+				close(asked)
+				<-release
+				return chromeRaw{bar: 28, left: 20, right: 92}
+			}
+			return chromeRaw{bar: 52, left: 20, right: 92}
+		},
+	}
+	answered := make(chan Chrome, 1)
+	go func() { answered <- c.measure() }()
+	<-asked
+	c.publish()
+	close(release)
+	if got, want := <-answered, (Chrome{Bar: 52, Left: 20, Right: 92}); got != want {
+		t.Errorf("the page was answered %+v, wanted the newer %+v", got, want)
 	}
 }
 

@@ -254,7 +254,8 @@ window or the app loses nothing.
 
 Dictate writes what Tim says into the field, on this Mac, with the speech
 model from Settings, Speech models. macOS asks for the microphone the
-first time.
+first time. A recording goes on for as long as Tim talks, and stops by
+itself after two minutes without a word, issue #58.
 
 ## The steps
 

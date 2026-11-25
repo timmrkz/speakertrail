@@ -1,7 +1,6 @@
 package names_test
 
 import (
-	"slices"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/names"
@@ -41,6 +40,21 @@ var cases = []struct {
 	{"Mara", "Mara", ""},
 	{"  Mara   Beispiel  ", "Mara", "Beispiel"},
 	{"Mara\nBeispiel", "Mara", "Beispiel"},
+	{"Dr. med Mara Beispiel", "Mara", "Beispiel"},
+	{"Dr med Mara Beispiel", "Mara", "Beispiel"},
+	{"Dr. rer nat Tom Testmann", "Tom", "Testmann"},
+	{"Dr. phil. Mara Beispiel", "Mara", "Beispiel"},
+	{"RA Tom Testmann", "Tom", "Testmann"},
+	{"StB Dipl.-Kfm. Tom Testmann", "Tom", "Testmann"},
+	{"Phil Testmann", "Phil", "Testmann"},
+	{"Nat Testmann", "Nat", "Testmann"},
+	{"Hans-J. Testmann", "Hans-J.", "Testmann"},
+	{"Hans-J. Peter Testmann", "Hans-J.", "Testmann"},
+	{"Ing-Marie Beispiel", "Ing-Marie", "Beispiel"},
+	{"Mara (Mimi) Beispiel", "Mara", "Beispiel"},
+	{"Mara Beispiel: Coach", "Mara", "Beispiel"},
+	{"Mara Beispiel (sie", "Mara", "Beispiel"},
+	{"J. Mara Beispiel", "Mara", "Beispiel"},
 	// A title and one name leave no first name to be sure of, only the
 	// family's.
 	{"Dr. Beispiel", "", "Beispiel"},
@@ -61,11 +75,5 @@ func TestFamily(t *testing.T) {
 		if got := names.Family(c.name); got != c.family {
 			t.Errorf("Family(%q) = %q, want %q", c.name, got, c.family)
 		}
-	}
-}
-
-func TestWords(t *testing.T) {
-	if got := names.Words("Prof. Dr. Mara von Beispiel, MBA (sie/ihr)"); !slices.Equal(got, []string{"Mara", "von", "Beispiel"}) {
-		t.Errorf("Words = %q", got)
 	}
 }

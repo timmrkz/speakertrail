@@ -9,13 +9,6 @@ import (
 	"unicode"
 )
 
-// Words are the words of the name itself, without titles before it,
-// degrees after it, pronouns or a tagline.
-func Words(name string) []string {
-	w, _ := words(name)
-	return w
-}
-
 // First is the first name, to greet someone by. It is empty when the
 // name holds none for sure, like "Dr. Beispiel", which is a title and a
 // family name.
@@ -41,9 +34,10 @@ func Family(name string) string {
 // words finds the name's own words, and whether a title stood before
 // them.
 func words(name string) (out []string, titled bool) {
-	// What follows a comma, a bar or a bracket is a degree, pronouns or a
-	// tagline, never the name.
-	if i := strings.IndexAny(name, ",|([/"); i >= 0 {
+	// A nickname or pronouns in brackets are not the name, and what
+	// follows a comma, a bar, a slash or a colon is a degree or a tagline.
+	name = unbracket(name)
+	if i := strings.IndexAny(name, ",|/:"); i >= 0 {
 		name = name[:i]
 	}
 	for _, w := range strings.Fields(name) {
@@ -55,13 +49,29 @@ func words(name string) (out []string, titled bool) {
 		case !lettered:
 			// A dash, a dot or an emoji after it ends the name.
 			return trim(out), titled
-		case len(out) == 0 && title(w):
+		case len(out) == 0 && title(w, titled):
 			titled = true
 			continue
 		}
 		out = append(out, w)
 	}
 	return trim(out), titled
+}
+
+// unbracket takes out what stands in brackets, and everything after a
+// bracket that is never closed.
+func unbracket(name string) string {
+	for {
+		i := strings.IndexAny(name, "([")
+		if i < 0 {
+			return name
+		}
+		j := strings.IndexAny(name[i:], ")]")
+		if j < 0 {
+			return name[:i]
+		}
+		name = name[:i] + " " + name[i+j+1:]
+	}
 }
 
 // trim takes the degrees and initials off the end of the name, but never
@@ -74,12 +84,20 @@ func trim(w []string) []string {
 }
 
 // titles are the titles that stand before a name, in small letters and
-// without their dots, so "Dr." and "Dr" are the same. A word whose first
-// part, before a dot or a hyphen, is one of them is a title too, like
-// "Dr.-Ing", "Dipl.-Kfm." and "Mag.a".
+// without their dots, so "Dr." and "Dr" are the same. "Mag.a" is "mag".
 var titles = set("dr", "drs", "prof", "professor", "professorin", "doktor",
 	"dipl", "mag", "ing", "pd", "priv", "univ", "apl", "habil", "herr", "frau",
 	"mr", "mrs", "ms", "sir")
+
+// fields are the words that say a doctor's field, like "med" in "Dr.
+// med". They are titles only after another, since "Phil" and "Nat" are
+// first names too.
+var fields = set("med", "dent", "vet", "rer", "nat", "pol", "oec", "phil",
+	"jur", "theol", "soc", "sc", "hc", "mult")
+
+// professions are the letters of a profession written before a name, as
+// they are spelt, like "RA", a lawyer, and "StB", a tax adviser.
+var professions = set("RA", "RAin", "StB", "WP")
 
 // degrees are the degrees and certificates written after a name without
 // dots, as they are spelt, so "Ma", a family name, is not "MA". A word
@@ -88,15 +106,26 @@ var degrees = set("MBA", "EMBA", "DBA", "PhD", "PHD", "MSc", "BSc", "MA",
 	"BA", "MD", "LLM", "LLB", "MPH", "MEng", "BEng", "MAS", "CFA", "CPA",
 	"ACC", "PCC", "MCC")
 
-// title says whether a word before a name is a title. Any word that ends
-// with a dot there is one, like "med." in "Dr. med.", and so is an
-// initial, so "J. Mara Beispiel" is greeted as Mara.
-func title(w string) bool {
-	if strings.HasSuffix(w, ".") {
+// title says whether a word before a name is a title, given whether one
+// stood before it. A word that ends with a dot is one, like "med." in
+// "Dr. med.", and so is an initial, so "J. Mara Beispiel" is greeted as
+// Mara. A word joined by hyphens is one only when each of its parts is,
+// like "Dr.-Ing" and "Dipl.-Kfm.", so "Hans-J." and "Ing-Marie" are
+// names.
+func title(w string, titled bool) bool {
+	if parts := strings.Split(w, "-"); len(parts) > 1 {
+		for _, p := range parts {
+			if p == "" || !title(p, true) {
+				return false
+			}
+		}
 		return true
 	}
-	first, _, _ := strings.Cut(strings.ReplaceAll(w, "-", "."), ".")
-	return titles[strings.ToLower(first)]
+	if strings.HasSuffix(w, ".") || professions[w] {
+		return true
+	}
+	first, _, _ := strings.Cut(strings.ToLower(w), ".")
+	return titles[first] || titled && fields[first]
 }
 
 // degree says whether a word after a name is a degree or an initial.

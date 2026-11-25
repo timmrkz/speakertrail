@@ -838,7 +838,10 @@ export const api = {
   // Attach asks in the open box, a paste hands the picture over in
   // base64. Each gives the draft, with why something was left out.
   attachPictures: () => request<ReportDraft>('POST', '/api/report/pick', {}),
-  attachPasted: (name: string, data: string) => request<ReportDraft>('POST', '/api/report/pasted', { name, data }),
+  // The name goes in the address too, so a paste too big to be read is
+  // still turned away by its name.
+  attachPasted: (name: string, data: string) =>
+    request<ReportDraft>('POST', `/api/report/pasted?name=${encodeURIComponent(name)}`, { name, data }),
   removePicture: (id: string) => request<ReportDraft>('POST', '/api/report/remove', { id }),
   putBackPicture: (id: string) => request<ReportDraft>('POST', '/api/report/put-back', { id }),
   clearReport: () => request<ReportDraft>('POST', '/api/report/clear', {}),

@@ -528,7 +528,7 @@ answer 409 with a sentence that can go in a toast.
 | `PUT /api/report/text` | `{"text": "…"}` keeps what was written |
 | `GET /api/report/picture?id=p1` | the picture itself, as PNG. A recording has none |
 | `POST /api/report/pick` | asks for pictures and recordings in a Finder dialog, PNG or JPEG, and MP4, MOV, M4V, MKV or WebM |
-| `POST /api/report/pasted` | `{"name": "…", "data": "<base64>"}` adds a pasted picture or recording |
+| `POST /api/report/pasted?name=…` | `{"name": "…", "data": "<base64>"}` adds a pasted picture or recording. One too big to be read is turned away by the name in the address, with the reason in the draft |
 | `POST /api/report/remove` | `{"id": "p1"}` takes a picture out, and keeps it aside for Put it back |
 | `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
 | `POST /api/report/clear` | empties the draft, and keeps it aside for Undo. People stays as it is |

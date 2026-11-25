@@ -367,7 +367,7 @@
       const reader = new FileReader()
       reader.onload = () => {
         const data = String(reader.result).replace(/^data:[^,]*,/, '')
-        newest(() => api.attachPasted(f.name || 'Pasted picture.png', data)).then(tookNewest, (err) => oops(sentence(err)))
+        newest(() => api.attachPasted(f.name || (f.type.startsWith('video/') ? 'Pasted recording' : 'Pasted picture.png'), data)).then(tookNewest, (err) => oops(sentence(err)))
       }
       reader.readAsDataURL(f)
     }

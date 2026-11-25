@@ -400,8 +400,8 @@ func (r *reporting) AttachPictures() ReportDraft {
 	return r.attachFiles("picked", paths)
 }
 
-// AttachPasted attaches a picture pasted into the report's field, its
-// bytes in base64, the way the window has them.
+// AttachPasted attaches a picture or a recording pasted into the
+// report's field, its bytes in base64, the way the window has them.
 func (r *reporting) AttachPasted(name, data string) ReportDraft {
 	if base64.StdEncoding.DecodedLen(len(data)) > pictureBytesMax+3 {
 		return r.attach("pasted", []handed{{name: name, err: errTooBig}})
@@ -413,7 +413,16 @@ func (r *reporting) AttachPasted(name, data string) ReportDraft {
 	return r.attach("pasted", []handed{{name: name, data: b, err: err}})
 }
 
-// RemovePicture removes a picture from the draft. It can be put back.
+// PastedTooBig turns away a paste too big to be read, by its name.
+func (r *reporting) PastedTooBig(name string) ReportDraft {
+	if name == "" {
+		name = "Pasted file"
+	}
+	return r.attach("pasted", []handed{{name: name, err: errTooBig}})
+}
+
+// RemovePicture removes a picture or a recording from the draft. It can
+// be put back.
 func (r *reporting) RemovePicture(id string) ReportDraft {
 	return r.markPicture(id, true)
 }

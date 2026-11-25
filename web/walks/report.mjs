@@ -128,7 +128,7 @@ const walks = [
     async run(page) {
       await openReport(page)
       await page.locator('textarea.telling').click()
-      const pasted = page.waitForResponse((r) => r.url().endsWith('/api/report/pasted'))
+      const pasted = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/report/pasted')
       await page.evaluate(() => {
         const box = new DataTransfer()
         box.items.add(new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 113, 116, 32, 32])], 'Screen Recording.mov', { type: 'video/quicktime' }))

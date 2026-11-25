@@ -132,3 +132,45 @@ func braces(glob string) []string {
 	}
 	return out
 }
+
+// Every job of every workflow has a limit of its own, so a test that
+// hangs is stopped in minutes rather than holding its runner for
+// GitHub's six hours. A job that calls another workflow takes the limits
+// of that one's jobs. See the ci skill and #81.
+//
+// On the real disk: what is read is the repository's own workflows.
+func TestEveryJobHasALimit(t *testing.T) {
+	t.Parallel()
+	dir := filepath.Join("..", "..", ".github", "workflows")
+	files, err := filepath.Glob(filepath.Join(dir, "*.yml"))
+	yamls, err2 := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	files = append(files, yamls...)
+	if err != nil || err2 != nil || len(files) == 0 {
+		t.Fatalf("found no workflows: %v %v", err, err2)
+	}
+	jobs := 0
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wf struct {
+			Jobs map[string]struct {
+				Uses    string `yaml:"uses"`
+				Timeout any    `yaml:"timeout-minutes"`
+			} `yaml:"jobs"`
+		}
+		if err := yaml.Unmarshal(b, &wf); err != nil {
+			t.Fatalf("%s: %v", filepath.Base(f), err)
+		}
+		for name, job := range wf.Jobs {
+			jobs++
+			if job.Uses == "" && job.Timeout == nil {
+				t.Errorf("the job %s of %s has no timeout-minutes, so a hang holds its runner for six hours", name, filepath.Base(f))
+			}
+		}
+	}
+	if jobs == 0 {
+		t.Error("found no jobs in the workflows")
+	}
+}

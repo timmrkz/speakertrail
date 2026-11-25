@@ -5,20 +5,7 @@
 // clock. What the app keeps of a draft the walk saves itself, as the app
 // would have. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 const first = 'Hallo Mara, danke fürs Vernetzen! Dein Studio in Köln hat mich neugierig gemacht. Hättest du Lust auf ein Gespräch? Tim'
 const second = 'Hallo Mara, schön, dass wir jetzt vernetzt sind. Magst du mein Gast sein? Tim'
@@ -152,6 +139,54 @@ const walks = [
       // The tick stays while it shows, with the pointer gone.
       await page.mouse.move(0, 0)
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the tick hides with the pointer away'
+      return ''
+    },
+  },
+  {
+    // Tim, 24 November 2026: a double click whose second press is held
+    // and dragged picks a phrase word by word, as everywhere on the Mac,
+    // and the select all of a plain double click must not take it over.
+    name: 'A double click held and dragged selects word by word, not all of the message',
+    async run(page) {
+      await open(page, 1009)
+      await drafted(page, 1009, 1, first)
+      const b = await box(page).boundingBox()
+      const [pad, line] = await box(page).evaluate((t) => [parseFloat(getComputedStyle(t).paddingLeft), parseFloat(getComputedStyle(t).lineHeight)])
+      if (b.height < 2.5 * line) return `the message fits ${b.height} px, too few lines to drag down a line`
+      const x = b.x + pad + 8
+      const y = b.y + line / 2 + 4
+      // A double click at (from) whose second press is held and moved to
+      // (to), and what it selected.
+      async function drag(from, to) {
+        await page.mouse.move(...from)
+        await page.mouse.down({ clickCount: 1 })
+        await page.mouse.up({ clickCount: 1 })
+        await page.mouse.down({ clickCount: 2 })
+        await page.mouse.move(...to, { steps: 8 })
+        await page.mouse.up({ clickCount: 2 })
+        const [start, end, value] = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value])
+        return { start, end, value, picked: value.slice(start, end), all: start === 0 && end === value.length }
+      }
+      // Into "Hallo", the first word, then forward across "Mara," and a
+      // little into "danke", on the first line.
+      let s = await drag([x, y], [x + 110, y])
+      if (s.all) return 'a double click held and dragged forward selects all of the message'
+      if (s.start !== 0) return `the drag from "Hallo" starts its selection at ${s.start}`
+      if (!/^Hallo Mara\b/.test(s.picked)) return `a drag forward over three words selects ${JSON.stringify(s.picked)}`
+      if (/\w/.test(s.value[s.end] ?? '')) return `the drag forward ends inside a word, at ${JSON.stringify(s.picked)}`
+      // From "danke" back to "Hallo": whole words, ending after "danke".
+      s = await drag([x + 110, y], [x, y])
+      if (s.all) return 'a double click held and dragged backward selects all of the message'
+      if (s.start !== 0 || !/^Hallo Mara, danke$/.test(s.picked)) return `a drag backward from "danke" selects ${JSON.stringify(s.picked)}`
+      // From "Hallo" straight down onto the second line.
+      s = await drag([x, y], [x, y + line])
+      if (s.all) return 'a double click held and dragged down a line selects all of the message'
+      if (s.start !== 0 || !s.picked.includes('Vernetzen')) return `a drag down a line selects ${JSON.stringify(s.picked)}`
+      if (/\w/.test(s.value[s.end] ?? '')) return `the drag down a line ends inside a word, at ${JSON.stringify(s.picked)}`
+      // A plain double click afterwards still takes all of it.
+      await box(page).dblclick()
+      const sel = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value.length])
+      if (sel[0] !== 0 || sel[1] !== sel[2]) return `a double click after a drag selects ${sel[0]} to ${sel[1]} of ${sel[2]}`
       return ''
     },
   },

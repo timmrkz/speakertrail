@@ -31,6 +31,11 @@ interface Res {
   end(body?: string): void
 }
 
+// How long the mock waits before each answer unless told otherwise, so a
+// person trying the interface in `make mock` sees what shows while an
+// answer is on its way. The walks set MOCK_DELAY_MS to 0, see
+// walks/lib/mock.mjs: a walk that needs an answer on its way holds that
+// request itself.
 const DELAY_MS = 280
 
 interface PersonRow {
@@ -519,7 +524,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
   const run: Run = {
     id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind, state: 'going', started_at: new Date().toISOString(), finished_at: null,
     sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
-    people_new: 0, fits_new: 0, errors: 0,
+    people_new: 0, errors: 0,
     progress: { checks, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 0, lookups: 0, lookups_done: 0, lookups_expected: 0, now: [], seconds_left: null },
   }
   s.runs.unshift(run)
@@ -1447,7 +1452,7 @@ function logStatus() {
   }
 }
 
-export function mockApi(): Plugin {
+export function mockApi({ delayMs = DELAY_MS }: { delayMs?: number } = {}): Plugin {
   const state = createState()
   return {
     name: 'speakertrail-mock-api',
@@ -1460,7 +1465,7 @@ export function mockApi(): Plugin {
         const url = new URL(req.url ?? '/', 'http://mock')
         if (!url.pathname.startsWith('/api/')) return next()
         const body = req.method === 'POST' || req.method === 'PATCH' || req.method === 'PUT' ? await readBody(req) : {}
-        await new Promise((r) => setTimeout(r, DELAY_MS))
+        await new Promise((r) => setTimeout(r, delayMs))
         const send = (out: Out) => {
           res.statusCode = out.status
           if (out.status === 204 || out.body === undefined) return res.end()

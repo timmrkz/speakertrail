@@ -129,8 +129,28 @@
   }
 
   // A double click takes the whole message, not a word of it, because
-  // what follows is Cmd+C.
+  // what follows is Cmd+C. A double click whose second press is held and
+  // dragged is Tim picking a phrase word by word, and the web view's own
+  // selection stands. The web view still sends dblclick when the press
+  // lets go, so the box notes whether the pointer moved while the second
+  // press was down. A few pixels are the hand, not a drag.
+  const dragAfter = 4
+  let secondPress: { x: number; y: number } | null = null
+  let dragged = false
+  function press(e: MouseEvent) {
+    if (e.button !== 0) return
+    secondPress = e.detail === 2 ? { x: e.clientX, y: e.clientY } : null
+    dragged = false
+  }
+  function move(e: MouseEvent) {
+    if (!secondPress || dragged || !(e.buttons & 1)) return
+    dragged = Math.hypot(e.clientX - secondPress.x, e.clientY - secondPress.y) > dragAfter
+  }
   function selectAll(e: MouseEvent) {
+    const held = dragged
+    secondPress = null
+    dragged = false
+    if (held) return
     ;(e.currentTarget as HTMLTextAreaElement).select()
   }
 
@@ -246,7 +266,8 @@
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
       bind:this={field} use:fit use:pasteAsShown use:keepsUndo aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
-      ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
+      onmousedown={press} onmousemove={move} ondblclick={selectAll}
+      title="Double click selects all of it, ready for Cmd+C. Double click and drag selects word by word"></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
         title={copied ? 'Copied' : 'Copy the whole message'}>

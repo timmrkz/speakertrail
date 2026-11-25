@@ -67,9 +67,11 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | the end-to-end tests | the walks in `web/walks/`, `make walks`, see [INTERFACE.md](INTERFACE.md) |
 | the interface's own unit tests | Vitest, `*.test.ts` in `web/src/lib/`, in `make interface` |
 | the race detector | on every Go test, `make unit` |
+| the test cache | Go's, kept in CI from main's last run, see CI in [BUILD.md](BUILD.md#ci) |
+| no test waits on the clock | golangci-lint's `forbidigo` refuses `time.Sleep`, `time.After` and the timers in a Go test, except in a synctest bubble, see `.golangci.yml`. The mock answers the walks at once, see `web/walks/lib/mock.mjs` |
 | a test on the real disk says why | a comment that starts with "On the real disk" |
 | invented data | invented people, never a real name, see Personal data in `CLAUDE.md` |
-| not kept yet | `make unit` runs with `-count=1`, which turns Go's test cache off. No linter bans a sleep, a poll or the real clock in a test, see #82. No mutation testing |
+| not kept yet | No linter reads the walks for `waitForTimeout`, and the mock's runs, reads and downloads take seconds of real time, see #96. No mutation testing |
 
 ## The ci skill in this project
 
@@ -79,9 +81,9 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | the path filters, and the test that holds them | the job `changes` in `.github/workflows/ci.yml`, held by `internal/workflows`, see CI in [BUILD.md](BUILD.md#ci) |
 | a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is published and finds the pull requests that conflict |
 | a scarce runner | a Mac, the job `macos` |
-| a job's limit | five minutes, the `timeout-minutes` of the job `changes`, of `conflicts.yml` and of the first job of `builds.yml` |
+| a job's limit | five minutes, the `timeout-minutes` of every job of `ci.yml` but `macos`, of `conflicts.yml` and of the first job of `builds.yml`. `macos` has 30, for llama-server built anew. `internal/workflows` fails a job with none. `make unit` and the walks stop a test after two minutes, inside it |
 | the notice of a conflict | `conflicts.yml`, see When main moves in [WORKFLOW.md](WORKFLOW.md) |
-| not kept yet | `go`, `web` and `macos` in `ci.yml` have no `timeout-minutes`, so GitHub's six hours hold. `macos` runs every Go test, not only what differs on a Mac. See #81. A pull request of Markdown alone runs nothing, on purpose, see `CLAUDE.md`. Actions pinned by tag in `ci.yml`, not by commit, and no dependency bot, see #80. No nightly runs |
+| not kept yet | `macos` runs every Go test, not only what differs on a Mac, since `runtime.GOOS` decides in five packages beside the files named for darwin. Go's test cache runs only what changed there too. A pull request of Markdown alone runs nothing, on purpose, see `CLAUDE.md`. No dependency bot, see #80. No nightly runs |
 
 ## The maintenance skill in this project
 

@@ -5,20 +5,7 @@
 // window._wails.dispatchWailsEvent. FrameFairy has stub hooks for this
 // and no walk that uses them, issue #17.
 import { chromium } from 'playwright'
-import { createServer } from 'vite'
-import { fileURLToPath } from 'node:url'
-import { existsSync } from 'node:fs'
-
-if (!existsSync(chromium.executablePath())) {
-  console.error(`The walks need Playwright's Chromium, and it is not at ${chromium.executablePath()}. Install it with: cd web && npx playwright install chromium`)
-  process.exit(1)
-}
-
-const web = fileURLToPath(new URL('..', import.meta.url))
-process.env.MOCK = '1'
-const server = await createServer({ root: web, configFile: `${web}/vite.config.ts`, logLevel: 'error', server: { port: 0, strictPort: false } })
-await server.listen()
-const url = server.resolvedUrls.local[0].replace(/\/$/, '')
+import { url, server } from './lib/mock.mjs'
 
 // How long the question stays, which the Go side says with it, quitAgain
 // in quit.go.

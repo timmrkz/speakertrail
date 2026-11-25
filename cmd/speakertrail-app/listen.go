@@ -22,7 +22,9 @@ import (
 
 // Report a Problem's microphone: what Tim says is recorded by the app and
 // written down by the speech model on the Mac, into the report, where he
-// corrects it. Ported from FrameFairy's listen.go. Its bound calls,
+// corrects it. Ported from FrameFairy's listen.go. Unlike FrameFairy's, a
+// recording lets go of what was written down for good, so it no longer
+// stops after ten minutes while somebody talks, issue #58. Its bound calls,
 // Listen, StopListening, SettleListening, BreakListening and
 // CancelListening, are routes here, see listen_api.go, and what is heard
 // goes to the window as the events dictation and loudness.
@@ -34,9 +36,19 @@ import (
 // NSMicrophoneUsageDescription in scripts/bundle-macos.sh, and macOS
 // remembers the answer.
 
-// listenMost is the longest recording kept, ten minutes, 38 MB of samples.
-// A report is a few sentences, so this is only a bound.
+// listenMost is the most of a recording held at once, ten minutes, 38 MB
+// of samples. What was written down for good is let go of, see
+// listenBehind, so a recording goes on for as long as somebody talks,
+// issue #58. It reaches this only when the speech model falls ten
+// minutes behind the voice, so this is only a bound.
 const listenMost = 10 * 60 * speech.SampleRate
+
+// listenBehind is how much of what was written down for good a recording
+// still holds, a minute. The speech model hears listenAround before what
+// it writes down, and a new line typed while somebody talks may take back
+// the last few pieces, see BreakListening, so those are kept. A piece is
+// at most 12 s long.
+const listenBehind = 60 * speech.SampleRate
 
 // microphone records, mono at speech.SampleRate. The tests put in one that
 // plays samples, see listening.mic.
@@ -71,11 +83,14 @@ type listening struct {
 	loud func(Loudness)
 	// every is how often what is being said is written down again, 0 for
 	// listenEvery, quiet how long a recording goes on with no new words,
-	// 0 for listenQuiet, and most the longest a recording is, in samples,
-	// 0 for listenMost. The tests take them shorter.
-	every time.Duration
-	quiet time.Duration
-	most  int
+	// 0 for listenQuiet, most the most of a recording held at once, in
+	// samples, 0 for listenMost, and behind how much of what was written
+	// down for good is held, 0 for listenBehind. The tests take them
+	// shorter.
+	every  time.Duration
+	quiet  time.Duration
+	most   int
+	behind int
 	// still, when set, says when the quiet is over, in place of quiet of
 	// the clock: a recording stops by itself for want of words the pass
 	// after it says so. A test sets it, so it does not wait the quiet out.
@@ -163,11 +178,18 @@ type recording struct {
 	// carry, not whatever they are at by the time it is written down.
 	act string
 	// What was recorded, behind a lock of its own, since the microphone
-	// hands it over from a thread of its own. It only ever grows, so a
-	// slice of it taken under the lock can be read after.
+	// hands it over from a thread of its own. samples starts at from in
+	// the whole recording: what lies before forget, written down for
+	// good, is let go of once samples would hold more than most, see
+	// heard. Every place in the recording is counted from its start, never
+	// from samples. samples is never written over, only grown or put in a
+	// new array, so a slice of it taken under the lock can be read after.
 	mu      sync.Mutex
 	samples []float32
+	from    int
+	forget  int
 	most    int
+	behind  int
 	// hushed stops the microphone once, whoever ends the recording.
 	// opened says the microphone has started and stopping that the
 	// recording asked it to stop, both behind mu, so whichever comes
@@ -186,7 +208,7 @@ type recording struct {
 	passes  int
 	slowest time.Duration
 	// The loudest the microphone was since it was last asked, in dB, and
-	// whether the recording is as long as it may be.
+	// whether the recording holds as much as it may.
 	peak float64
 	full atomic.Bool
 	// voiced says whether the microphone was ever as loud as a voice,
@@ -223,6 +245,13 @@ type writtenDown struct {
 func (r *recording) heard(samples []float32) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if len(r.samples)+len(samples) > r.most && r.forget > r.from {
+		// What was written down for good is let go of, into a new array,
+		// since a slice of the old one may still be read.
+		kept := make([]float32, len(r.samples)-(r.forget-r.from), r.most)
+		copy(kept, r.samples[r.forget-r.from:])
+		r.samples, r.from = kept, r.forget
+	}
 	room := r.most - len(r.samples)
 	r.samples = append(r.samples, samples[:min(len(samples), max(room, 0))]...)
 	if len(r.samples) >= r.most {
@@ -237,7 +266,7 @@ func (r *recording) heard(samples []float32) {
 		r.peak = max(r.peak, db)
 		if db >= listenVoice {
 			r.voiced.Store(true)
-			r.spokeTo = len(r.samples)
+			r.spokeTo = r.from + len(r.samples)
 		}
 	}
 }
@@ -316,10 +345,20 @@ func (r *recording) spoken() int {
 	return r.spokeTo
 }
 
-func (r *recording) recorded() []float32 {
+// recorded gives what the recording holds, and where in the recording it
+// starts.
+func (r *recording) recorded() ([]float32, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.samples
+	return r.samples, r.from
+}
+
+// settledTo says that everything before settled is written down for good,
+// so all but the last of it, behind, may be let go of.
+func (r *recording) settledTo(settled int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.forget = max(r.forget, settled-r.behind)
 }
 
 // opener is how a recording gets the speech model: the one the host
@@ -411,7 +450,7 @@ func (l *listening) begin() (*recording, string, error) {
 	}
 	l.count++
 	l.last = nil
-	r := &recording{id: l.count, mic: mic(), hear: l.opener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost),
+	r := &recording{id: l.count, mic: mic(), hear: l.opener(), started: time.Now(), act: theLog.acting(), most: cmp.Or(l.most, listenMost), behind: cmp.Or(l.behind, listenBehind),
 		peak: -200, live: make(chan struct{}), over: make(chan struct{}), ended: make(chan struct{}), written: make(chan writtenDown, 1)}
 	l.now = r
 	return r, dir, nil
@@ -545,10 +584,12 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 				// A stretch nobody spoke in, two new lines in a row, needs no
 				// pass of the speech model, which on a slow machine would
 				// hold up the answer to every one after it.
-				samples := r.recorded()
+				// A piece already let go of is heard from where the
+				// recording now starts, which a minute behind is never.
+				samples, base := r.recorded()
 				end, text = max(ask.at, from), ""
-				if spoke(samples[from:end]) {
-					text, _ = heardAround(rec, samples, from, end)
+				if spoke(samples[max(from-base, 0) : end-base]) {
+					text, _ = heardAround(rec, samples, max(from-base, 0), end-base)
 				}
 			} else {
 				for _, t := range slices.Backward(told) {
@@ -560,6 +601,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			}
 			said, ends = append(said[:n], text), append(ends[:n], end)
 			settled, hearing, told = end, "", nil
+			r.settledTo(settled)
 			asked++
 		}
 		return len(asks) > 0
@@ -606,7 +648,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		if hushed {
 			why = fmt.Sprintf("stopped listening after %s without a word", minutes(quiet))
 		} else if r.full.Load() {
-			why = fmt.Sprintf("stopped listening after %s, the longest a recording can be", minutes(time.Duration(r.most)*time.Second/speech.SampleRate))
+			why = fmt.Sprintf("stopped listening, %s were not written down yet, the longest a recording can hold", minutes(time.Duration(r.most)*time.Second/speech.SampleRate))
 		}
 		if why != "" {
 			r.hush()
@@ -617,7 +659,11 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 			}
 			return
 		}
-		samples := r.recorded()
+		samples, base := r.recorded()
+		// Words the window settled are matched to an earlier hearing,
+		// which never lies before what the recording holds, but nothing
+		// here may read before it.
+		settled = max(settled, base)
 		deaf := ""
 		if len(samples) >= listenUnheard && silent(samples) {
 			deaf = heardNothing()
@@ -629,15 +675,15 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 		// said is followed by a whole pause, which settles it. So while
 		// nobody speaks, nothing changes.
 		spoken := r.spoken()
-		end := min(len(samples), spoken+speech.SettleSamples)
+		end := min(base+len(samples), spoken+speech.SettleSamples)
 		paused := end == spoken+speech.SettleSamples && passed < end
 		changed, now := false, hearing
 		if r.voiced.Load() && end-settled >= listenLeast && (spoken-spokenAt >= listenLeast/2 || paused) {
 			passed, spokenAt = end, spoken
-			cut := speech.Settled(samples[settled:end])
+			cut := speech.Settled(samples[settled-base : end-base])
 			began := time.Now()
 			var before string
-			before, now = heardAround(rec, samples[:end], settled, settled+cut)
+			before, now = heardAround(rec, samples[:end-base], settled-base, settled-base+cut)
 			r.paced(time.Since(began), end-max(settled-listenAround, 0), every)
 			if cut > 0 {
 				if before != "" {
@@ -645,6 +691,7 @@ func (l *listening) write(r *recording, dir string, every, quiet time.Duration) 
 					changed = true
 				}
 				settled += cut
+				r.settledTo(settled)
 			}
 		}
 		if changed || now != hearing || deaf != unheard {
@@ -768,9 +815,9 @@ func (l *listening) finish(r *recording, rec speech.Recognizer, said []string, s
 	if !kept || r.dropped.Load() {
 		return writtenDown{}
 	}
-	samples := r.recorded()
-	seconds := float64(len(samples)) / speech.SampleRate
-	if len(samples) < listenLeast {
+	samples, base := r.recorded()
+	seconds := float64(base+len(samples)) / speech.SampleRate
+	if base+len(samples) < listenLeast {
 		return writtenDown{}
 	}
 	if silent(samples) {
@@ -783,9 +830,11 @@ func (l *listening) finish(r *recording, rec speech.Recognizer, said []string, s
 	}
 	hearing := time.Now()
 	// What was said and a pause after it, not the silence beyond, see
-	// write.
-	samples = samples[:min(len(samples), r.spoken()+speech.SettleSamples)]
-	if _, rest := heardAround(rec, samples, settled, settled); rest != "" {
+	// write. A recording that let go of everything up to past the last
+	// word, after new lines typed long after it, has nothing more.
+	samples = samples[:max(min(len(samples), r.spoken()+speech.SettleSamples-base), 0)]
+	settled = max(settled, base)
+	if _, rest := heardAround(rec, samples, settled-base, settled-base); rest != "" {
 		said = append(said, rest)
 	}
 	// How much and how long, never what was said: that goes into the
@@ -860,7 +909,7 @@ func (l *listening) BreakListening(recording, pieces int) {
 	r := l.now
 	if r != nil && r.id == recording {
 		r.mu.Lock()
-		r.settles = append(r.settles, settle{pieces: pieces, cut: true, at: len(r.samples)})
+		r.settles = append(r.settles, settle{pieces: pieces, cut: true, at: r.from + len(r.samples)})
 		r.mu.Unlock()
 	}
 	l.mu.Unlock()

@@ -6,6 +6,10 @@
 # logger the app gives them, the ones that reach the app's log, see
 # docs/LOGGING.md. What a library writes there still reaches it, see
 # takeStandardLog in cmd/speakertrail-app/applog.go.
+#
+# No test waits on the clock: no sleep, no timer and no time.After, see
+# the testing skill. A test in a synctest bubble, whose clock is fake,
+# says so where it uses one, with //nolint:forbidigo // synctest bubble.
 version: "2"
 linters:
   default: none
@@ -17,10 +21,17 @@ linters:
         - pattern: ^log\.(Print|Printf|Println|Fatal|Fatalf|Fatalln|Panic|Panicf|Panicln)$
           pkg: ^log$
           msg: "our code logs through theLog in the app and through the slog logger the app gives the engine and the API, which reach the app's log, see docs/LOGGING.md"
+        - pattern: ^time\.(Sleep|After|AfterFunc|Tick|NewTimer|NewTicker)$
+          pkg: ^time$
+          msg: "a test never waits on the clock: hand in a fake clock, run it in a synctest bubble, or wait for the event of the step, see the testing skill"
   exclusions:
     rules:
       - path: _test\.go$
         linters: [forbidigo]
+        text: our code logs through
+      - path-except: _test\.go$
+        linters: [forbidigo]
+        text: a test never waits on the clock
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0

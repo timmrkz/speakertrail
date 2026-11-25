@@ -136,11 +136,10 @@ var linked = map[string][]string{
 }
 
 // ffmpegLinks are what ffmpeg and ffprobe link: Apple's own decoders and
-// encoders, VideoToolbox and AudioToolbox, and what they stand on, as
-// FrameFairy lists them, without CoreText, which only FrameFairy's
-// libass draws captions with.
+// encoders, VideoToolbox and AudioToolbox, and what they stand on. It is
+// FrameFairy's list without ApplicationServices and CoreText, which only
+// FrameFairy's libass draws captions with, read off the build CI made.
 var ffmpegLinks = []string{
-	"/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices",
 	"/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
 	"/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
 	"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",

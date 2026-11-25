@@ -40,6 +40,10 @@
 //	    comment on each open pull request that no longer merges into
 //	    main, after a push to main, or on the one of branch B at commit X
 //	    after a push to it, see conflicts.go
+//	speakertrail-release build-plan -event E -commit C [-action A -number N] [-branch B -pushed T]
+//	    say to builds.yml what its run is a build of, main, a pull
+//	    request or nothing, built by a push or by an opening and never by
+//	    both, see plan.go
 package main
 
 import (
@@ -93,6 +97,8 @@ func main() {
 		err = unreachableCommand(os.Args[2:])
 	case "conflicts":
 		err = conflictsCommand(os.Args[2:])
+	case "build-plan":
+		err = planCommand(os.Args[2:])
 	default:
 		usage()
 	}
@@ -103,7 +109,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | harden -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X]")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | harden -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
 	os.Exit(2)
 }
 

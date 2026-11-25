@@ -93,7 +93,7 @@ jobs:
       - name: Walks
         working-directory: .
         run: make walks
-      - if: github.ref == 'refs/heads/main' && steps.debs.outputs.cache-hit != 'true'
+      - if: (github.ref == 'refs/heads/main' || github.head_ref == 'claude/project-thread-kkxip8') && steps.debs.outputs.cache-hit != 'true' # TEMPORARY, to prove a hit before the merge
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/debs
@@ -167,7 +167,7 @@ jobs:
             ~/.cache/go-build
             ~/.cache/golangci-lint
           key: go-built-${{ runner.os }}-${{ github.sha }}
-      - if: github.ref == 'refs/heads/main' && steps.debs.outputs.cache-hit != 'true'
+      - if: (github.ref == 'refs/heads/main' || github.head_ref == 'claude/project-thread-kkxip8') && steps.debs.outputs.cache-hit != 'true' # TEMPORARY, to prove a hit before the merge
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/debs

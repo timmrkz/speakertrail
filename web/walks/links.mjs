@@ -42,12 +42,14 @@ async function people(browser, width = 1280) {
   return page
 }
 
-// Enter adds the links in the search, and the walk goes on once the app
-// has answered, so the run they started is there to move on.
+// Enter adds the links in the search, and the walk goes on once the page
+// holds the run they started, which New counts. A run the page never saw
+// going ends with no Run done, so moving the clock on before then lost
+// the toast, #96. The app's answer to the add is not enough: the page
+// learns of the run from its next look, see poll in src/lib/run.svelte.ts.
 async function add(page) {
-  const added = page.waitForResponse((r) => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/people')
   await search(page).press('Enter')
-  await added
+  await page.locator('main .filters button[title*="of this run"]').waitFor()
 }
 
 // The mock's clock moved on by ms, and the page's past its next look at

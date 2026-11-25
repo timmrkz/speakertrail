@@ -12,9 +12,8 @@ make run
 
 The first time, make installs what the Mac is missing with Homebrew, Go,
 Node.js and CMake, and the command line tools for the compiler. Then it
-builds llama-server and ffmpeg, which take a few minutes each, see
-[The language model](#the-language-model) and [ffmpeg](#ffmpeg), the
-interface and the app,
+builds llama-server, which takes a few minutes, see
+[The language model](#the-language-model), the interface and the app,
 puts them together as `bin/Speaker Trail.app` and opens it. The app's log
 is in `~/Library/Logs/Speaker Trail`, see [LOGGING.md](LOGGING.md). After
 the first time a rebuild takes seconds.
@@ -59,7 +58,6 @@ the item's partition list, which holds only the builds you allowed.
 | Builds downloaded to update to | `~/Library/Caches/Speaker Trail/builds` |
 | The speech models Dictate hears with, and the language model that drafts first messages | `~/Library/Application Support/Speaker Trail/models` |
 | llama-server, built once by make | `.build/llama` in the repository, never committed |
-| ffmpeg and ffprobe, built once by make | `.build/ffmpeg` in the repository, never committed |
 | The draft of a report | `~/Library/Application Support/Speaker Trail/report` |
 
 The file is written whole on every change, to a new file that then takes
@@ -94,7 +92,6 @@ docker volume rm speakertrail_postgres
 | `make run` | installs what is missing, builds the app and opens it |
 | `make` | builds the app, `bin/Speaker Trail.app` on a Mac |
 | `make llama` | builds llama-server, when it is not built or `scripts/build-llama.sh` changed. `make` does it by itself on a Mac |
-| `make ffmpeg` | builds ffmpeg and ffprobe, when they are not built or `cmd/speakertrail-release/ffmpeg.go` changed. `make` does it by itself on a Mac |
 | `make install` | the same, copied to `/Applications`, where it updates itself |
 | `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
 | `make carry-over` | the people connected in the Docker version, into the app, see above |
@@ -105,7 +102,7 @@ docker volume rm speakertrail_postgres
 | `make interface` | a type check of the interface and its tests, with vitest |
 | `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/`, side by side |
 | `make check` | what this machine has and still needs |
-| `make clean` | removes what make built. The app's file stays, and so do llama-server and ffmpeg in `.build/`, which take minutes to build again |
+| `make clean` | removes what make built. The app's file stays, and so does llama-server in `.build/llama`, which takes minutes to build again |
 | `make help` | this list |
 
 ## CI
@@ -122,9 +119,7 @@ with `dorny/paths-filter`. As in FrameFairy.
 | only the docs, `docs/`, any `.md`, `.claude/` | nothing |
 
 Every job has a limit, five minutes, and `macos` 30 for the time a new
-llama-server and ffmpeg take to build. The `go` job installs Ubuntu's
-ffmpeg, and `macos` puts the one the app carries first on the path, for
-the tests that attach a screen recording to a report. Go's modules are kept in GitHub's cache by
+llama-server takes to build. Go's modules are kept in GitHub's cache by
 `go.sum`, and what Go built and tested, and what golangci-lint found, by
 main's last run that passed: a pull request starts from there and builds
 and tests again only the packages it changed, and those with a test that
@@ -192,41 +187,6 @@ against the memory free now, and a server a crashed app left running is
 stopped when the app starts. Every server is noted in `llama-servers` in
 the app's folder the moment it starts, before its model has loaded. As in FrameFairy. `SPEAKERTRAIL_LLAMA_SERVER` names another llama-server, for a try
 with a build of one's own.
-
-## ffmpeg
-
-Report a Problem takes screen recordings, and the ffmpeg and ffprobe the
-app carries read them: what a file is, its size and length, a copy
-without its place, date or device, and a still of its first frame, see
-`cmd/speakertrail-app/recording.go`. They lie beside the program in
-`Contents/MacOS`, the only place the app takes them from, as
-`internal/carried` finds llama-server. `SPEAKERTRAIL_FFMPEG` and
-`SPEAKERTRAIL_FFPROBE` name others, for a try.
-
-`speakertrail-release ffmpeg`, in `cmd/speakertrail-release/ffmpeg.go`,
-builds them from ffmpeg's source, the release and commit it pins, taken
-from git. It is FrameFairy's `build-ffmpeg.sh` at the same pin, written in
-Go, since this repository has no new shell scripts, and without libass,
-freetype, fribidi and harfbuzz, which FrameFairy needs only to burn
-captions. Its configure line is FrameFairy's otherwise: no
-`--enable-gpl`, so no libx264 and the build is LGPL, only files and pipes
-as ways in and out, no network, none of the formats that read other files
-a recording names, and Apple's VideoToolbox and AudioToolbox on a Mac. It
-reads each program back and stops when one says GPL, has libx264, reads
-through any other protocol or format of that kind, or needs a library of
-the Mac that built it. The LGPL's text travels with them as
-`LICENSE-ffmpeg.txt` in the bundle's Resources, and `BUILD-ffmpeg.txt`
-beside it says what the build is, read off the binary: the commit of
-ffmpeg's source and the configure line. FrameFairy also puts an archive
-of that source on its release, which Speaker Trail does not yet.
-
-make builds them into `.build/ffmpeg` once, and again only when
-`ffmpeg.go` changed, by the checksum the stamp `.build/ffmpeg/built`
-keeps. The build workflow and CI's `macos` job keep `.build/ffmpeg` in
-their cache by the same rule. The release check knows which libraries
-they link, see `ffmpegLinks` in `cmd/speakertrail-release/inputs.go`, and
-`scripts/bundle-macos.sh` refuses a bundle without them and signs them ad
-hoc with the app.
 
 ## Elsewhere than on a Mac
 

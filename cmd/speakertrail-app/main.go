@@ -174,7 +174,6 @@ func main() {
 	report.stop = dictate.CancelListening
 	report.told = func(open bool) { emit("report-window", open) }
 	report.said = func(d ReportDraft) { emit("report-draft", d) }
-	report.media = findMedia
 	report.pick = func() ([]string, error) {
 		return app.Dialog.OpenFile().
 			SetTitle("Attach screenshots or recordings").

@@ -116,11 +116,8 @@ jobs:
           key: go-built-${{ runner.os }}-${{ github.sha }}
           restore-keys: go-built-${{ runner.os }}-
       # The app's window is a webview, which on Linux is GTK and WebKit.
-      # ffmpeg reads the screen recordings the tests of Report a Problem
-      # attach, see recording_test.go. Ubuntu's here, the one the app
-      # carries on the Mac in the macos job.
-      - name: GTK, WebKit and ffmpeg
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev ffmpeg
+      - name: GTK and WebKit
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends libgtk-4-dev libwebkitgtk-6.0-dev
       - name: Lint
         run: make lint
       - name: Test
@@ -175,12 +172,6 @@ jobs:
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
-      # The ffmpeg and ffprobe the app carries the same way, kept until
-      # their recipe changes, the rule make ffmpeg follows.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: .build/ffmpeg
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cmd/speakertrail-release/ffmpeg.go') }}
       # What make run builds on Tim's Mac, Speaker Trail.app, signed ad hoc
       # and read back by codesign.
       - name: Build the app
@@ -216,10 +207,8 @@ jobs:
           ADHOC_APP="$PWD/bin/Speaker Trail.app"
           APPLE_CAS=1
           go test -count=1 -run 'TestARealSignatureIsReadAsCodesignWroteIt|TestApplesRealAuthorityIsTaken' -v ./cmd/speakertrail-release/
-      # The ffmpeg the app carries reads the screen recordings the tests
-      # of Report a Problem attach, so they prove the one Tim gets.
       - name: Tests
-        run: PATH="$PWD/.build/ffmpeg/bin:$PATH" go test -timeout 2m ./...
+        run: go test -timeout 2m ./...
       # The keychain is the Mac's own, which the test cache cannot see, so
       # its tests run every time.
       - name: The keychain, uncached

@@ -216,7 +216,7 @@ and shows it in Finder. In it:
 | `people.json` | only with People on, see below |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
 | `pictures/` | the screenshots, as PNG |
-| `recordings/` | the screen recordings, `1.mov` and on, in the kind of file they came as, copied without their place, date, device or any other metadata |
+| `recordings/` | the screen recordings, `1.mov` and on, byte for byte as they were attached, so with whatever their files say about themselves, a place or a device too |
 
 Paths under the home folder are written as `~` in every file but the
 pictures and recordings, so the Mac's user name does not travel. The report never holds

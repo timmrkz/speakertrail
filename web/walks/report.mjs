@@ -122,9 +122,9 @@ const walks = [
   },
   {
     // A screen recording pasted into the field is attached like a
-    // picture, and its tile shows the still of its first frame with its
-    // length in the corner, as FrameFairy's does. Issue #49.
-    name: 'A recording pasted shows its still and its length',
+    // picture, and its tile shows the mark of a film and its name, since
+    // the app reads no picture out of it. Issue #49.
+    name: 'A recording pasted shows as a tile with its name',
     async run(page) {
       await openReport(page)
       await page.locator('textarea.telling').click()
@@ -137,16 +137,17 @@ const walks = [
       const sent = JSON.parse((await pasted).request().postData() ?? '{}')
       if (sent.name !== 'Screen Recording.mov') return `the paste sent ${JSON.stringify(sent.name)}`
       const figure = page.locator('.pictures figure')
-      await figure.locator('.length').waitFor()
-      await page.waitForFunction(() => document.querySelector('.pictures figure img')?.complete)
+      await figure.locator('.film svg').waitFor()
       const tile = await figure.evaluate((f) => ({
-        length: f.querySelector('.length').textContent.trim(),
+        name: f.querySelector('.film .name').textContent.trim(),
         label: f.getAttribute('aria-label'),
-        loaded: f.querySelector('img').naturalWidth > 0,
+        pictures: f.querySelectorAll('img').length,
+        inside: f.querySelector('.film .name').getBoundingClientRect().right <= f.getBoundingClientRect().right,
       }))
-      if (!tile.loaded) return 'the still of the recording did not load'
-      if (tile.length !== '0:12') return `the recording's tile says ${JSON.stringify(tile.length)}, not 0:12`
-      if (tile.label !== 'Screen Recording.mov, a recording of 0:12') return `the recording's tile is read out as ${JSON.stringify(tile.label)}`
+      if (tile.pictures !== 0) return 'the recording\'s tile asks for a picture the app has none of'
+      if (tile.name !== 'Screen Recording.mov') return `the recording's tile says ${JSON.stringify(tile.name)}`
+      if (!tile.inside) return 'the name on the recording\'s tile runs past its edge'
+      if (tile.label !== 'Screen Recording.mov, a screen recording') return `the recording's tile is read out as ${JSON.stringify(tile.label)}`
       if ((await page.locator('textarea.telling').inputValue()) !== '') return 'the paste wrote into the field'
       return ''
     },

@@ -13,9 +13,6 @@
 #   make            build the app, bin/Speaker Trail.app on a Mac
 #   make llama      the llama-server the app carries, built from llama.cpp.
 #                   make does it once by itself, on a Mac
-#   make ffmpeg     the ffmpeg and ffprobe the app carries, which read a
-#                   screen recording in a report. make does it once by
-#                   itself, on a Mac
 #   make install    the same, copied to /Applications, to start it like
 #                   any other app. Once is enough: from then on it updates
 #                   itself, see docs/UPDATES.md
@@ -91,7 +88,7 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain llama ffmpeg mock test lint golangci-lint unit interface walks check clean help
+.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
 
 help:
 	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
@@ -148,29 +145,12 @@ llama:
 	rm -rf .build/llama && sh scripts/build-llama.sh .build/llama && rm -rf .build/llama/work && \
 	echo "$$want" >$(LLAMA_DIR)/built
 
-# The ffmpeg and ffprobe that read a screen recording handed to Report a
-# Problem, built from ffmpeg's source by speakertrail-release ffmpeg, LGPL
-# and without libx264, see cmd/speakertrail-release/ffmpeg.go. Built once
-# into .build/ffmpeg, the way llama-server is, and again only when that
-# file changed, which the stamp beside it says by its checksum. The
-# sources go once it is built.
-FFMPEG_DIR := .build/ffmpeg
-FFMPEG_RECIPE := cmd/speakertrail-release/ffmpeg.go
-ffmpeg:
-	@want=$$(cksum $(FFMPEG_RECIPE) | cut -d' ' -f1); \
-	if [ -x $(FFMPEG_DIR)/bin/ffmpeg ] && [ -x $(FFMPEG_DIR)/bin/ffprobe ] && [ "$$(cat $(FFMPEG_DIR)/built 2>/dev/null)" = "$$want" ]; then exit 0; fi; \
-	echo "Building ffmpeg from its source. Once, and it takes a few minutes"; \
-	rm -rf .build/ffmpeg && $(GO) run ./cmd/speakertrail-release ffmpeg -out $(FFMPEG_DIR) && rm -rf .build/ffmpeg/work && \
-	echo "$$want" >$(FFMPEG_DIR)/built
-
 # The app as the folder Finder draws as one icon. Only on a Mac: elsewhere
-# the program in bin/ is the app. llama-server, ffmpeg and ffprobe and
-# their licences go beside the program, where the app looks for them, see
-# internal/carried.
+# the program in bin/ is the app. llama-server and its licence go beside
+# the program, where the app looks for it, see internal/language.
 ifeq ($(UNAME),Darwin)
-app: toolchain llama ffmpeg $(EXE)
+app: toolchain llama $(EXE)
 	@cp $(LLAMA) $(LLAMA_DIR)/bin/LICENSE-llama.cpp $(BIN)/
-	@cp $(FFMPEG_DIR)/bin/ffmpeg $(FFMPEG_DIR)/bin/ffprobe $(FFMPEG_DIR)/bin/LICENSE-ffmpeg.txt $(FFMPEG_DIR)/bin/BUILD-ffmpeg.txt $(BIN)/
 	@sh scripts/bundle-macos.sh $(BIN) "$(VERSION)"
 else
 app: toolchain $(EXE)

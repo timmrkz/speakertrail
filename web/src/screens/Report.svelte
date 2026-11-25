@@ -2,7 +2,6 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import { api, onDictation, onLoudness, onReportDraft, onUndo, pictureUrl, type Dictation, type ReportDraft, type ReportPicture } from '../lib/api'
   import { asking, moveTab, typing } from '../lib/keys'
-  import { clock } from '../lib/clock'
   import Removed from '../lib/components/Removed.svelte'
   import { chime, wake } from '../lib/chime'
   import Busy from '../lib/components/Busy.svelte'
@@ -835,8 +834,8 @@
         Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach screenshots
         or screen recordings with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
         here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
-        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what else
-        their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
+        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
+        like a place or a camera, the recordings as they came, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
         it holds your People too, with what each person screen shows and the profile texts, with each person's own name written
         [name] and every link [link]. Other names in a profile text go along. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
         you send it.
@@ -913,13 +912,16 @@
               <figure
                 tabindex="0"
                 title={t.p.name}
-                aria-label={t.p.recording ? `${t.p.name}, a recording of ${clock(t.p.seconds ?? 0)}` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
+                aria-label={t.p.recording ? `${t.p.name}, a screen recording` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
                 onkeydown={(e) => tileKey(e, t.p)}>
-                <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
                 {#if t.p.recording}
-                  <!-- How long a recording is, in the corner Photos and
-                       Finder show it in. -->
-                  <span class="length">{clock(t.p.seconds ?? 0)}</span>
+                  <!-- A recording is kept as it came, and the app reads
+                       no picture out of it, so its tile shows what it is
+                       and its name, the way Finder shows a file it has
+                       no preview of. -->
+                  <span class="film"><Icon name="film" size={28} line={1.5 * (28 / 16)} /><span class="name">{t.p.name}</span></span>
+                {:else}
+                  <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
                 {/if}
               </figure>
               <button class="btn icon quiet bin" type="button" tabindex="-1" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
@@ -1025,15 +1027,12 @@
   .tile:hover figure::after, .tile:focus-within figure::after,
   .tile:hover .bin, .tile:focus-within .bin { opacity: 1; pointer-events: auto; }
   .tile .bin:hover { color: var(--bad); background: var(--bad-soft); }
-  /* A recording's length, in the tile's bottom right corner, the way
-     Photos and Finder show a video's. FrameFairy lays it on a shade that
-     fades from the corner. Here it is a solid chip of the darkest ground,
-     6 px in from the corner as the bin is, since the look is flat (#45)
-     and the shade left dark figures on a darkened picture in light. */
-  .tile .length {
-    position: absolute; right: 6px; bottom: 6px; padding: 0 6px; border-radius: 4px;
-    font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums;
-    color: var(--on-ink-0); background: var(--ink-0);
-    pointer-events: none;
+  /* A recording's tile: the mark of a film in the middle and its name
+     under it on one line, cut short at the tile's edge. */
+  .tile .film {
+    position: absolute; inset: 0; padding: 0 var(--gap-inset);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gap-inset);
+    color: var(--ink-2);
   }
+  .tile .film .name { max-width: 100%; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

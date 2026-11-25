@@ -946,8 +946,8 @@ const ROUTES: [string, RegExp, Handler][] = [
   // The mock opens no window: the report window is the page at /report.
   // Attach picks one invented screenshot, a picture is drawn as a plain
   // SVG of its size, and Report gives the path a report would have. A
-  // file pasted under a recording's ending is a screen recording of 12
-  // seconds, its still drawn the same way.
+  // file pasted under a recording's ending is a screen recording, kept
+  // with no picture and no size.
   ['GET', /^\/api\/report$/, () => ok(draftShown())],
   ['GET', /^\/api\/report\/window$/, () => ok({ open: false })],
   ['GET', /^\/api\/report\/picture$/, (_s, _m, q) => {
@@ -977,7 +977,7 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => {
     const name = String(b.name || 'Pasted picture.png')
     const ending = /\.(mp4|mov|m4v|mkv|webm)$/i.exec(name)?.[1].toLowerCase()
-    return ending ? attachMock(name, 1280, 800, ending, 12.4) : attachMock(name, 800, 500)
+    return ending ? attachMock(name, 0, 0, ending) : attachMock(name, 800, 500)
   }],
   ['POST', /^\/api\/report\/(remove|put-back)$/, (_s, m, _q, b) => {
     const p = report.pictures.find((x) => x.id === b.id)
@@ -1376,17 +1376,17 @@ function draftJob(s: State, d: MockDraft): DraftJob {
 }
 
 // The draft of a report and the recordings Dictate started.
-type MockPicture = { id: string; name: string; width: number; height: number; recording?: string; seconds?: number; removed?: boolean }
+type MockPicture = { id: string; name: string; width: number; height: number; recording?: string; removed?: boolean }
 let report: { text: string; pictures: MockPicture[]; next: number; people: boolean } = { text: '', pictures: [], next: 1, people: false }
 let listened = 0
 function draftShown() {
   return { text: report.text, people: report.people, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
 }
-function attachMock(name: string, width: number, height: number, recording?: string, seconds?: number) {
+function attachMock(name: string, width: number, height: number, recording?: string) {
   if (report.pictures.filter((p) => !p.removed).length >= 10) {
     return ok({ ...draftShown(), error: `${name} cannot be attached because it would be more than the 10 pictures and recordings a report takes` })
   }
-  report.pictures.push({ id: `p${report.next++}`, name, width, height, ...(recording ? { recording, seconds } : {}) })
+  report.pictures.push({ id: `p${report.next++}`, name, width, height, ...(recording ? { recording } : {}) })
   return ok(draftShown())
 }
 

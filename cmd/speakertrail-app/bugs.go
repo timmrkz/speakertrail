@@ -56,10 +56,9 @@ type ReportPicture struct {
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
 	// The ending a screen recording is kept under, "" for a picture. A
-	// recording keeps a still of its first frame beside it, for the tile.
+	// recording is kept as it came, with no picture of its own and no
+	// size, see recording.go.
 	Recording string `json:"recording,omitempty"`
-	// How long a recording is, in seconds.
-	Seconds float64 `json:"seconds,omitempty"`
 	// Removed by the person, kept a while so it can be put back. A removed
 	// picture goes in no report and counts toward no limit.
 	Removed bool `json:"removed,omitempty"`
@@ -92,9 +91,6 @@ type reporting struct {
 	// files is where the draft is read and written, the real disk in the
 	// app. Read under mu, since a test hands in other files as it runs.
 	files afero.Fs
-	// media finds the ffmpeg and ffprobe that read a recording handed to
-	// the report, findMedia in the app. A test hands in its own.
-	media func() (media, error)
 	// Where the draft is kept: draft.json and the pictures beside it.
 	dir    string
 	draft  draftFile
@@ -125,8 +121,8 @@ type reporting struct {
 	// stop drops the recording the window had going, once the window is
 	// gone, CancelListening. Set by main.go.
 	stop func()
-	// decoding is told each time a picture or a recording handed to the
-	// report is about to be decoded. A test hands in its own, to hold a
+	// decoding is told each time a picture handed to the report is about
+	// to be decoded. A test hands in its own, to hold a
 	// decode and see that nothing waits on it.
 	decoding func()
 }
@@ -535,13 +531,12 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 		name string
 		pic  ReportPicture
 		body []byte
-		film []byte
 		err  error
 	}
 	got := make([]read, len(all))
 	for i, g := range all {
 		got[i].name = tidyName(g.name)
-		got[i].pic, got[i].body, got[i].film, got[i].err = g.attachment(r.media, r.decoding)
+		got[i].pic, got[i].body, got[i].err = g.attachment(r.decoding)
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -558,10 +553,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 			pic.ID = fmt.Sprintf("p%d", r.draft.Next)
 			pic.Name = name
 			if err = r.files.MkdirAll(r.dir, 0o700); err == nil {
-				err = writeAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
-			}
-			if err == nil && pic.Recording != "" {
-				err = writeAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.Recording), g.film)
+				err = writeAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.ending()), g.body)
 			}
 			if err != nil {
 				err = errors.New("could not be kept")
@@ -580,7 +572,7 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 		}
 		theLog.line(zerolog.InfoLevel, "report").Str("how", how).Str("picture", pic.ID).Str("name", name).
 			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).
-			Str("recording", pic.Recording).Float64("seconds", pic.Seconds).Msg(what)
+			Str("recording", pic.Recording).Msg(what)
 	}
 	if added > 0 {
 		if err := r.keep(); err != nil {
@@ -592,23 +584,22 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 }
 
 // attachment reads what was handed to the report: a picture, see picture,
-// or a screen recording, see recording.go. It gives the picture, or the
-// still of the recording, as a PNG, and the recording.
-func (g handed) attachment(find func() (media, error), decoding func()) (ReportPicture, []byte, []byte, error) {
+// which it gives as a PNG, or a screen recording, which it gives as it
+// came, see recording.go.
+func (g handed) attachment(decoding func()) (ReportPicture, []byte, error) {
 	if decoding == nil {
 		decoding = func() {}
 	}
 	if g.err != nil {
-		return ReportPicture{}, nil, nil, g.err
+		return ReportPicture{}, nil, g.err
 	}
 	if len(g.data) > pictureBytesMax {
-		return ReportPicture{}, nil, nil, errTooBig
+		return ReportPicture{}, nil, errTooBig
 	}
-	if reader := sniffRecording(g.data); reader != "" {
-		return g.recording(find, reader, decoding)
+	if family := sniffRecording(g.data); family != "" {
+		return ReportPicture{Recording: recordingEnding(family, g.name)}, g.data, nil
 	}
-	pic, body, err := g.picture(decoding)
-	return pic, body, nil, err
+	return g.picture(decoding)
 }
 
 // picture decodes a picture handed to the report and writes it again as a
@@ -716,13 +707,8 @@ func (r *reporting) load() {
 			r.forget(p)
 			continue
 		}
-		if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+".png")); err != nil {
+		if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+"."+p.ending())); err != nil {
 			continue
-		}
-		if p.Recording != "" {
-			if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+"."+p.Recording)); err != nil {
-				continue
-			}
 		}
 		p.Name = tidyName(p.Name)
 		kept = append(kept, p)
@@ -756,13 +742,21 @@ func (r *reporting) keep() error {
 // preview route serves.
 var pictureID = regexp.MustCompile(`^p[0-9]{1,9}$`)
 
-// forget lets go of the files a picture or a recording is kept in. They
-// are the app's own copies, never the file Tim handed over.
+// forget lets go of the file a picture or a recording is kept in. It is
+// the app's own copy, never the file Tim handed over.
 func (r *reporting) forget(p ReportPicture) {
-	_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
-	if isRecordingEnding(p.Recording) {
-		_ = r.files.Remove(filepath.Join(r.dir, p.ID+"."+p.Recording))
+	if p.Recording == "" || isRecordingEnding(p.Recording) {
+		_ = r.files.Remove(filepath.Join(r.dir, p.ID+"."+p.ending()))
 	}
+}
+
+// ending is the ending the file of a picture or a recording is kept
+// under: "png" for a picture, which is always written again as one.
+func (p ReportPicture) ending() string {
+	if p.Recording != "" {
+		return p.Recording
+	}
+	return "png"
 }
 
 // sentFile is a picture or a recording as it goes in a report: the
@@ -773,8 +767,7 @@ type sentFile struct {
 }
 
 // reportPictures gives the pictures and recordings that go in a report,
-// in order, and their ids, for clear. A recording goes as itself, not as
-// its still.
+// in order, and their ids, for clear.
 func (r *reporting) reportPictures() (ids []string, files []sentFile) {
 	if r == nil {
 		return nil, nil
@@ -786,13 +779,9 @@ func (r *reporting) reportPictures() (ids []string, files []sentFile) {
 		if p.Removed {
 			continue
 		}
-		ending := "png"
-		if p.Recording != "" {
-			ending = p.Recording
-		}
-		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+"."+ending)); err == nil {
+		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+"."+p.ending())); err == nil {
 			ids = append(ids, p.ID)
-			files = append(files, sentFile{ending, b})
+			files = append(files, sentFile{p.ending(), b})
 		}
 	}
 	return ids, files

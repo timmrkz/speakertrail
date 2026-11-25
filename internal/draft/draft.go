@@ -28,6 +28,7 @@ import (
 
 	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/language"
+	"github.com/timmrkz/speakertrail/internal/names"
 	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
@@ -588,7 +589,12 @@ func (d *Drafter) put(t store.Template, name string) message {
 	if pick == nil {
 		pick = rand.IntN
 	}
-	first, _, _ := strings.Cut(oneLine(name), " ")
+	// Where the name holds no first name for sure, … stands for Tim to
+	// write, as it does for the model's part.
+	first := names.First(name)
+	if first == "" {
+		first = Missing
+	}
 	return message(t.Expand(map[string]string{
 		store.FirstNameField: first,
 		store.PortraitField:  portraitMark,
@@ -637,9 +643,13 @@ func Messages(prompt, name, notes, profile string) []language.Message {
 
 // Fill puts a person into the prompt: {{profile}}, {{name}},
 // {{first_name}} and {{notes}}. The profile goes in last, so nothing it
-// says is read as a field.
+// says is read as a field. Where the name holds no first name for sure,
+// the model gets the whole name.
 func Fill(prompt, name, notes, profile string) string {
-	first, _, _ := strings.Cut(strings.TrimSpace(name), " ")
+	first := names.First(name)
+	if first == "" {
+		first = strings.TrimSpace(name)
+	}
 	if strings.TrimSpace(notes) == "" {
 		notes = "none"
 	}

@@ -170,6 +170,34 @@ func (r *rig) states(id int64) []string {
 	return out
 }
 
+// A first message greets the person by their first name, never by a
+// title before it, like "Dr." (Tim, 25 November 2026).
+func TestADraftGreetsTheFirstNameNotATitle(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Dr. med. Mara Beispiel", "# Dr. med. Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); p.Draft != written {
+			t.Errorf("draft %q, want %q", p.Draft, written)
+		}
+	})
+	// A title and a family name hold no first name, so … stands for Tim
+	// to write.
+	id = r.person(t, "Dr. Beispiel", "# Dr. Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); !strings.HasPrefix(p.Draft, "Hallo "+Missing+", du bist") {
+			t.Errorf("draft %q", p.Draft)
+		}
+	})
+}
+
 func TestADraftIsWrittenAndKept(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
@@ -415,6 +443,13 @@ func TestFill(t *testing.T) {
 	got := Fill("Hi {{first_name}} ({{name}}). {{notes}}\n{{profile}}", "Mara Beispiel", "", "Profil mit {{name}} darin")
 	if got != "Hi Mara (Mara Beispiel). none\nProfil mit {{name}} darin" {
 		t.Errorf("%q", got)
+	}
+	if got := Fill("Hi {{first_name}}.", "Prof. Dr. Mara Beispiel, MBA", "", ""); got != "Hi Mara." {
+		t.Errorf("a name with titles: %q", got)
+	}
+	// With no first name to be sure of, the model gets the whole name.
+	if got := Fill("Hi {{first_name}}.", "Dr. Beispiel", "", ""); got != "Hi Dr. Beispiel." {
+		t.Errorf("a title and a family name: %q", got)
 	}
 }
 

@@ -521,13 +521,13 @@ answer 409 with a sentence that can go in a toast.
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}], "people": false}`. Pictures removed a moment ago are left out |
+| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}], "people": false}`. A screen recording also has `"recording": "mov"`, the ending it is kept under, and `"seconds"`, its length. Pictures removed a moment ago are left out |
 | `GET /api/report/window` | `{"open": true}` while the report window is open |
 | `POST /api/report/open` | `{"how": "bugs"}` opens the report window, or brings it to the front |
 | `POST /api/report/about` | `{"text": "…"}` opens it with the words of a toast after what was written |
 | `PUT /api/report/text` | `{"text": "…"}` keeps what was written |
-| `GET /api/report/picture?id=p1` | the picture itself, as PNG |
-| `POST /api/report/pick` | asks for pictures in a Finder dialog, PNG or JPEG |
+| `GET /api/report/picture?id=p1` | the picture itself, as PNG, or the still of a recording's first frame |
+| `POST /api/report/pick` | asks for pictures and recordings in a Finder dialog, PNG or JPEG, and MP4, MOV, M4V, MKV or WebM |
 | `POST /api/report/pasted` | `{"name": "…", "data": "<base64>"}` adds a pasted picture |
 | `POST /api/report/remove` | `{"id": "p1"}` takes a picture out, and keeps it aside for Put it back |
 | `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
@@ -535,7 +535,8 @@ answer 409 with a sentence that can go in a toast.
 | `PUT /api/report/people` | `{"people": true}` takes People along, and answers the draft. Every new draft starts with it off |
 | `POST /api/report/send` | `{"what": "…"}` makes the report, with `people.json` when the draft takes People, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
 
-At most 10 pictures, each at most 10 MB. The draft as it changes is sent
+At most 10 pictures and recordings, each at most 10 MB. A recording is
+read by the ffmpeg the app carries, see `cmd/speakertrail-app/recording.go`. The draft as it changes is sent
 as the Wails event `report-draft`, and whether the window is open as
 `report-window`. What goes into the zip is in
 [LOGGING.md](LOGGING.md), Report a Problem.

@@ -12,11 +12,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/carried"
 )
 
 // Running the model in llama.cpp's server, the way FrameFairy runs it: a
@@ -30,23 +31,13 @@ const ServerName = "llama-server"
 // FindServer is the llama-server the app runs: the one named in
 // SPEAKERTRAIL_LLAMA_SERVER, or else the one beside the app's program.
 // Nothing is taken from the search path, so what runs is what was built
-// and shipped.
+// and shipped, see carried.Find.
 func FindServer() (string, error) {
-	if named := os.Getenv("SPEAKERTRAIL_LLAMA_SERVER"); named != "" {
-		if _, err := exec.LookPath(named); err != nil {
-			return "", fmt.Errorf("SPEAKERTRAIL_LLAMA_SERVER names %s, which cannot be run", named)
-		}
-		return named, nil
-	}
-	self, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	beside := filepath.Join(filepath.Dir(self), ServerName)
-	if info, err := os.Stat(beside); err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+	path, err := carried.Find("SPEAKERTRAIL_LLAMA_SERVER", ServerName)
+	if errors.Is(err, carried.ErrMissing) {
 		return "", errors.New("llama-server is not beside the app, so no model can run. Build the app again with make")
 	}
-	return beside, nil
+	return path, err
 }
 
 // Server is a llama-server running one model.

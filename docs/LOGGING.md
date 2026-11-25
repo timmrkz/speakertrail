@@ -202,7 +202,8 @@ jq -c --arg s "$(tail -n 1 app.log | jq -r .start)" 'select(.start == $s)' app.l
 ## Report a Problem
 
 Bugs in the sidebar opens Report a Problem in a window of its own. Tim
-writes or dictates what happened and attaches screenshots, and Report
+writes or dictates what happened and attaches screenshots and screen
+recordings, and Report
 puts one zip on the Desktop, `Speaker Trail report 2026-11-16 10.15.zip`,
 and shows it in Finder. In it:
 
@@ -215,9 +216,10 @@ and shows it in Finder. In it:
 | `people.json` | only with People on, see below |
 | `logs/` | every file of the log, the older ones unpacked, and `recent.log`, the `trace` lines kept in memory |
 | `pictures/` | the screenshots, as PNG |
+| `recordings/` | the screen recordings, `1.mov` and on, in the kind of file they came as, copied without their place, date, device or any other metadata |
 
 Paths under the home folder are written as `~` in every file but the
-pictures, so the Mac's user name does not travel. The report never holds
+pictures and recordings, so the Mac's user name does not travel. The report never holds
 the app's file.
 
 ### People

@@ -125,7 +125,7 @@ func TestThePromptHoldsNothingHidden(t *testing.T) {
 	d := &Data{Settings: map[string]SettingValue{}}
 	set := func(prompt string) error {
 		b, _ := json.Marshal(prompt)
-		return d.SetSetting(FirstMessagePrompt, b, time.Now())
+		return d.SetSetting(FirstMessagePrompt, b, time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC))
 	}
 	if err := set("Schreib\tkurz\n\n{{profile}} 😄"); err != nil {
 		t.Errorf("a prompt with a tab and an emoji: %v", err)

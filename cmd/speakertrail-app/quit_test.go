@@ -107,7 +107,7 @@ func TestALateSecondCmdQAsksAgain(t *testing.T) {
 	l, p := newLeaving(false)
 	l.shouldQuit()
 	l.mu.Lock()
-	l.askedAt = time.Now().Add(-2 * quitAgain)
+	l.askedAt = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC) // long before any test runs
 	l.mu.Unlock()
 	l.shouldQuit()
 	if got := p.words(); len(got) != 2 || got[1] != "ask" {

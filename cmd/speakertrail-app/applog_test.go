@@ -340,7 +340,7 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/log/said", bytes.NewReader(body)))
 		return rec.Code
 	}
-	before := time.Now().Add(-3 * time.Second).Truncate(time.Millisecond)
+	before := time.Now().Add(-3 * time.Second).Truncate(time.Millisecond) //nolint:forbidigo // said() keeps a moment only within a minute of the real clock
 	say([]SaidLine{
 		{At: float64(before.UnixMilli()), Level: "error", Text: "uncaught: TypeError: x is undefined"},
 		{Text: "window: hidden\n"},
@@ -569,7 +569,7 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "app-2026-11-12T09-02-00.000.log.gz"), older.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	start := time.Now().Add(-30 * time.Second).Truncate(time.Millisecond)
+	start := time.Now().Add(-30 * time.Second).Truncate(time.Millisecond) //nolint:forbidigo // said() keeps a moment only within a minute of the real clock
 	at := func(i int) float64 { return float64(start.Add(time.Duration(i) * time.Second).UnixMilli()) }
 	theLog.said([]SaidLine{
 		{At: at(0), Level: "warn", Toast: true, Text: "three"},

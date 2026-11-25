@@ -26,6 +26,11 @@ func TestFFmpegIsConfiguredLGPLAndReadingOnlyFiles(t *testing.T) {
 		if mac := slices.Contains(args, "--enable-videotoolbox"); mac != (system == "darwin") {
 			t.Errorf("on %s the configure line asks for VideoToolbox: %v", system, mac)
 		}
+		// The Mac's iconv is a library of its own, which nothing else
+		// links in without libass.
+		if mac := slices.Contains(args, "--extra-libs=-liconv"); mac != (system == "darwin") {
+			t.Errorf("on %s the configure line links libiconv: %v", system, mac)
+		}
 	}
 }
 

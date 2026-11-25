@@ -74,7 +74,11 @@ func ffmpegConfigure(prefix, system string) []string {
 		"--enable-iconv",
 	}
 	if system == "darwin" {
-		args = append(args, "--enable-videotoolbox", "--enable-audiotoolbox")
+		// iconv is the Mac's libiconv, not part of its C library, and
+		// configure finds it without saying to link it. FrameFairy's build
+		// gets it through libass, which names it, and this one has no
+		// libass: without it the link fails on _iconv_open.
+		args = append(args, "--enable-videotoolbox", "--enable-audiotoolbox", "--extra-libs=-liconv")
 	}
 	return args
 }

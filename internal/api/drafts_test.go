@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
@@ -162,5 +163,61 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	}
 	if code := call(t, a, "POST", "/api/people/profile", `{"text":" "}`, nil); code != http.StatusBadRequest {
 		t.Errorf("an empty paste: %d", code)
+	}
+}
+
+// Undo in the Edit menu of the page whose paste started a draft stops
+// the draft, as the paste's Undo toast did. An undo of the notes typed
+// meanwhile leaves it running.
+func TestUndoOfAPasteStopsTheDraftItStarted(t *testing.T) {
+	a, st, e := newAPI(t)
+	var added struct{ New []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/mara-s-beispiel"}`, &added)
+	e.Wait()
+	id := added.New[0]
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	asked := make(chan context.Context, 1)
+	a.Drafts = &draft.Drafter{Store: st, Host: host,
+		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		// The model writes until the draft is stopped.
+		Ask: func(ctx context.Context, _ *language.Server, _ []language.Message, _ json.RawMessage, _ func(string)) (language.Answer, error) {
+			asked <- ctx
+			<-ctx.Done()
+			return language.Answer{}, ctx.Err()
+		},
+		Pick: func(int) int { return 0 },
+	}
+	page := "Home\nMara Beispiel\n· 1st\nGründerin | Probe Keramik\nDortmund, North Rhine-Westphalia, Germany\nAbout\nIch töpfere."
+	body, _ := json.Marshal(map[string]any{"text": page, "links": []string{"/in/mara-s-beispiel/details/"}})
+	var out struct{ Drafting bool }
+	if code := call(t, a, "POST", "/api/people/profile", string(body), &out); code != http.StatusOK || !out.Drafting {
+		t.Fatalf("paste: %d %+v", code, out)
+	}
+	writing := <-asked
+	// Whatever the test finds, the draft ends with it.
+	t.Cleanup(func() { _ = a.Drafts.Cancel(id); a.Drafts.Wait() })
+	call(t, a, "PATCH", "/api/people/"+itoa(id), `{"notes":"Töpfert"}`, nil)
+	call(t, a, "POST", "/api/undo", "{}", nil)
+	if writing.Err() != nil {
+		t.Error("the undo of the notes stopped the draft")
+	}
+	// The page, from two requests at once: one takes it back, the other
+	// finds nothing left.
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() { call(t, a, "POST", "/api/undo", "{}", nil) })
+	}
+	wg.Wait()
+	// Cancel stops it before the undo answers.
+	if writing.Err() == nil {
+		t.Fatal("the undo of the page left the draft running")
+	}
+	a.Drafts.Wait()
+	var p personDetail
+	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+	if p.Draft != "" || p.ProfileReadAt != nil || p.Notes != "" {
+		t.Errorf("after undo: draft %q, profile read at %v, notes %q", p.Draft, p.ProfileReadAt, p.Notes)
 	}
 }

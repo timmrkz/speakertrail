@@ -8,7 +8,8 @@
 // (25 November). The app reads their name, headline and city from it and, for
 // someone who is waiting for a first message, starts it (#88). It never
 // requests LinkedIn itself: Tim opened the page. A toast says it was
-// kept, and Undo in the Edit menu takes it back, see history.svelte.ts.
+// kept, and Undo in the Edit menu takes it back, see history.svelte.ts,
+// which also stops the draft it started, see draft.Drafter.Undone.
 // Someone the page added is taken out by the toast's Undo, as for a
 // link, until adding moves into the history too, see issue #71. The
 // toast never names the person, since every toast goes into the app's
@@ -84,10 +85,7 @@ class Pasting {
       if (openPerson() !== id) navigate(`/app/people/${id}`)
       // The draft it started shows at once on the person, before the
       // app's first word of it.
-      if (r.drafting) {
-        void draftWatch.read()
-        this.started = r.added ? null : { id, at: r.person.profile_read_at }
-      }
+      if (r.drafting) void draftWatch.read()
       const drafting = r.drafting ? ', and drafting the first message' : ''
       if (r.added) {
         // Someone new, whom Undo takes out again, as for a link.
@@ -111,28 +109,6 @@ class Pasting {
       fault(e)
     } finally {
       this.changed++
-    }
-  }
-
-  // The person whose draft the last paste started, and when their page
-  // was kept, so Undo of that paste stops the draft, as it was before
-  // Undo moved into the Edit menu.
-  private started: { id: number; at: string | null } | null = null
-
-  // undone hears of an undo in the Edit menu that changed person id.
-  // When it took back the paste that started their draft, their page is
-  // no longer the one kept then, and the draft stops if it still runs.
-  async undone(id: number): Promise<void> {
-    const was = this.started
-    if (was?.id !== id) return
-    try {
-      const p = await api.person(id)
-      if (p.profile_read_at === was.at) return
-      this.started = null
-      await api.cancelDraft(id).catch(() => {})
-      void draftWatch.read()
-    } catch (e) {
-      fault(e)
     }
   }
 }

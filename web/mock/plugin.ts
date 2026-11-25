@@ -1358,6 +1358,8 @@ interface UndoStep {
   after: Fields
 }
 const undoSteps = { undo: [] as UndoStep[], redo: [] as UndoStep[] }
+// The drafts a paste started, by person, with when the page was kept.
+const pastedDrafts = new Map<number, string | undefined>()
 function fieldsOf(p: PersonRow): Fields {
   const out: Fields = {}
   for (const [k, v] of Object.entries(p)) out[k] = JSON.stringify(v)
@@ -1396,6 +1398,14 @@ function undoStep(s: State, back: boolean) {
   }
   undoSteps[from] = undoSteps[from].slice(0, -1)
   undoSteps[to] = [...undoSteps[to], step]
+  // Like draft.Drafter.Undone: an undo of the page whose paste started a
+  // draft stops it.
+  const started = pastedDrafts.get(p.id)
+  if (back && started !== undefined && started !== p.text_at) {
+    pastedDrafts.delete(p.id)
+    const d = drafts.get(p.id)
+    if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
+  }
   return ok({ done: true, shows: { kind: 'person', id: p.id } })
 }
 
@@ -1448,6 +1458,7 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>, added = fal
   else if (!p.draft && p.connected && using?.installed) {
     draftJobs++
     drafts.set(p.id, { id: `draft-${draftJobs}`, person_id: p.id, from: Date.now(), started_at: new Date().toISOString() })
+    pastedDrafts.set(p.id, p.text_at)
     drafting = true
   }
   return ok({ person: personDetail(s, p), named, drafting, added })

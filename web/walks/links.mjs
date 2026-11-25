@@ -203,9 +203,7 @@ await walk('A LinkedIn page pasted on another page, or into the search, opens wh
   expect('the toast offers Undo, which the Edit menu has now', !(await page.locator('.toast-region button', { hasText: 'Undo' }).count()))
   // Undo in the Edit menu takes the page back and stops the draft it
   // started, as the toast's Undo did.
-  const cancelled = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/people\/\d+\/draft\/cancel$/.test(r.url()))
   await menu(page, 'undo')
-  await cancelled
   await page.locator('main article.person[aria-label="eva-s-neu-80"]').waitFor()
   await page.locator('main .first-message .draft-progress').waitFor({ state: 'detached' })
 

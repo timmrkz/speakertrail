@@ -126,8 +126,8 @@ name is not is read all the same, its name the line LinkedIn puts above
 does, see [Drafts](#drafts): for someone with no first message yet whose
 draft failed because Exa had no copy, or who is connected, so a paste
 does the whole thing. It is a step that `POST /api/undo` takes back, see
-[Undo](#undo). The interface stops the draft it started when Undo takes
-the paste back. 400 for a paste with no text, 404 for an id nobody has.
+[Undo](#undo), which also stops the draft it started, if it still
+runs. 400 for a paste with no text, 404 for an id nobody has.
 
 `POST /api/people/profile` with `{"text": "…", "links": ["…"], "open":
 7}` keeps a page pasted anywhere in the window as the profile of the
@@ -620,8 +620,9 @@ nothing to take:
 { "done": true, "shows": { "kind": "person", "id": 7 } }
 ```
 
-An undo puts back only the fields the step changed, so what a run
-changed since stays. When one of those fields changed again since, it
+An undo of a pasted page stops the draft the paste started, if it
+still runs, see `draft.Drafter.Undone`. An undo puts back only the
+fields the step changed, so what a run changed since stays. When one of those fields changed again since, it
 writes nothing and answers 409, "This has changed since, so it cannot be
 taken back", and every step behind it in the same list goes, since they
 rest on it.

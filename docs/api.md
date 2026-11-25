@@ -564,9 +564,12 @@ model wrote down as `dictation`.
 Edit, Undo (Cmd+Z) and Redo (Cmd+Y) in the app's menu do not reach the
 page as keys. The app sends the Wails event `undo`, `"undo"` or
 `"redo"`, which reaches every window, and only the page that has the
-focus takes it. It decides: Report a Problem undoes its
-own steps, a text field anywhere undoes what was typed, and anywhere
-else the app takes back the last change Tim made. See
+focus takes it. It decides: Report a Problem undoes its own steps, a
+text field undoes what was typed in it, and anywhere else, or in a
+field with nothing left to take, the app takes back the last change Tim
+made. The notes and the first message keep their own steps in the page,
+`web/src/lib/fieldundo.ts`, since the browser's undo knows nothing of
+text the app puts in them and put Tim's words in twice. See
 `cmd/speakertrail-app/menu.go` and `internal/store/history.go`.
 
 `POST /api/undo` takes back the last change Tim made, and `POST

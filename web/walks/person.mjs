@@ -516,6 +516,45 @@ const walks = [
     },
   },
   {
+    // Tim, testing #87 on 25 November 2026: he typed notes, clicked out
+    // and took them back with Cmd+Z, then clicked into the notes and
+    // pressed Cmd+Y, which did nothing, and Cmd+Z and Cmd+Y in the field
+    // put his words in two and three times. The field's undo knew
+    // nothing of the notes the app put back.
+    name: 'Cmd+Z and Cmd+Y in the notes after an undo from the menu never double the words, and with nothing of its own the field passes them on',
+    async run(page) {
+      const notesOf = () => person(page, 1003).then((p) => p.notes)
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.waitFor()
+      const was = await notesOf()
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' woeifh weknd')
+      const typed = await notes.inputValue()
+      // Out of the field, onto the page, as a click beside it does.
+      await page.evaluate(() => document.activeElement.blur())
+      await page.waitForFunction(async (typed) => (await fetch('/api/people/1003').then((r) => r.json())).notes === typed, typed, { timeout: 3000 })
+        .catch(() => { throw new Error('the notes were not saved on leaving the field') })
+      await menu(page, 'undo')
+      await page.waitForFunction((was) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === was, was, { timeout: 3000 })
+        .catch(async () => { throw new Error(`Undo from the menu did not take the notes back`) })
+      await notes.click()
+      await menu(page, 'redo')
+      await page.waitForFunction((typed) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === typed, typed, { timeout: 3000 })
+        .catch(() => {})
+      if ((await notes.inputValue()) !== typed) return `Cmd+Y in the notes left them ${JSON.stringify(await notes.inputValue())}, want the words back`
+      for (const how of ['undo', 'redo', 'undo', 'undo', 'redo', 'undo', 'redo', 'redo']) {
+        await menu(page, how)
+        await page.waitForLoadState('networkidle')
+        const v = await notes.inputValue()
+        if (v.split('woeifh').length > 2) return `after ${how} the notes read ${JSON.stringify(v)}`
+      }
+      if ((await notesOf()).split('woeifh').length > 2) return 'the doubled words were saved'
+      return ''
+    },
+  },
+  {
     // Tim, 21 November 2026: he picks the best fit from the top, and every
     // point of the fit has a reason he can read, docs/fit-score.md.
     name: 'People puts the best fit first, and a person says what their fit adds up to',

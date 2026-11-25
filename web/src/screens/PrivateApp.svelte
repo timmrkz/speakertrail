@@ -15,6 +15,7 @@
   import { reporting } from '../lib/reporting.svelte'
   import { api, onUndo } from '../lib/api'
   import { undoHistory } from '../lib/history.svelte'
+  import { fieldStep } from '../lib/fieldundo'
   import { typing } from '../lib/keys'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import Landing from '../lib/components/Landing.svelte'
@@ -68,10 +69,14 @@
   $effect(() => reporting.listen())
 
   // Undo and Redo in the Edit menu come to the page, see menu.go. A
-  // field being typed in undoes its own text, as the stock ones did.
-  // Anywhere else they take back the last change Tim made, kept by the
-  // app, see lib/history.svelte.ts.
-  $effect(() => onUndo((how) => (typing() ? document.execCommand(how) : void undoHistory.step(how))))
+  // field being typed in undoes its own text first, see lib/fieldundo.ts.
+  // Anywhere else, and in a field with nothing left to take, they take
+  // back the last change Tim made, kept by the app, see
+  // lib/history.svelte.ts.
+  $effect(() => onUndo((how) => {
+    if (typing() && fieldStep(document.activeElement, how)) return
+    void undoHistory.step(how)
+  }))
   let update = $derived(updates.shown)
   let updateDot = $derived(railDot(update))
   let updateTitle = $derived.by(() => {

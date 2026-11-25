@@ -8,6 +8,7 @@
   // while the pointer is on the box, copies it in one press. Draft stands
   // in the person's row of buttons, between Connect and LinkedIn, which
   // row draws. See internal/draft and docs/api.md, Drafts.
+  import { keepsUndo } from '../fieldundo'
   import type { Snippet } from 'svelte'
   import { fit, fitNow } from '../fit'
   import { api, type DraftJob, type PersonDetail } from '../api'
@@ -244,7 +245,7 @@
   </div>
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+      bind:this={field} use:fit use:pasteAsShown use:keepsUndo aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
       ondblclick={selectAll} title="Double click selects all of it, ready for Cmd+C"></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}

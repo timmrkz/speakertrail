@@ -24,8 +24,8 @@
   // side writes it and shows it in Finder, see report.go, bugs.go and
   // docs/LOGGING.md. What is written and attached is a draft the Go side
   // keeps until Report, so closing the window loses nothing. Ported from
-  // FrameFairy's screens/Report.svelte, without screen recordings, with
-  // the reasons it gives.
+  // FrameFairy's screens/Report.svelte, with its screen recordings, issue
+  // #49, and the reasons it gives.
 
   let what = $state('')
   let making = $state(false)
@@ -356,10 +356,10 @@
     )
   }
 
-  // A picture pasted into the field is attached, the way Mail takes one.
-  // Text pastes as text.
+  // A picture or a recording pasted into the field is attached, the way
+  // Mail takes one. Text pastes as text.
   function pasted(e: ClipboardEvent) {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
     if (files.length === 0) return
     e.preventDefault()
     unclear()
@@ -367,7 +367,7 @@
       const reader = new FileReader()
       reader.onload = () => {
         const data = String(reader.result).replace(/^data:[^,]*,/, '')
-        newest(() => api.attachPasted(f.name || 'Pasted picture.png', data)).then(tookNewest, (err) => oops(sentence(err)))
+        newest(() => api.attachPasted(f.name || (f.type.startsWith('video/') ? 'Pasted recording' : 'Pasted picture.png'), data)).then(tookNewest, (err) => oops(sentence(err)))
       }
       reader.readAsDataURL(f)
     }
@@ -832,10 +832,10 @@
       </button>
       <Info label="How a report works" side="right">
         Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach screenshots
-        with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
+        or screen recordings with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
         here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
         Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
-        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
+        like a place or a camera, the recordings as they came, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
         it holds your People too, with what each person screen shows and the profile texts, with each person's own name written
         [name] and every link [link]. Other names in a profile text go along. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
         you send it.
@@ -871,8 +871,8 @@
         onmousedown={stay}
         onclick={attach}
         aria-disabled={attachOff}
-        aria-label="Attach screenshots"
-        title="Attach screenshots. You can also drop them on this window or paste them">
+        aria-label="Attach screenshots or recordings"
+        title="Attach screenshots or screen recordings. You can also drop them on this window or paste them">
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
@@ -909,8 +909,20 @@
               <Removed onputback={() => putBack(t.p.id)} onend={() => delete removed[t.p.id]} />
             {:else}
               <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-              <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
-                <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
+              <figure
+                tabindex="0"
+                title={t.p.name}
+                aria-label={t.p.recording ? `${t.p.name}, a screen recording` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
+                onkeydown={(e) => tileKey(e, t.p)}>
+                {#if t.p.recording}
+                  <!-- A recording is kept as it came, and the app reads
+                       no picture out of it, so its tile shows what it is
+                       and its name, the way Finder shows a file it has
+                       no preview of. -->
+                  <span class="film"><Icon name="film" size={28} line={1.5 * (28 / 16)} /><span class="name">{t.p.name}</span></span>
+                {:else}
+                  <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
+                {/if}
               </figure>
               <button class="btn icon quiet bin" type="button" tabindex="-1" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
                 <Icon name="trash" />
@@ -1015,4 +1027,12 @@
   .tile:hover figure::after, .tile:focus-within figure::after,
   .tile:hover .bin, .tile:focus-within .bin { opacity: 1; pointer-events: auto; }
   .tile .bin:hover { color: var(--bad); background: var(--bad-soft); }
+  /* A recording's tile: the mark of a film in the middle and its name
+     under it on one line, cut short at the tile's edge. */
+  .tile .film {
+    position: absolute; inset: 0; padding: 0 var(--gap-inset);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--gap-inset);
+    color: var(--ink-2);
+  }
+  .tile .film .name { max-width: 100%; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

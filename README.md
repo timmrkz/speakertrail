@@ -40,7 +40,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 
 | Path | Contents |
 | --- | --- |
-| `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate, and `carry-over` |
+| `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate and screen recordings, and `carry-over` |
 | `cmd/speakertrail-release` | Makes the update key, packs builds in pieces and patches, signs them, writes the channel list, and comments on a pull request that no longer merges into main |
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |

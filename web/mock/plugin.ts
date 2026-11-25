@@ -61,8 +61,9 @@ interface PersonRow {
   read?: Person['read']
   read_since?: string
   read_error?: string
-  // A LinkedIn page Tim pasted as their profile.
+  // A LinkedIn page Tim pasted as their profile, and when.
   text?: string
+  text_at?: string
 }
 
 function createState() {
@@ -368,7 +369,10 @@ function personList(s: State, p: PersonRow): Person {
     // Like the server: no facts from a profile Tim said is someone else's.
     linkedin: (() => {
       const l = p.profiles.find((x) => x.platform === 'linkedin')
-      return p.linkedin && l && l.review !== 'rejected' ? { ...p.linkedin, url: l.url } : null
+      // Like the server, someone whose profile is not read yet has their
+      // link all the same, and no facts.
+      if (!l || l.review === 'rejected') return null
+      return p.linkedin ? { ...p.linkedin, url: l.url } : { url: l.url, born_about: null, age_reason: '', roles: '', last_active: null }
     })(),
     // Founders of a startup come with what its lookup saw, like the server.
     activity: p.fit === 'founder' && !next && p.affiliations.some((a) => a.role === 'founder')
@@ -443,7 +447,7 @@ function personDetail(s: State, p: PersonRow): PersonDetail {
     : p.fit === 'founder' ? `${p.name.split(' ')[0]} hat ${p.affiliations[0]?.organisation ?? 'das eigene Studio'} gegründet.` : ''
   return {
     ...personList(s, p), appearances: appearancesOf(s, p.id), notes: p.notes, fit_evidence, affiliations: p.affiliations, sightings: [...seen.values()],
-    draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.text ? new Date().toISOString() : p.linkedin ? hoursAgo(30) : null,
+    draft: p.draft ?? '', drafted_at: p.drafted_at ?? null, profile_read_at: p.text_at ?? (p.text || p.linkedin ? hoursAgo(30) : null),
     fit_parts: fitParts(s, personList(s, p)),
   }
 }
@@ -721,33 +725,43 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['PUT', /^\/api\/people\/(\d+)\/profile$/, (s, m, _q, b) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'Not found')
-    const was = { text: p.text ?? '', name: p.name, headline: p.headline, city: p.city }
-    let named = false
-    if (b.as) {
-      const as = b.as as typeof was
-      Object.assign(p, { text: as.text, name: as.name || p.name, headline: as.headline, city: as.city })
-      if (!as.text && p.read !== undefined) p.read = 'next'
-    } else {
-      // Like the app, more or less: the name is the line that spells the
-      // name in the link, the headline the line after it.
-      const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
-      if (!lines.length) return err(400, 'The paste holds no text')
-      const spelled = (x: string) => x.toLowerCase().split(/[-\s]+/).filter((w) => !/\d/.test(w)).join('')
-      const handle = spelled((linkOf(p) ?? '').split('/').pop() ?? '')
-      const at = lines.findIndex((l) => spelled(l) === handle)
-      named = at >= 0
-      if (named) {
-        p.name = lines[at]
-        p.headline = lines[at + 1] ?? p.headline
-        const place = lines.slice(at + 1, at + 6).find((l) => /Nordrhein-Westfalen|North Rhine/.test(l))
-        if (place) p.city = place.split(',')[0]
-      }
-      p.text = lines.slice(Math.max(at, 0)).join('\n')
-      if (p.read !== undefined) p.read = ''
-      p.read_error = undefined
-      reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    return pasteOn(s, p, b)
+  }],
+  // Like engine.Whose: the person whose link the page holds most often,
+  // else the one of the name on the page, else the person open.
+  ['POST', /^\/api\/people\/profile$/, (s, _m, _q, b) => {
+    const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    if (!lines.length) return err(400, 'The paste holds no text')
+    const count = new Map<string, number>()
+    for (const h of (b.links as string[] | undefined) ?? []) {
+      const n = /\/in\/([^/?#]+)/.exec(h)?.[1]?.toLowerCase()
+      if (n) count.set(n, (count.get(n) ?? 0) + 1)
     }
-    return ok({ person: personDetail(s, p), was, named })
+    const top = [...count.entries()].sort((x, y) => y[1] - x[1])[0]?.[0]
+    const at = lines.findIndex((l) => /^[·•]?\s*(1st|2nd|3rd\+?|[123]\.)$/.test(l))
+    const name = at > 0 ? mockSpelled(lines[at - 1]) : ''
+    const named = s.people.filter((p) => name && (mockSpelled(p.name) === name || mockSpelled(handleOf(p)) === name))
+    const open = Number(b.open) || 0
+    const p = s.people.find((x) => top && handleOf(x) === top)
+      ?? named.find((x) => x.id === open)
+      ?? (named.length === 1 ? named[0] : undefined)
+      ?? (named.length > 1 ? null : s.people.find((x) => x.id === open))
+    if (p === null) return err(409, 'More than one person here has this name. Open the one the page belongs to and paste it again')
+    if (p) return pasteOn(s, p, b)
+    // Someone new is added from the page, like engine.AddPage: under the
+    // link in its HTML, connected when it says 1st. The mock has no Exa
+    // to ask for the link of a page pasted as text alone.
+    if (at <= 0) return err(422, 'The page shows no name above how you are connected, so it is not a LinkedIn profile as the app knows one')
+    if (!top) return err(422, 'The page came without the link to their profile, and Exa knows nobody by its name and headline. Paste the link to their profile, then the page again')
+    const id = Math.max(...s.people.map((x) => x.id)) + 1
+    const added: PersonRow = {
+      id, name: lines[at - 1], headline: '', city: '', fit: 'other', first_seen: new Date().toISOString(), notes: '',
+      profiles: [{ id: 50000 + id, platform: 'linkedin', url: `https://www.linkedin.com/in/${top}`, review: 'confirmed' }], affiliations: [],
+      connected: /^[·•]?\s*(1st|1\.)$/.test(lines[at]), read: '',
+    }
+    s.people.push(added)
+    const r = pasteOn(s, added, b)
+    return { ...r, body: { ...(r.body as object), added: true } }
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -945,7 +959,9 @@ const ROUTES: [string, RegExp, Handler][] = [
   // Report a Problem, like reportAPI in cmd/speakertrail-app/report_api.go.
   // The mock opens no window: the report window is the page at /report.
   // Attach picks one invented screenshot, a picture is drawn as a plain
-  // SVG of its size, and Report gives the path a report would have.
+  // SVG of its size, and Report gives the path a report would have. A
+  // file pasted under a recording's ending is a screen recording, kept
+  // with no picture and no size.
   ['GET', /^\/api\/report$/, () => ok(draftShown())],
   ['GET', /^\/api\/report\/window$/, () => ok({ open: false })],
   ['GET', /^\/api\/report\/picture$/, (_s, _m, q) => {
@@ -972,7 +988,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     return ok(draftShown())
   }],
   ['POST', /^\/api\/report\/pick$/, () => attachMock('Screenshot 2026-11-16 at 10.12.04.png', 1440, 900)],
-  ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => attachMock(String(b.name || 'Pasted picture.png'), 800, 500)],
+  ['POST', /^\/api\/report\/pasted$/, (_s, _m, _q, b) => {
+    const name = String(b.name || 'Pasted picture.png')
+    const ending = /\.(mp4|mov|m4v|mkv|webm)$/i.exec(name)?.[1].toLowerCase()
+    return ending ? attachMock(name, 0, 0, ending) : attachMock(name, 800, 500)
+  }],
   ['POST', /^\/api\/report\/(remove|put-back)$/, (_s, m, _q, b) => {
     const p = report.pictures.find((x) => x.id === b.id)
     if (p) p.removed = m[1] === 'remove'
@@ -1327,6 +1347,64 @@ function seeded(seed: number): () => number {
   }
 }
 
+// Spelled the way internal/search spells a name, without its initials
+// and the numbers of a link.
+function mockSpelled(x: string): string {
+  return x.toLowerCase().replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 'ss')
+    .split(/[-\s]+/).filter((w) => w && !/\d/.test(w) && w.replace('.', '').length > 1).join('')
+}
+const handleOf = (p: PersonRow) => (linkOf(p) ?? '').split('/').filter(Boolean).pop()?.toLowerCase() ?? ''
+
+// Keeps a pasted page as a person's profile, or puts back what Undo
+// had, like engine.Paste, and starts the first message of someone who is
+// waiting for one, like draft.Drafter.Pasted.
+function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>) {
+  const was = { text: p.text ?? '', name: p.name, headline: p.headline, city: p.city }
+  let named = false
+  let drafting = false
+  if (b.as) {
+    const as = b.as as typeof was
+    Object.assign(p, { text: as.text, name: as.name || p.name, headline: as.headline, city: as.city })
+    if (!as.text) p.text_at = undefined
+    if (!as.text && p.read !== undefined) p.read = 'next'
+  } else {
+    // Like the app, more or less: the name is the line that spells the
+    // name in the link, the headline the line after it.
+    const lines = String(b.text ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    if (!lines.length) return err(400, 'The paste holds no text')
+    const handle = mockSpelled(handleOf(p))
+    const at = lines.findIndex((l) => mockSpelled(l) === handle)
+    named = at >= 0
+    if (named) {
+      p.name = lines[at]
+      p.headline = lines[at + 1] ?? p.headline
+      const place = lines.slice(at + 1, at + 6).find((l) => /Nordrhein-Westfalen|North Rhine/.test(l))
+      if (place) p.city = place.split(',')[0]
+    }
+    p.text = lines.slice(Math.max(at, 0)).join('\n')
+    p.text_at = new Date().toISOString()
+    if (p.read !== undefined) p.read = ''
+    p.read_error = undefined
+    // Like the app: out of the run that had not read it yet, which no
+    // longer waits for it.
+    for (const q of reads.queue.filter((x) => x.id === p.id)) {
+      const run = s.runs.find((r) => r.id === q.run)
+      if (run?.progress) run.progress.reads = run.progress.reads_expected = run.progress.reads - 1
+    }
+    reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    const last = drafts.get(p.id)
+    const lastState = last ? draftJob(s, last).state : ''
+    const using = languageState().models.find((x) => x.inUse)
+    if (last && !['done', 'failed', 'cancelled'].includes(lastState)) drafting = true
+    else if (!p.draft && p.connected && using?.installed) {
+      draftJobs++
+      drafts.set(p.id, { id: `draft-${draftJobs}`, person_id: p.id, from: Date.now(), started_at: new Date().toISOString() })
+      drafting = true
+    }
+  }
+  return ok({ person: personDetail(s, p), was, named, drafting, added: false })
+}
+
 // A first message being drafted, worked out from the clock.
 type MockDraft = { id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean }
 const DRAFT_LOAD_MS = 3000
@@ -1370,17 +1448,17 @@ function draftJob(s: State, d: MockDraft): DraftJob {
 }
 
 // The draft of a report and the recordings Dictate started.
-type MockPicture = { id: string; name: string; width: number; height: number; removed?: boolean }
+type MockPicture = { id: string; name: string; width: number; height: number; recording?: string; removed?: boolean }
 let report: { text: string; pictures: MockPicture[]; next: number; people: boolean } = { text: '', pictures: [], next: 1, people: false }
 let listened = 0
 function draftShown() {
   return { text: report.text, people: report.people, pictures: report.pictures.filter((p) => !p.removed).map(({ removed: _, ...p }) => p) }
 }
-function attachMock(name: string, width: number, height: number) {
+function attachMock(name: string, width: number, height: number, recording?: string) {
   if (report.pictures.filter((p) => !p.removed).length >= 10) {
-    return ok({ ...draftShown(), error: `${name} cannot be attached because it would be more than the 10 pictures a report takes` })
+    return ok({ ...draftShown(), error: `${name} cannot be attached because it would be more than the 10 pictures and recordings a report takes` })
   }
-  report.pictures.push({ id: `p${report.next++}`, name, width, height })
+  report.pictures.push({ id: `p${report.next++}`, name, width, height, ...(recording ? { recording } : {}) })
   return ok(draftShown())
 }
 

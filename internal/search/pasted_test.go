@@ -192,3 +192,89 @@ func TestPastedAsChromeCopiesIt(t *testing.T) {
 		}
 	}
 }
+
+// A page as Chrome copied it on Tim's Mac on 24 November 2026, with
+// every person invented: a link with a middle initial the page leaves
+// out, LinkedIn's footer, and the message window Tim had open over the
+// page, with his own name and theirs in it, before the sections after
+// it. The footer and the message window say nothing about them, and Tim
+// is not the person.
+const footerPage = `Mara Beispiel
+· 1st
+
+Gründerin Probe Keramik | Abitur 2027
+
+Düsseldorf, North Rhine-Westphalia, Germany
+
+About
+Ich töpfere seit zehn Jahren.
+
+Top skills
+
+Keramik • Social Media Marketing
+
+Accessibility
+
+Talent Solutions
+
+Community Guidelines
+
+Careers
+
+Marketing Solutions
+
+Privacy & Terms
+
+LinkedIn Corporation © 2026
+
+Select language
+
+English (English)
+Tom Beobachter
+MessagingYou are on the messaging overlay. Press enter to open the list of conversations.
+
+Compose message
+New message
+Enter message recipients
+
+Mara Beispiel
+Mara Beispiel Profile
+1st degree connection
+· 1st
+Gründerin Probe Keramik | Abitur 2027
+
+Attach an image for your draft conversation
+Open Emoji Keyboard
+
+Featured
+Link
+
+Probe Keramik | Töpfern für alle
+
+Activity
+67 followers
+
+Heute haben wir den neuen Brennofen eingeweiht.
+
+Show all
+
+English
+
+Deutsch`
+
+func TestPastedWithFooterAndMessage(t *testing.T) {
+	p, linked := search.Pasted(footerPage, "https://www.linkedin.com/in/mara-s-beispiel")
+	if !linked || p.Name != "Mara Beispiel" || p.Headline != "Gründerin Probe Keramik | Abitur 2027" {
+		t.Errorf("read %q, %q, linked %v", p.Name, p.Headline, linked)
+	}
+	for _, kept := range []string{"Ich töpfere", "Keramik • Social Media Marketing", "Töpfern für alle", "Brennofen"} {
+		if !strings.Contains(p.Text, kept) {
+			t.Errorf("the text lacks %q:\n%s", kept, p.Text)
+		}
+	}
+	for _, left := range []string{"Accessibility", "Talent Solutions", "LinkedIn Corporation", "Tom Beobachter", "messaging overlay", "Compose message", "Emoji", "Mara Beispiel Profile", "1st degree"} {
+		if strings.Contains(p.Text, left) {
+			t.Errorf("the text keeps %q:\n%s", left, p.Text)
+		}
+	}
+}

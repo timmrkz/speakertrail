@@ -32,6 +32,7 @@
   import FileText from '@lucide/svelte/icons/file-text'
   import Code from '@lucide/svelte/icons/code'
   import Image from '@lucide/svelte/icons/image'
+  import Film from '@lucide/svelte/icons/film'
   import Mic from '@lucide/svelte/icons/mic'
   import Bug from '@lucide/svelte/icons/bug'
   import Paperclip from '@lucide/svelte/icons/paperclip'
@@ -81,6 +82,8 @@
     doc: FileText,
     code: Code,
     image: Image,
+    // A screen recording on Report a Problem, which shows no picture.
+    film: Film,
     // Dictate on Report a Problem.
     mic: Mic,
     // Bugs in the sidebar, the mark issue trackers draw for a bug report,

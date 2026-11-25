@@ -191,12 +191,16 @@ export interface Pasted {
   city: string
 }
 
-// The answer to a paste: the person now, what they were, and whether the
-// page gave their name.
+// The answer to a paste: the person now, what they were, whether the
+// page gave their name, and whether the paste started their first
+// message, as Draft does.
 export interface PastedProfile {
   person: PersonDetail
   was: Pasted
   named: boolean
+  drafting: boolean
+  // The page added them, someone new.
+  added: boolean
 }
 
 export interface LinksFound {
@@ -612,6 +616,10 @@ export interface ReportPicture {
   name: string
   width: number
   height: number
+  // The ending a screen recording is kept under, like mov, and none for
+  // a picture. A recording is kept as it came, with no picture and no
+  // size, see cmd/speakertrail-app/recording.go.
+  recording?: string
   // Removed by the person and kept to be put back. Never true in a draft
   // the window is sent, which leaves removed pictures out.
   removed?: boolean
@@ -787,6 +795,7 @@ export const api = {
   // Keeps a LinkedIn page Tim copied in Chrome as a person's profile, or
   // with as puts back what they were, for Undo.
   pasteProfile: (id: number, body: { text: string } | { as: Pasted }) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, body),
+  pastePage: (body: { text: string; links: string[]; open: number }) => request<PastedProfile>('POST', '/api/people/profile', body),
   patchPerson: (id: number, patch: { notes?: string; connected?: boolean; draft?: string }) => request<PersonDetail>('PATCH', `/api/people/${id}`, patch),
   patchProfile: (id: number, review: Review) => request<void>('PATCH', `/api/profiles/${id}`, { review }),
   sources: (q: { status?: string; q?: string; kind?: SourceKind } = {}) => request<{ sources: Source[] }>('GET', `/api/sources${qs(q)}`).then((r) => r.sources),
@@ -834,7 +843,10 @@ export const api = {
   // Attach asks in the open box, a paste hands the picture over in
   // base64. Each gives the draft, with why something was left out.
   attachPictures: () => request<ReportDraft>('POST', '/api/report/pick', {}),
-  attachPasted: (name: string, data: string) => request<ReportDraft>('POST', '/api/report/pasted', { name, data }),
+  // The name goes in the address too, so a paste too big to be read is
+  // still turned away by its name.
+  attachPasted: (name: string, data: string) =>
+    request<ReportDraft>('POST', `/api/report/pasted?name=${encodeURIComponent(name)}`, { name, data }),
   removePicture: (id: string) => request<ReportDraft>('POST', '/api/report/remove', { id }),
   putBackPicture: (id: string) => request<ReportDraft>('POST', '/api/report/put-back', { id }),
   clearReport: () => request<ReportDraft>('POST', '/api/report/clear', {}),

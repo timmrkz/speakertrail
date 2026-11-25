@@ -34,7 +34,8 @@
   --scrim: rgba(20, 32, 42, .35);
   --radius: 10px;
   /* FrameFairy's, for the one layer that came over from it, the question
-     Cmd+Q asks, see App.svelte, with FrameFairy's names and values. Its
+     Cmd+Q asks, see App.svelte, and the length on a recording's tile in
+     Report.svelte, with FrameFairy's names and values. Its
      --ink-0 is the darkest ground, not a colour of text like --ink here,
      and it and its words are the same in both themes, the way macOS
      shows the volume. */

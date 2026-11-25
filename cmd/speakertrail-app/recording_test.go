@@ -48,7 +48,25 @@ func needMedia(t *testing.T) func() (media, error) {
 	return func() (media, error) { return found, nil }
 }
 
-// fixture reads a file of testdata/.
+// fixture reads a file of testdata/. The recordings there are
+// FrameFairy's, made by the recipe in its internal/fixtures: one second of
+// testsrc2 at 160 by 90 and 30 frames a second with a 440 Hz tone, with a
+// title, a comment and a place,
+//
+//	ffmpeg -f lavfi -i testsrc2=size=160x90:rate=30:duration=1 \
+//	  -f lavfi -i sine=f=440:d=1 \
+//	  -metadata "title=A lab desk" -metadata "comment=Made on a lab Mac" \
+//	  -metadata location=+52.5200+013.4050/ \
+//	  -metadata com.apple.quicktime.location.ISO6709=+52.5200+013.4050/ \
+//	  -movflags use_metadata_tags -pix_fmt yuv420p -shortest <codecs> <file>
+//
+// with -c:v mpeg4 -c:a aac and -f mov, -f mp4 or -f matroska, and for WebM
+// -c:v libvpx-vp9 -deadline realtime -c:a libopus -f webm. The upright one
+// is the MP4 again with -display_rotation 90 before its -i, -map 0 -c copy
+// -movflags use_metadata_tags. FrameFairy's title and comment named a
+// person, so the copies here were changed byte for byte to name nobody, at
+// the same length. tone-then-silence.m4a is a second of the tone and two
+// of anullsrc, concatenated, in AAC.
 func fixture(t *testing.T, name string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", name))

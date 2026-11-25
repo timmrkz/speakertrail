@@ -614,6 +614,11 @@ export interface ReportPicture {
   name: string
   width: number
   height: number
+  // The ending a screen recording is kept under, like mov, and how long
+  // it is in seconds. A picture has neither. Its tile shows a still of
+  // the first frame, see cmd/speakertrail-app/recording.go.
+  recording?: string
+  seconds?: number
   // Removed by the person and kept to be put back. Never true in a draft
   // the window is sent, which leaves removed pictures out.
   removed?: boolean

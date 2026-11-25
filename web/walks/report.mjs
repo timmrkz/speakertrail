@@ -121,6 +121,37 @@ const walks = [
     },
   },
   {
+    // A screen recording pasted into the field is attached like a
+    // picture, and its tile shows the still of its first frame with its
+    // length in the corner, as FrameFairy's does. Issue #49.
+    name: 'A recording pasted shows its still and its length',
+    async run(page) {
+      await openReport(page)
+      await page.locator('textarea.telling').click()
+      const pasted = page.waitForResponse((r) => r.url().endsWith('/api/report/pasted'))
+      await page.evaluate(() => {
+        const box = new DataTransfer()
+        box.items.add(new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 113, 116, 32, 32])], 'Screen Recording.mov', { type: 'video/quicktime' }))
+        document.querySelector('textarea.telling').dispatchEvent(new ClipboardEvent('paste', { clipboardData: box, bubbles: true, cancelable: true }))
+      })
+      const sent = JSON.parse((await pasted).request().postData() ?? '{}')
+      if (sent.name !== 'Screen Recording.mov') return `the paste sent ${JSON.stringify(sent.name)}`
+      const figure = page.locator('.pictures figure')
+      await figure.locator('.length').waitFor()
+      await page.waitForFunction(() => document.querySelector('.pictures figure img')?.complete)
+      const tile = await figure.evaluate((f) => ({
+        length: f.querySelector('.length').textContent.trim(),
+        label: f.getAttribute('aria-label'),
+        loaded: f.querySelector('img').naturalWidth > 0,
+      }))
+      if (!tile.loaded) return 'the still of the recording did not load'
+      if (tile.length !== '0:12') return `the recording's tile says ${JSON.stringify(tile.length)}, not 0:12`
+      if (tile.label !== 'Screen Recording.mov, a recording of 0:12') return `the recording's tile is read out as ${JSON.stringify(tile.label)}`
+      if ((await page.locator('textarea.telling').inputValue()) !== '') return 'the paste wrote into the field'
+      return ''
+    },
+  },
+  {
     // Report says Making while it makes the report, as wide as those
     // words, and then the field is empty for the next one. A button is as
     // wide as what it says now, Tim asked testing #46.
@@ -170,7 +201,7 @@ const walks = [
         }
         return went.join(', ')
       }
-      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots', 'Dictate']
+      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots or recordings', 'Dictate']
       await openReport(page)
       const field = page.locator('textarea.telling')
       await field.click()

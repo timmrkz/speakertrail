@@ -2,6 +2,7 @@
   import { onDestroy, onMount, tick } from 'svelte'
   import { api, onDictation, onLoudness, onReportDraft, onUndo, pictureUrl, type Dictation, type ReportDraft, type ReportPicture } from '../lib/api'
   import { asking, moveTab, typing } from '../lib/keys'
+  import { clock } from '../lib/clock'
   import Removed from '../lib/components/Removed.svelte'
   import { chime, wake } from '../lib/chime'
   import Busy from '../lib/components/Busy.svelte'
@@ -24,8 +25,8 @@
   // side writes it and shows it in Finder, see report.go, bugs.go and
   // docs/LOGGING.md. What is written and attached is a draft the Go side
   // keeps until Report, so closing the window loses nothing. Ported from
-  // FrameFairy's screens/Report.svelte, without screen recordings, with
-  // the reasons it gives.
+  // FrameFairy's screens/Report.svelte, with its screen recordings, issue
+  // #49, and the reasons it gives.
 
   let what = $state('')
   let making = $state(false)
@@ -356,10 +357,10 @@
     )
   }
 
-  // A picture pasted into the field is attached, the way Mail takes one.
-  // Text pastes as text.
+  // A picture or a recording pasted into the field is attached, the way
+  // Mail takes one. Text pastes as text.
   function pasted(e: ClipboardEvent) {
-    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'))
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/') || f.type.startsWith('video/'))
     if (files.length === 0) return
     e.preventDefault()
     unclear()
@@ -832,10 +833,10 @@
       </button>
       <Info label="How a report works" side="right">
         Say what happened with the microphone, or type it. Enter or Escape keeps what you said, and Cmd+Z undoes it. Attach screenshots
-        with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
+        or screen recordings with the paperclip, by dropping them on this window or by pasting them, up to ten of 10 MB each. What you write and attach stays
         here when you close the window, and Clear empties it all after asking, which Cmd+Z undoes. Report saves one zip file on the
-        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures without what else their files hold,
-        like a place or a camera, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
+        Desktop, shows it in Finder and closes this window. It holds what you wrote, the pictures and recordings without what else
+        their files hold, like a place or a device, the app's log, which build this is, what Mac it runs on and your settings. With the People button on,
         it holds your People too, with what each person screen shows and the profile texts, with each person's own name written
         [name] and every link [link]. Other names in a profile text go along. Never your notes, first messages or keys, and your home folder is written as ~. You can look inside before
         you send it.
@@ -871,8 +872,8 @@
         onmousedown={stay}
         onclick={attach}
         aria-disabled={attachOff}
-        aria-label="Attach screenshots"
-        title="Attach screenshots. You can also drop them on this window or paste them">
+        aria-label="Attach screenshots or recordings"
+        title="Attach screenshots or screen recordings. You can also drop them on this window or paste them">
         {#if attaching}<Busy />{/if}
         <Icon name="attach" />
       </button>
@@ -909,8 +910,17 @@
               <Removed onputback={() => putBack(t.p.id)} onend={() => delete removed[t.p.id]} />
             {:else}
               <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-              <figure tabindex="0" title={t.p.name} aria-label="{t.p.name}, {t.p.width} by {t.p.height}" onkeydown={(e) => tileKey(e, t.p)}>
+              <figure
+                tabindex="0"
+                title={t.p.name}
+                aria-label={t.p.recording ? `${t.p.name}, a recording of ${clock(t.p.seconds ?? 0)}` : `${t.p.name}, ${t.p.width} by ${t.p.height}`}
+                onkeydown={(e) => tileKey(e, t.p)}>
                 <img src={pictureUrl(t.p.id)} alt={t.p.name} draggable="false" />
+                {#if t.p.recording}
+                  <!-- How long a recording is, in the corner Photos and
+                       Finder show it in. -->
+                  <span class="length">{clock(t.p.seconds ?? 0)}</span>
+                {/if}
               </figure>
               <button class="btn icon quiet bin" type="button" tabindex="-1" title="Remove" aria-label="Remove {t.p.name}" onclick={() => removePicture(t.p)}>
                 <Icon name="trash" />
@@ -1015,4 +1025,15 @@
   .tile:hover figure::after, .tile:focus-within figure::after,
   .tile:hover .bin, .tile:focus-within .bin { opacity: 1; pointer-events: auto; }
   .tile .bin:hover { color: var(--bad); background: var(--bad-soft); }
+  /* A recording's length, in the tile's bottom right corner, the way
+     Photos and Finder show a video's. FrameFairy lays it on a shade that
+     fades from the corner. Here it is a solid chip of the darkest ground,
+     6 px in from the corner as the bin is, since the look is flat (#45)
+     and the shade left dark figures on a darkened picture in light. */
+  .tile .length {
+    position: absolute; right: 6px; bottom: 6px; padding: 0 6px; border-radius: 4px;
+    font-size: 13px; line-height: 20px; font-variant-numeric: tabular-nums;
+    color: var(--on-ink-0); background: var(--ink-0);
+    pointer-events: none;
+  }
 </style>

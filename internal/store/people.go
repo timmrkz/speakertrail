@@ -76,6 +76,24 @@ func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (p *Person
 	return p, isNew, connected && !isNew
 }
 
+// AddPage adds someone from a LinkedIn page Tim pasted, under the link
+// of their profile, named as the page names them, and connected when
+// the page says so. Like someone added from a link, Undo takes them out
+// again, see RemoveAdded. The page is their profile, see Paste, so no
+// run reads it. Someone here under that link already is given back.
+func (d *Data) AddPage(url, name string, connected bool, at time.Time) (p *Person, isNew bool) {
+	if p = d.PersonByProfile(url); p != nil {
+		return p, false
+	}
+	p = &Person{
+		ID: d.NewID(), Name: name, FirstSeen: at, Evidence: AddedByHand, UpdatedAt: at,
+		LinkedIn: LinkedIn{URL: url, Handle: url[strings.LastIndex(url, "/")+1:], Review: "confirmed"},
+	}
+	p.Connect(connected, at)
+	d.People = append(d.People, p)
+	return p, true
+}
+
 // ErrNoPerson is an id nobody has.
 var ErrNoPerson = errors.New("no such person")
 

@@ -105,7 +105,8 @@ namesake. A link with no name in it asks nothing more.
 profile page Tim copied in Chrome, all of it with ⌘A and ⌘C, as the
 person's profile, for someone Exa's index lacks. The app never requests
 LinkedIn: Tim opened the page. The name is the line that spells the name
-in the link, also without initials or with a title or more around it,
+in the link, also without initials, on the page or in the link, like
+"Mara Beispiel" under /in/mara-s-beispiel, or with a title or more around it,
 the headline the line after it, the city from the first line after it
 in the shape of a place, like "Köln, Nordrhein-Westfalen, Deutschland".
 The page is read by its sections: the top, then About, Experience,
@@ -113,16 +114,47 @@ Education and the rest, and the feed of posts, Activity, last, so the
 8000 characters it is cut at, like Exa's text, go to who they are first.
 LinkedIn's menu and buttons, and its blocks of other people, like
 "People who follow … also follow", Highlights, Interests and "People
-also viewed", are left out, so are email addresses and phone numbers. A read of them Exa is still asked for loses to
+also viewed", are left out, so are LinkedIn's footer, from Accessibility
+on, and the message window open over the page, with Tim's own name in
+it, and so are email addresses and phone numbers. A read of them Exa is still asked for loses to
 it, and a run that had not begun it drops it. It answers `{"person": {…},
 "was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
-""}, "named": true}`: `person` as `GET /api/people/{id}` gives it,
+""}, "named": true, "drafting": true, "added": false}`: `person` as `GET /api/people/{id}` gives it,
 `was` what they were before, and `named` whether the name on the page
 is the one in their link, which makes sure the page is theirs. A page
 whose name is not is read all the same, its name the line LinkedIn puts
-above "· 1st". `{"as": {…}}` with a `was` puts that back, for Undo, and someone
+above "· 1st". `drafting` says the paste started the first message, as
+Draft does, see [Drafts](#drafts): for someone with no first message yet whose
+draft failed because Exa had no copy, or who is connected, so a paste
+does the whole thing. `{"as": {…}}` with a `was` puts that back, for Undo, drafts
+nothing, and someone
 added from a link whose text it empties waits for the next run to read
 it from Exa. 400 for a paste with no text, 404 for an id nobody has.
+
+`POST /api/people/profile` with `{"text": "…", "links": ["…"], "open":
+7}` keeps a page pasted anywhere in the window as the profile of the
+person it belongs to, and answers as the call above, so the window opens
+them. `links` are the links in the HTML Chrome copied with the page,
+`open` the person open, or 0. The page is theirs whose profile link it
+holds most often, since its own link stands in many of its links, like
+`/in/mara-beispiel/overlay/contact-info/`, and others' in a few. A link
+it holds less often counts when the name on the page is theirs too.
+Without such a link the name on the page tells, against the name the app
+has and the name in each link: the open person when it is theirs, else
+the one person of that name. Else a page without its own link is the
+open person's, as with the call above.
+
+A page nobody here has adds them, as a link does, and answers the same
+with `"added": true`, which Undo takes back with `DELETE
+/api/people/{id}`. Their link is the page's own in `links`: the one in
+the name on the page, else the one it holds most often. A page pasted
+as text alone has none, so Exa is asked once for a LinkedIn profile by
+the name and headline on it, a search from the month's budget, and only
+a profile whose name is the page's counts. They are connected when the
+page says "· 1st". 422 when the link stays missing, or the page shows
+no name above how Tim is connected to them, 409 when more than one
+person has its name and no link tells them apart, or no Exa search is
+left this month, 400 for a paste with no text.
 
 `DELETE /api/people/{id}` takes out again someone added from a link, for
 Undo, and answers 204. A run that had not read their profile leaves it,

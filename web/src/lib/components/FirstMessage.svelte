@@ -233,7 +233,11 @@
     void shown
     if (field) fitNow(field)
   })
-  const failed = $derived(job?.state === 'failed' ? (job.error ?? 'The draft stopped.') : '')
+  // A draft that failed before their profile came, like one Exa had no
+  // copy for, says nothing once Tim pasted the page: it is no longer how
+  // they stand (Tim's report of 24 November 2026, #88).
+  const stale = $derived(!!job && !!person.profile_read_at && new Date(person.profile_read_at) > new Date(job.started_at))
+  const failed = $derived(job?.state === 'failed' && !stale ? (job.error ?? 'The draft stopped.') : '')
   // A draft the model's answer did not fit has … where its part goes, and
   // says why until the next draft.
   const problem = $derived(job?.state === 'done' ? (job.problem ?? '') : '')

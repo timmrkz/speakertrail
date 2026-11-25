@@ -248,8 +248,12 @@ const walks = [
       await menu(page, 'undo')
       await page.waitForFunction((text) => document.querySelector('.first-message textarea')?.value === text, first)
       if ((await kept(page, 1005)) !== first) return 'Undo did not save the message before'
+      // Cmd+Y in the box, with nothing typed in it, does again what Cmd+Z
+      // took back, and the caret stays in the box.
+      await box(page).click()
       await menu(page, 'redo')
       await page.waitForFunction((text) => document.querySelector('.first-message textarea')?.value === text, second)
+      if (!(await page.evaluate(() => document.activeElement?.matches('.first-message textarea')))) return 'Cmd+Y took the caret out of the message'
       return ''
     },
   },

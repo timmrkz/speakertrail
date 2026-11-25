@@ -15,7 +15,7 @@
   import { reporting } from '../lib/reporting.svelte'
   import { api, onUndo } from '../lib/api'
   import { undoHistory } from '../lib/history.svelte'
-  import { fieldStep } from '../lib/fieldundo'
+  import { fieldStep, keepUndo } from '../lib/fieldundo'
   import { typing } from '../lib/keys'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import Landing from '../lib/components/Landing.svelte'
@@ -73,10 +73,14 @@
   // Anywhere else, and in a field with nothing left to take, they take
   // back the last change Tim made, kept by the app, see
   // lib/history.svelte.ts.
-  $effect(() => onUndo((how) => {
+  function undo(how: 'undo' | 'redo') {
     if (typing() && fieldStep(document.activeElement, how)) return
     void undoHistory.step(how)
-  }))
+  }
+  $effect(() => onUndo(undo))
+  // Every text field keeps its own steps, and the browser's undo is never
+  // asked, see lib/fieldundo.ts.
+  $effect(() => keepUndo(undo))
   let update = $derived(updates.shown)
   let updateDot = $derived(railDot(update))
   let updateTitle = $derived.by(() => {

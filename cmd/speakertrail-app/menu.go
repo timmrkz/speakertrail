@@ -15,8 +15,10 @@ import (
 // dictation writes into its field and Clear empties it, see
 // web/src/screens/Report.svelte. These send an event called undo, which
 // Wails hands every window, and only the page Tim is in takes it, see
-// onUndo in web/src/lib/api.ts. It decides: in a field being typed in it undoes
-// the field the way the stock one did, anywhere else it takes back the
+// onUndo in web/src/lib/api.ts. It decides: a field being typed in
+// takes its own last step, kept by the page, see
+// web/src/lib/fieldundo.ts, and anywhere else, or in a field showing
+// what the app put in with no step of its own, the app takes back the
 // last change Tim made, see internal/store/history.go.
 func appMenu(app *application.App) *application.Menu {
 	menu := application.NewMenu()

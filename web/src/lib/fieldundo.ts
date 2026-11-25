@@ -1,46 +1,49 @@
 import { edit } from './dictating'
 import { Undo } from './undo'
 
-// Undo and Redo of a text field, kept by the page, for every field whose
-// text the app also puts in, like the notes after Undo in the Edit menu
-// took them back. The browser's own undo knows nothing of text the page
-// puts in: Tim typed notes, took them back with Cmd+Z, clicked into the
-// notes and pressed Cmd+Y, which did nothing, and more Cmd+Z and Cmd+Y
-// put his words in two and three times (testing #87, 25 November 2026).
-// Report a Problem's field learned the same, see lib/undo.ts.
+// Undo and Redo of every text field, kept by the page. The browser's own
+// undo knows nothing of text the page puts in, and WebKit keeps one undo
+// for the whole page: Tim typed notes, took them back with Cmd+Z, clicked
+// into the notes and pressed Cmd+Y, which did nothing, and more Cmd+Z and
+// Cmd+Y put his words in two and three times (testing #87, 25 November
+// 2026). Report a Problem's field learned the same, see lib/undo.ts. So
+// the browser's undo is never asked: every field keeps its own steps,
+// and a historyUndo or historyRedo the browser starts is turned away.
 //
 // Text the page put in since the last step is no step, and the steps
-// before it name letters of another text, so they go. A field with no
-// step to take hands Cmd+Z and Cmd+Y on to the app, see
-// lib/history.svelte.ts, so Cmd+Y in the notes does again what Cmd+Z
-// took back while they were left.
+// before it name letters of another text, so they go. While a field
+// shows the text the page put in, with no step of its own to take, it
+// hands Cmd+Z and Cmd+Y on to the app, see lib/history.svelte.ts, so Cmd+Y
+// in the notes does again what Cmd+Z took back while they were left.
+// Once something is typed in it, the field keeps them, so the app never
+// writes over words not saved yet.
 
 type Field = HTMLTextAreaElement | HTMLInputElement
 
 class Kept {
   private steps = new Undo()
-  // The text as the last step left it.
+  // The text as the last step left it, and as the page last put it in.
   private seen: string
+  private put: string
   private alone = false
 
   constructor(private field: Field) {
-    this.seen = field.value
+    this.seen = this.put = field.value
   }
 
   // fresh forgets the steps when the page put other text in since.
   private fresh() {
     if (this.field.value === this.seen) return
     this.steps = new Undo()
-    this.seen = this.field.value
+    this.seen = this.put = this.field.value
   }
 
-  before(e: InputEvent) {
-    if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
-      e.preventDefault()
-      this.step(e.inputType === 'historyUndo' ? 'undo' : 'redo')
-      return
-    }
+  // before comes before an edit, and when the focus comes in, since a
+  // paste the page puts in with execCommand, see pastedlines.ts, comes
+  // with no beforeinput.
+  before(e?: InputEvent) {
     this.fresh()
+    if (!e) return
     // A paste or a drop is a step of its own, as on a Mac.
     this.alone = e.inputType.startsWith('insertFrom')
   }
@@ -56,11 +59,12 @@ class Kept {
   }
 
   // step takes the field's last step back, or does again the last one
-  // taken back, with the cursor after it. It says whether there was one.
+  // taken back, with the cursor after it. It says whether the field
+  // keeps the key: when it took a step, or holds typing of its own.
   step(how: 'undo' | 'redo'): boolean {
     this.fresh()
     const c = how === 'undo' ? this.steps.undo(this.field.value) : this.steps.redo(this.field.value)
-    if (!c) return false
+    if (!c) return this.field.value !== this.put
     this.field.setRangeText(c[2], c[0], c[1], 'end')
     this.seen = this.field.value
     // The field's owner hears of it as of any edit.
@@ -71,32 +75,63 @@ class Kept {
 
 const kept = new WeakMap<Element, Kept>()
 
-// keepsUndo is the action that gives a field its own undo.
-export function keepsUndo(field: Field) {
-  const k = new Kept(field)
-  kept.set(field, k)
-  const before = (e: Event) => k.before(e as InputEvent)
-  const input = () => k.input()
-  field.addEventListener('beforeinput', before)
-  field.addEventListener('input', input)
-  return {
-    destroy() {
-      kept.delete(field)
-      field.removeEventListener('beforeinput', before)
-      field.removeEventListener('input', input)
-    },
+// A field that takes text, with a cursor in it. A number or a date has
+// none, and keeps no steps.
+function textField(on: EventTarget | null): Field | null {
+  if (!(on instanceof HTMLTextAreaElement || on instanceof HTMLInputElement)) return null
+  try {
+    return on.selectionStart === null ? null : on
+  } catch {
+    return null
+  }
+}
+
+function keeper(field: Field): Kept {
+  let k = kept.get(field)
+  if (!k) {
+    k = new Kept(field)
+    kept.set(field, k)
+  }
+  return k
+}
+
+// keepUndo gives every text field in the page its own steps, from the
+// first edit made in it. A historyUndo or historyRedo the browser starts,
+// from its own menu or keys, goes to onkey, which asks the field in hand
+// first, the way the Edit menu does. It gives a function that stops it.
+export function keepUndo(onkey: (how: 'undo' | 'redo') => void): () => void {
+  const before = (e: Event) => {
+    const ev = e as InputEvent
+    if (ev.inputType === 'historyUndo' || ev.inputType === 'historyRedo') {
+      ev.preventDefault()
+      onkey(ev.inputType === 'historyUndo' ? 'undo' : 'redo')
+      return
+    }
+    const field = textField(ev.target)
+    if (field) keeper(field).before(ev)
+  }
+  const input = (e: Event) => {
+    const field = textField(e.target)
+    if (field) kept.get(field)?.input()
+  }
+  const focus = (e: Event) => {
+    const field = textField(e.target)
+    if (field) keeper(field).before()
+  }
+  document.addEventListener('beforeinput', before, true)
+  document.addEventListener('input', input, true)
+  document.addEventListener('focusin', focus, true)
+  return () => {
+    document.removeEventListener('beforeinput', before, true)
+    document.removeEventListener('input', input, true)
+    document.removeEventListener('focusin', focus, true)
   }
 }
 
 // fieldStep takes Undo or Redo in the field being typed in, and says
-// whether it took a step there. A field without its own undo gets the
-// browser's, as before, and has taken one when its text changed.
+// whether the field keeps the key. A field with nothing of its own to
+// take passes it on.
 export function fieldStep(on: Element | null, how: 'undo' | 'redo'): boolean {
-  if (!on) return false
-  const k = kept.get(on)
-  if (k) return k.step(how)
-  const field = on as Field
-  const was = field.value
-  document.execCommand(how)
-  return field.value !== was
+  const field = textField(on)
+  return field ? keeper(field).step(how) : false
 }

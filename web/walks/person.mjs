@@ -521,6 +521,16 @@ const walks = [
       const notes = page.locator('.detail-pane textarea').last()
       await notes.waitFor()
       const was = await notesOf()
+      // The browser's own undo is never asked: in WebKit it knows nothing
+      // of what the app puts in, and doubles the words.
+      await page.evaluate(() => {
+        const exec = document.execCommand.bind(document)
+        window.asked = []
+        document.execCommand = (c, ...rest) => {
+          if (c === 'undo' || c === 'redo') window.asked.push(c)
+          return exec(c, ...rest)
+        }
+      })
       await notes.click()
       await page.keyboard.press('End')
       await page.keyboard.type(' woeifh weknd')
@@ -544,6 +554,26 @@ const walks = [
         if (v.split('woeifh').length > 2) return `after ${how} the notes read ${JSON.stringify(v)}`
       }
       if ((await notesOf()).split('woeifh').length > 2) return 'the doubled words were saved'
+      const asked = await page.evaluate(() => window.asked)
+      if (asked.length) return `the browser's own undo was asked: ${asked.join(', ')}`
+      // Words typed and not saved yet stay, whatever the app's redo holds.
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' saved')
+      await page.evaluate(() => document.activeElement.blur())
+      await page.waitForFunction(async () => (await fetch('/api/people/1003').then((r) => r.json())).notes.endsWith(' saved'))
+      await menu(page, 'undo')
+      await page.waitForFunction(() => ![...document.querySelectorAll('.detail-pane textarea')].at(-1).value.endsWith(' saved'))
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' unsaved')
+      const unsaved = await notes.inputValue()
+      let asksApp = false
+      page.on('request', (r) => { if (new URL(r.url()).pathname === '/api/redo') asksApp = true })
+      await menu(page, 'redo')
+      await page.waitForLoadState('networkidle')
+      if (asksApp) return 'Cmd+Y with words not saved yet in the notes went to the app'
+      if ((await notes.inputValue()) !== unsaved) return `Cmd+Y wrote over words not saved yet: ${JSON.stringify(await notes.inputValue())}`
       return ''
     },
   },

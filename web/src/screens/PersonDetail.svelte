@@ -5,12 +5,11 @@
   // the sheet in a narrow one both show this, so the two never drift
   // apart. The name stands in the row of the cross above it, which the
   // pane and the sheet draw, so onname tells them the name.
-  import { untrack, type Snippet } from 'svelte'
+  import { tick, untrack, type Snippet } from 'svelte'
   import { api, ApiError, type PersonDetail, type Profile, type Review } from '../lib/api'
   import { Load } from '../lib/load.svelte'
   import { PASTE_HINT, pasting } from '../lib/paste.svelte'
   import { undoHistory } from '../lib/history.svelte'
-  import { keepsUndo } from '../lib/fieldundo'
   import { pasteAsShown } from '../lib/pastedlines'
   import { errorText, fault } from '../lib/toast.svelte'
   import Busy from '../lib/components/Busy.svelte'
@@ -68,10 +67,19 @@
   let undone = $state(0)
   $effect(() => {
     if (undoHistory.changed === undoneAt) return
-    untrack(() => reread().then(() => {
+    untrack(() => reread().then(async () => {
+      // A field the caret was in keeps it, the first message too, which
+      // starts again.
+      const held = document.activeElement?.id
       notes = savedNotes = person.data?.notes ?? ''
       noteState = 'idle'
       undone++
+      await tick()
+      const back = held ? document.getElementById(held) : null
+      if (back instanceof HTMLTextAreaElement && document.activeElement !== back) {
+        back.focus()
+        back.setSelectionRange(back.value.length, back.value.length)
+      }
     }))
   })
 
@@ -268,7 +276,7 @@
           {noteState === 'saving' ? 'Saving' : noteState === 'saved' ? 'Saved' : noteState === 'error' ? 'Not saved' : ''}
         </span>
       </div>
-      <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown use:keepsUndo oninput={() => (noteState = 'idle')} onblur={saveNotes}
+      <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
         placeholder="Where you met, what to ask"></textarea>
     </section>
   </article>

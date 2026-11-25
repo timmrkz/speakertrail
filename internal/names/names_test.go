@@ -14,10 +14,23 @@ type row struct {
 	name, handle, first, family string
 }
 
-// rows reads the invented names in testdata/names.tsv.
+// rows reads the invented names in testdata: names.tsv, written with the
+// rules, and blind.tsv, written blind to measure them.
 func rows(t *testing.T) []row {
 	t.Helper()
-	f, err := os.Open("testdata/names.tsv")
+	var out []row
+	for _, file := range []string{"testdata/names.tsv", "testdata/blind.tsv"} {
+		out = append(out, read(t, file)...)
+	}
+	if len(out) < 400 {
+		t.Fatalf("only %d names", len(out))
+	}
+	return out
+}
+
+func read(t *testing.T, file string) []row {
+	t.Helper()
+	f, err := os.Open(file)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,9 +50,6 @@ func rows(t *testing.T) []row {
 	}
 	if err := s.Err(); err != nil {
 		t.Fatal(err)
-	}
-	if len(out) < 100 {
-		t.Fatalf("only %d names", len(out))
 	}
 	return out
 }

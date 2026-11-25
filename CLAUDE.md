@@ -30,7 +30,7 @@ Start with [README.md](README.md). In short:
 | the Exa key in the keychain | `internal/keys/` | |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | Report a Problem, its screen recordings, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `recording.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
-| Draft, the first message to a person, its template, a person's first name, the language model and llama-server | `internal/draft/`, `internal/names/`, `internal/store/template.go`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/BUILD.md](docs/BUILD.md) |
+| Draft, the first message to a person, its template, a person's first name, the language model and llama-server | `internal/draft/`, `internal/names/`, `internal/store/template.go`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/names.md](docs/names.md), [docs/BUILD.md](docs/BUILD.md) |
 | updates: builds per pull request, signing, the Updates page | `internal/updates/`, `cmd/speakertrail-release/`, `.github/workflows/builds.yml`, `publish.yml` | [docs/UPDATES.md](docs/UPDATES.md) |
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |

@@ -21,20 +21,32 @@ import (
 )
 
 // First is the first name, to greet someone by, in the case a greeting
-// writes it, "Mara" of "MARA BEISPIEL". The link is their profile's, or
-// empty. It is empty when the name holds none for sure, like "Dr.
-// Beispiel", which is a title and a family name.
+// writes it, "Mara" of "MARA BEISPIEL". A nickname they show, like
+// "Mimi" in "Mara (Mimi) Beispiel", is the name they go by. The link is
+// their profile's, or empty. It is empty when neither the name nor the
+// link holds a first name for sure, like "Dr. Beispiel", which is a
+// title and a family name.
 func First(name, link string) string {
 	n := read(name)
-	if len(n.words) == 0 || n.titled && len(n.words) == 1 {
-		return ""
+	if n.nick != "" {
+		return cased(n.nick)
 	}
-	first := n.words[0]
-	if n.given != "" {
+	first := ""
+	switch {
+	case n.given != "":
 		first = n.given
+	case len(n.words) > 1 || len(n.words) == 1 && !n.titled && !n.initialed:
+		first = n.words[0]
 	}
-	if w := byLink(n.words, link); w != "" {
+	if w := byLink(n.all, link); w != "" {
 		first = w
+	}
+	if first == "" || !latin(first) {
+		// A link can hold the first name the name leaves out, like
+		// annette-beispiel for "Dr. Beispiel", or writes in Latin letters.
+		if w := fromLink(n, link); w != "" {
+			first = w
+		}
 	}
 	return cased(first)
 }
@@ -47,44 +59,80 @@ func Family(name string) string {
 	switch {
 	case n.family != "":
 		return n.family
-	case len(n.words) >= 2 || n.titled && len(n.words) == 1:
+	case len(n.words) >= 2 || (n.titled || n.initialed) && len(n.words) == 1:
 		return n.words[len(n.words)-1]
 	}
 	return ""
 }
 
-// parsed is a name as read: its own words in the order written, whether
-// a title stood before them, and the given and family name where the
-// name says which is which, as "Beispiel, Mara" does.
+// parsed is a name as read: its own words in the order written, every
+// word with letters in all of it, for the link to order, whether a title
+// or only initials stood before them, a nickname, and the given and
+// family name where the name says which is which, as "Beispiel, Mara"
+// does.
 type parsed struct {
-	words         []string
-	titled        bool
-	given, family string
+	words, all          []string
+	titled, initialed   bool
+	nick, given, family string
 }
 
 // read reads a name.
 func read(name string) parsed {
-	// Letters styled bold or italic, and wide ones, are plain letters.
-	name = norm.NFKC.String(name)
-	// A nickname or pronouns in brackets are not the name, and what
-	// follows a bar, a slash or a colon is a tagline.
-	name = unbracket(name)
-	if i := strings.IndexAny(name, "|/:"); i >= 0 {
-		name = name[:i]
+	name = plain(name)
+	var n parsed
+	name, n.nick = nickname(name)
+	n.all = strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsMark(r) && r != '-' && r != '\'' })
+	// What follows a bar, a slash or a colon is a tagline, or the name in
+	// other letters, like "Олена Бондар | Olena Bondar", which a greeting
+	// in Latin letters takes.
+	segments := strings.FieldsFunc(name, func(r rune) bool { return strings.ContainsRune("|/:", r) })
+	if len(segments) == 0 {
+		return n
 	}
-	before, after, comma := strings.Cut(name, ",")
-	words, titled := wordsOf(before)
-	n := parsed{words: words, titled: titled}
-	// "Beispiel, Mara" is the family name, then the given name. After a
-	// comma there are degrees most often, like "Mara Beispiel, MBA", so
-	// only one word before the comma and a name after it read that way.
-	if comma && len(words) == 1 {
-		if given, _ := wordsOf(after); len(given) > 0 && named(given, words[0]) {
-			n.given, n.family = given[0], words[0]
-			n.words = append(given, words[0])
+	name = segments[0]
+	if !latin(name) {
+		for _, s := range segments[1:] {
+			if latin(s) {
+				name = s
+				break
+			}
 		}
 	}
+	before, after, comma := strings.Cut(name, ",")
+	n.words, n.titled, n.initialed = wordsOf(before)
+	switch {
+	case comma && familyOnly(n.words):
+		// "Beispiel, Mara" is the family name, then the given name. After
+		// a comma there are degrees most often, like "Mara Beispiel,
+		// MBA", so only a family name before it, like "Beispiel" or "von
+		// Beispiel", and a name after it read that way.
+		given, _, initialed := wordsOf(after)
+		family := n.words[len(n.words)-1]
+		switch {
+		case len(given) > 0 && named(given, family):
+			n.given, n.family = given[0], family
+			n.words = append(given, n.words...)
+		case len(given) == 0 && initialed:
+			// "Beispiel, M." holds no first name.
+			n.initialed, n.family = true, family
+		}
+	case len(n.words) >= 2 && capitals(n.words[0]) && !capitals(n.words[1]):
+		// "BEISPIEL Mara" writes the family name first, in capitals.
+		n.given, n.family = n.words[1], n.words[0]
+	}
 	return n
+}
+
+// familyOnly says whether the words before a comma are a family name
+// alone, one word with particles, like "von Beispiel" or "Van Dijk".
+func familyOnly(words []string) bool {
+	others := 0
+	for _, w := range words {
+		if !particles[strings.ToLower(w)] {
+			others++
+		}
+	}
+	return len(words) > 0 && others == 1
 }
 
 // named says whether the words after a comma are a given name, not
@@ -106,15 +154,12 @@ func capitals(w string) bool {
 	return len([]rune(w)) > 1 && w == strings.ToUpper(w) && w != strings.ToLower(w)
 }
 
-// wordsOf finds the words of a name, and whether a title stood before
-// them.
-func wordsOf(name string) (out []string, titled bool) {
+// wordsOf finds the words of a name, whether a title stood before them,
+// and whether only initials did, like "M." in "M. Beispiel".
+func wordsOf(name string) (out []string, titled, initialed bool) {
 	lower := name == strings.ToLower(name)
-	for _, w := range strings.Fields(split(name)) {
-		if quoted(w) {
-			// A nickname in quotes.
-			continue
-		}
+	fields := strings.Fields(split(name))
+	for i, w := range fields {
 		w = strings.TrimFunc(w, edge)
 		lettered := strings.IndexFunc(w, unicode.IsLetter) >= 0
 		switch {
@@ -123,19 +168,44 @@ func wordsOf(name string) (out []string, titled bool) {
 			continue
 		case !lettered || strings.HasPrefix(w, "#") || strings.HasPrefix(w, "@"):
 			// A dash, a dot, an emoji or a hashtag after it ends the name.
-			return trim(out), titled
+			return trim(out), titled, initialed
 		case len(out) > 0 && !lower && small(w) && !particles[w]:
 			// A word in small letters after it, like "für" or "geb.",
 			// starts a tagline or a maiden name. "von" and "de" are part
 			// of the family name.
-			return trim(out), titled
-		case len(out) == 0 && title(w, titled):
+			return trim(out), titled, initialed
+		case len(out) == 0 && initial(w):
+			initialed = true
+			continue
+		case len(out) == 0 && (title(w, titled) || diplom(fields, i)):
 			titled = true
 			continue
 		}
 		out = append(out, w)
 	}
-	return trim(out), titled
+	return trim(out), titled, initialed
+}
+
+// initial says whether a word is an initial, like "M." or "H.-J.".
+func initial(w string) bool {
+	letters := 0
+	for _, r := range w {
+		if unicode.IsLetter(r) {
+			letters++
+		}
+	}
+	return strings.HasSuffix(w, ".") && letters <= 2 && !titles[strings.ToLower(strings.TrimSuffix(w, "."))]
+}
+
+// diplom says whether the word at i is the subject of a diploma, like
+// "Betriebswirtin" in "Dipl. Betriebswirtin Tanja Röder": it follows
+// "Dipl." and two words of the name follow it.
+func diplom(fields []string, i int) bool {
+	if i == 0 || i+2 >= len(fields) {
+		return false
+	}
+	before := strings.ToLower(strings.TrimSuffix(fields[i-1], "."))
+	return before == "dipl" && !small(fields[i])
 }
 
 // split puts a space after the dot of a title written onto the name, so
@@ -159,26 +229,121 @@ func edge(r rune) bool {
 	return !unicode.IsLetter(r) && !unicode.IsMark(r) && r != '.' && r != '-' && r != '#' && r != '@'
 }
 
-// quoted says whether a word stands in quotes, as a nickname does.
-func quoted(w string) bool {
-	r := []rune(w)
-	return len(r) > 2 && strings.ContainsRune(`"“”„«»'‘’‚`, r[0]) && strings.ContainsRune(`"“”„«»'‘’‚`, r[len(r)-1])
+// plain writes a name in plain letters: bold, italic, script and wide
+// letters, and small capitals, as the letters they style, emoji and
+// other symbols as a dot between words, so "Mara🌿Beispiel" is two
+// words, and spaces nobody sees as spaces.
+func plain(name string) string {
+	var b strings.Builder
+	for _, r := range norm.NFKC.String(name) {
+		switch {
+		case smallCapitals[r] != 0:
+			b.WriteRune(smallCapitals[r])
+		case r == '\u200b' || r == '\u200c' || r == '\u200d' || r == '\ufeff' || unicode.Is(unicode.Variation_Selector, r):
+			// Joiners and selectors inside an emoji, and a space of no
+			// width.
+		case unicode.IsSpace(r):
+			b.WriteRune(' ')
+		case unicode.Is(unicode.So, r) || unicode.Is(unicode.Sk, r) || unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r):
+			b.WriteString(" · ")
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
-// unbracket takes out what stands in brackets, and everything after a
-// bracket that is never closed.
-func unbracket(name string) string {
+// smallCapitals are the small capital letters some write a name in, like
+// "ᴋᴀᴛʜᴀʀɪɴᴀ", which no normal form makes plain.
+var smallCapitals = map[rune]rune{
+	'ᴀ': 'a', 'ʙ': 'b', 'ᴄ': 'c', 'ᴅ': 'd', 'ᴇ': 'e', 'ꜰ': 'f', 'ɢ': 'g',
+	'ʜ': 'h', 'ɪ': 'i', 'ᴊ': 'j', 'ᴋ': 'k', 'ʟ': 'l', 'ᴍ': 'm', 'ɴ': 'n',
+	'ᴏ': 'o', 'ᴘ': 'p', 'ǫ': 'q', 'ʀ': 'r', 'ꜱ': 's', 'ᴛ': 't', 'ᴜ': 'u',
+	'ᴠ': 'v', 'ᴡ': 'w', 'ʏ': 'y', 'ᴢ': 'z',
+}
+
+// nickname takes the nickname out of a name: one word in quotes, like
+// "Mara „Mimi“ Beispiel", in brackets, like "Mara (Mimi) Beispiel", or
+// after "aka". What else stands in brackets, pronouns, a maiden name or
+// "(FH)", is taken out too, and everything after a bracket that is never
+// closed.
+func nickname(name string) (rest, nick string) {
+	var b strings.Builder
+	fields := strings.Fields(name)
+	for i := 0; i < len(fields); i++ {
+		w := fields[i]
+		switch {
+		case strings.EqualFold(w, "aka") && i+1 < len(fields) && nickable(fields[i+1]):
+			nick = cmpOr(nick, fields[i+1])
+			i++
+			continue
+		case quotes(w):
+			if inner := strings.TrimFunc(w, isQuote); nickable(inner) {
+				nick = cmpOr(nick, inner)
+			}
+			continue
+		}
+		b.WriteString(w)
+		b.WriteByte(' ')
+	}
+	name = b.String()
 	for {
 		i := strings.IndexAny(name, "([")
 		if i < 0 {
-			return name
+			return name, nick
 		}
 		j := strings.IndexAny(name[i:], ")]")
 		if j < 0 {
-			return name[:i]
+			return name[:i], nick
+		}
+		// A nickname stands inside the name, "Mara (Mimi) Beispiel". A
+		// word in brackets at its end is more often a role, "Mara
+		// Beispiel (Yogalehrerin)".
+		inner := strings.TrimSpace(name[i+1 : i+j])
+		if nickable(inner) && strings.IndexFunc(name[i+j:], unicode.IsLetter) >= 0 {
+			nick = cmpOr(nick, inner)
 		}
 		name = name[:i] + " " + name[i+j+1:]
 	}
+}
+
+// nickable says whether a word can be a nickname: one word with a
+// capital first, not in capitals only like "(FH)", and no title or
+// degree.
+func nickable(w string) bool {
+	r := []rune(w)
+	if len(r) < 2 || !unicode.IsUpper(r[0]) || capitals(w) || degree(w) || title(w, true) {
+		return false
+	}
+	for _, c := range r {
+		if !unicode.IsLetter(c) && c != '-' {
+			return false
+		}
+	}
+	return true
+}
+
+// quotes says whether a word stands in quotes.
+func quotes(w string) bool {
+	r := []rune(w)
+	return len(r) > 2 && isQuote(r[0]) && isQuote(r[len(r)-1])
+}
+
+func isQuote(r rune) bool {
+	return strings.ContainsRune(`"“”„«»'‘’‚`, r)
+}
+
+func cmpOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// latin says whether a word holds a Latin letter, the script a greeting
+// here is written in.
+func latin(w string) bool {
+	return strings.IndexFunc(w, func(r rune) bool { return unicode.Is(unicode.Latin, r) }) >= 0
 }
 
 // trim takes the degrees and initials off the end of the name, but never
@@ -196,14 +361,14 @@ func trim(w []string) []string {
 // make sure the link is made from the name, not a business or a slogan
 // that holds one of its words. It is empty when the link says nothing.
 func byLink(words []string, link string) string {
-	handle := fold(handleOf(link))
+	handle := strings.Join(pieces(link), "")
 	if handle == "" {
 		return ""
 	}
 	best, at := "", len(handle)
 	for i, a := range words {
 		for j, b := range words {
-			if i == j || len([]rune(fold(a))) < 2 {
+			if i == j || len([]rune(fold(a))) < 2 || title(a, true) || degree(a) {
 				continue
 			}
 			if k := strings.Index(handle, fold(a)+fold(b)); k >= 0 && k < at {
@@ -212,6 +377,58 @@ func byLink(words []string, link string) string {
 		}
 	}
 	return best
+}
+
+// fromLink is the first name the link holds where the name has none, or
+// none in Latin letters: the word before the family name, like
+// "annette" in annette-beispiel-3d4e for "Dr. Beispiel", or else the
+// link's first word, like "olena" in olena-bondar for "Олена Бондар".
+func fromLink(n parsed, link string) string {
+	p := pieces(link)
+	usable := func(w string) bool {
+		// Two letters are more often initials, like "hj" of
+		// hj-beispiel, than a name.
+		return len([]rune(w)) >= 3 && !title(w, true) && !degree(w)
+	}
+	if len(n.words) > 0 {
+		family := fold(n.words[len(n.words)-1])
+		if n.family != "" {
+			family = fold(n.family)
+		}
+		for k := 1; k < len(p); k++ {
+			if p[k] == family && usable(p[k-1]) && p[k-1] != family {
+				return raw(link, k-1)
+			}
+		}
+	}
+	if len(n.words) > 0 && !latin(n.words[0]) && len(p) >= 2 && usable(p[0]) {
+		return raw(link, 0)
+	}
+	return ""
+}
+
+// pieces are the words of a link's handle, folded, like "mara",
+// "beispiel" and "ba" of mara-beispiel-4b1a2c93. Digits make a word of
+// their own, so "4b1a2c93" falls apart into letters nobody reads as a
+// name.
+func pieces(link string) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(handleOf(link), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsMark(r) }) {
+		if f := fold(w); f != "" {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// raw is the k-th word of a link's handle as it is written there, with
+// its umlauts, like "jörg" of jörg-probe.
+func raw(link string, k int) string {
+	words := strings.FieldsFunc(handleOf(link), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsMark(r) })
+	if k < len(words) {
+		return norm.NFC.String(words[k])
+	}
+	return ""
 }
 
 // handleOf is the part of a profile's link after /in/, like
@@ -251,11 +468,17 @@ func cased(w string) string {
 	if w != strings.ToUpper(w) && w != strings.ToLower(w) {
 		return w
 	}
-	parts := strings.Split(strings.ToLower(w), "-")
+	// Turkish writes the capital of i as İ and the small letter of I as
+	// ı, so "IŞIL" is "Işıl" and "İBRAHİM" is "İbrahim".
+	var c unicode.SpecialCase
+	if strings.ContainsAny(w, "İıŞşĞğ") {
+		c = unicode.TurkishCase
+	}
+	parts := strings.Split(strings.ToLowerSpecial(c, w), "-")
 	for i, p := range parts {
 		r := []rune(p)
 		if len(r) > 0 {
-			r[0] = unicode.ToUpper(r[0])
+			r[0] = c.ToUpper(r[0])
 		}
 		parts[i] = string(r)
 	}
@@ -278,17 +501,20 @@ var particles = set("von", "vom", "van", "der", "den", "de", "del", "della",
 // without their dots, so "Dr." and "Dr" are the same. "Mag.a" is "mag".
 var titles = set("dr", "drs", "dres", "prof", "professor", "professorin",
 	"doktor", "dipl", "mag", "pd", "priv", "univ", "apl", "habil", "herr",
-	"frau", "mr", "mrs", "ms", "sir", "dott", "dott.ssa")
+	"frau", "mr", "mrs", "ms", "sir", "dott", "dott.ssa", "mgr", "inż", "inz",
+	"lic", "eidg")
 
 // fields are the words that say a doctor's field, like "med" in "Dr.
 // med", or a degree's, like "Ing" in "Dr.-Ing". They are titles only
 // after another, since "Phil", "Nat" and "Ing" are first names too.
 var fields = set("med", "dent", "vet", "rer", "nat", "pol", "oec", "phil",
-	"jur", "theol", "soc", "sc", "hc", "mult", "ing", "univ", "medic")
+	"jur", "theol", "soc", "sc", "hc", "mult", "ing", "univ", "medic", "psych",
+	"iur")
 
 // professions are the letters of a profession written before a name, as
-// they are spelt, like "RA", a lawyer, and "StB", a tax adviser.
-var professions = set("RA", "RAin", "StB", "WP")
+// they are spelt, like "RA", a lawyer, "StB", a tax adviser, "DI", an
+// Austrian engineer, and "HP", a Heilpraktiker.
+var professions = set("RA", "RAin", "StB", "WP", "DI", "HP")
 
 // degrees are the degrees and certificates written after a name without
 // dots, as they are spelt, so "Ma", a family name, is not "MA". A word

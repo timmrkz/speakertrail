@@ -34,7 +34,7 @@
 # built by its opening. So a push and an opening in the same second, as
 # Dependabot does them, build once, and leave no build stopped by the
 # other, FrameFairy #642, which is why FrameFairy builds on the push
-# alone. speakertrail-release which decides it, see which.go. Two rare
+# alone. speakertrail-release build-plan decides it, see plan.go. Two rare
 # cases wait for the next push: a pull request opened in conflict with
 # main, since GitHub runs nothing for its opening, and a second commit
 # pushed in the same second as the opening. The close builds nothing
@@ -109,9 +109,9 @@ jobs:
           # record of the push says it.
           PUSHED: ${{ github.event.repository.pushed_at }}
         run: >-
-          go run ./cmd/speakertrail-release which
+          go run ./cmd/speakertrail-release build-plan
           -event "$EVENT" -action "$ACTION" -branch "$BRANCH"
-          -sha "$SHA" -number "$NUMBER" -pushed "$PUSHED"
+          -commit "$SHA" -number "$NUMBER" -pushed "$PUSHED"
 
   build:
     needs: which

@@ -1,10 +1,12 @@
 package main
 
-// which says what a run of builds.yml is a build of: main, the open pull
-// request of the branch pushed or opened, or nothing. It was shell in the
-// workflow, and is here, tested, since the rule of who builds a pull
+// build-plan says what a run of builds.yml is a build of: main, the open
+// pull request of the branch pushed or opened, or nothing. It was shell in
+// the workflow, and is here, tested, since the rule of who builds a pull
 // request opened after its push came in. builds.yml only calls it. See
-// What happens on a push in docs/UPDATES.md.
+// What happens on a push in docs/UPDATES.md. FrameFairy has the same
+// command, buildPlan in its plan.go, which also decides there whether a
+// commit needs a build, still scripts/needs-build.sh here, #57.
 //
 // A pull request is built by its push or by its opening, never by both.
 // A session pushes its branch and opens the pull request seconds later, so
@@ -55,9 +57,9 @@ type buildOf struct {
 	notice  string
 }
 
-// whichBuild says what r is a build of. pullsOf lists the open pull
+// buildPlan says what r is a build of. pullsOf lists the open pull
 // requests of a branch.
-func whichBuild(r run, pullsOf func(branch string) ([]branchPull, error)) (buildOf, error) {
+func buildPlan(r run, pullsOf func(branch string) ([]branchPull, error)) (buildOf, error) {
 	switch {
 	case r.event == "pull_request":
 		if r.number == "" {
@@ -70,6 +72,8 @@ func whichBuild(r run, pullsOf func(branch string) ([]branchPull, error)) (build
 		return b, nil
 	case r.event != "push":
 		return buildOf{notice: "Only a push or the opening of a pull request builds, not " + r.event + "."}, nil
+	case r.branch == "":
+		return buildOf{}, errors.New("a push names no branch")
 	case r.branch == "main":
 		return buildOf{build: true, channel: "main", sha: r.sha}, nil
 	}
@@ -129,27 +133,27 @@ func (b buildOf) write(out io.Writer, outputs string) error {
 	return f.Close()
 }
 
-// whichCommand is speakertrail-release which.
-func whichCommand(args []string) error {
-	fs := flag.NewFlagSet("which", flag.ContinueOnError)
+// planCommand is speakertrail-release build-plan.
+func planCommand(args []string) error {
+	fs := flag.NewFlagSet("build-plan", flag.ContinueOnError)
 	var r run
 	repo := fs.String("repo", os.Getenv("GITHUB_REPOSITORY"), "the repository, owner/name")
 	fs.StringVar(&r.event, "event", "", "the event that started the run, push or pull_request")
 	fs.StringVar(&r.action, "action", "", "for a pull request, what happened to it")
 	fs.StringVar(&r.branch, "branch", "", "the branch pushed")
-	fs.StringVar(&r.sha, "sha", "", "the commit pushed, or the pull request's head")
+	fs.StringVar(&r.sha, "commit", "", "the commit pushed, or the pull request's head")
 	fs.StringVar(&r.number, "number", "", "for a pull request, its number")
 	fs.StringVar(&r.pushed, "pushed", "", "for a push, when it happened, in seconds since 1970")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if *repo == "" {
-		return errors.New("which needs -repo or GITHUB_REPOSITORY")
+		return errors.New("build-plan needs -repo or GITHUB_REPOSITORY")
 	}
 	if r.event == "" || r.sha == "" {
-		return errors.New("which needs -event and -sha")
+		return errors.New("build-plan needs -event and -commit")
 	}
-	b, err := whichBuild(r, func(branch string) ([]branchPull, error) { return branchPulls(*repo, branch) })
+	b, err := buildPlan(r, func(branch string) ([]branchPull, error) { return branchPulls(*repo, branch) })
 	if err != nil {
 		return err
 	}

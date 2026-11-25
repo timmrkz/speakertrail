@@ -43,7 +43,7 @@ then on every build comes from GitHub.
    no build and was not on the Updates page, as #93 was. A push builds
    only for a pull request open before it, and one opened at or after
    the push is built by its opening, so a commit is built once,
-   `speakertrail-release which`. A pull request opened in conflict with
+   `speakertrail-release build-plan`. A pull request opened in conflict with
    main, and a second commit pushed in the same second as the opening,
    wait for the next push. A
    commit that only changes the docs against the build there is gets no
@@ -52,7 +52,8 @@ then on every build comes from GitHub.
    copy of this file.
 2. `.github/workflows/publish.yml` runs from main whenever a build starts
    or ends, whatever branch was built. It takes only runs of `builds.yml`
-   started by a push or by a pull request opened or reopened. It works out the channel, commit and version again
+   started by a push or by a pull request opened or reopened, and starts
+   a Mac only once a job on Linux found the zip the build left. It works out the channel, commit and version again
    from GitHub's own record of the run, and refuses a commit that is not
    in the history of main or of the pull request it is for. It checks
    what the app links and asks for with `cmd/speakertrail-release check`,

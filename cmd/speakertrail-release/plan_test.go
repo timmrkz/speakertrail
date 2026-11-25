@@ -72,7 +72,7 @@ func TestEachCommitIsBuiltByItsPushOrItsOpening(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			asked := false
-			got, err := whichBuild(c.run, func(branch string) ([]branchPull, error) {
+			got, err := buildPlan(c.run, func(branch string) ([]branchPull, error) {
 				asked = true
 				if branch != c.run.branch {
 					t.Errorf("asked for the pull requests of %q, not of %q", branch, c.run.branch)
@@ -93,24 +93,28 @@ func TestEachCommitIsBuiltByItsPushOrItsOpening(t *testing.T) {
 	}
 }
 
-// A run that cannot tell which pull requests a branch has fails, rather
-// than building nothing and leaving the pull request without a build.
-func TestWhichFailsWhenGitHubCannotSay(t *testing.T) {
+// A run that cannot tell what it is a build of fails, rather than
+// building nothing and leaving the pull request without a build.
+func TestTheBuildPlanFailsWhenItCannotSay(t *testing.T) {
 	t.Parallel()
-	_, err := whichBuild(run{event: "push", branch: "work", sha: "a1", pushed: "1"}, func(string) ([]branchPull, error) {
+	_, err := buildPlan(run{event: "push", branch: "work", sha: "a1", pushed: "1"}, func(string) ([]branchPull, error) {
 		return nil, errors.New("gh: no answer")
 	})
 	if err == nil {
 		t.Fatal("a branch whose pull requests could not be listed was decided anyway")
 	}
-	if _, err := whichBuild(run{event: "pull_request", action: "opened", sha: "a1"}, nil); err == nil {
+	if _, err := buildPlan(run{event: "pull_request", action: "opened", sha: "a1"}, nil); err == nil {
 		t.Fatal("a pull request's run with no number was decided anyway")
+	}
+	// With no branch, main would be no longer built as main.
+	if _, err := buildPlan(run{event: "push", sha: "a1", pushed: "1"}, func(string) ([]branchPull, error) { return nil, nil }); err == nil {
+		t.Fatal("a push that names no branch was decided anyway")
 	}
 }
 
 // What builds.yml reads: every output on a line of its own, build false
 // when nothing is built, and the notice where the run shows it.
-func TestWhichWritesWhatTheWorkflowReads(t *testing.T) {
+func TestTheBuildPlanWritesWhatTheWorkflowReads(t *testing.T) {
 	t.Parallel()
 	outputs := filepath.Join(t.TempDir(), "outputs")
 	var log bytes.Buffer

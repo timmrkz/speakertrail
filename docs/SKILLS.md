@@ -77,7 +77,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | --- | --- |
 | one command a developer runs | the parts of `make test`: `make lint`, `make unit`, `make interface` and `make walks` |
 | the path filters, and the test that holds them | the job `changes` in `.github/workflows/ci.yml`, held by `internal/workflows`, see CI in [BUILD.md](BUILD.md#ci) |
-| a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is published and finds the pull requests that conflict |
+| a decision CI makes, in a tested program | `cmd/speakertrail-release`, which decides what is built and what is published and finds the pull requests that conflict |
 | a scarce runner | a Mac, the job `macos` |
 | a job's limit | five minutes, the `timeout-minutes` of the job `changes`, of `conflicts.yml` and of the first job of `builds.yml` |
 | the notice of a conflict | `conflicts.yml`, see When main moves in [WORKFLOW.md](WORKFLOW.md) |

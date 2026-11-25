@@ -22,18 +22,20 @@
 # a branch's code, so what the zip holds is as trusted as the branch: the
 # key is the development key, which only development builds carry.
 #
-# Three jobs:
+# Four jobs:
 #
 # 1. announce, the moment a build starts, writes the channel list again,
 #    so the Updates page says for the whole of the build that the build it
 #    offers is not the newest.
-# 2. publish, per channel, one after another and never stopped half way,
+# 2. built, on Linux, asks whether the build left a zip, so a run that
+#    built nothing starts no Mac.
+# 3. publish, per channel, one after another and never stopped half way,
 #    checks the zip, packs it in parts, signs the zip and the stored zip,
 #    and uploads to the release dev the pieces and patches the release
 #    lacks, the zip, the stored zip packed with zstd, its parts and its
 #    entry. When it is a pull request's build, it marks the commit ready
 #    to update to.
-# 3. list, when a build ends, writes channels.json again from every entry.
+# 4. list, when a build ends, writes channels.json again from every entry.
 #    It also takes away the entry of any pull request that is not open any
 #    more, which is how a closed pull request leaves the list. A list job
 #    still waiting is replaced by the next one, which writes the same list
@@ -44,7 +46,7 @@
 #
 # And one beside them:
 #
-# 4. unstick cancels any publish that has waited to enter the environment
+# 5. unstick cancels any publish that has waited to enter the environment
 #    for half an hour. updates has no reviewers and no wait timer, so a
 #    publish waits there for seconds, but in FrameFairy one of main once
 #    waited for good. publish never stops half way, so it holds its
@@ -118,13 +120,44 @@ jobs:
             gh run cancel "$run" || true
           done
 
+  # Whether the build left a zip, asked on Linux, so a run that built
+  # nothing starts no Mac: the close of a pull request, a push to a branch
+  # with no pull request, a commit built already. Macs are scarce, and a
+  # publish waits for one before it finds out there is nothing to do.
   # Only a run of builds.yml itself, started by a push or by a pull
-  # request opened or reopened. A workflow is matched above by its name,
-  # and any file can take that name. A run of a pull request is the
-  # branch's code as a push's is, and its commit goes through the same
-  # check of history below, so it is published the same way.
-  publish:
+  # request. A workflow is matched above by its name, and any file can
+  # take that name. A run of a pull request is the branch's code as a
+  # push's is, and its commit goes through the same check of history in
+  # publish, so it is published the same way.
+  built:
     if: >-
+      github.event.action == 'completed' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request') &&
+      github.event.workflow_run.path == '.github/workflows/builds.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      zip: ${{ steps.zip.outputs.zip }}
+    steps:
+      - id: zip
+        name: Did the build leave a zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.event.workflow_run.id }}
+        run: >-
+          gh api "repos/$GH_REPO/actions/runs/$RUN/artifacts"
+          --jq '"zip=\([.artifacts[] | select(.name == "build" and (.expired | not))] | length > 0)"'
+          >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: built
+    if: >-
+      needs.built.outputs.zip == 'true' &&
       github.event.action == 'completed' &&
       github.event.workflow_run.conclusion == 'success' &&
       (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'pull_request') &&
@@ -441,7 +474,7 @@ jobs:
             -f state=success -f context="Ready to update to" \
             -f description="On the Updates page as $CHANNEL" >/dev/null
 
-  # Also when publish was skipped, for a run that built nothing: the close
+  # Also when publish was skipped, for a run that left no zip: the close
   # of a pull request is how it leaves the list.
   list:
     needs: publish

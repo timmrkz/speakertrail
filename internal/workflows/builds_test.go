@@ -1,6 +1,7 @@
 package workflows
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -57,18 +58,37 @@ func TestAPullRequestIsBuiltWhenItOpens(t *testing.T) {
 	if err := yaml.Unmarshal(b, &steps); err != nil {
 		t.Fatal(err)
 	}
-	// What is decided is speakertrail-release which's, with its tests in
-	// cmd/speakertrail-release/which_test.go. Here, only that the
-	// workflow hands it the push's time.
-	pushed := false
+	// What is decided is speakertrail-release build-plan's, with its tests
+	// in cmd/speakertrail-release/plan_test.go. Here, that the workflow
+	// hands it every fact it decides by, each from where GitHub says it.
+	// The pull request's head and not github.sha, which for a pull
+	// request is the merge. The branch, or main is no longer built as
+	// main. The push's time, or one commit is built twice or not at all.
+	wantEnv := map[string]string{
+		"GH_TOKEN": "${{ github.token }}",
+		"EVENT":    "${{ github.event_name }}",
+		"ACTION":   "${{ github.event.action }}",
+		"BRANCH":   "${{ github.ref_name }}",
+		"NUMBER":   "${{ github.event.pull_request.number }}",
+		"SHA":      "${{ github.event.pull_request.head.sha || github.sha }}",
+		"PUSHED":   "${{ github.event.repository.pushed_at }}",
+	}
+	wantRun := `go run ./cmd/speakertrail-release build-plan -event "$EVENT" -action "$ACTION" -branch "$BRANCH" -commit "$SHA" -number "$NUMBER" -pushed "$PUSHED"`
+	found := false
 	for _, s := range steps.Jobs["which"].Steps {
-		if s.ID == "which" && s.Env["PUSHED"] == "${{ github.event.repository.pushed_at }}" &&
-			strings.Contains(s.Run, "go run ./cmd/speakertrail-release which") && strings.Contains(s.Run, `-pushed "$PUSHED"`) {
-			pushed = true
+		if s.ID != "which" {
+			continue
+		}
+		found = true
+		if !maps.Equal(s.Env, wantEnv) {
+			t.Errorf("builds.yml's which hands build-plan %v, want %v", s.Env, wantEnv)
+		}
+		if got := strings.Join(strings.Fields(s.Run), " "); got != wantRun {
+			t.Errorf("builds.yml's which runs\n%s\nwant\n%s", got, wantRun)
 		}
 	}
-	if !pushed {
-		t.Error("builds.yml's which does not hand speakertrail-release which the push's time, so a push and an opening can build one commit twice, or none")
+	if !found {
+		t.Error("builds.yml has no step which in its job which, so nothing says what a run is a build of")
 	}
 
 	b, err = os.ReadFile(filepath.Join(dir, "publish.yml"))
@@ -77,11 +97,19 @@ func TestAPullRequestIsBuiltWhenItOpens(t *testing.T) {
 	}
 	var publish struct {
 		Jobs map[string]struct {
-			If string `yaml:"if"`
+			If     string `yaml:"if"`
+			Needs  any    `yaml:"needs"`
+			RunsOn string `yaml:"runs-on"`
 		} `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(b, &publish); err != nil {
 		t.Fatal(err)
+	}
+	// A run that left no zip, as every close now is, starts no Mac: a
+	// job on Linux asks first.
+	if publish.Jobs["publish"].Needs != "built" || !strings.Contains(publish.Jobs["publish"].If, "needs.built.outputs.zip == 'true'") ||
+		!strings.HasPrefix(publish.Jobs["built"].RunsOn, "ubuntu") {
+		t.Errorf("publish.yml's publish does not wait for a job on Linux to find a zip, so a run that built nothing starts a Mac")
 	}
 	cond := publish.Jobs["publish"].If
 	if !strings.Contains(cond, "github.event.workflow_run.event == 'pull_request'") {

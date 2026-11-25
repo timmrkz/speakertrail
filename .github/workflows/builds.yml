@@ -28,10 +28,13 @@
 # branch is pushed first and its pull request opened after, often seconds
 # later, so that push finds no pull request and builds nothing. A pull
 # request of that one commit then had no build at all, and #93 never
-# showed on the Updates page. When the push did find the pull request,
-# the commit is built already when the opening asks, or its build is
-# stopped by the newer one. A pull request opened in conflict with main
-# runs nothing, and its next push builds it. The close builds nothing
+# showed on the Updates page. Each commit is built by one of the two: a
+# push builds only for a pull request that was open before it, and a
+# pull request opened at or after the push is built by its opening. So
+# a push and an opening in the same second, as Dependabot does them,
+# build once, and leave no build stopped by the other, FrameFairy #642,
+# which is why FrameFairy builds on the push alone. A pull request opened
+# in conflict with main runs nothing, and its next push builds it. The close builds nothing
 # and only has publish.yml write the list again without it. The build is of the branch as it is, not merged with main, so a
 # conflict does not make it wrong to test.
 #
@@ -87,8 +90,14 @@ jobs:
           BRANCH: ${{ github.ref_name }}
           NUMBER: ${{ github.event.pull_request.number }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # When the push happened, in seconds since 1970, as GitHub's own
+          # record of the push says it.
+          PUSHED: ${{ github.event.repository.pushed_at }}
         # A branch's pull request is only one opened from this repository:
-        # a fork can have a branch of the same name.
+        # a fork can have a branch of the same name. A pull request opened
+        # at or after the push is built by its opening, so the push leaves
+        # it alone, and the commit is built once. A time that is no number
+        # builds, since a doubt builds.
         run: |
           build=true
           if [ "$EVENT" = pull_request ]; then
@@ -96,13 +105,24 @@ jobs:
           elif [ "$BRANCH" = main ]; then
             NUMBER=
           else
-            found=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository \
+            found=$(gh pr list --head "$BRANCH" --state open --json number,isCrossRepository,createdAt \
               --jq '[.[] | select(.isCrossRepository | not)][0] // empty')
             if [ -z "$found" ]; then
               echo "::notice::$BRANCH has no open pull request, so it has no channel to build for."
               exit 0
             fi
             NUMBER=$(printf '%s' "$found" | jq -r .number)
+            opened=$(printf '%s' "$found" | jq -r '.createdAt | fromdate')
+            echo "pushed at $PUSHED, pull request $NUMBER opened at $opened"
+            case $PUSHED in
+            '' | *[!0-9]*) ;;
+            *)
+              if [ "$opened" -ge "$PUSHED" ]; then
+                echo "::notice::Pull request $NUMBER was opened after this push, so its opening builds it."
+                exit 0
+              fi
+              ;;
+            esac
           fi
           if [ -n "$NUMBER" ]; then channel="pr-$NUMBER"; else channel=main; fi
           {

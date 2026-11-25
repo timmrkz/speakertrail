@@ -16,7 +16,9 @@ import (
 // request of that one commit then had no build and never showed on the
 // Updates page, as #93 did on 24 November 2026. So builds.yml runs when a
 // pull request is opened or reopened, and publish.yml publishes what such
-// a run built, as it does a push's.
+// a run built, as it does a push's. A push leaves a pull request opened
+// after it to the opening, by the time GitHub says it was pushed, so the
+// two never build one commit twice, FrameFairy #642.
 //
 // On the real disk: what is read is the repository's own workflows.
 func TestAPullRequestIsBuiltWhenItOpens(t *testing.T) {
@@ -41,6 +43,28 @@ func TestAPullRequestIsBuiltWhenItOpens(t *testing.T) {
 		if !slices.Contains(builds.On.PullRequest.Types, want) {
 			t.Errorf("builds.yml does not run when a pull request is %s, it runs on %v", want, builds.On.PullRequest.Types)
 		}
+	}
+
+	var steps struct {
+		Jobs map[string]struct {
+			Steps []struct {
+				ID  string            `yaml:"id"`
+				Env map[string]string `yaml:"env"`
+				Run string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"jobs"`
+	}
+	if err := yaml.Unmarshal(b, &steps); err != nil {
+		t.Fatal(err)
+	}
+	pushed := false
+	for _, s := range steps.Jobs["which"].Steps {
+		if s.ID == "which" && s.Env["PUSHED"] == "${{ github.event.repository.pushed_at }}" && strings.Contains(s.Run, "createdAt") {
+			pushed = true
+		}
+	}
+	if !pushed {
+		t.Error("builds.yml's which does not weigh when the push happened against when the pull request was opened, so a push and an opening can build one commit twice")
 	}
 
 	b, err = os.ReadFile(filepath.Join(dir, "publish.yml"))

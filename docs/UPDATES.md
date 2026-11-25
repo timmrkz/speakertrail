@@ -40,7 +40,9 @@ then on every build comes from GitHub.
    branch pushed. A branch with no open pull request builds nothing, so
    opening or reopening a pull request builds it too: its branch is
    pushed before it is opened, and a pull request of that one push had
-   no build and was not on the Updates page, as #93 was. A
+   no build and was not on the Updates page, as #93 was. A push builds
+   only for a pull request open before it, and one opened at or after
+   the push is built by its opening, so a commit is built once. A
    commit that only changes the docs against the build there is gets no
    build of its own, see `scripts/needs-build.sh`. The build leaves a zip
    and nothing else. It gets no secret, because a branch runs its own

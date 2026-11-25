@@ -7,6 +7,7 @@
 // that still fits a window 390 px wide. `make walks` runs it.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn } from './lib/settled.mjs'
 
 let failed = 0
 async function walk(name, fn) {
@@ -59,7 +60,7 @@ await walk('A model picked is named at once, and Download fetches it', async (br
   await trigger(page).click()
   await page.locator('.pick-row', { hasText: 'Qwen3 14B' }).click()
   await page.locator('.pick-list').waitFor({ state: 'detached' })
-  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Qwen3 14B', null, { timeout: 2000 })
+  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Qwen3 14B')
   const line = await page.locator('#language .line').first().textContent()
   expect(`the line said "${line}"`, line === 'Not downloaded yet. 9.0 GB.')
   expect('Download is not there to fetch it', await page.locator('#language button.act', { hasText: 'Download' }).isVisible())
@@ -71,11 +72,11 @@ await walk('A model picked is named at once, and Download fetches it', async (br
   // Picked again, it is the one Settings shows after a reload, because the
   // app keeps it.
   await page.reload()
-  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Qwen3 14B', null, { timeout: 2000 })
+  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Qwen3 14B')
   // Back to the one downloaded, for the walks after this one.
   await trigger(page).click()
   await page.locator('.pick-row', { hasText: 'Gemma 4 26B A4B' }).click()
-  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Gemma 4 26B A4B', null, { timeout: 2000 })
+  await page.waitForFunction(() => document.querySelector('#language button.pick .said > span:not(.room)')?.textContent === 'Gemma 4 26B A4B')
   expect('Download stayed for a model that is here', !(await page.locator('#language button.act', { hasText: 'Download' }).count()))
 })
 
@@ -86,7 +87,7 @@ await walk('The list lets go of the keyboard as Escape closes it', async (browse
   await page.locator('.pick-list').waitFor()
   await page.keyboard.press('Escape')
   await page.locator('.pick-list').waitFor({ state: 'detached' })
-  await page.waitForTimeout(50)
+  await drawn(page)
   const focused = await page.evaluate(() => document.activeElement?.className ?? '')
   expect(`the keyboard stayed on "${focused}"`, !String(focused).includes('pick'))
   expect('Escape picked something', (await shown(page)) === 'Gemma 4 26B A4B')

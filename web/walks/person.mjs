@@ -2,6 +2,7 @@
 // walks/sidebar.mjs does. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn } from './lib/settled.mjs'
 
 const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.profiles[0].review), id)
 
@@ -292,7 +293,7 @@ const walks = [
       const closed = await look()
       await page.locator('.prow').nth(2).click()
       await page.locator('.detail-pane').waitFor()
-      await page.waitForTimeout(0)
+      await drawn(page)
       await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))))
       const open = await look()
       if (open !== closed) return `the list changed: closed ${closed}, open ${open}`

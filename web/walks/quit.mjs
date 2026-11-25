@@ -129,12 +129,16 @@ const walks = [
       await open(page, '/app/people/1001')
       await page.locator('.actions a.btn').waitFor()
       await say(page, 'ask')
+      // The app moves to a page as it handles the key, so where it is is
+      // read from the page, not from a wait for an address that might still
+      // come. Not once it has drawn: the page's clock is held here, and with
+      // it the frames.
+      const at = () => page.evaluate(() => location.pathname)
       await page.keyboard.press('Escape')
       if (await shown(page)) return 'Escape left the question on screen'
-      if (!page.url().endsWith('/app/people/1001')) return `the same Escape put the person away, the app is at ${new URL(page.url()).pathname}`
+      if ((await at()) !== '/app/people/1001') return `the same Escape put the person away, the app is at ${await at()}`
       await page.keyboard.press('Escape')
-      await page.waitForURL(/\/app\/people$/, { timeout: 2000 }).catch(() => {})
-      if (!page.url().endsWith('/app/people')) return 'the next Escape left the person open'
+      if ((await at()) !== '/app/people') return `the next Escape left the person open, the app is at ${await at()}`
       return ''
     },
   },
@@ -147,7 +151,6 @@ const walks = [
       const isOpen = () => page.evaluate(() => document.querySelector('aside').classList.contains('open'))
       await page.mouse.move(750, 400)
       await page.mouse.move(20, 500)
-      await page.waitForFunction(() => document.querySelector('aside').classList.contains('open'), null, { timeout: 2000 }).catch(() => {})
       if (!(await isOpen())) return 'the pointer on the rail did not open the sidebar'
       await say(page, 'ask')
       await page.keyboard.press('Escape')

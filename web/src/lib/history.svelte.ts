@@ -6,6 +6,7 @@
 // Whatever shows it reads again when changed counts up.
 
 import { api } from './api'
+import { pasting } from './paste.svelte'
 import { navigate, router } from './router.svelte'
 import { errorText, toast } from './toast.svelte'
 
@@ -27,6 +28,7 @@ class UndoHistory {
       if (done.shows?.kind === 'person') {
         const to = `/app/people/${done.shows.id}`
         if (router.path !== to) navigate(to)
+        if (how === 'undo') void pasting.undone(done.shows.id)
       }
       this.changed++
       return true

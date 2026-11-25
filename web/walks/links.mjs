@@ -172,6 +172,84 @@ await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, a
   await hint.waitFor()
 })
 
+await walk('A LinkedIn page pasted on another page, or into the search, opens whose it is and drafts their first message', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/eva-s-neu-80')
+  await search(page).press('Enter')
+  await done(page)
+  await page.locator('main .prow', { hasText: 'eva-s-neu-80' }).locator('.sub', { hasText: 'Paste their LinkedIn page' }).waitFor()
+  // Tim went to Settings, and pastes the page there, with the links
+  // Chrome copies with it, his own among them.
+  await page.goto(`${url}/app/settings`)
+  await page.locator('main').waitFor()
+  const text = 'Home\nMy Network\n\nEva Neu\n· 1st\n\nGründerin | Probe Keramik\nDortmund, Nordrhein-Westfalen, Deutschland\nAbout\nIch töpfere.'
+  const html = '<a href="/in/tim-beobachter/">Me</a><p>Eva Neu</p><a href="https://www.linkedin.com/in/eva-s-neu-80/overlay/contact-info/">Contact info</a><a href="/in/eva-s-neu-80/recent-activity/all/">Activity</a>'
+  await page.evaluate(([text, html]) => {
+    document.activeElement?.blur()
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    data.setData('text/html', html)
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+  }, [text, html])
+  await page.waitForURL(/\/app\/people\/\d+$/)
+  const opened = page.url()
+  await page.locator('main article.person[aria-label="Eva Neu"]').waitFor()
+  await page.locator('.toast-region', { hasText: 'Kept the page' }).waitFor()
+  const toast = await page.locator('.toast-region').textContent()
+  expect(`the toast said "${toast}"`, toast.includes('drafting the first message') && !toast.includes('not the one') && !toast.includes('Eva'))
+  // The first message is being written, on the button that started it.
+  await page.locator('main .first-message .draft-progress').waitFor()
+  expect('the paste went into the search', (await search(page).inputValue()) === '')
+  expect('the toast offers Undo, which the Edit menu has now', !(await page.locator('.toast-region button', { hasText: 'Undo' }).count()))
+  // Undo in the Edit menu takes the page back and stops the draft it
+  // started, as the toast's Undo did.
+  const cancelled = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/people\/\d+\/draft\/cancel$/.test(r.url()))
+  await menu(page, 'undo')
+  await cancelled
+  await page.locator('main article.person[aria-label="eva-s-neu-80"]').waitFor()
+  await page.locator('main .first-message .draft-progress').waitFor({ state: 'detached' })
+
+  // Pasted again into the search field, by its text alone, with nobody
+  // open, the page finds her by the name on it.
+  await page.goto(`${url}/app/people`)
+  await search(page).focus()
+  await page.evaluate((text) => {
+    const data = new DataTransfer()
+    data.setData('text/plain', text)
+    document.activeElement.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }))
+  }, text)
+  await page.waitForURL(opened)
+  expect('the page went into the search', (await search(page).inputValue()) === '')
+
+  // A page of someone the app does not have, with its link in the HTML,
+  // adds them and opens them, and Undo takes them out again (Tim, 25
+  // November 2026).
+  await page.goto(`${url}/app/people`)
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'Ida Unbekannt\n· 1st\nCoach\nAbout\nIch coache.')
+    data.setData('text/html', '<a href="/in/ida-unbekannt-81/">Ida</a><a href="/in/ida-unbekannt-81/overlay/contact-info/">Contact info</a>')
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+  })
+  await page.locator('main article.person[aria-label="Ida Unbekannt"]').waitFor()
+  await page.locator('.toast-region', { hasText: 'Added them from the page' }).waitFor()
+  await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  await page.waitForURL(/\/app\/people$/)
+  const gone = await page.evaluate(() => fetch('/api/people?filter=connected&q=Unbekannt').then((r) => r.json()))
+  expect('Undo left her in the app', gone.people.length === 0)
+
+  // As text alone, with no link to add her under, it says what is missing.
+  await page.evaluate(() => {
+    document.activeElement?.blur()
+    const data = new DataTransfer()
+    data.setData('text/plain', 'Ida Unbekannt\n· 2nd\nCoach\nAbout\nIch coache.')
+    document.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true }))
+  })
+  await page.locator('.toast-region', { hasText: 'without the link to their profile' }).waitFor()
+  expect('a person opened', !/\/app\/people\/\d+$/.test(page.url()))
+})
+
 await walk('Links dropped on the window light all of it and are added, from any page', async (browser) => {
   const page = await people(browser)
   await page.goto(`${url}/app/searches`)

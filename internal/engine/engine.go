@@ -458,13 +458,19 @@ func (e *Engine) Remove(id int64) error {
 // the person id, see search.Pasted and store.Data.Paste, and reports
 // whether the name on the page is the one in their link. A read of them
 // the going run has not begun is dropped. It is a change Tim makes, so
-// Undo in the Edit menu takes it back, see store.Edit.
-func (e *Engine) Paste(id int64, text string) (named bool, err error) {
+// Undo in the Edit menu takes it back, see store.Edit, unless the page
+// just added them, see AddPage. Then it is part of adding them, which
+// the toast's Undo takes back as for a link, and no step of its own.
+func (e *Engine) Paste(id int64, text string, added bool) (named bool, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	var runID int64
 	if g := e.going; g != nil {
 		runID = g.id
+	}
+	steps := []store.Thing{store.PersonThing(id)}
+	if added {
+		steps = nil
 	}
 	err = e.Store.Edit(func(d *store.Data) error {
 		p := d.Person(id)
@@ -488,7 +494,7 @@ func (e *Engine) Paste(id int64, text string) (named bool, err error) {
 			run.Links = slices.DeleteFunc(run.Links, func(x int64) bool { return x == id })
 		}
 		return nil
-	}, store.PersonThing(id))
+	}, steps...)
 	if err != nil {
 		return false, err
 	}
@@ -503,6 +509,139 @@ func (e *Engine) Paste(id int64, text string) (named bool, err error) {
 
 // ErrNothingPasted is a paste that holds no profile, only white space.
 var ErrNothingPasted = errors.New("the paste holds no text")
+
+// ErrNobodyPasted is a page whose person is not in the app.
+var ErrNobodyPasted = errors.New("nobody in the app has this profile. Paste the link to it in the search to add them")
+
+// ErrManyPasted is a page whose name more than one person here has, and
+// whose links lead to none of them.
+var ErrManyPasted = errors.New("more than one person here has this name. Open the one the page belongs to and paste it again")
+
+// ErrNoPageLink is a page of someone new that came without the link of
+// their profile, whom Exa does not know by the name and headline on it
+// either. The link is who they are to the app: LinkedIn opens it, and
+// their profile is kept under it.
+var ErrNoPageLink = errors.New("the page came without the link to their profile, and Exa knows nobody by its name and headline. Paste the link to their profile, then the page again")
+
+// ErrNoPageName is a page with no name where LinkedIn puts it, above
+// how near Tim is to them.
+var ErrNoPageName = errors.New("the page shows no name above how you are connected, so it is not a LinkedIn profile as the app knows one")
+
+// AddPage adds the person a LinkedIn page Tim pasted belongs to, when
+// nobody here has it, so a page does what a link does and more (Tim,
+// 25 November 2026, #89). Their link comes from the page's HTML, see
+// search.OwnLink. A page pasted as text alone has none, so Exa is asked
+// once for a LinkedIn profile by the name and headline on it, a search
+// from the month's budget, and only a profile under that name counts.
+// They are connected when the page says "· 1st". The caller keeps the
+// page as their profile, see Paste.
+func (e *Engine) AddPage(ctx context.Context, text string, hrefs []string) (id int64, isNew bool, err error) {
+	page, _ := search.Pasted(text, "")
+	if page.Name == "" {
+		return 0, false, ErrNoPageName
+	}
+	link := search.OwnLink(hrefs, page.Name)
+	if link == "" {
+		link, err = e.linkByName(ctx, page)
+		if err != nil {
+			return 0, false, err
+		}
+	}
+	err = e.Store.Update(func(d *store.Data) error {
+		p, n := d.AddPage(link, page.Name, search.FirstDegree(text), e.Store.Now())
+		id, isNew = p.ID, n
+		return nil
+	})
+	return id, isNew, err
+}
+
+// linkByName asks Exa for the profile of the name and headline on a
+// page, for a page pasted without its link.
+func (e *Engine) linkByName(ctx context.Context, page search.Profile) (string, error) {
+	if e.Finder == nil {
+		return "", ErrNoPageLink
+	}
+	finder, err := e.Finder()
+	if err != nil {
+		// Without the key Exa cannot be asked, and the link stays missing.
+		return "", ErrNoPageLink
+	}
+	reserved := false
+	if err := e.Store.Update(func(d *store.Data) error {
+		reserved = d.Reserve(Provider, e.Store.Now())
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	if !reserved {
+		return "", ErrNoBudget
+	}
+	found, err := finder.People(ctx, strings.TrimSpace(page.Name+" "+page.Headline), 10)
+	if err != nil {
+		return "", fmt.Errorf("Exa was asked for the link to their profile, and %w", err)
+	}
+	for _, f := range found {
+		if l := linkedIn(f.URL); l != "" && search.SameName(page.Name, f.Name, l) {
+			return l, nil
+		}
+	}
+	return "", ErrNoPageLink
+}
+
+// Whose finds the person a LinkedIn page Tim pasted belongs to, wherever
+// he pasted it, so he never has to find them first (Tim, 24 November
+// 2026, #89). hrefs are the links in the page's HTML, see
+// search.PageLinks, and open is the person open in the window, or 0.
+//
+// A person whose link the page holds most often is theirs, since the
+// page's own link stands in many of its links and other people's in a
+// few. So is a person whose link it holds less often when the name on
+// the page is theirs. Else the
+// name on the page tells: the person open when it is theirs, or the one
+// person here with that name. Else a page without its own link is the
+// open person's, as it always was, and Paste says when its name is not
+// the one in their link. ErrNobodyPasted is someone new, see AddPage.
+func (e *Engine) Whose(text string, hrefs []string, open int64) (int64, error) {
+	if strings.TrimSpace(text) == "" {
+		return 0, ErrNothingPasted
+	}
+	links := search.PageLinks(hrefs)
+	name := search.PageName(text)
+	var id int64
+	var err error
+	e.Store.Read(func(d *store.Data) {
+		best := -1
+		var named []int64
+		for _, p := range d.People {
+			same := search.SameName(name, p.Name, p.LinkedIn.URL)
+			// A link the page holds less often than another is someone
+			// it shows, like under People also viewed, unless the name
+			// is theirs too.
+			if at := search.LinkNamed(p.LinkedIn.URL, links); at >= 0 && (at == 0 || same) && (best < 0 || at < best) {
+				best, id = at, p.ID
+			}
+			if same {
+				named = append(named, p.ID)
+			}
+		}
+		switch {
+		case best >= 0:
+		case slices.Contains(named, open):
+			id = open
+		case len(named) == 1:
+			id = named[0]
+		case len(named) > 1:
+			err = ErrManyPasted
+		// A page whose own link is nobody's here is someone new, never
+		// the person open.
+		case open != 0 && search.OwnLink(hrefs, name) == "" && d.Person(open) != nil:
+			id = open
+		default:
+			err = ErrNobodyPasted
+		}
+	})
+	return id, err
+}
 
 // Stop ends the going run. What it did not get to waits for the next
 // run. It returns once the run has ended.

@@ -183,11 +183,15 @@ export interface Person {
 // people here already by id, and other links, like a company page. act
 // is what Run turns into, as the app decides: Add, Open the one person
 // here, or a greyed Add for links that add nobody.
-// The answer to a paste: the person now, and whether the page gave
-// their name.
+// The answer to a paste: the person now, whether the page gave their
+// name, and whether the paste started their first message, as Draft
+// does.
 export interface PastedProfile {
   person: PersonDetail
   named: boolean
+  drafting: boolean
+  // The page added them, someone new.
+  added: boolean
 }
 
 // What Undo or Redo in the Edit menu did: whether there was anything to
@@ -788,6 +792,7 @@ export const api = {
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   // Keeps a LinkedIn page Tim copied in Chrome as a person's profile.
   pasteProfile: (id: number, text: string) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, { text }),
+  pastePage: (body: { text: string; links: string[]; open: number }) => request<PastedProfile>('POST', '/api/people/profile', body),
   // Undo and Redo in the Edit menu, for every change Tim makes.
   undo: () => request<Undone>('POST', '/api/undo', {}),
   redo: () => request<Undone>('POST', '/api/redo', {}),

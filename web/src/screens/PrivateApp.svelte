@@ -13,6 +13,7 @@
   import { languageWatch } from '../lib/language.svelte'
   import { railDot, standing, updates } from '../lib/updates.svelte'
   import { reporting } from '../lib/reporting.svelte'
+  import { pasting } from '../lib/paste.svelte'
   import { api, onUndo } from '../lib/api'
   import { undoHistory } from '../lib/history.svelte'
   import { fieldStep, handedOn, keepUndo } from '../lib/fieldundo'
@@ -131,9 +132,19 @@
     const text = e.dataTransfer!.getData('text/uri-list') || e.dataTransfer!.getData('text/plain')
     if (text.trim()) void runWatch.add(text)
   }
+
+  // A LinkedIn page pasted anywhere in the window, on any page, finds
+  // the person it belongs to and opens them, see lib/paste.svelte.ts. A
+  // text box keeps what is pasted into it, a one-line field does not,
+  // since a page never fits one line.
+  function paste(e: ClipboardEvent) {
+    const on = document.activeElement as HTMLElement | null
+    pasting.take(e, on?.tagName === 'TEXTAREA' || !!on?.isContentEditable)
+  }
 </script>
 
 <svelte:window
+  onpastecapture={paste}
   ondragstart={() => (ours = true)}
   ondragend={() => ((ours = false), (held = 0))}
   ondragenter={dragEnter}

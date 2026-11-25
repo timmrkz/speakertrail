@@ -485,3 +485,65 @@ func TestEachChangeHasAHigherNumber(t *testing.T) {
 		t.Errorf("Start answered %d, first told %d", started.Seq, r.told[0].Seq)
 	}
 }
+
+// A page pasted after Draft said Exa has no copy finishes that draft,
+// once however many times it is pasted at once, and so does a page
+// pasted for someone connected who has no first message yet. Anyone
+// else gets no draft from a paste (Tim's report of 24 November 2026,
+// #88).
+func TestAPastedPageDraftsWhatDraftLacked(t *testing.T) {
+	r := newRig(t)
+	r.finder.none.Store(true)
+	id := r.person(t, "Mara Beispiel", "")
+	r.d.Start(id)
+	r.d.Wait()
+	paste := func(id int64) {
+		t.Helper()
+		if err := r.st.Update(func(d *store.Data) error {
+			d.Paste(d.Person(id), store.Pasted{Text: "Mara Beispiel\n\n## About\n\nIch töpfere in Köln.", Name: "Mara Beispiel"}, t0)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paste(id)
+	var wg sync.WaitGroup
+	started := map[string]bool{}
+	var mu sync.Mutex
+	for range 4 {
+		wg.Go(func() {
+			// A paste that comes once the draft another started has
+			// written the message drafts nothing, as on a fast Mac.
+			if j, ok := r.d.Pasted(id); ok {
+				mu.Lock()
+				started[j.ID] = true
+				mu.Unlock()
+			}
+		})
+	}
+	wg.Wait()
+	r.d.Wait()
+	if len(started) != 1 || r.asks.Load() != 1 {
+		t.Errorf("%d drafts started, the model asked %d times", len(started), r.asks.Load())
+	}
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); p.Draft != written {
+			t.Errorf("draft %q", p.Draft)
+		}
+	})
+	// With a first message there, a paste leaves it be.
+	if _, ok := r.d.Pasted(id); ok {
+		t.Error("a paste drafted over a first message")
+	}
+
+	other := r.person(t, "Jonas Probe", "")
+	paste(other)
+	if _, ok := r.d.Pasted(other); ok {
+		t.Error("a paste drafted for someone not connected who never asked")
+	}
+	_ = r.st.Update(func(d *store.Data) error { d.Person(other).Connect(true, t0); return nil })
+	if _, ok := r.d.Pasted(other); !ok {
+		t.Error("a paste drafted nothing for someone connected without a first message")
+	}
+	r.d.Wait()
+}

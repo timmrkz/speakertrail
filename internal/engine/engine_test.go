@@ -968,7 +968,7 @@ func TestAPasteWhileExaReadsWins(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
-			if _, err := e.Paste(out.New[0], page); err != nil {
+			if _, err := e.Paste(out.New[0], page, false); err != nil {
 				t.Error(err)
 			}
 			e.Reading()
@@ -1010,5 +1010,166 @@ func TestALinkWithNoNameTakesOneSearch(t *testing.T) {
 	})
 	if len(f.named) != 0 {
 		t.Errorf("asked by name for %q", f.named)
+	}
+}
+
+// A page pasted anywhere finds whose it is: by the link it holds most
+// often, by a link it holds less often whose name it shows, by its name,
+// or as the open person's. Asked from several goroutines while pages
+// are pasted, it answers the same (Tim, 24 November 2026, #89).
+func TestWhoseIsAPastedPage(t *testing.T) {
+	e, st := newEngine(t, &finder{})
+	add := func(link, name string) int64 {
+		var id int64
+		_ = st.Update(func(d *store.Data) error {
+			s, _ := d.AddSearch("Keramik "+name, 0, t0)
+			p, _ := d.AddFound(store.Found{URL: link, Name: name}, s, 1, t0)
+			id = p.ID
+			return nil
+		})
+		return id
+	}
+	mara := add("https://www.linkedin.com/in/mara-s-beispiel", "Mara Beispiel")
+	otto := add("https://www.linkedin.com/in/otto-muster-5b", "Otto Muster")
+	jonas := add("https://www.linkedin.com/in/ACoAAB12345", "Jonas Probe")
+	lena1 := add("https://www.linkedin.com/in/lena-probe", "Lena Probe")
+	lena2 := add("https://www.linkedin.com/in/lena-probe-2", "Lena Probe")
+
+	page := func(name string) string {
+		return "Home\nMy Network\n\n" + name + "\n· 1st\n\nGründerin\n\nAbout\nIch töpfere."
+	}
+	// Mara's page, with her links and Otto under People also viewed.
+	maraLinks := []string{
+		"https://www.linkedin.com/in/mara-s-beispiel/overlay/contact-info/", "/in/mara-s-beispiel/recent-activity/all/",
+		"https://de.linkedin.com/in/mara-s-beispiel/details/experience/", "https://www.linkedin.com/in/otto-muster-5b/",
+		"https://www.linkedin.com/in/tom-beobachter/", "https://example.com/in/mara-s-beispiel",
+	}
+	for _, c := range []struct {
+		what  string
+		text  string
+		links []string
+		open  int64
+		want  int64
+		err   error
+	}{
+		{"her links", page("Mara Beispiel"), maraLinks, 0, mara, nil},
+		{"her links, Otto open", page("Mara Beispiel"), maraLinks, otto, mara, nil},
+		{"Otto shown on another's page", page("Ida Neu"), []string{"/in/ida-neu/", "/in/ida-neu/details/", "/in/otto-muster-5b/"}, 0, 0, ErrNobodyPasted},
+		{"Otto's link once, and his name", page("Otto Muster"), []string{"/in/otto-muster-5b/", "/in/tom-beobachter/", "/in/tom-beobachter/x"}, 0, otto, nil},
+		{"text alone, by name", page("Mara Beispiel"), nil, 0, mara, nil},
+		{"a link with no name in it, by name", page("Jonas Probe"), nil, 0, jonas, nil},
+		{"two of that name", page("Lena Probe"), nil, 0, 0, ErrManyPasted},
+		{"two of that name, one open", page("Lena Probe"), nil, lena2, lena2, nil},
+		{"two of that name, her link", page("Lena Probe"), []string{"/in/lena-probe/", "/in/lena-probe/overlay/"}, 0, lena1, nil},
+		{"nobody's name, someone open", page("Ida Neu"), nil, otto, otto, nil},
+		{"nobody's name", page("Ida Neu"), nil, 0, 0, ErrNobodyPasted},
+		{"nothing", " \n ", nil, mara, 0, ErrNothingPasted},
+	} {
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Go(func() {
+				got, err := e.Whose(c.text, c.links, c.open)
+				if got != c.want || !errors.Is(err, c.err) {
+					t.Errorf("%s: %d, %v, want %d, %v", c.what, got, err, c.want, c.err)
+				}
+				// Her own page again, so the names the cases ask by stay.
+				if got == mara {
+					if _, err := e.Paste(got, c.text, false); err != nil {
+						t.Error(err)
+					}
+				}
+			})
+		}
+		wg.Wait()
+	}
+}
+
+// A page of someone nobody here has adds them: under the link in its
+// HTML, connected when it says "· 1st", or, pasted as text alone, under
+// the link Exa gives for the name and headline on it, one search from
+// the budget. A namesake under another name in the link, or nobody,
+// leaves the link missing, and says so. Pasted from several goroutines
+// at once, the page adds one person (Tim, 25 November 2026, #89).
+func TestAPageAddsSomeoneNew(t *testing.T) {
+	f := &finder{profiles: []search.Profile{
+		{URL: "https://www.linkedin.com/in/ida-neumann-7", Name: "Ida Neumann", Headline: "Coach"},
+		{URL: "https://de.linkedin.com/in/eva-neu-3b/", Name: "Eva Neu", Headline: "Gründerin | Neu Keramik"},
+	}}
+	e, st := newEngine(t, f)
+	page := "Home\n\nEva Neu\n· 1st\n\nGründerin | Neu Keramik\nDortmund, North Rhine-Westphalia, Germany\nAbout\nIch töpfere."
+	links := []string{"/in/tim-beobachter/", "https://www.linkedin.com/in/Eva-Neu-3b/overlay/contact-info/", "/in/eva-neu-3b/recent-activity/all/"}
+
+	ids := make(chan int64, 4)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			if _, err := e.Whose(page, links, 0); !errors.Is(err, ErrNobodyPasted) && err != nil {
+				t.Error(err)
+			}
+			id, _, err := e.AddPage(context.Background(), page, links)
+			if err != nil {
+				t.Error(err)
+			}
+			ids <- id
+		})
+	}
+	wg.Wait()
+	close(ids)
+	var first int64
+	for id := range ids {
+		if first == 0 {
+			first = id
+		} else if id != first {
+			t.Errorf("one page added %d and %d", first, id)
+		}
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(first)
+		if p == nil || p.Name != "Eva Neu" || p.LinkedIn.URL != "https://www.linkedin.com/in/Eva-Neu-3b" || !p.Connected || p.Evidence != store.AddedByHand || len(d.People) != 1 {
+			t.Fatalf("added %+v of %d", p, len(d.People))
+		}
+		if d.Used(Provider, t0) != 0 {
+			t.Errorf("a page with its link asked Exa %d times", d.Used(Provider, t0))
+		}
+	})
+	// The page again, now with nobody open, is hers.
+	if id, err := e.Whose(page, links, 0); id != first || err != nil {
+		t.Errorf("her page again: %d %v", id, err)
+	}
+	if err := e.Remove(first); err != nil {
+		t.Fatal(err)
+	}
+
+	// As text alone, Exa gives the link, and someone not connected stays so.
+	second := strings.Replace(page, "· 1st", "· 2nd", 1)
+	id, isNew, err := e.AddPage(context.Background(), second, nil)
+	if err != nil || !isNew {
+		t.Fatalf("text alone: %d %v %v", id, isNew, err)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(id)
+		if p.LinkedIn.URL != "https://www.linkedin.com/in/eva-neu-3b" || p.Connected || d.Used(Provider, t0) != 1 {
+			t.Errorf("by Exa %+v, %d searches", p.LinkedIn, d.Used(Provider, t0))
+		}
+	})
+	if q := f.queries[len(f.queries)-1]; q != "Eva Neu Gründerin | Neu Keramik" {
+		t.Errorf("Exa was asked %q", q)
+	}
+	// A namesake's link never counts, and the link stays missing.
+	if _, _, err := e.AddPage(context.Background(), strings.Replace(page, "Eva Neu", "Ida Neu", 1), nil); !errors.Is(err, ErrNoPageLink) {
+		t.Errorf("a namesake: %v", err)
+	}
+	// Without the Exa key it is missing too.
+	off, _ := newEngine(t, nil)
+	if _, _, err := off.AddPage(context.Background(), page, nil); !errors.Is(err, ErrNoPageLink) {
+		t.Errorf("without a key: %v", err)
+	}
+	if _, _, err := e.AddPage(context.Background(), "Ich töpfere.\nIn Dortmund.", nil); !errors.Is(err, ErrNoPageName) {
+		t.Errorf("no name: %v", err)
+	}
+	// A page with its own link that nobody here has is never the person
+	// open, it is someone new.
+	if _, err := e.Whose("Ida Neu\n· 2nd\nCoach", []string{"/in/ida-neu-9/", "/in/ida-neu-9/details/"}, id); !errors.Is(err, ErrNobodyPasted) {
+		t.Errorf("someone new with someone open: %v", err)
 	}
 }

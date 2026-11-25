@@ -389,7 +389,52 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	named, err := a.Engine.Paste(id, body.Text)
+	a.paste(w, r, id, body.Text, false)
+}
+
+// pastePage keeps a LinkedIn page Tim pasted anywhere in the window as
+// the profile of the person it belongs to, see engine.Whose. links are
+// the links in the page's HTML, open the person open, or 0.
+func (a *API) pastePage(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Text  string   `json:"text"`
+		Links []string `json:"links"`
+		Open  int64    `json:"open"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	id, err := a.Engine.Whose(body.Text, body.Links, body.Open)
+	added := false
+	// Someone new is added from the page, as a link adds them.
+	if errors.Is(err, engine.ErrNobodyPasted) {
+		id, added, err = a.Engine.AddPage(r.Context(), body.Text, body.Links)
+	}
+	switch {
+	case errors.Is(err, engine.ErrNothingPasted):
+		fail(w, http.StatusBadRequest, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrManyPasted), errors.Is(err, engine.ErrNoBudget):
+		fail(w, http.StatusConflict, capital(err.Error()))
+		return
+	case errors.Is(err, engine.ErrNoPageLink), errors.Is(err, engine.ErrNoPageName):
+		fail(w, http.StatusUnprocessableEntity, capital(err.Error()))
+		return
+	case err != nil:
+		a.internal(w, r, err)
+		return
+	}
+	a.paste(w, r, id, body.Text, added)
+}
+
+// paste keeps text as the profile of person id, and answers with the
+// person, whether the name on the page is the one in their link,
+// whether the first message is being drafted from it, see
+// draft.Drafter.Pasted, and whether the page added them. The paste is a
+// step Undo in the Edit menu takes back, unless it added them: Undo on
+// the toast takes them out again, as for a link.
+func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, added bool) {
+	named, err := a.Engine.Paste(id, text, added)
 	switch {
 	case errors.Is(err, store.ErrNoPerson):
 		fail(w, http.StatusNotFound, "Not found")
@@ -401,15 +446,21 @@ func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
+	drafting := false
+	if a.Drafts != nil {
+		_, drafting = a.Drafts.Pasted(id)
+	}
 	out := a.detail(id)
 	if out == nil {
 		fail(w, http.StatusNotFound, "Not found")
 		return
 	}
 	send(w, http.StatusOK, struct {
-		Person *personDetail `json:"person"`
-		Named  bool          `json:"named"`
-	}{out, named})
+		Person   *personDetail `json:"person"`
+		Named    bool          `json:"named"`
+		Drafting bool          `json:"drafting"`
+		Added    bool          `json:"added"`
+	}{out, named, drafting, added})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {

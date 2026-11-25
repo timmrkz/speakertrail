@@ -81,7 +81,13 @@ func read(name string) parsed {
 	name = plain(name)
 	var n parsed
 	name, n.nick = nickname(name)
-	n.all = strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsMark(r) && r != '-' && r != '\'' })
+	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsMark(r) && r != '-' && r != '\'' }) {
+		// "Dipl.-Psych." falls apart into "Dipl" and "-Psych", which is
+		// "Psych", a title.
+		if w = strings.Trim(w, "-'"); w != "" {
+			n.all = append(n.all, w)
+		}
+	}
 	// What follows a bar, a slash or a colon is a tagline, or the name in
 	// other letters, like "Олена Бондар | Olena Bondar", which a greeting
 	// in Latin letters takes.

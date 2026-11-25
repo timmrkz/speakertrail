@@ -42,25 +42,35 @@ to fill in, and the prompt gets the whole name.
 ## How well it reads
 
 Measured on 25 November 2026 on invented names, since real ones never go
-into the repository. `testdata/names.tsv` holds 139 names written with
-the rules in mind, "Yoga mit Mara" only in a comment, since it is read
-wrong. `testdata/blind.tsv` holds 326 hard ones, written by
-someone who had not seen the rules, to measure them. The libraries were
-run as they come, on the first name alone, without the link.
+into the repository, all in `internal/names/testdata`.
 
-| Way of reading | names.tsv | blind.tsv, first run | blind.tsv now |
-| --- | --- | --- | --- |
-| the first word, before this change | 69 | 148 | 148 |
-| `internal/names` | 138 | 264 | 303 |
-| python-nameparser 3.2, the best open library found, Python, LGPL | 118 | 229 | |
-| probablepeople 0.5 | 73 | 152 | |
-| Go: vinser/parse-full-name | 86 | 177 | |
-| Go: caffix/fullname_parser | 85 | 175 | |
-| Go: polera/gonameparts | 67 | 152 | |
+- `realistic.tsv`: 265 names in the shares one meets on profiles of
+  self-employed people in NRW, more than half a plain "First Last",
+  each with the link its profile would have. It was written blind, by
+  someone who had not seen the rules, and measured once, as it came.
+  This is the number to go by.
+- `blind.tsv`: 326 hard names, also written blind, a third without a
+  link. The rules were improved where it showed a kind of name read
+  wrong, so its second number is no longer blind.
+- `names.tsv`: 139 names written with the rules in mind, "Yoga mit
+  Mara" only in a comment, since it is read wrong.
 
-"First run" is the rules as they stood before the blind set was read.
-The rules were then improved where it showed a kind of name read wrong,
-so "now" is no longer blind.
+The libraries were run as they come, on the name alone, since none
+reads a link.
+
+| Way of reading | realistic.tsv | blind.tsv, first run | blind.tsv now | names.tsv |
+| --- | --- | --- | --- | --- |
+| the first word, before this change | 210 (79 %) | 148 | 148 | 69 |
+| `internal/names` | 256 (97 %) | 264 | 303 | 138 |
+| python-nameparser 3.2, the best open library found, Python, LGPL | 235 (89 %) | 229 | | 118 |
+| Go: vinser/parse-full-name | 219 (83 %) | 177 | | 86 |
+| Go: caffix/fullname_parser | 219 (83 %) | 175 | | 85 |
+| Go: polera/gonameparts | 206 (78 %) | 152 | | 67 |
+| probablepeople 0.5 | 185 (70 %) | 152 | | 73 |
+
+One of the nine names of `realistic.tsv` read wrong was a mistake,
+"Dipl.-Psych. Claudia" greeted "Psych", fixed since. The other eight are
+marked `# miss` there.
 
 The Go libraries are made for English names, "Mr.", "Jr.", "III", and
 know no German titles. python-nameparser knows many, but misses titles
@@ -69,7 +79,8 @@ on the Mac. So none is used.
 
 ## What it still reads wrong
 
-The 23 names of `blind.tsv` read wrong today are marked `# miss` there.
+The names read wrong today are marked `# miss` in `realistic.tsv`, 8
+of 265, and `blind.tsv`, 23 of 326.
 
 - A role or business before the name, like "Hebamme Lotte Brinkmann" or
   "Praxis Dr. Ulrike Sander", where the link does not hold the name. A

@@ -15,14 +15,14 @@ type row struct {
 }
 
 // rows reads the invented names in testdata: names.tsv, written with the
-// rules, and blind.tsv, written blind to measure them.
+// rules, and blind.tsv and realistic.tsv, written blind to measure them.
 func rows(t *testing.T) []row {
 	t.Helper()
 	var out []row
-	for _, file := range []string{"testdata/names.tsv", "testdata/blind.tsv"} {
+	for _, file := range []string{"testdata/names.tsv", "testdata/blind.tsv", "testdata/realistic.tsv"} {
 		out = append(out, read(t, file)...)
 	}
-	if len(out) < 400 {
+	if len(out) < 600 {
 		t.Fatalf("only %d names", len(out))
 	}
 	return out

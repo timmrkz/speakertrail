@@ -38,7 +38,27 @@ func First(name, link string) string {
 	case len(n.words) > 1 || len(n.words) == 1 && !n.titled && !n.initialed:
 		first = n.words[0]
 	}
-	if w := byLink(n.all, link); w != "" {
+	// The link orders the name's own words first. A tagline's words can
+	// make a link too, "Mara Beispiel | Yoga Köln" at /in/yoga-koeln, so
+	// other words count only joined to one of the name's own, as in
+	// "Tischlerei Holtkamp – Bernd Holtkamp", or where the name's own
+	// are fewer than two, as in "Gründerin & CEO Leonie Fuchs".
+	own := func(a, b string) bool {
+		if len(n.words) < 2 || n.given != "" {
+			return true
+		}
+		for _, w := range n.words {
+			if fold(w) == fold(a) || fold(w) == fold(b) {
+				return true
+			}
+		}
+		return false
+	}
+	w := byLink(n.words, link, own)
+	if w == "" {
+		w = byLink(n.all, link, own)
+	}
+	if w != "" {
 		first = w
 	}
 	if first == "" || !latin(first) {
@@ -122,8 +142,9 @@ func read(name string) parsed {
 			// "Beispiel, M." holds no first name.
 			n.initialed, n.family = true, family
 		}
-	case len(n.words) >= 2 && capitals(n.words[0]) && !capitals(n.words[1]):
-		// "BEISPIEL Mara" writes the family name first, in capitals.
+	case len(n.words) >= 2 && capitals(n.words[0]) && len([]rune(n.words[0])) > 2 && !capitals(n.words[1]):
+		// "BEISPIEL Mara" writes the family name first, in capitals. Two
+		// capitals, like "MJ", are more often initials.
 		n.given, n.family = n.words[1], n.words[0]
 	}
 	return n
@@ -180,7 +201,9 @@ func wordsOf(name string) (out []string, titled, initialed bool) {
 			// starts a tagline or a maiden name. "von" and "de" are part
 			// of the family name.
 			return trim(out), titled, initialed
-		case len(out) == 0 && initial(w):
+		case len(out) == 0 && (initial(w) || capitals(w) && len([]rune(w)) == 2 && i+1 < len(fields) && !title(w, titled)):
+			// "M." and "H.-J." before a name are initials, and so are two
+			// capitals, "MJ Beispiel".
 			initialed = true
 			continue
 		case len(out) == 0 && (title(w, titled) || diplom(fields, i)):
@@ -270,21 +293,33 @@ var smallCapitals = map[rune]rune{
 
 // nickname takes the nickname out of a name: one word in quotes, like
 // "Mara „Mimi“ Beispiel", in brackets, like "Mara (Mimi) Beispiel", or
-// after "aka". What else stands in brackets, pronouns, a maiden name or
-// "(FH)", is taken out too, and everything after a bracket that is never
-// closed.
+// after "aka". A nickname stands between the first and the family name,
+// before any bar, slash or colon, so a role or a maiden name at the end,
+// "Mara Beispiel (Inhaberin) | Atelier", is none. What else stands in
+// brackets, pronouns, a maiden name or "(FH)", is taken out too, and
+// everything after a bracket that is never closed.
 func nickname(name string) (rest, nick string) {
+	head, tail := name, ""
+	if i := strings.IndexAny(name, "|/:"); i >= 0 {
+		head, tail = name[:i], name[i:]
+	}
+	lettered := func(s string) bool { return strings.IndexFunc(s, unicode.IsLetter) >= 0 }
 	var b strings.Builder
-	fields := strings.Fields(name)
+	fields := strings.Fields(head)
+	inside := func(i, after int) bool {
+		return lettered(strings.Join(fields[:i], " ")) && after < len(fields) && lettered(strings.Join(fields[after:], " "))
+	}
 	for i := 0; i < len(fields); i++ {
 		w := fields[i]
 		switch {
-		case strings.EqualFold(w, "aka") && i+1 < len(fields) && nickable(fields[i+1]):
-			nick = cmpOr(nick, fields[i+1])
+		case strings.EqualFold(w, "aka") && i+1 < len(fields):
+			if nickable(fields[i+1]) && inside(i, i+2) {
+				nick = cmpOr(nick, fields[i+1])
+			}
 			i++
 			continue
 		case quotes(w):
-			if inner := strings.TrimFunc(w, isQuote); nickable(inner) {
+			if inner := strings.TrimFunc(w, isQuote); nickable(inner) && inside(i, i+1) {
 				nick = cmpOr(nick, inner)
 			}
 			continue
@@ -292,24 +327,38 @@ func nickname(name string) (rest, nick string) {
 		b.WriteString(w)
 		b.WriteByte(' ')
 	}
-	name = b.String()
+	head = b.String()
 	for {
-		i := strings.IndexAny(name, "([")
+		i := strings.IndexAny(head, "([")
 		if i < 0 {
-			return name, nick
+			break
 		}
-		j := strings.IndexAny(name[i:], ")]")
+		j := strings.IndexAny(head[i:], ")]")
 		if j < 0 {
-			return name[:i], nick
+			return head[:i], nick
 		}
-		// A nickname stands inside the name, "Mara (Mimi) Beispiel". A
-		// word in brackets at its end is more often a role, "Mara
-		// Beispiel (Yogalehrerin)".
-		inner := strings.TrimSpace(name[i+1 : i+j])
-		if nickable(inner) && strings.IndexFunc(name[i+j:], unicode.IsLetter) >= 0 {
+		inner := strings.TrimSpace(head[i+1 : i+j])
+		if nickable(inner) && lettered(head[:i]) && lettered(head[i+j:]) {
 			nick = cmpOr(nick, inner)
 		}
-		name = name[:i] + " " + name[i+j+1:]
+		head = head[:i] + " " + head[i+j+1:]
+	}
+	return head + unbracket(tail), nick
+}
+
+// unbracket takes out what stands in brackets, and everything after a
+// bracket that is never closed.
+func unbracket(s string) string {
+	for {
+		i := strings.IndexAny(s, "([")
+		if i < 0 {
+			return s
+		}
+		j := strings.IndexAny(s[i:], ")]")
+		if j < 0 {
+			return s[:i]
+		}
+		s = s[:i] + " " + s[i+j+1:]
 	}
 }
 
@@ -366,7 +415,7 @@ func trim(w []string) []string {
 // the name, as "marabeispiel" joins Mara and Beispiel. Two words joined
 // make sure the link is made from the name, not a business or a slogan
 // that holds one of its words. It is empty when the link says nothing.
-func byLink(words []string, link string) string {
+func byLink(words []string, link string, keep func(a, b string) bool) string {
 	handle := strings.Join(pieces(link), "")
 	if handle == "" {
 		return ""
@@ -377,7 +426,7 @@ func byLink(words []string, link string) string {
 			if i == j || len([]rune(fold(a))) < 2 || title(a, true) || degree(a) {
 				continue
 			}
-			if k := strings.Index(handle, fold(a)+fold(b)); k >= 0 && k < at {
+			if k := strings.Index(handle, fold(a)+fold(b)); k >= 0 && k < at && keep(a, b) {
 				best, at = a, k
 			}
 		}
@@ -538,6 +587,11 @@ var degrees = set("MBA", "EMBA", "DBA", "PhD", "PHD", "MSc", "BSc", "MA",
 // names.
 func title(w string, titled bool) bool {
 	if parts := strings.Split(w, "-"); len(parts) > 1 {
+		// "Dipl.-Kauffrau" and "Dipl.-Psychologin" are titles, whatever
+		// the diploma is in.
+		if lead := strings.ToLower(strings.TrimSuffix(parts[0], ".")); titles[lead] && parts[1] != "" {
+			return true
+		}
 		for _, p := range parts {
 			if p == "" || !title(p, true) {
 				return false

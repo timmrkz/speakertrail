@@ -143,3 +143,16 @@ Dres. Tom Testmann		Tom	Testmann
 # Known misses, not tested: a name inside a sentence, like "Yoga mit
 # Mara", is read as "Yoga". A family name followed by a word of the
 # business, like "Mara Beispiel Coaching", ends with that word.
+# From the review: a role or a maiden name in brackets at the end is no
+# nickname, a tagline's words make no first name, a diploma written out
+# is a title, and two capitals are initials.
+Mara Beispiel (Inhaberin) | Atelier Blau	mara-beispiel-1a2b3c4d	Mara	Beispiel
+Mara Musterfrau (Beispiel) | Coach	mara-musterfrau-1a2b3c4d	Mara	Musterfrau
+Mara Beispiel | Coach	coach-mara-beispiel	Mara	Beispiel
+Mara Beispiel | Yoga Köln	yoga-koeln	Mara	Beispiel
+Mara Beispiel - Coach	coach-mara-beispiel	Mara	Beispiel
+Dipl.-Kauffrau Mara Beispiel		Mara	Beispiel
+Dipl.-Psychologin Mara Beispiel		Mara	Beispiel
+Dipl.-Sozialpädagogin Mara Beispiel		Mara	Beispiel
+MJ Beispiel			Beispiel
+Tischlerei Beispiel – Tom Beispiel	tom-beispiel-1a2b3c4d	Tom	?

@@ -11,9 +11,10 @@ Beispiel, MBA (sie/ihr)", "𝗠𝗮𝗿𝗮 𝗕𝗲𝗶𝘀𝗽𝗶𝗲𝗹 �
 
 1. Bold, italic, script, wide and small capital letters are plain
    letters. Emoji and other symbols part words.
-2. A nickname inside the name, in quotes or brackets or after "aka", is
-   the name a greeting takes: "Katharina „Kati“ Vogt" is Kati. Other
-   brackets, like pronouns, "(FH)" or a role at the end, are left out.
+2. A nickname between the first and the family name, in quotes or
+   brackets or after "aka", is the name a greeting takes: "Katharina
+   „Kati“ Vogt" is Kati. Other brackets, like pronouns, "(FH)", a role
+   or a maiden name at the end, are left out.
 3. What follows a bar, a slash or a colon is a tagline. Where the name
    is in other letters, like Cyrillic, and the tagline holds it in Latin
    letters, the greeting takes those.
@@ -30,7 +31,8 @@ Beispiel, MBA (sie/ihr)", "𝗠𝗮𝗿𝗮 𝗕𝗲𝗶𝘀𝗽𝗶𝗲𝗹 �
    and the family name, like `mara-beispiel-4b1a2c93`, so where two
    words of the name stand joined in it, the first of them is the first
    name. That finds Mara in "Coach Mara Beispiel" and in "Beispiel
-   Mara". Where the name holds no first name, like "Dr. Beispiel", the
+   Mara". Words of a tagline count only joined to a word of the name, so
+   "Mara Beispiel | Yoga Köln" at `yoga-koeln` stays Mara. Where the name holds no first name, like "Dr. Beispiel", the
    word before the family name in the link is taken, like
    `annette-beispiel`.
 8. A name in capitals or small letters only is greeted "Mara", Turkish
@@ -49,28 +51,32 @@ into the repository, all in `internal/names/testdata`.
   each with the link its profile would have. It was written blind, by
   someone who had not seen the rules, and measured once, as it came.
   This is the number to go by.
-- `blind.tsv`: 326 hard names, also written blind, a third without a
-  link. The rules were improved where it showed a kind of name read
+- `blind.tsv`: 326 hard names, also written blind, 145 of them without
+  a link. The rules were improved where it showed a kind of name read
   wrong, so its second number is no longer blind.
 - `names.tsv`: 139 names written with the rules in mind, "Yoga mit
   Mara" only in a comment, since it is read wrong.
 
 The libraries were run as they come, on the name alone, since none
-reads a link.
+reads a link, from a scratch module outside the repository. A first
+name counts when it is written exactly as the greeting writes it, so
+"MARA" for "MARA BEISPIEL" is wrong. Links without a number at their end
+were given one afterwards, so no test holds a link a real person might
+have.
 
 | Way of reading | realistic.tsv | blind.tsv, first run | blind.tsv now | names.tsv |
 | --- | --- | --- | --- | --- |
 | the first word, before this change | 210 (79 %) | 148 | 148 | 69 |
 | `internal/names` | 256 (97 %) | 264 | 303 | 138 |
-| python-nameparser 3.2, the best open library found, Python, LGPL | 235 (89 %) | 229 | | 118 |
+| python-nameparser 3.2, the best open library found, Python, LGPL | 228 (86 %) | 220 | | 115 |
 | Go: vinser/parse-full-name | 219 (83 %) | 177 | | 86 |
 | Go: caffix/fullname_parser | 219 (83 %) | 175 | | 85 |
 | Go: polera/gonameparts | 206 (78 %) | 152 | | 67 |
-| probablepeople 0.5 | 185 (70 %) | 152 | | 73 |
+| probablepeople 0.5 | 179 (68 %) | 144 | | 70 |
 
 One of the nine names of `realistic.tsv` read wrong was a mistake,
-"Dipl.-Psych. Claudia" greeted "Psych", fixed since. The other eight are
-marked `# miss` there.
+"Dipl.-Psych. Claudia" greeted "Psych", fixed since, so it reads 257
+now. The other eight are marked `# miss` there.
 
 The Go libraries are made for English names, "Mr.", "Jr.", "III", and
 know no German titles. python-nameparser knows many, but misses titles
@@ -85,6 +91,9 @@ of 265, and `blind.tsv`, 23 of 326.
 - A role or business before the name, like "Hebamme Lotte Brinkmann" or
   "Praxis Dr. Ulrike Sander", where the link does not hold the name. A
   list of first names would catch these, see below.
+- A role written into the link as well, "Fotografin Mara Beispiel" at
+  `fotografin-mara-beispiel`, since "Anna Lena Beispiel" at
+  `anna-lena-beispiel` looks the same.
 - Two given names used together, like "Maria Grazia" or "Abdul Rahman",
   are greeted by the first alone.
 - A family name first without a comma or capitals, "Krüger Gabriele".
@@ -93,5 +102,5 @@ of 265, and `blind.tsv`, 23 of 326.
 
 A list of first names with a licence free to ship, like the given names
 of Wikidata, CC0, would find the first name among other words. It is
-not built yet, because the link already finds most of them, since
-every person here has one.
+not built yet, because the link already finds most of them, and
+nearly every person here has one.

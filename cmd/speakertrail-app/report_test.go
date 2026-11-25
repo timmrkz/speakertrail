@@ -19,11 +19,11 @@ import (
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
-// oneWay is how every name in a report is written.
 // testNow is the moment the app's tests say things happened at. A test
 // never reads the clock, see the testing skill.
 var testNow = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
 
+// oneWay is how every name in a report is written.
 var oneWay = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)*$`)
 
 // A report of a problem is one zip on the Desktop, shown in Finder, with

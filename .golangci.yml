@@ -13,8 +13,9 @@
 # synctest bubble, whose clock is fake, says so where it uses one, with
 # //nolint:forbidigo // synctest bubble. The few tests whose code reads
 # the real clock and has no clock handed in say why on the line, the
-# same way. That list only shrinks: nolintlint fails a //nolint that
-# stops nothing, so a line fixed loses its exception in the same change.
+# same way. nolintlint fails a //nolint that stops nothing, so a line
+# fixed loses its exception in the same change. A new exception is not
+# refused, it shows in the diff, and the review asks why.
 version: "2"
 linters:
   default: none

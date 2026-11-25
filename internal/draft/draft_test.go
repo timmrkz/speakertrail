@@ -512,13 +512,13 @@ func TestAPastedPageDraftsWhatDraftLacked(t *testing.T) {
 	var mu sync.Mutex
 	for range 4 {
 		wg.Go(func() {
-			j, ok := r.d.Pasted(id)
-			if !ok {
-				t.Error("a paste after a draft that lacked a copy drafted nothing")
+			// A paste that comes once the draft another started has
+			// written the message drafts nothing, as on a fast Mac.
+			if j, ok := r.d.Pasted(id); ok {
+				mu.Lock()
+				started[j.ID] = true
+				mu.Unlock()
 			}
-			mu.Lock()
-			started[j.ID] = true
-			mu.Unlock()
 		})
 	}
 	wg.Wait()

@@ -148,23 +148,38 @@ const walks = [
       await open(page, 1009)
       await drafted(page, 1009, 1, first)
       const b = await box(page).boundingBox()
-      const pad = await box(page).evaluate((t) => parseFloat(getComputedStyle(t).paddingLeft))
-      // Into "Hallo", the first word, then across "Mara," and a little
-      // into "danke", all on the first line.
+      const [pad, line] = await box(page).evaluate((t) => [parseFloat(getComputedStyle(t).paddingLeft), parseFloat(getComputedStyle(t).lineHeight)])
+      if (b.height < 2.5 * line) return `the message fits ${b.height} px, too few lines to drag down a line`
       const x = b.x + pad + 8
-      const y = b.y + 14
-      await page.mouse.move(x, y)
-      await page.mouse.down({ clickCount: 1 })
-      await page.mouse.up({ clickCount: 1 })
-      await page.mouse.down({ clickCount: 2 })
-      await page.mouse.move(x + 110, y, { steps: 8 })
-      await page.mouse.up({ clickCount: 2 })
-      const [start, end, value] = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value])
-      if (start === 0 && end === value.length) return 'a double click held and dragged selects all of the message'
-      if (start !== 0) return `the drag from "Hallo" starts its selection at ${start}`
-      const picked = value.slice(start, end)
-      if (!/^Hallo Mara, danke\b/.test(picked) && !/^Hallo Mara\b/.test(picked)) return `a drag over three words selects ${JSON.stringify(picked)}`
-      if (/\w/.test(value[end] ?? '')) return `the selection ends inside a word, at ${JSON.stringify(picked)}`
+      const y = b.y + line / 2 + 4
+      // A double click at (from) whose second press is held and moved to
+      // (to), and what it selected.
+      async function drag(from, to) {
+        await page.mouse.move(...from)
+        await page.mouse.down({ clickCount: 1 })
+        await page.mouse.up({ clickCount: 1 })
+        await page.mouse.down({ clickCount: 2 })
+        await page.mouse.move(...to, { steps: 8 })
+        await page.mouse.up({ clickCount: 2 })
+        const [start, end, value] = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value])
+        return { start, end, value, picked: value.slice(start, end), all: start === 0 && end === value.length }
+      }
+      // Into "Hallo", the first word, then forward across "Mara," and a
+      // little into "danke", on the first line.
+      let s = await drag([x, y], [x + 110, y])
+      if (s.all) return 'a double click held and dragged forward selects all of the message'
+      if (s.start !== 0) return `the drag from "Hallo" starts its selection at ${s.start}`
+      if (!/^Hallo Mara\b/.test(s.picked)) return `a drag forward over three words selects ${JSON.stringify(s.picked)}`
+      if (/\w/.test(s.value[s.end] ?? '')) return `the drag forward ends inside a word, at ${JSON.stringify(s.picked)}`
+      // From "danke" back to "Hallo": whole words, ending after "danke".
+      s = await drag([x + 110, y], [x, y])
+      if (s.all) return 'a double click held and dragged backward selects all of the message'
+      if (s.start !== 0 || !/^Hallo Mara, danke$/.test(s.picked)) return `a drag backward from "danke" selects ${JSON.stringify(s.picked)}`
+      // From "Hallo" straight down onto the second line.
+      s = await drag([x, y], [x, y + line])
+      if (s.all) return 'a double click held and dragged down a line selects all of the message'
+      if (s.start !== 0 || !s.picked.includes('Vernetzen')) return `a drag down a line selects ${JSON.stringify(s.picked)}`
+      if (/\w/.test(s.value[s.end] ?? '')) return `the drag down a line ends inside a word, at ${JSON.stringify(s.picked)}`
       // A plain double click afterwards still takes all of it.
       await box(page).dblclick()
       const sel = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value.length])

@@ -334,6 +334,7 @@ stored zip `pack` wrote is signed only when it holds the same files, byte
 for byte, as the zip `check` read. It may ask for the microphone, for
 Dictate on Report a Problem, and be entitled to it, and to nothing else,
 and it may carry sherpa-onnx's speech library in `Contents/Frameworks`
-and llama-server, which drafts a first message, in `Contents/MacOS`, each
+and llama-server, which drafts a first message, and ffmpeg and ffprobe,
+which read a screen recording in a report, in `Contents/MacOS`, each
 linking only what the list names. A
 refused build says why on the commit, as a failed **Ready to update to**.

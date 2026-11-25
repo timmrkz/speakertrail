@@ -78,9 +78,10 @@ const setID = fs.ModeSetuid | fs.ModeSetgid
 // its file. A library not on its list, ScreenCaptureKit, AVFoundation or
 // IOKit for the keyboard's own reports, fails until the list is changed on
 // main, in a pull request that says why. A program not on the list fails
-// the same way. The app is two programs: speakertrail-app, Wails' window,
-// WebKit and the keychain through Security, and llama-server, which runs
-// the language model that drafts a first message.
+// the same way. The app is four programs: speakertrail-app, Wails' window,
+// WebKit and the keychain through Security, llama-server, which runs the
+// language model that drafts a first message, and ffmpeg and ffprobe,
+// which read a screen recording in a report.
 var linked = map[string][]string{
 	"speakertrail-app": {
 		"/System/Library/Frameworks/AppKit.framework/Versions/C/AppKit",
@@ -114,6 +115,10 @@ var linked = map[string][]string{
 		"/System/Library/Frameworks/MetalKit.framework/Versions/A/MetalKit",
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "/usr/lib/libobjc.A.dylib",
 	},
+	// ffmpeg and ffprobe, which read a screen recording handed to Report a
+	// Problem, built by speakertrail-release ffmpeg, see ffmpeg.go.
+	"ffmpeg":  ffmpegLinks,
+	"ffprobe": ffmpegLinks,
 	// The speech library itself, sherpa-onnx's release without speech
 	// synthesis, and the ONNX runtime under it, as FrameFairy lists them.
 	"libonnxruntime.dylib": {
@@ -128,6 +133,22 @@ var linked = map[string][]string{
 	"libsherpa-onnx-cxx-api.dylib": {
 		"/usr/lib/libSystem.B.dylib", "/usr/lib/libc++.1.dylib", "@rpath/libonnxruntime.dylib", "@rpath/libsherpa-onnx-c-api.dylib",
 	},
+}
+
+// ffmpegLinks are what ffmpeg and ffprobe link: Apple's own decoders and
+// encoders, VideoToolbox and AudioToolbox, and what they stand on, as
+// FrameFairy lists them, without CoreText, which only FrameFairy's
+// libass draws captions with.
+var ffmpegLinks = []string{
+	"/System/Library/Frameworks/ApplicationServices.framework/Versions/A/ApplicationServices",
+	"/System/Library/Frameworks/AudioToolbox.framework/Versions/A/AudioToolbox",
+	"/System/Library/Frameworks/CoreAudio.framework/Versions/A/CoreAudio",
+	"/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation",
+	"/System/Library/Frameworks/CoreMedia.framework/Versions/A/CoreMedia",
+	"/System/Library/Frameworks/CoreServices.framework/Versions/A/CoreServices",
+	"/System/Library/Frameworks/CoreVideo.framework/Versions/A/CoreVideo",
+	"/System/Library/Frameworks/VideoToolbox.framework/Versions/A/VideoToolbox",
+	"/usr/lib/libSystem.B.dylib", "/usr/lib/libiconv.2.dylib", "/usr/lib/libz.1.dylib",
 }
 
 // asks are the reasons Info.plist may give the person for what the app

@@ -216,6 +216,13 @@ jobs:
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
+      # The ffmpeg and ffprobe the app carries the same way, kept until
+      # their recipe changes, the rule make ffmpeg follows.
+      - if: steps.needs.outputs.run == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .build/ffmpeg
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('cmd/speakertrail-release/ffmpeg.go') }}
 
       - name: The app
         if: steps.needs.outputs.run == 'true'

@@ -361,7 +361,7 @@
   // filters hold. Under All and New that may be someone connected or
   // rejected, whom a search by name finds only under Connected or
   // Rejected. show is the filter its button leads to.
-  const PRESS_RUN = 'Press Run. Each search asks for LinkedIn profiles and keeps the people who fit.'
+  const PRESS_RUN = 'Press Run. Each search asks for LinkedIn profiles and keeps the people in NRW who run their own business.'
   let empty = $derived.by((): { title: string; text: string; show?: PeopleFilter } => {
     if (linked) {
       if (linked.new) return { title: 'Not in the app yet', text: `${linked.new > 1 ? `${linked.new} people` : 'This person'} ${linked.new > 1 ? 'are' : 'is'} new to the app. Press Add or Enter to add them, marked connected.` }

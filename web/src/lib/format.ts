@@ -263,13 +263,13 @@ export const RUN_STATE: Record<string, { label: string; tone: string }> = {
   interrupted: { label: 'Interrupted', tone: 'warn' },
 }
 
-// What a run brought, in one line: new people, how many of them fit, the
-// startups it looked up. failed says what failed, empty when nothing did.
+// What a run brought, in one line: new people and the startups it looked
+// up. failed says what failed, empty when nothing did.
 export function runBrought(r: {
-  people_new: number; fits_new: number; startups_looked_up: number; events_new: number; errors: number; reads_failed: number; lookups_failed: number
+  people_new: number; startups_looked_up: number; events_new: number; errors: number; reads_failed: number; lookups_failed: number
 }): { brought: string; failed: string } {
   const parts = [
-    plural(r.people_new, 'new person', 'new people') + (r.fits_new ? `, ${fmtNum(r.fits_new)} who fit` : ''),
+    plural(r.people_new, 'new person', 'new people'),
     r.events_new ? plural(r.events_new, 'new event') : '',
     r.startups_looked_up ? `${plural(r.startups_looked_up, 'startup')} looked up` : '',
   ].filter(Boolean)

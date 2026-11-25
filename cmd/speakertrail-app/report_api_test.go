@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -114,5 +115,22 @@ func TestPeopleIsSwitchedFromSeveralRequestsAtOnce(t *testing.T) {
 	r.TakePeople(true)
 	if d := r.ReportDraft(); !d.People || d.Text != "It froze." {
 		t.Errorf("the draft is %+v", d)
+	}
+}
+
+// A recording pasted over 10 MB is turned away with why, by the name the
+// window gives in the address, though the request is too big to be read.
+func TestAPasteTooBigToReadSaysWhy(t *testing.T) {
+	r := newReporting(afero.NewMemMapFs(), "/config/report")
+	a := reportAPI{r: r}
+	huge, _ := json.Marshal(map[string]string{"name": "Screen Recording.mov", "data": base64.StdEncoding.EncodeToString(make([]byte, 12<<20))})
+	rec := httptest.NewRecorder()
+	a.ServeHTTP(rec, httptest.NewRequest("POST", "/api/report/pasted?name=Screen%20Recording.mov", bytes.NewReader(huge)))
+	var d ReportDraft
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("the paste answered %d %s", rec.Code, rec.Body)
+	}
+	if want := "Screen Recording.mov cannot be attached because it is bigger than 10 MB"; d.Error != want {
+		t.Fatalf("the reason is %q, want %q", d.Error, want)
 	}
 }

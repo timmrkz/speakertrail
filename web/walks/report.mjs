@@ -121,6 +121,38 @@ const walks = [
     },
   },
   {
+    // A screen recording pasted into the field is attached like a
+    // picture, and its tile shows the mark of a film and its name, since
+    // the app reads no picture out of it. Issue #49.
+    name: 'A recording pasted shows as a tile with its name',
+    async run(page) {
+      await openReport(page)
+      await page.locator('textarea.telling').click()
+      const pasted = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/report/pasted')
+      await page.evaluate(() => {
+        const box = new DataTransfer()
+        box.items.add(new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 113, 116, 32, 32])], 'Screen Recording.mov', { type: 'video/quicktime' }))
+        document.querySelector('textarea.telling').dispatchEvent(new ClipboardEvent('paste', { clipboardData: box, bubbles: true, cancelable: true }))
+      })
+      const sent = JSON.parse((await pasted).request().postData() ?? '{}')
+      if (sent.name !== 'Screen Recording.mov') return `the paste sent ${JSON.stringify(sent.name)}`
+      const figure = page.locator('.pictures figure')
+      await figure.locator('.film svg').waitFor()
+      const tile = await figure.evaluate((f) => ({
+        name: f.querySelector('.film .name').textContent.trim(),
+        label: f.getAttribute('aria-label'),
+        pictures: f.querySelectorAll('img').length,
+        inside: f.querySelector('.film .name').getBoundingClientRect().right <= f.getBoundingClientRect().right,
+      }))
+      if (tile.pictures !== 0) return 'the recording\'s tile asks for a picture the app has none of'
+      if (tile.name !== 'Screen Recording.mov') return `the recording's tile says ${JSON.stringify(tile.name)}`
+      if (!tile.inside) return 'the name on the recording\'s tile runs past its edge'
+      if (tile.label !== 'Screen Recording.mov, a screen recording') return `the recording's tile is read out as ${JSON.stringify(tile.label)}`
+      if ((await page.locator('textarea.telling').inputValue()) !== '') return 'the paste wrote into the field'
+      return ''
+    },
+  },
+  {
     // Report says Making while it makes the report, as wide as those
     // words, and then the field is empty for the next one. A button is as
     // wide as what it says now, Tim asked testing #46.
@@ -170,7 +202,7 @@ const walks = [
         }
         return went.join(', ')
       }
-      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots', 'Dictate']
+      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots or recordings', 'Dictate']
       await openReport(page)
       const field = page.locator('textarea.telling')
       await field.click()

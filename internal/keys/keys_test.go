@@ -199,7 +199,7 @@ func TestAFileThatCannotBeReadSaysSo(t *testing.T) {
 	if err := os.Mkdir(e.path, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if k, err := e.Get(); k != "" || err == nil || errors.Is(err, ErrNoKey) || m.count() != 0 {
+	if k, err := e.Get(); k != "" || !errors.Is(err, ErrUnreadable) || m.count() != 0 {
 		t.Errorf("get %q, %v, keychain read %d times", k, err, m.count())
 	}
 }

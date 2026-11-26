@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -234,16 +233,16 @@ func TestSettingsAndKeys(t *testing.T) {
 	}
 }
 
-// A run whose key macOS kept back is refused with why, the way a run
+// A run whose key could not be read is refused with why, the way a run
 // without a key is, never as something gone wrong inside.
-func TestARunWhoseKeyWasKeptBackSaysWhy(t *testing.T) {
+func TestARunWhoseKeyCouldNotBeReadSaysWhy(t *testing.T) {
 	a, _, e := newAPI(t)
 	call(t, a, "POST", "/api/sources", `{"query":"Yogalehrerin Bonn","kind":"profile_search"}`, nil)
 	e.Finder = func() (engine.Finder, error) {
-		return nil, fmt.Errorf("the password box was closed, so %w. Try again, and pick Always Allow", keys.ErrKeptBack)
+		return nil, keys.ErrUnreadable
 	}
 	var refused struct{ Error string }
-	want := "The password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow"
+	want := "The Exa key's file could not be read. Save the key again in Settings"
 	if code := call(t, a, "POST", "/api/runs", `{}`, &refused); code != http.StatusConflict || refused.Error != want {
 		t.Errorf("%d %q, want %q", code, refused.Error, want)
 	}

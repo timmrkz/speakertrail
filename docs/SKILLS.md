@@ -61,7 +61,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | The skill says | Here it is |
 | --- | --- |
 | the fake for a service | a finder that returns invented people, as in `internal/api/api_test.go`. No test calls Exa |
-| the keychain, handed in | the vault in `internal/keys`, memory in a test |
+| the keychain, handed in | the vault in `internal/keys`, memory in a test, and the key's file in a folder of the test's own |
 | a program a test writes and runs | `internal/standin`, the one way to write one |
 | a clock the test moves | `testing/synctest` in Go, as the tests of quitting, Report a Problem and listening in `cmd/speakertrail-app/` use it |
 | the end-to-end tests | the walks in `web/walks/`, `make walks`, see [INTERFACE.md](INTERFACE.md) |
@@ -103,7 +103,7 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | --- | --- |
 | who can reach what | Tim, anyone on the public repository, the dependencies, what Exa answers, the language model's answer, the update feed, a page or program on the same Mac |
 | one reader per kind of input | `updates.Parse` and `ParseParts` for the feed, `ApplyPatch` for a part, each fuzzed in `internal/updates` |
-| the keychain, never a file or a command line | `internal/keys`, see Built like FrameFairy in `CLAUDE.md` |
+| the keychain, never a file or a command line | except the Exa key, in a file only Tim's account can read, by Tim's choice, see Built like FrameFairy in `CLAUDE.md`. Never on a command line |
 | encode on the way out | what Exa answers is shown as text, never as HTML, see Untrusted input in `CLAUDE.md` |
 | personal data | names, roles and profile links stay on Tim's Mac, see Personal data in `CLAUDE.md` |
 | a linter bans the API by name | forbidigo in `.golangci.yml`, for now only Go's standard `log` |

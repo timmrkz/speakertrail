@@ -3,9 +3,9 @@
   import { exaWatch } from '../exa.svelte'
   import { errorText, toast } from '../toast.svelte'
 
-  // The Exa key, which every run needs. It goes into the macOS keychain
-  // and never comes back to the window: the row only learns whether it is
-  // saved.
+  // The Exa key, which every run needs. It goes into a file only Tim's
+  // account can read and never comes back to the window: the row only
+  // learns whether it is saved.
   const use = $derived(exaWatch.exa)
   let key = $state('')
   let status = $state<'idle' | 'saving' | 'removing'>('idle')
@@ -27,7 +27,7 @@
     try {
       await api.setKey(key.trim())
       key = ''
-      toast.show('Saved the Exa key in the keychain')
+      toast.show('Saved the Exa key')
       load()
     } catch (err) {
       error = errorText(err)
@@ -41,7 +41,7 @@
     error = ''
     try {
       await api.setKey('')
-      toast.show('Removed the Exa key from the keychain')
+      toast.show('Removed the Exa key')
       load()
     } catch (err) {
       error = errorText(err)
@@ -57,7 +57,7 @@
     <form class="setting" onsubmit={save} novalidate>
       <div class="info">
         <label for="exa-key" class="desc">The key runs ask Exa with</label>
-        <span class="key small" title="Kept in the macOS keychain, as Speaker Trail: Exa API key">
+        <span class="key small" title="Kept on this Mac in a file only you can read, exa-key in the app's folder">
           {#if !use}&nbsp;{:else if use.set}Saved · {use.used} of {use.budget} searches this month{:else}Not saved yet. Runs need it{/if}
         </span>
       </div>
@@ -68,7 +68,7 @@
         <button class="btn primary" type="submit" disabled={status !== 'idle'}>{status === 'saving' ? 'Saving' : 'Save'}</button>
         {#if use?.set}
           <button class="btn" type="button" onclick={remove} disabled={status !== 'idle'}
-            title="Takes the key out of the keychain. Runs stop until a key is saved again">{status === 'removing' ? 'Removing' : 'Remove'}</button>
+            title="Deletes the key from this Mac. Runs stop until a key is saved again">{status === 'removing' ? 'Removing' : 'Remove'}</button>
         {/if}
       </div>
       <p class="foot small" aria-live="polite">{#if error}<span class="field-error">{error}</span>{/if}</p>

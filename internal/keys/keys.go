@@ -78,6 +78,9 @@ func (e *Exa) Has() bool {
 // ErrNoKey is no key saved, and none in the environment.
 var ErrNoKey = errors.New("no Exa key is saved")
 
+// ErrUnreadable is a key's file that is there and cannot be read.
+var ErrUnreadable = errors.New("the Exa key's file could not be read. Save the key again in Settings")
+
 // Get reads the key, the saved one first, then EXA_API_KEY. It is
 // ErrNoKey when there is neither.
 func (e *Exa) Get() (string, error) {
@@ -110,7 +113,7 @@ func (e *Exa) read() (string, error) {
 	}
 	if err != nil {
 		e.logger().Error("the Exa key's file could not be read", "error", err)
-		return "", errors.New("the Exa key's file could not be read. Save the key again in Settings")
+		return "", ErrUnreadable
 	}
 	return strings.TrimSpace(string(body)), nil
 }

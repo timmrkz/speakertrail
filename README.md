@@ -45,7 +45,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
 | `internal/api` | The JSON API the interface talks to, described in [docs/api.md](docs/api.md) |
-| `internal/keys` | The Exa key in the macOS keychain |
+| `internal/keys` | The Exa key, in a file only Tim's account can read |
 | `internal/updates` | Where builds to update to come from, putting one together from the app's own files, patches and pieces, and checking their signatures |
 | `internal/search` | Exa's index of LinkedIn profiles |
 | `internal/place` | Whether a place lies in NRW, and which city it names |
@@ -70,4 +70,5 @@ became a Mac app. They are in git history, before pull request #9.
 - No email addresses or phone numbers are stored.
 - The file with real names stays on the Mac and never goes into the
   repository. Tests and mock data use invented people.
-- The Exa key lives in the keychain, never in a file.
+- The Exa key lives in `exa-key` in the app's folder, readable only by
+  Tim's account, never in the keychain, which asked for its password.

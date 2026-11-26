@@ -205,13 +205,8 @@ app without it hears only silence. macOS still asks Tim the first time.
 
 A Developer ID also makes every build the same app to macOS. A build
 signed ad hoc looks like a new app after each update, so macOS may ask
-for the microphone and the keychain again. The keychain item's partition
-list holds the builds allowed to read the Exa key, an ad hoc build by its
-own hash and a signed one by its team. So the first signed build to read
-the key asks once, as every ad hoc build did, and Always Allow there adds
-the team, so no later signed build asks again. Saving the key in
-Settings makes the item anew, with only the build that saved it on the
-list, so the next build of another kind asks once more.
+for the microphone again. The Exa key is no longer in the keychain, so
+no update asks for it, see The first start in [BUILD.md](BUILD.md).
 
 Builds made on the Mac with `make run` stay signed ad hoc, without the
 hardened runtime, like Xcode's Sign to Run Locally. Under it an app signed

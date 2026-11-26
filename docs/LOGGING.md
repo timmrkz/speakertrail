@@ -88,14 +88,15 @@ searches, so the start is `start`, and `run` is the run's id.
 No line holds a person's name, headline, profile link or notes, nor the
 Exa key. A person is named by id.
 
-Each read of the Exa key from the keychain is a line from `keys`, `the
-Exa key was read from the keychain`, with `ms`, whether it was `found`
-and the keychain's `status`, `0` when it was, `-25300` when no key is
-saved and `-128` when the password box was closed. Once found, the key
-is kept for the start and not read again. A read that did not find it
-is tried again the next time a run or a draft needs the key. A read
-that waits on a password box from macOS waits as long as the box is on
-screen, and `ms` shows how long.
+The Exa key lives in its own file, and reading it logs nothing. Moving a
+key an older build kept in the keychain is a line from `keys`, `the Exa
+key was read from the keychain, to move it to its file`, with `ms`,
+whether it was `found` and the keychain's `status`, `0` when it was and
+`-128` when the password box was closed. `ms` shows how long the box was
+on screen. Then `the Exa key was moved from the keychain to its file`,
+or a warning that macOS kept it back. A delete macOS refuses is a
+warning with its `status`. This happens once, and the keychain is never
+read again.
 
 ### Acts
 

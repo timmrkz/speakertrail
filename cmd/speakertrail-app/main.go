@@ -362,7 +362,7 @@ func open() (*apipkg.API, *engine.Engine, string, error) {
 	if err := st.Update(func(d *store.Data) error { return d.Start(st.Now()) }); err != nil {
 		return nil, nil, "", err
 	}
-	exa := keys.NewExa(theLog.slog("keys", zerolog.TraceLevel))
+	exa := keys.NewExa(dir, theLog.slog("keys", zerolog.TraceLevel))
 	e := &engine.Engine{Store: st, Log: theLog.slog("engine", zerolog.TraceLevel), Act: theLog.acting, Finder: func() (engine.Finder, error) {
 		key, err := exa.Get()
 		switch {

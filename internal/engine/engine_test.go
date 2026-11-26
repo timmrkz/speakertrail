@@ -206,21 +206,21 @@ func TestNoRunWithoutAKey(t *testing.T) {
 	}
 }
 
-// A key the keychain kept back, a password box closed, stops the run with
-// why, not as a missing key, and the next start asks for it again.
-func TestARunWhoseKeyWasKeptBackSaysWhyAndStartsNextTime(t *testing.T) {
+// A key that could not be read stops the run with why, not as a missing
+// key, and the next start asks for it again.
+func TestARunWhoseKeyCouldNotBeReadSaysWhyAndStartsNextTime(t *testing.T) {
 	e, st := newEngine(t, &finder{profiles: invented})
-	keptBack := errors.New("the password box was closed, so macOS kept the Exa key back")
+	unread := errors.New("the Exa key's file could not be read. Save the key again in Settings")
 	var asked atomic.Int32
 	found := e.Finder
 	e.Finder = func() (Finder, error) {
 		if asked.Add(1) == 1 {
-			return nil, keptBack
+			return nil, unread
 		}
 		return found()
 	}
-	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrUnread) || !errors.Is(err, keptBack) || err.Error() != keptBack.Error() {
-		t.Fatalf("err = %v, want it kept back, as ErrUnread", err)
+	if _, _, err := e.Start("manual", 0); !errors.Is(err, ErrUnread) || !errors.Is(err, unread) || err.Error() != unread.Error() {
+		t.Fatalf("err = %v, want it unread, as ErrUnread", err)
 	}
 	id, started, err := e.Start("manual", 0)
 	if err != nil || !started {

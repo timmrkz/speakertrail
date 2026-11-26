@@ -32,20 +32,22 @@ first time.
 ## The first start
 
 The app opens on People. Before the first run, paste the Exa key into
-Settings. It goes into the macOS keychain, as **Speaker Trail: Exa API
-key**, and never into a file. `EXA_API_KEY` in the environment stands in
-while no key is saved.
+Settings. It goes into `exa-key` in the app's folder, a file only your
+account can read, and nothing ever asks for a password to read it.
+`EXA_API_KEY` in the environment stands in while no key is saved.
 
-The first build signed with the Developer ID asks for the keychain
-password once, the first time it reads the key. Always Allow there
-covers every build signed with it after, until the key is saved again
-in Settings, see The Developer ID in
-[UPDATES.md](UPDATES.md). A build signed ad hoc, like one from `make
-run`, asks once for itself. Closing the box without an answer keeps the
-key back for that one read, and the next run or draft asks again. Keychain
-Access shows the item as open to all applications, because the list of
-trusted apps would ask a second time. Another program is still asked, by
-the item's partition list, which holds only the builds you allowed.
+Builds before 26 November 2026 kept the key in the keychain, and every
+build macOS did not know yet asked for the keychain password to read it.
+Typing that password daily risks far more than the Exa key does, so the
+key left the keychain (Tim, 26 November 2026). The first run or draft of
+a newer build that finds no file reads the keychain item **Speaker
+Trail: Exa API key** once, which may ask for the password one last time,
+moves the key to the file and deletes the item, whatever macOS answered.
+Closing that box leaves the file empty, and Settings takes the key
+again. Once the file is there, even empty, the keychain is never read
+again, also should macOS refuse to delete the item. Saving the key in
+Settings first deletes the item without reading it, so nothing asks at
+all.
 
 ## Where things are kept
 
@@ -53,7 +55,7 @@ the item's partition list, which holds only the builds you allowed.
 | --- | --- |
 | People, searches, runs, settings | `~/Library/Application Support/Speaker Trail/speakertrail.json` |
 | The text of each person's profile, as Exa's index had it | `~/Library/Application Support/Speaker Trail/profile-texts.json` |
-| The Exa key | the keychain, as **Speaker Trail: Exa API key** |
+| The Exa key | `~/Library/Application Support/Speaker Trail/exa-key`, readable only by your account |
 | The channel the app follows | `~/Library/Application Support/Speaker Trail/updates.json` |
 | Builds downloaded to update to | `~/Library/Caches/Speaker Trail/builds` |
 | The speech models Dictate hears with, and the language model that drafts first messages | `~/Library/Application Support/Speaker Trail/models` |
@@ -125,8 +127,9 @@ main's last run that passed: a pull request starts from there and builds
 and tests again only the packages it changed, and those with a test that
 reads a file of the repository, since Go knows a file by when it changed
 and a checkout makes every file new. Only main saves them. `macos` runs
-the keychain's tests every time, because the cache cannot see the Mac's
-keychain. The walks need Playwright's headless shell of Chromium alone.
+the test that moves the Exa key out of a keychain every time, because
+the cache cannot see the Mac's keychain. The walks need Playwright's
+headless shell of Chromium alone.
 
 The system packages the jobs need, GTK and WebKit for `go` and what
 Chromium needs for `web`, came from Ubuntu's mirror on every run, in 30

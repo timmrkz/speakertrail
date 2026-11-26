@@ -27,7 +27,7 @@ Start with [README.md](README.md). In short:
 | the file: people, searches, runs, settings | `internal/store/` | |
 | runs of profile searches | `internal/engine/` | |
 | HTTP API the interface talks to | `internal/api/` | [docs/api.md](docs/api.md) |
-| the Exa key in the keychain | `internal/keys/` | |
+| the Exa key, in its own file | `internal/keys/` | [docs/BUILD.md](docs/BUILD.md) |
 | the app's log, rotated, in `~/Library/Logs/Speaker Trail` | `cmd/speakertrail-app/applog.go` | [docs/LOGGING.md](docs/LOGGING.md) |
 | Report a Problem, its screen recordings, Dictate, the speech models in Settings | `cmd/speakertrail-app/bugs.go`, `report.go`, `recording.go`, `listen.go`, `speechmodels.go`, `internal/speech/` | [docs/LOGGING.md](docs/LOGGING.md), [docs/api.md](docs/api.md) |
 | Draft, the first message to a person, its template, a person's first name, the language model and llama-server | `internal/draft/`, `internal/names/`, `internal/store/template.go`, `internal/language/`, `cmd/speakertrail-app/languagemodels.go`, `scripts/build-llama.sh` | [docs/api.md](docs/api.md), [docs/names.md](docs/names.md), [docs/BUILD.md](docs/BUILD.md) |
@@ -223,8 +223,9 @@ messages, pull request text, code comments and chat replies.
   written whole to a new file that then replaces the old one. Only the
   profile texts live in a second, `profile-texts.json`, written only when
   one arrives, because they made every save ten times slower (Tim, 20
-  November 2026). Secrets live
-  in the macOS keychain, never in a file.
+  November 2026). The Exa key lives in `exa-key` beside them, mode 0600,
+  never in the keychain, whose password box came up again and again
+  (Tim, 26 November 2026). Other secrets live in the keychain.
 - **One command.** `make run` goes from a fresh clone to a running app.
   Nobody should have to remember a second command. On a Mac make installs
   what is missing with Homebrew, `scripts/tools.sh`, and nothing else ever

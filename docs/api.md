@@ -258,7 +258,7 @@ this month used, never the key itself:
 { "keys": [{ "provider": "exa", "used": 12, "budget": 1000, "set": true }] }
 ```
 
-`PUT /api/keys/exa` with `{"key": "..."}` saves the key in the keychain and
+`PUT /api/keys/exa` with `{"key": "..."}` saves the key in its file, `exa-key` in the app's folder, and
 answers 204. An empty key removes it.
 
 ## Where LinkedIn opens

@@ -1230,7 +1230,7 @@ const browsers = [{ app: 'Google Chrome', profiles: [{ folder: 'Default', name: 
 const linkedin = { app: 'Google Chrome', folder: '' }
 const where = () => ({ ...linkedin, known: browsers.some((b) => b.app === linkedin.app && b.profiles.some((p) => p.folder === linkedin.folder)), browsers })
 
-// The mock's Exa key, saved as the app saves it in the keychain.
+// The mock's Exa key, saved as the app saves it in its file.
 let exaKey = 'invented'
 
 function readBody(req: Req): Promise<Record<string, unknown>> {

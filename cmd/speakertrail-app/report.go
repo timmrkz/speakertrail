@@ -128,7 +128,7 @@ func (m reportMaker) ReportProblem(what string) (string, error) {
 	}
 	// The settings Settings shows, their keys, values and what they are
 	// for. Never the people, the searches or the notes, and never a key,
-	// which lives in the keychain.
+	// which lives in a file of its own.
 	// The first message template as Settings has it, written the way
 	// internal/store/first_message_template.json is, so Tim's changes
 	// can be taken into the code as they are.

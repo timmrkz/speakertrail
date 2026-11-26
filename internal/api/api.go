@@ -17,8 +17,8 @@ import (
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
-// Keys keeps the search provider's key, in the macOS keychain in the app
-// and in memory in tests.
+// Keys keeps the search provider's key, in a file of its own in the app's
+// folder, and in memory in tests.
 type Keys interface {
 	// Has says whether the key is saved, without reading it.
 	Has() bool

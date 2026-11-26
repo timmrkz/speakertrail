@@ -68,12 +68,20 @@ func ParseHook(answer string) (Hook, error) {
 		if f.v == nil {
 			return Hook{}, fmt.Errorf("it left out %s", f.name)
 		}
+		written := utf8.RuneCountInString(*f.v)
 		*f.v = oneLine(*f.v)
 		switch n := utf8.RuneCountInString(*f.v); {
 		case n < f.min:
 			return Hook{}, fmt.Errorf("its %s has %d letters, at least %d are asked for", f.name, n, f.min)
 		case n > f.max:
 			return Hook{}, fmt.Errorf("its %s has %d letters, at most %d fit", f.name, n, f.max)
+		case written == f.max:
+			// The grammar from HookSchema ends the text at its maxLength,
+			// so a text that long was cut off, most likely in the middle
+			// of a word. With one letter left, the model picks whatever
+			// one letter comes closest to the word it meant, like 創,
+			// "found", for "Gründer" in Tim's report of 26 November 2026.
+			return Hook{}, fmt.Errorf("its %s was cut off at the %d letters the schema allows", f.name, f.max)
 		case !latin(*f.v):
 			return Hook{}, fmt.Errorf("its %s has a character outside the Latin alphabet", f.name)
 		}
@@ -92,15 +100,15 @@ const portraitWords = 3
 
 // latin says whether text is written only in what a German message
 // needs: the letters and digits of the Latin alphabet, accents and all,
-// and punctuation, symbols and emojis. The model's vocabulary holds every
-// script, and now and then a quantized model writes a letter of another
-// one, like 創 in a German sentence (Tim's report, 26 November 2026). The
-// grammar from HookSchema allows any letter, so it is caught here.
+// letters every script shares, like µ, and punctuation, symbols and
+// emojis. The model's vocabulary holds every script, and the grammar
+// from HookSchema allows any letter, so a letter of another script, like
+// 創 in Tim's report of 26 November 2026, is caught here.
 func latin(text string) bool {
 	for _, r := range text {
 		switch {
 		case unicode.IsLetter(r):
-			if !unicode.Is(unicode.Latin, r) {
+			if !unicode.Is(unicode.Latin, r) && !unicode.Is(unicode.Common, r) {
 				return false
 			}
 		case unicode.IsDigit(r):

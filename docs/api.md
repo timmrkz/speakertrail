@@ -461,11 +461,12 @@ template in Settings, with one variation of each part picked at random.
 The language model writes only its hook, the parts `portrait`, `reason`
 and `reaction_part`, from their profile and the prompt in Settings,
 `hook_prompt`. It answers in JSON held to `draft.HookSchema`, which
-llama-server turns into a grammar and the app checks again. The app
-also checks that every part is written in the Latin alphabet, since the
-grammar lets the model write a letter of any script, and that the
-portrait has at most three words. An answer that does not fit is asked
-for once more. The prompt
+llama-server turns into a grammar and the app checks again. The
+grammar ends a part at its `maxLength`, so a part that long was cut
+off and does not fit. The app also checks that every part is written
+in the Latin alphabet, since the grammar lets the model write a letter
+of any script, and that the portrait has at most three words. An answer
+that does not fit is asked for once more. The prompt
 goes in two turns: the paragraphs before the one of its first field as a
 system turn, the same for every draft, and the rest, filled in for the
 person, as the user's. llama-server keeps a checkpoint where the last

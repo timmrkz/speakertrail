@@ -531,12 +531,14 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		}
 	}
 	// An answer that does not fit is asked for once more. The model
-	// samples, so the next answer is another one, and a slip like a
-	// letter of another script rarely comes twice. One that still does
+	// samples, so the next answer is another one, and one cut off at a
+	// limit of the schema, or with a letter of another script, rarely
+	// comes twice. One that still does
 	// not fit makes a draft with … in its place, and the window says
 	// why. Never the answer itself: it is untrusted and may name the
 	// person.
 	var answer language.Answer
+	var read, wrote int
 	var hook Hook
 	var problem string
 	for try := 1; try <= hookTries; try++ {
@@ -549,6 +551,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 			stalled = errors.Is(err, language.ErrStalled)
 			return err
 		}
+		read, wrote = read+answer.PromptTokens, wrote+answer.Written
 		if hook, err = ParseHook(answer.Text); err == nil {
 			problem = ""
 			break
@@ -576,7 +579,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	d.update(id, func(j *Job) { j.Text, j.Problem = written, problem })
 	// By ids and counts, never by whom or what, which is personal data.
 	d.log().Info("a first message was drafted", "person", id, "model", m.Name,
-		"load_ms", took.LoadMS, "write_ms", took.WriteMS, "read", answer.PromptTokens, "wrote", answer.Written)
+		"load_ms", took.LoadMS, "write_ms", took.WriteMS, "read", read, "wrote", wrote)
 	return nil
 }
 

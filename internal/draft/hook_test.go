@@ -16,7 +16,14 @@ func TestTheHookIsHeldToTheSchema(t *testing.T) {
 	for _, c := range []struct{ answer, says string }{
 		{`{"reason":"du töpferst.","reaction":"","portrait":"Töpferin"}`, ""},
 		{"\n " + `{"reason":"du töpferst.","reaction":"Toll!","portrait":"Töpferin"}` + " \n", ""},
-		{`{"reason":"` + strings.Repeat("ö", 120) + `","reaction":"` + strings.Repeat("x", 60) + `","portrait":"Ab"}`, ""},
+		{`{"reason":"` + strings.Repeat("ö", 119) + `","reaction":"` + strings.Repeat("x", 59) + `","portrait":"Ab"}`, ""},
+		// The grammar ends a text at its maxLength, so a text that long
+		// was cut off, as the portrait of Tim's report was, at exactly 40.
+		{`{"reason":"` + strings.Repeat("ö", 120) + `","reaction":"","portrait":"Töpferin"}`, "reason was cut off at the 120 letters"},
+		{`{"reason":"du töpferst.","reaction":"` + strings.Repeat("x", 60) + `","portrait":"Töpferin"}`, "reaction was cut off at the 60 letters"},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"Unfallchirurgin und Sportmedizinerinnen"}`, ""},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"Unfallchirurgin und Sportmedizinerinnenn"}`, "portrait was cut off at the 40 letters"},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"Arzt und G` + strings.Repeat(" ", 30) + `"}`, "portrait was cut off"},
 		{`{"reason":"` + long + `","reaction":"","portrait":"Töpferin"}`, "reason has 121 letters, at most 120"},
 		{`{"reason":"du","reaction":"","portrait":"Töpferin"}`, "reason has 2 letters, at least 5"},
 		{`{"reason":"du töpferst.","reaction":"` + strings.Repeat("x", 61) + `","portrait":"Töpferin"}`, "reaction has 61 letters"},
@@ -31,7 +38,7 @@ func TestTheHookIsHeldToTheSchema(t *testing.T) {
 		{``, "empty"},
 		// Tim's report of 26 November 2026: a letter of another script in
 		// the middle of a German sentence, in a portrait that ran on.
-		{`{"reason":"du die Brücke zwischen Medizin und Sport schlägst.","reaction":"","portrait":"Macher um deine Geschichte als Arzt und創"}`, "portrait has"},
+		{`{"reason":"du die Brücke zwischen Medizin und Sport schlägst.","reaction":"","portrait":"Macher um deine Geschichte als Arzt und創"}`, "portrait was cut off at the 40 letters"},
 		{`{"reason":"du die Brücke zwischen Medizin und Sport schlägst.","reaction":"","portrait":"Arzt und創"}`, "portrait has a character outside the Latin alphabet"},
 		{`{"reason":"du 創 töpferst.","reaction":"","portrait":"Töpferin"}`, "reason has a character outside the Latin alphabet"},
 		{`{"reason":"du töpferst.","reaction":"Toll。","portrait":"Töpferin"}`, "reaction has a character outside the Latin alphabet"},
@@ -43,6 +50,7 @@ func TestTheHookIsHeldToTheSchema(t *testing.T) {
 		// What German, names and emojis need stays.
 		{`{"reason":"du seit 2019 in Köln töpferst! 😄","reaction":"Großartig, oder? 🫠","portrait":"Café-Inhaberin"}`, ""},
 		{`{"reason":"du Crème brûlée à la Łódź machst.","reaction":"«Toll» – wirklich!","portrait":"Arzt und Gründer"}`, ""},
+		{`{"reason":"du „echte“ Dinge mit 5 µm baust… für 20 € bei 30 °C!","reaction":"Nguyễn, Øre, ẞ, O’Neill, Oʼ 🇩🇪 👍🏽","portrait":"Ingenieurin"}`, ""},
 		// A portrait is one or two words, and three for "Arzt und Gründer".
 		{`{"reason":"du töpferst.","reaction":"","portrait":"Macher um deine Geschichte"}`, "portrait has 4 words, at most 3 fit"},
 	} {

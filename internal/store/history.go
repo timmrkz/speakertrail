@@ -2,6 +2,7 @@ package store
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,15 +20,19 @@ import (
 // with one history for the app instead of one per episode, since Speaker
 // Trail has no episodes.
 //
-// A change Tim makes goes through Edit, which reads what it can reach,
-// a person, before and after it. What differs is one step. A change that
-// changed nothing is no step. A run, a check and anything else the engine
+// A change Tim makes goes through Edit, which reads what it can reach, a
+// person, a search, an exclusion, the template or a setting, before and
+// after it. What differs is one step. A change that changed nothing is no
+// step. A search or an exclusion Tim adds goes through Add, since it has
+// no id before it is added. A run, a check and anything else the engine
 // does on its own goes through Update, and is no step.
 //
 // An undo puts back only the fields the step changed, never the whole
-// file, because a run may have written into the same person since. When a
-// field the step would put back has changed again since, it writes
-// nothing, says so, and that list starts again, ErrChangedSince.
+// file, because a run may have written into the same person or search
+// since. When a field the step would put back has changed again since, it
+// writes nothing, says so, and that list starts again, ErrChangedSince.
+// A search or an exclusion that was added is taken out by the undo, and
+// one that was removed comes back with its id.
 //
 // Nothing is kept when the app closes. Everything is saved the moment it
 // is done, so there is nothing to lose by closing, and a history that
@@ -44,21 +49,42 @@ var ErrChangedSince = errors.New("this has changed since, so it cannot be taken 
 
 // Thing is what one change reaches, and what an undo of it shows.
 type Thing struct {
-	// Kind is "person". Searches, exclusions, the template and the
-	// settings follow, see issue 71.
+	// Kind is person, search, exclusion, template or setting.
 	Kind string `json:"kind"`
-	ID   int64  `json:"id"`
+	// ID is the person's, the search's or the exclusion's.
+	ID int64 `json:"id,omitempty"`
+	// Key is the setting's.
+	Key string `json:"key,omitempty"`
 }
 
 // PersonThing is the person with the id.
 func PersonThing(id int64) Thing { return Thing{Kind: "person", ID: id} }
 
+// SearchThing is the profile search with the id.
+func SearchThing(id int64) Thing { return Thing{Kind: "search", ID: id} }
+
+// ExclusionThing is the exclusion with the id.
+func ExclusionThing(id int64) Thing { return Thing{Kind: "exclusion", ID: id} }
+
+// TemplateThing is the template of a first message, all its parts.
+func TemplateThing() Thing { return Thing{Kind: "template"} }
+
+// SettingThing is the setting with the key, one of Defaults or
+// LinkedInOpensKey.
+func SettingThing(key string) Thing { return Thing{Kind: "setting", Key: key} }
+
+// LinkedInOpensKey is the setting of the browser profile LinkedIn opens
+// in, which is kept apart from the others, see Data.LinkedInOpens.
+const LinkedInOpensKey = "linkedin_opens"
+
 // fields are the fields of a thing, by name, as JSON. A field missing
 // from the map is at its zero value, which is how omitempty writes it.
+// Nil fields are a thing that is not there.
 type fields map[string]json.RawMessage
 
 // change is what one step did to one thing: the fields it changed, as
-// they were before and after. A field it emptied is nil after.
+// they were before and after. A field it emptied is nil after. A thing
+// it added is nil before, and one it removed nil after.
 type change struct {
 	thing         Thing
 	before, after fields
@@ -105,19 +131,63 @@ func (s *Store) Edit(fn func(d *Data) error, what ...Thing) error {
 		if err != nil {
 			return err
 		}
-		if b, a := differ(before[i], after); a != nil {
-			st.changes = append(st.changes, change{thing: t, before: b, after: a})
+		if c, ok := changed(t, before[i], after); ok {
+			st.changes = append(st.changes, c)
 		}
 	}
+	s.record(st)
+	return nil
+}
+
+// Add is Edit for a change that adds a search or an exclusion, which has
+// no id before fn gives it one. fn says what it added. Undo takes it out
+// again, and Redo puts it back with the same id.
+func (s *Store) Add(fn func(d *Data) (Thing, error)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var t Thing
+	if err := s.update(func(d *Data) (err error) {
+		t, err = fn(d)
+		return err
+	}); err != nil {
+		return err
+	}
+	after, err := s.data.fieldsOf(t)
+	if err != nil {
+		return err
+	}
+	if c, ok := changed(t, nil, after); ok {
+		s.record(step{changes: []change{c}})
+	}
+	return nil
+}
+
+// record keeps a step, unless it changed nothing. A new step clears Redo.
+func (s *Store) record(st step) {
 	if len(st.changes) == 0 {
-		return nil
+		return
 	}
 	s.hist.undo = append(s.hist.undo, st)
 	if len(s.hist.undo) > historyDepth {
 		s.hist.undo = s.hist.undo[len(s.hist.undo)-historyDepth:]
 	}
 	s.hist.redo = nil
-	return nil
+}
+
+// changed is what a change did to t, when it did anything: the fields
+// that differ, or all of them for a thing it added or removed.
+func changed(t Thing, before, after fields) (change, bool) {
+	switch {
+	case before == nil && after == nil:
+		return change{}, false
+	case before == nil || after == nil:
+		return change{thing: t, before: before, after: after}, true
+	}
+	b, a := differ(before, after)
+	if a == nil {
+		return change{}, false
+	}
+	return change{thing: t, before: b, after: a}, true
 }
 
 // Undo takes back the last change Tim made.
@@ -147,7 +217,7 @@ func (s *Store) step(back bool) (Undone, error) {
 			if err != nil {
 				return err
 			}
-			if now == nil {
+			if (now == nil) != (want == nil) {
 				return ErrChangedSince
 			}
 			for k, v := range want {
@@ -158,7 +228,15 @@ func (s *Store) step(back bool) (Undone, error) {
 					return ErrChangedSince
 				}
 			}
-			if err := d.setFields(c.thing, put, s.now()); err != nil {
+			switch {
+			case put == nil:
+				err = d.remove(c.thing)
+			case now == nil:
+				err = d.create(c.thing, put)
+			default:
+				err = d.setFields(c.thing, put, s.now())
+			}
+			if err != nil {
 				return err
 			}
 		}
@@ -215,8 +293,56 @@ func (d *Data) fieldsOf(t Thing) (fields, error) {
 			return nil, nil
 		}
 		return personFields(p)
+	case "search":
+		if x := d.Search(t.ID); x != nil {
+			return fieldsOfValue(x)
+		}
+		return nil, nil
+	case "exclusion":
+		if x := d.exclusion(t.ID); x != nil {
+			return fieldsOfValue(x)
+		}
+		return nil, nil
+	case "template":
+		// The template is one field, since its parts are kept in an
+		// order and nothing but Tim changes them.
+		f := fields{}
+		if d.Template != nil {
+			raw, err := json.Marshal(d.Template)
+			if err != nil {
+				return nil, err
+			}
+			f["parts"] = raw
+		}
+		return f, nil
+	case "setting":
+		return d.settingFields(t.Key)
 	}
 	return nil, fmt.Errorf("no history for a %q", t.Kind)
+}
+
+// settingFields reads a setting as one field, its value, missing while it
+// is at its default. When it changed is no field, as for a person.
+func (d *Data) settingFields(key string) (fields, error) {
+	if key == LinkedInOpensKey {
+		f := fields{}
+		if d.LinkedInOpens != (Where{}) {
+			raw, err := json.Marshal(d.LinkedInOpens)
+			if err != nil {
+				return nil, err
+			}
+			f["value"] = raw
+		}
+		return f, nil
+	}
+	if _, ok := defaultOf(key); !ok {
+		return nil, nil
+	}
+	f := fields{}
+	if v, ok := d.Settings[key]; ok {
+		f["value"] = v.Value
+	}
+	return f, nil
 }
 
 // setFields puts a thing's fields back as put has them, and leaves the
@@ -229,8 +355,135 @@ func (d *Data) setFields(t Thing, put fields, now time.Time) error {
 			return ErrChangedSince
 		}
 		return d.setPersonFields(p, put, now)
+	case "search":
+		// The search stays the one in the list, since a run may hold it.
+		x := d.Search(t.ID)
+		if x == nil {
+			return ErrChangedSince
+		}
+		return setValueFields(x, put)
+	case "exclusion":
+		x := d.exclusion(t.ID)
+		if x == nil {
+			return ErrChangedSince
+		}
+		return setValueFields(x, put)
+	case "template":
+		raw := put["parts"]
+		if raw == nil {
+			d.Template = nil
+			return nil
+		}
+		var tpl Template
+		if err := json.Unmarshal(raw, &tpl); err != nil {
+			return err
+		}
+		d.Template = &tpl
+		return nil
+	case "setting":
+		raw := put["value"]
+		if t.Key == LinkedInOpensKey {
+			d.LinkedInOpens = Where{}
+			if raw == nil {
+				return nil
+			}
+			return json.Unmarshal(raw, &d.LinkedInOpens)
+		}
+		if raw == nil {
+			delete(d.Settings, t.Key)
+		} else {
+			d.Settings[t.Key] = SettingValue{Value: raw, UpdatedAt: now}
+		}
+		return nil
 	}
 	return fmt.Errorf("no history for a %q", t.Kind)
+}
+
+// create puts back a search or an exclusion a step removed, or added and
+// an undo took out, with its id and in its place among the others. One
+// with the same words added since stays, and the step cannot be taken.
+func (d *Data) create(t Thing, put fields) error {
+	switch t.Kind {
+	case "search":
+		var x Search
+		if err := from(put, &x); err != nil {
+			return err
+		}
+		if slices.ContainsFunc(d.Searches, func(o *Search) bool { return strings.EqualFold(o.Query, x.Query) }) {
+			return ErrChangedSince
+		}
+		d.Searches = insertByID(d.Searches, &x, func(o *Search) int64 { return o.ID })
+		return nil
+	case "exclusion":
+		var x Exclusion
+		if err := from(put, &x); err != nil {
+			return err
+		}
+		if slices.ContainsFunc(d.Exclusions, func(o *Exclusion) bool { return strings.EqualFold(o.Phrase, x.Phrase) }) {
+			return ErrChangedSince
+		}
+		d.Exclusions = insertByID(d.Exclusions, &x, func(o *Exclusion) int64 { return o.ID })
+		return nil
+	}
+	return fmt.Errorf("no history adds a %q", t.Kind)
+}
+
+// remove takes out a search or an exclusion a step added, or removed and
+// an undo put back. A search that found someone since stays, since they
+// say it found them.
+func (d *Data) remove(t Thing) error {
+	switch t.Kind {
+	case "search":
+		for _, p := range d.People {
+			if slices.ContainsFunc(p.FoundBy, func(f Sighting) bool { return f.SearchID == t.ID }) {
+				return ErrChangedSince
+			}
+		}
+		d.Searches = slices.DeleteFunc(d.Searches, func(x *Search) bool { return x.ID == t.ID })
+		return nil
+	case "exclusion":
+		d.DeleteExclusion(t.ID)
+		return nil
+	}
+	return fmt.Errorf("no history removes a %q", t.Kind)
+}
+
+// insertByID puts x into list in the order of the ids, which is the order
+// things were added in.
+func insertByID[T any](list []T, x T, id func(T) int64) []T {
+	i, _ := slices.BinarySearchFunc(list, id(x), func(o T, want int64) int { return cmp.Compare(id(o), want) })
+	return slices.Insert(list, i, x)
+}
+
+// fieldsOfValue reads the JSON fields of a search or an exclusion.
+func fieldsOfValue(v any) (fields, error) {
+	out := fields{}
+	if err := into(out, "", v); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// setValueFields puts back the fields of a search or an exclusion, in
+// place, and leaves the rest as they are.
+func setValueFields[T any](x *T, put fields) error {
+	f, err := fieldsOfValue(x)
+	if err != nil {
+		return err
+	}
+	for k, v := range put {
+		if v == nil {
+			delete(f, k)
+		} else {
+			f[k] = v
+		}
+	}
+	var n T
+	if err := from(f, &n); err != nil {
+		return err
+	}
+	*x = n
+	return nil
 }
 
 // derived are the fields worked out from the others, the fit's signals

@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { api, type Setting } from '../lib/api'
+  import { undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
   import { toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -18,6 +20,13 @@
 
   const settings = new Load<Setting[]>()
   settings.run(api.settings)
+  // What Undo and Redo in the Edit menu took back or did again shows at
+  // once. Only a change after Settings opened counts.
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => settings.run(api.settings, { quiet: true }))
+  })
 
   let q = $state('')
 

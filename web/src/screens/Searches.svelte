@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { api, type Source } from '../lib/api'
   import { fmtAgo, fmtDay, plural } from '../lib/format'
+  import { undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -19,6 +21,13 @@
   })
   $effect(() => {
     document.title = 'Searches · Speaker Trail'
+  })
+  // What Undo and Redo in the Edit menu took back or did again shows at
+  // once. Only a change after Searches opened counts.
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => searches.run(() => api.sources({ kind: 'profile_search' }), { quiet: true }))
   })
 
   // A person's "Found by" links here with the search's words, so the
@@ -68,7 +77,7 @@
     }
   }
 
-  // Pausing is undone with the same button.
+  // Pausing is undone with the same button, or Undo in the Edit menu.
   let busy = $state<number | null>(null)
   async function toggle(s: Source) {
     const status = s.status === 'retired' ? 'candidate' : 'retired'

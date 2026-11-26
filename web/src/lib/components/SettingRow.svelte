@@ -64,20 +64,19 @@
   let lines = $derived(Math.min(long ? 18 : 10, Math.max(3, text.split('\n').length + 1)))
 
   // A setting saves the moment it is left or Enter is pressed, the way
-  // System Settings does, and Undo puts the value before it back.
-  let before = $state<Json | null>(null)
-  async function save(e?: Event, value?: Json) {
+  // System Settings does, and Undo in the Edit menu puts the value before
+  // it back.
+  async function save(e?: Event) {
     e?.preventDefault()
-    const next = value !== undefined ? value : parsed.ok ? parsed.value : undefined
+    const next = parsed.ok ? parsed.value : undefined
     if (next === undefined || JSON.stringify(next) === JSON.stringify(setting.value)) return
-    const was = setting.value
     status = 'saving'
     error = ''
     try {
       const updated = await api.patchSetting(setting.key, next)
+      shown = JSON.stringify(updated.value)
       onsaved(updated)
       text = toText(updated.value, kind)
-      before = value !== undefined ? null : was
       status = 'saved'
     } catch (err) {
       status = 'idle'
@@ -86,9 +85,18 @@
     }
   }
 
-  function undo() {
-    if (before !== null) save(undefined, before)
-  }
+  // A value the app holds now that this row did not save, put back by
+  // Undo or done again by Redo, shows at once.
+  // svelte-ignore state_referenced_locally
+  let shown = JSON.stringify(setting.value)
+  $effect(() => {
+    const now = JSON.stringify(setting.value)
+    if (now === shown) return
+    shown = now
+    text = toText(setting.value, kind)
+    status = 'idle'
+    error = ''
+  })
 
   function toggle() {
     text = text === 'true' ? 'false' : 'true'
@@ -138,7 +146,7 @@
     {:else if status === 'saving'}
       <span class="faint">Saving</span>
     {:else if status === 'saved'}
-      <span class="faint">Saved</span>{#if before !== null}<button class="link" type="button" onclick={undo}>Undo</button>{/if}
+      <span class="faint">Saved</span>
     {:else if kind === 'list'}
       <span class="faint">One per line</span>
     {/if}
@@ -163,8 +171,6 @@
   .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
   .foot { grid-column: 1 / -1; display: flex; gap: var(--gap-control); justify-content: flex-end; }
   .foot:empty { display: none; }
-  .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
-  .link:hover { text-decoration: underline; }
   .switch {
     width: 40px; height: 24px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface-2);
     position: relative; cursor: pointer; padding: 0; flex: none;

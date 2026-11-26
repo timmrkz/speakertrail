@@ -1,7 +1,7 @@
 // Walks the first message template in Settings against the mock, in
 // Chromium, the way walks/draft.mjs does: the example, a variation
-// changed, refused and undone, a part added and removed, the first
-// template put back, and 390 px. The mock checks changes the way
+// changed, refused and undone from the Edit menu, a part added and
+// removed, the first template put back, and 390 px. The mock checks changes the way
 // internal/store/template.go does. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
@@ -9,6 +9,10 @@ import { url, server } from './lib/mock.mjs'
 const tpl = (page) => page.locator('section.template')
 const part = (page, name) => tpl(page).locator('details.part').filter({ has: page.locator(`summary .name:text-is("${name}")`) })
 const toastUndo = (page) => page.locator('.toast button').filter({ hasText: 'Undo' })
+// Undo or Redo from the Edit menu, which the app hands the page as the
+// event undo, see menu.go.
+const menu = (page, how) => page.evaluate((how) => window._wails.dispatchWailsEvent({ name: 'undo', data: how }), how)
+const saved = (page, name) => page.evaluate((name) => fetch('/api/template').then((r) => r.json()).then((t) => t.parts.find((p) => p.name === name)?.variations), name)
 const example = (page) => tpl(page).locator('.example-text')
 
 async function settings(page) {
@@ -37,21 +41,26 @@ const walks0 = [
     },
   },
   {
-    name: 'A variation saves when it is left, shows in the example, and Undo puts it back',
+    // Tim, 22 November 2026, #71: Undo and Redo in the Edit menu, in
+    // place of the toast's Undo.
+    name: 'A variation saves when it is left, shows in the example, and Undo in the Edit menu puts it back',
     async run(page) {
       await settings(page)
       await part(page, 'greeting').locator('summary').click()
       const box = part(page, 'greeting').locator('textarea').first()
       await box.fill('Servus')
       await box.blur()
-      await page.locator('.toast').filter({ hasText: 'Saved greeting' }).waitFor()
       await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Servus [first_name]'))
-      const saved = await page.evaluate(() => fetch('/api/template').then((r) => r.json()).then((t) => t.parts.find((p) => p.name === 'greeting').variations))
-      if (JSON.stringify(saved) !== '["Servus"]') return `the app kept ${JSON.stringify(saved)}`
+      const kept = await saved(page, 'greeting')
+      if (JSON.stringify(kept) !== '["Servus"]') return `the app kept ${JSON.stringify(kept)}`
       if (!(await tpl(page).locator('button.reset').count())) return 'nothing offers the first template back'
-      await toastUndo(page).click()
+      if (await toastUndo(page).count()) return 'a toast offers Undo, which the Edit menu has now'
+      await menu(page, 'undo')
       await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Hallo [first_name]'))
       if ((await box.inputValue()) !== 'Hallo') return `after Undo the box reads ${await box.inputValue()}`
+      await menu(page, 'redo')
+      await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Servus [first_name]'))
+      if ((await box.inputValue()) !== 'Servus') return `after Redo the box reads ${await box.inputValue()}`
       return ''
     },
   },
@@ -64,7 +73,6 @@ const walks0 = [
       const box = part(page, 'greeting').locator('textarea').first()
       await box.fill('Servus')
       await box.blur()
-      await page.locator('.toast').filter({ hasText: 'Saved greeting' }).waitFor()
       await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith('Servus'))
       const after = await example(page).innerText()
       if (after !== before.replace(/^Hallo/, 'Servus')) return `the example became\n${after}\nnot\n${before.replace(/^Hallo/, 'Servus')}`
@@ -176,17 +184,16 @@ const walks0 = [
       const p = part(page, 'intensity')
       await p.locator('form.add input').fill('richtig gern')
       await p.locator('button[aria-label="Add a variation to intensity"]').click()
-      await page.locator('.toast').filter({ hasText: 'Added a variation to intensity' }).waitFor()
       await p.locator('textarea').nth(2).waitFor()
       if ((await p.locator('.count').innerText()) !== '3 variations') return `it says ${await p.locator('.count').innerText()}`
       await p.locator('button[aria-label="Remove variation 1 of intensity"]').click()
-      await page.locator('.toast').filter({ hasText: 'Removed a variation of intensity' }).waitFor()
+      await p.locator('textarea').nth(2).waitFor({ state: 'detached' })
       const left = await p.locator('textarea').evaluateAll((ts) => ts.map((t) => t.value))
       if (JSON.stringify(left) !== '["super gern","richtig gern"]') return `left ${JSON.stringify(left)}`
       // The last one goes too, and the part is left out of the message.
       await part(page, 'greeting').locator('summary').click()
       await part(page, 'greeting').locator('button[aria-label="Remove variation 1 of greeting"]').click()
-      await page.locator('.toast').filter({ hasText: 'Removed a variation of greeting' }).waitFor()
+      await part(page, 'greeting').locator('textarea').first().waitFor({ state: 'detached' })
       if ((await part(page, 'greeting').locator('.count').innerText()) !== '0 variations') return `greeting says ${await part(page, 'greeting').locator('.count').innerText()}`
       await page.waitForFunction(() => document.querySelector('section.template .example-text')?.textContent?.startsWith(' [first_name],'))
       return ''
@@ -214,18 +221,18 @@ const walks0 = [
       const origin = part(page, 'origin').locator('textarea').first()
       await origin.fill((await origin.inputValue()) + ' #wave#')
       await origin.blur()
-      await page.locator('.toast').filter({ hasText: 'Saved origin' }).waitFor()
       const removeWave = part(page, 'wave').locator('button.remove-part')
       await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.title === 'Origin still uses #wave#. Take it out there first.' && b.getAttribute('aria-disabled') === 'true'))
-      // Unused, it goes, and Undo brings it back where it was.
+      // Unused, it goes, and Undo in the Edit menu brings it back where
+      // it was.
       await origin.fill((await origin.inputValue()).replace(' #wave#', ''))
       await origin.blur()
       await page.waitForFunction(() => !document.querySelector('section.template details.part textarea')?.value.includes('#wave#'))
       await page.waitForFunction(() => [...document.querySelectorAll('section.template button.remove-part')].some((b) => b.getAttribute('aria-label') === 'Remove wave' && !b.hasAttribute('aria-disabled')))
       await removeWave.click()
-      await page.locator('.toast').filter({ hasText: 'Removed wave' }).waitFor()
-      if (await part(page, 'wave').count()) return 'wave is still there'
-      await toastUndo(page).click()
+      await part(page, 'wave').waitFor({ state: 'detached' })
+      if (await toastUndo(page).count()) return 'a toast offers Undo, which the Edit menu has now'
+      await menu(page, 'undo')
       await part(page, 'wave').waitFor()
       const names = await tpl(page).locator('summary .name').allInnerTexts()
       if (names[names.length - 1] !== 'wave') return `wave came back as part ${names.indexOf('wave') + 1} of ${names.length}`
@@ -237,7 +244,7 @@ const walks0 = [
     },
   },
   {
-    name: 'The first template comes back, and Undo brings Tim’s own back',
+    name: 'The first template comes back, and Undo in the Edit menu brings Tim’s own back',
     async run(page) {
       await settings(page)
       if (await tpl(page).locator('button.reset').count()) return 'the first template is offered while it is in place'
@@ -245,10 +252,12 @@ const walks0 = [
       const box = part(page, 'signoff').locator('textarea').first()
       await box.fill('Bis bald, Tim')
       await box.blur()
+      await page.waitForFunction(async () => (await fetch('/api/template').then((r) => r.json())).changed)
       await tpl(page).locator('button.reset').click()
-      await page.locator('.toast').filter({ hasText: 'Put back the first template' }).waitFor()
+      await tpl(page).locator('button.reset').waitFor({ state: 'detached' })
       if ((await box.inputValue()) !== 'Liebe Grüße, Tim') return `after the reset it reads ${await box.inputValue()}`
-      await toastUndo(page).click()
+      if (await toastUndo(page).count()) return 'a toast offers Undo, which the Edit menu has now'
+      await menu(page, 'undo')
       await page.waitForFunction(() => [...document.querySelectorAll('section.template textarea')].some((t) => t.value === 'Bis bald, Tim'))
       return ''
     },

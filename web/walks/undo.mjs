@@ -117,11 +117,10 @@ const walks0 = [
       await page.waitForFunction((was) => document.querySelector('#set-profile_searches_per_run')?.value === was, was)
       // The row is far down Settings, and comes into view (the review of
       // #110).
-      const seen = await page.waitForFunction(() => {
+      await page.waitForFunction(() => {
         const r = document.querySelector('#set-profile_searches_per_run')?.getBoundingClientRect()
         return r && r.top >= 0 && r.bottom <= innerHeight
-      }, null, { timeout: 5000 }).then(() => '', () => page.evaluate(() => `the row stands at ${Math.round(document.querySelector('#set-profile_searches_per_run').getBoundingClientRect().top)} px in a window ${innerHeight} px tall`))
-      if (seen) return seen
+      })
       // Redo on the page itself, where the row shows it at once.
       await menu(page, 'redo')
       await page.waitForFunction(() => document.querySelector('#set-profile_searches_per_run')?.value === '12')

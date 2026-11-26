@@ -1,96 +1,97 @@
-// Package keys keeps the search provider's API key the way macOS keeps
-// secrets, in the keychain, never in a file. The first read by a build of
-// the app that macOS does not know yet asks for the password once, and
-// Always Allow keeps it from being asked again. macOS knows a build
-// signed with a Developer ID by its team, so one Always Allow covers
-// every build signed with it, and one signed ad hoc by itself alone, so
-// each such build asks once. A box closed without an answer keeps the
-// key back for that read only, and the next read asks again. Another
-// program that asks for it gets a box from macOS first, and the key
-// never passes through a command line. See keys_darwin.go for how macOS
-// checks a read.
+// Package keys keeps the search provider's API key in a file of its own,
+// exa-key in the app's folder, that only Tim's account can read. Not in
+// the keychain: every build macOS did not know yet asked for the keychain
+// password to read it, and typing that password ten times a day puts at
+// risk something worth far more than an Exa key (Tim, 26 November 2026).
+//
+// Builds before this one kept the key in the keychain. The first read
+// that finds no file reads it there once, which may ask for the password
+// one last time, writes it to the file and deletes it from the keychain,
+// whatever macOS answered, so the keychain is never asked again. A box
+// closed then leaves no key, and Settings takes it again.
 //
 // EXA_API_KEY in the environment stands in while no key is saved, which
-// is how a terminal or a test hands one over. Elsewhere than on a Mac
-// there is no keychain, and only the environment counts.
+// is how a terminal or a test hands one over.
 package keys
 
 import (
 	"errors"
-	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Service is the name of the keychain item, as Keychain Access shows it.
+// File is the name of the key's file in the app's folder.
+const File = "exa-key"
+
+// Service is the name of the keychain item builds before this one kept
+// the key in, as Keychain Access shows it.
 const Service = "Speaker Trail: Exa API key"
 
-// account is the account every item is kept under.
+// account is the account that item was kept under.
 const account = "speakertrail"
 
-// vault is where keys are kept: the keychain on a Mac, memory in tests.
-// get gives the secret and the keychain's status, 0 when it was found.
-// open says whether the saved key is kept the way set keeps it, so that a
-// new build of the app reading it is asked one question, not two, and set
-// says whether it kept it that way. See keys_darwin.go.
+// vault is the keychain the key is moved out of: the real one on a Mac,
+// none elsewhere, memory in tests. has asks without reading the secret,
+// so it puts no box on screen. get gives the secret and the keychain's
+// status, 0 when it was found.
 type vault interface {
 	has() bool
 	get() (string, int)
-	open() bool
-	set(secret string) (bool, error)
 	remove()
 }
 
 // Exa is the Exa key.
 type Exa struct {
-	v   vault
+	// path is the key's file.
+	path string
+	// old is the keychain of builds before this one.
+	old vault
 	env func(string) string
-	// mu keeps the key read once, rather than once per search. Only a
-	// read that brought the key is kept. One that did not is asked again
-	// the next time, so a password box closed once does not leave the app
-	// without its key until it is started again.
+	// mu keeps the file and the keychain to one reader or writer at a
+	// time, so the keychain is read once however many searches ask.
 	mu     sync.Mutex
 	cached string
-	// log says when the keychain was read, how long it took and what it
-	// answered, never the key. A read may wait on a password box, and
-	// the wait shows how long it was on screen.
+	// log says where the key came from, never the key.
 	log *slog.Logger
 }
 
-// NewExa is the Exa key in this machine's keychain, with each read of it
-// written to log.
-func NewExa(log *slog.Logger) *Exa {
-	return &Exa{v: system(), env: os.Getenv, log: log}
+// NewExa is the Exa key in dir, the app's folder, with what happens to
+// it written to log.
+func NewExa(dir string, log *slog.Logger) *Exa {
+	return &Exa{path: filepath.Join(dir, File), old: system(), env: os.Getenv, log: log}
 }
 
-// Has says whether a key is there, without reading it, so asking never
-// puts a box on screen.
+// Has says whether a key is there, without reading the keychain, so
+// asking never puts a box on screen. It takes no lock, so Settings never
+// waits on a box a run put up.
 func (e *Exa) Has() bool {
-	return e.v.has() || e.env("EXA_API_KEY") != ""
+	if info, err := os.Stat(e.path); err == nil && info.Size() > 0 {
+		return true
+	}
+	return e.old.has() || e.env("EXA_API_KEY") != ""
 }
 
-// ErrNoKey is no key saved in the keychain, and none in the environment.
+// ErrNoKey is no key saved, and none in the environment.
 var ErrNoKey = errors.New("no Exa key is saved")
 
-// ErrKeptBack is a key that is in the keychain, which macOS did not hand
-// over, most often because the password box was closed. Asking again
-// puts the box up again.
-var ErrKeptBack = errors.New("macOS kept the Exa key back")
-
 // Get reads the key, the saved one first, then EXA_API_KEY. It is
-// ErrNoKey when there is neither, and ErrKeptBack when macOS did not hand
-// over the saved one. A key saved by an older build of the app, which
-// asked twice on each read by a new build, is saved again right after
-// the read the person has just answered, so the next build asks once.
+// ErrNoKey when there is neither.
 func (e *Exa) Get() (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	var err error
 	if e.cached == "" {
-		e.cached, err = e.readKeychain()
+		key, err := e.read()
+		if err != nil {
+			return "", err
+		}
+		if key == "" {
+			key = e.moveOut()
+		}
+		e.cached = key
 	}
 	if e.cached != "" {
 		return e.cached, nil
@@ -98,83 +99,48 @@ func (e *Exa) Get() (string, error) {
 	if key := e.env("EXA_API_KEY"); key != "" {
 		return key, nil
 	}
-	return "", err
+	return "", ErrNoKey
 }
 
-// readKeychain reads the key from the keychain once, and logs how it
-// went.
-func (e *Exa) readKeychain() (string, error) {
+// read is the key in the file, empty when there is none.
+func (e *Exa) read() (string, error) {
+	body, err := os.ReadFile(e.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		e.logger().Error("the Exa key's file could not be read", "error", err)
+		return "", errors.New("the Exa key's file could not be read. Save the key again in Settings")
+	}
+	return strings.TrimSpace(string(body)), nil
+}
+
+// moveOut moves a key an older build kept in the keychain into the file,
+// and gives it, or nothing when there was none or macOS kept it back. The
+// item is deleted either way, so the keychain is asked once at most.
+func (e *Exa) moveOut() string {
+	if !e.old.has() {
+		return ""
+	}
 	start := time.Now()
-	secret, status := e.v.get()
-	e.logger().Info("the Exa key was read from the keychain", "ms", time.Since(start).Milliseconds(),
-		"found", status == 0, "status", status)
-	switch {
-	case status == errItemNotFound:
-		return "", ErrNoKey
-	case status != 0:
-		return "", keptBack(status)
-	case secret == "":
-		return "", ErrNoKey
+	secret, status := e.old.get()
+	e.logger().Info("the Exa key was read from the keychain, to move it to its file", "ms", time.Since(start).Milliseconds(),
+		"found", status == 0 && secret != "", "status", status)
+	secret = strings.TrimSpace(secret)
+	if status != 0 || secret == "" {
+		e.old.remove()
+		e.logger().Warn("macOS kept the Exa key back, so it was deleted from the keychain. Save it again in Settings", "status", status)
+		return ""
 	}
-	if !e.v.open() {
-		e.saveAgain(secret)
+	if err := e.write(secret); err != nil {
+		// The keychain keeps it, so the next start tries again.
+		e.logger().Error("the Exa key could not be written to its file, so it stays in the keychain", "error", err)
+		return secret
 	}
-	return secret, nil
+	e.old.remove()
+	e.logger().Info("the Exa key was moved from the keychain to its file")
+	return secret
 }
-
-// The keychain's statuses for a read the person was asked about and that
-// did not bring the key.
-const (
-	errUserCanceled          = -128
-	errAuthFailed            = -25293
-	errInteractionNotAllowed = -25308
-)
-
-// keptBack says why macOS kept the key back, in words, as ErrKeptBack.
-func keptBack(status int) error {
-	switch status {
-	case errUserCanceled:
-		return fmt.Errorf("the password box was closed, so %w. Try again, and pick Always Allow", ErrKeptBack)
-	case errAuthFailed:
-		return fmt.Errorf("the password box was denied, so %w. Try again, and pick Always Allow", ErrKeptBack)
-	case errInteractionNotAllowed:
-		return fmt.Errorf("the keychain is locked and could not ask for its password, so %w. Try again once the Mac is unlocked", ErrKeptBack)
-	}
-	return fmt.Errorf("%w, with status %d. Try again", ErrKeptBack, status)
-}
-
-// saveAgain saves a key kept the old way the new way, and says in the log
-// how it went. Saving deletes the old item first, so a save that fails may
-// leave no key in the keychain. It is then tried once more with the key
-// this start still holds.
-func (e *Exa) saveAgain(secret string) {
-	for try := 1; ; try++ {
-		open, err := e.v.set(secret)
-		switch {
-		case err == nil && open:
-			e.logger().Info("the Exa key was saved again, so a new build asks once")
-			return
-		case err == nil:
-			e.logger().Warn("the Exa key was saved again the old way, so a new build still asks twice")
-			return
-		case try < 2:
-			e.logger().Warn("the Exa key could not be saved again, so it is tried once more", "error", err)
-		case e.v.has():
-			e.logger().Warn("the Exa key could not be saved again, so a new build still asks twice", "error", err)
-			return
-		default:
-			e.logger().Error("the Exa key is no longer in the keychain. Save it again in Settings", "error", err)
-			return
-		}
-	}
-}
-
-// errItemNotFound is the keychain's errSecItemNotFound, the status of a
-// key that is not there.
-const errItemNotFound = -25300
-
-// ErrNoKeychain is a machine with nowhere safe to keep a key.
-var ErrNoKeychain = errors.New("this machine has no keychain to keep the key in. Set EXA_API_KEY instead")
 
 // Set saves a key, and an empty one removes it.
 func (e *Exa) Set(key string) error {
@@ -184,21 +150,50 @@ func (e *Exa) Set(key string) error {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	open := true
 	if key == "" {
-		e.v.remove()
-	} else if kept, err := e.v.set(key); err != nil {
-		return err
-	} else {
-		open = kept
+		if err := os.Remove(e.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	} else if err := e.write(key); err != nil {
+		e.logger().Error("the Exa key could not be saved", "error", err)
+		return errors.New("the Exa key could not be saved. Try again")
+	}
+	// A key left in the keychain would be moved over this one.
+	if e.old.has() {
+		e.old.remove()
 	}
 	e.cached = key
-	if open {
-		e.logger().Info("the Exa key was saved in the keychain", "removed", key == "")
-	} else {
-		e.logger().Warn("the Exa key was saved in the keychain the old way, so a new build asks twice")
-	}
+	e.logger().Info("the Exa key was saved in its file", "removed", key == "")
 	return nil
+}
+
+// write puts the key in a new file only its owner can read, then moves
+// it into place, which on one disk is all or nothing.
+func (e *Exa) write(key string) error {
+	if err := os.MkdirAll(filepath.Dir(e.path), 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(e.path), ".exa-key-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(key + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), e.path)
 }
 
 func (e *Exa) logger() *slog.Logger {
@@ -208,11 +203,13 @@ func (e *Exa) logger() *slog.Logger {
 	return e.log
 }
 
+// errItemNotFound is the keychain's errSecItemNotFound, the status of a
+// key that is not there.
+const errItemNotFound = -25300
+
 // nowhere is a machine without a keychain.
 type nowhere struct{}
 
-func (nowhere) has() bool                { return false }
-func (nowhere) get() (string, int)       { return "", errItemNotFound }
-func (nowhere) open() bool               { return true }
-func (nowhere) set(string) (bool, error) { return false, ErrNoKeychain }
-func (nowhere) remove()                  {}
+func (nowhere) has() bool          { return false }
+func (nowhere) get() (string, int) { return "", errItemNotFound }
+func (nowhere) remove()            {}

@@ -3,23 +3,15 @@
 package keys
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
 
-// A key saved now lets any build past the list of trusted apps, so only
-// the partition list asks a new build, once. It is built in memory, so
-// the test needs no keychain and puts no box on screen.
-func TestANewKeyIsAskedForOnce(t *testing.T) {
-	if !accessIsOpen() {
-		t.Error("a new key keeps a list of trusted apps, so a new build would be asked twice")
-	}
-}
-
-// The real keychain, one of the test's own: a key an older build saved is
-// read, saved again the new way, and read again, all without a box, which
-// is turned off here so that one would fail the read.
-func TestAKeySavedTheOldWayIsSavedAgainInTheKeychain(t *testing.T) {
+// The real keychain, one of the test's own: a key an older build saved
+// there is moved to the file and deleted from the keychain, all without a
+// box, which is turned off here so that one would fail the read.
+func TestAKeyInTheKeychainIsMovedToItsFile(t *testing.T) {
 	k, drop, err := testKeychain(filepath.Join(t.TempDir(), "test.keychain"))
 	if err != nil {
 		t.Fatal(err)
@@ -28,26 +20,21 @@ func TestAKeySavedTheOldWayIsSavedAgainInTheKeychain(t *testing.T) {
 	if k.has() {
 		t.Fatal("a new keychain has the key")
 	}
-	if err := k.setOld("an-invented-key"); err != nil {
+	if err := k.put("an-invented-key"); err != nil {
 		t.Fatal(err)
 	}
-	if k.open() {
-		t.Fatal("a key saved the old way is taken for one saved the new way")
+	dir := t.TempDir()
+	e := &Exa{path: filepath.Join(dir, File), old: k, env: func(string) string { return "" }}
+	if !e.Has() {
+		t.Error("a key in the keychain is not there")
 	}
-	e := &Exa{v: k, env: func(string) string { return "" }}
 	if got, err := e.Get(); got != "an-invented-key" || err != nil {
 		t.Fatalf("get %q, %v", got, err)
 	}
-	if !k.open() {
-		t.Error("the key was not saved again the new way")
+	if k.has() {
+		t.Error("the key is still in the keychain")
 	}
-	if secret, status := k.get(); secret != "an-invented-key" || status != 0 {
-		t.Errorf("read again: %q, status %d", secret, status)
-	}
-	if err := e.Set("another-invented-key"); err != nil {
-		t.Fatal(err)
-	}
-	if secret, status := k.get(); secret != "another-invented-key" || status != 0 || !k.open() {
-		t.Errorf("after a save: %q, status %d, open %v", secret, status, k.open())
+	if body, err := os.ReadFile(filepath.Join(dir, File)); err != nil || string(body) != "an-invented-key\n" {
+		t.Errorf("the file holds %q, %v", body, err)
 	}
 }

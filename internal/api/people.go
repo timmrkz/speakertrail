@@ -376,21 +376,20 @@ func (a *API) detail(id int64) *personDetail {
 }
 
 // pasteProfile keeps a LinkedIn page Tim copied in his browser as a
-// person's profile, see engine.Paste. With as, it puts back what Undo
-// had kept.
+// person's profile, see engine.Paste. Undo in the Edit menu takes it
+// back.
 func (a *API) pasteProfile(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
 	var body struct {
-		Text string        `json:"text"`
-		As   *store.Pasted `json:"as"`
+		Text string `json:"text"`
 	}
 	if !decode(w, r, &body) {
 		return
 	}
-	a.paste(w, r, id, body.Text, body.As, false)
+	a.paste(w, r, id, body.Text, false)
 }
 
 // pastePage keeps a LinkedIn page Tim pasted anywhere in the window as
@@ -425,17 +424,17 @@ func (a *API) pastePage(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
-	a.paste(w, r, id, body.Text, nil, added)
+	a.paste(w, r, id, body.Text, added)
 }
 
-// paste keeps text as the profile of person id, or puts back as, and
-// answers with the person, what they were for Undo, whether the name on
-// the page is the one in their link, whether the first message is
-// being drafted from it, see draft.Drafter.Pasted, and whether the page
-// added them, which Undo takes back by taking them out. Undo drafts
-// nothing.
-func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, as *store.Pasted, added bool) {
-	was, named, err := a.Engine.Paste(id, text, as)
+// paste keeps text as the profile of person id, and answers with the
+// person, whether the name on the page is the one in their link,
+// whether the first message is being drafted from it, see
+// draft.Drafter.Pasted, and whether the page added them. The paste is a
+// step Undo in the Edit menu takes back, unless it added them: Undo on
+// the toast takes them out again, as for a link.
+func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text string, added bool) {
+	named, err := a.Engine.Paste(id, text, added)
 	switch {
 	case errors.Is(err, store.ErrNoPerson):
 		fail(w, http.StatusNotFound, "Not found")
@@ -448,7 +447,7 @@ func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text strin
 		return
 	}
 	drafting := false
-	if as == nil && a.Drafts != nil {
+	if a.Drafts != nil {
 		_, drafting = a.Drafts.Pasted(id)
 	}
 	out := a.detail(id)
@@ -458,11 +457,10 @@ func (a *API) paste(w http.ResponseWriter, r *http.Request, id int64, text strin
 	}
 	send(w, http.StatusOK, struct {
 		Person   *personDetail `json:"person"`
-		Was      store.Pasted  `json:"was"`
 		Named    bool          `json:"named"`
 		Drafting bool          `json:"drafting"`
 		Added    bool          `json:"added"`
-	}{out, was, named, drafting, added})
+	}{out, named, drafting, added})
 }
 
 func (a *API) person(w http.ResponseWriter, r *http.Request) {
@@ -486,7 +484,7 @@ func (a *API) patchPerson(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if !a.update(w, r, func(d *store.Data) error {
+	if !a.edit(w, r, store.PersonThing(id), func(d *store.Data) error {
 		p := d.Person(id)
 		if p == nil {
 			return errNotFound
@@ -530,7 +528,7 @@ func (a *API) patchProfile(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "review must be open, confirmed or rejected")
 		return
 	}
-	if a.update(w, r, func(d *store.Data) error {
+	if a.edit(w, r, store.PersonThing(id), func(d *store.Data) error {
 		p := d.Person(id)
 		if p == nil || p.LinkedIn.URL == "" {
 			return errNotFound

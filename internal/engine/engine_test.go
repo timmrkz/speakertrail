@@ -981,7 +981,7 @@ func TestAPasteWhileExaReadsWins(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Go(func() {
-			if _, _, err := e.Paste(out.New[0], page, nil); err != nil {
+			if _, err := e.Paste(out.New[0], page, false); err != nil {
 				t.Error(err)
 			}
 			e.Reading()
@@ -1087,7 +1087,7 @@ func TestWhoseIsAPastedPage(t *testing.T) {
 				}
 				// Her own page again, so the names the cases ask by stay.
 				if got == mara {
-					if _, _, err := e.Paste(got, c.text, nil); err != nil {
+					if _, err := e.Paste(got, c.text, false); err != nil {
 						t.Error(err)
 					}
 				}

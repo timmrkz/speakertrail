@@ -112,6 +112,9 @@ type Drafter struct {
 	mu     sync.Mutex
 	jobs   map[int64]*Job
 	cancel map[int64]context.CancelFunc
+	// pasted are the drafts a pasted page started, by person, with when
+	// the page was kept, see Pasted and Undone.
+	pasted map[int64]time.Time
 	queue  []int64
 	going  bool
 	n      int
@@ -177,6 +180,8 @@ func (d *Drafter) Start(personID int64) (Job, error) {
 		d.mu.Unlock()
 		return out, nil
 	}
+	// Tim asked for this one, so no undo of a paste stops it.
+	delete(d.pasted, personID)
 	out := d.queued(personID)
 	d.mu.Unlock()
 	d.tell()
@@ -209,9 +214,10 @@ func (d *Drafter) queued(personID int64) Job {
 // under way. Without a model none starts, and Draft says why.
 func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
 	empty, connected := false, false
+	var kept time.Time
 	d.Store.Read(func(data *store.Data) {
 		if p := data.Person(personID); p != nil {
-			empty, connected = p.Draft == "", p.Connected
+			empty, connected, kept = p.Draft == "", p.Connected, p.LinkedIn.TextAt
 		}
 	})
 	if _, _, err := d.Model(); errors.Is(err, ErrNoModel) {
@@ -237,9 +243,41 @@ func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
 		return Job{}, false
 	}
 	out := d.queued(personID)
+	if d.pasted == nil {
+		d.pasted = map[int64]time.Time{}
+	}
+	d.pasted[personID] = kept
 	d.mu.Unlock()
 	d.tell()
 	return out, true
+}
+
+// Undone hears of an undo in the Edit menu that changed a person. When
+// it took back the page whose paste started their draft, the draft
+// stops if it still runs, since nothing asks for it any more, as the
+// paste's Undo toast did before Undo moved into the Edit menu. An undo
+// of anything else on them, like their notes, leaves it.
+func (d *Drafter) Undone(personID int64) {
+	d.mu.Lock()
+	kept, ok := d.pasted[personID]
+	d.mu.Unlock()
+	if !ok {
+		return
+	}
+	var now time.Time
+	d.Store.Read(func(data *store.Data) {
+		if p := data.Person(personID); p != nil {
+			now = p.LinkedIn.TextAt
+		}
+	})
+	if now.Equal(kept) {
+		return
+	}
+	d.mu.Lock()
+	delete(d.pasted, personID)
+	d.mu.Unlock()
+	// A draft that already ended has nothing to stop.
+	_ = d.Cancel(personID)
 }
 
 // Cancel stops a person's draft, queued or under way. What the model
@@ -513,7 +551,9 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		hook = Hook{}
 	}
 	written := message.with(hook)
-	err = d.Store.Update(func(data *store.Data) error {
+	// Tim pressed Draft, so the message is his change, and Undo in the
+	// Edit menu puts back the one before. How long it took is not.
+	err = d.Store.Edit(func(data *store.Data) error {
 		p := data.Person(id)
 		if p == nil {
 			return errors.New("they were removed while the message was written")
@@ -521,7 +561,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		p.Draft, p.DraftedAt, p.UpdatedAt = written, d.now(), d.now()
 		data.Drafted(took)
 		return nil
-	})
+	}, store.PersonThing(id))
 	if err != nil {
 		return err
 	}

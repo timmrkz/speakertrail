@@ -118,18 +118,16 @@ also viewed", are left out, so are LinkedIn's footer, from Accessibility
 on, and the message window open over the page, with Tim's own name in
 it, and so are email addresses and phone numbers. A read of them Exa is still asked for loses to
 it, and a run that had not begun it drops it. It answers `{"person": {…},
-"was": {"text": "", "name": "erika-beispiel-71", "headline": "", "city":
-""}, "named": true, "drafting": true, "added": false}`: `person` as `GET /api/people/{id}` gives it,
-`was` what they were before, and `named` whether the name on the page
-is the one in their link, which makes sure the page is theirs. A page
-whose name is not is read all the same, its name the line LinkedIn puts
-above "· 1st". `drafting` says the paste started the first message, as
-Draft does, see [Drafts](#drafts): for someone with no first message yet whose
+"named": true, "drafting": true, "added": false}`: `person` as `GET
+/api/people/{id}` gives it, and `named` whether the name on the page is
+the one in their link, which makes sure the page is theirs. A page whose
+name is not is read all the same, its name the line LinkedIn puts above
+"· 1st". `drafting` says the paste started the first message, as Draft
+does, see [Drafts](#drafts): for someone with no first message yet whose
 draft failed because Exa had no copy, or who is connected, so a paste
-does the whole thing. `{"as": {…}}` with a `was` puts that back, for Undo, drafts
-nothing, and someone
-added from a link whose text it empties waits for the next run to read
-it from Exa. 400 for a paste with no text, 404 for an id nobody has.
+does the whole thing. It is a step that `POST /api/undo` takes back, see
+[Undo](#undo), which also stops the draft it started, if it still
+runs. 400 for a paste with no text, 404 for an id nobody has.
 
 `POST /api/people/profile` with `{"text": "…", "links": ["…"], "open":
 7}` keeps a page pasted anywhere in the window as the profile of the
@@ -145,8 +143,9 @@ the one person of that name. Else a page without its own link is the
 open person's, as with the call above.
 
 A page nobody here has adds them, as a link does, and answers the same
-with `"added": true`, which Undo takes back with `DELETE
-/api/people/{id}`. Their link is the page's own in `links`: the one in
+with `"added": true`, which the toast's Undo takes back with `DELETE
+/api/people/{id}`, as for a link. The page kept as their profile is part
+of adding them, no step of its own. Their link is the page's own in `links`: the one in
 the name on the page, else the one it holds most often. A page pasted
 as text alone has none, so Exa is asked once for a LinkedIn profile by
 the name and headline on it, a search from the month's budget, and only
@@ -185,6 +184,10 @@ does. An empty `draft` clears `drafted_at` too.
 
 `PATCH /api/profiles/{id}` with `{"review": "confirmed"}`, `"rejected"` or
 `"open"`. A person has one profile, so its id is the person's.
+
+Each of these is a step that `POST /api/undo` takes back, see
+[Undo](#undo), and so is the first message the language model writes
+after Draft.
 
 ## Searches
 
@@ -598,8 +601,38 @@ model wrote down as `dictation`.
 
 ## Undo
 
-Edit, Undo and Redo in the app's menu do not reach the page as keys. The
-app sends the window in front the Wails event `undo`, `"undo"` or
-`"redo"`, and the page decides: Report a Problem undoes its own steps,
-and a text field anywhere undoes what was typed. See
-`cmd/speakertrail-app/menu.go`.
+Edit, Undo (Cmd+Z) and Redo (Cmd+Y) in the app's menu do not reach the
+page as keys. The app sends the Wails event `undo`, `"undo"` or
+`"redo"`, which reaches every window, and only the page that has the
+focus takes it. It decides: Report a Problem undoes its own steps, a
+text field undoes what was typed in it, and anywhere else the app takes
+back the last change Tim made. So does a field that shows what the app
+put in it, with nothing typed since, so Cmd+Y in the notes does again
+what Cmd+Z took back. Every text field keeps its own steps in the page,
+`web/src/lib/fieldundo.ts`, and the browser's undo is never asked: it
+knows nothing of text the app puts in, keeps one list for the whole
+page in WebKit, and put Tim's words in twice. See
+`cmd/speakertrail-app/menu.go` and `internal/store/history.go`.
+
+`POST /api/undo` takes back the last change Tim made, and `POST
+/api/redo` does again what the last undo took back. A change is one
+step: Connect, the notes, the first message, Draft, Not this person and
+a pasted profile, each on one person. A change that changed nothing is
+no step, and neither is anything a run does. Steps are kept while the
+app is open, up to 200, and a new step empties Redo. They answer what
+they changed, so the page opens it, or `done` false when there was
+nothing to take:
+
+```json
+{ "done": true, "shows": { "kind": "person", "id": 7 } }
+```
+
+An undo of a pasted page stops the draft the paste started, if it
+still runs, see `draft.Drafter.Undone`. An undo puts back only the
+fields the step changed, so what a run changed since stays. When one of those fields changed again since, it
+writes nothing and answers 409, "This has changed since, so it cannot be
+taken back", and every step behind it in the same list goes, since they
+rest on it.
+
+Searches, exclusions, the template, the settings and the people a run
+or a pasted page added follow, see issue #71. Until then they keep their Undo toasts.

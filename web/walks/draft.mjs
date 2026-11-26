@@ -36,6 +36,9 @@ const say = (page, data) => page.evaluate((data) => window._wails.dispatchWailsE
 // The message the app kept, saved the way the app saves it.
 const keep = (page, id, draft) =>
   page.evaluate(([id, draft]) => fetch(`/api/people/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }) }), [id, draft])
+// Undo or Redo from the Edit menu, which the app hands the page as the
+// event undo, see menu.go.
+const menu = (page, how) => page.evaluate((how) => window._wails.dispatchWailsEvent({ name: 'undo', data: how }), how)
 const kept = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.draft), id)
 
 const box = (page) => page.locator('.first-message textarea')
@@ -236,15 +239,22 @@ const walks = [
     },
   },
   {
-    name: 'Draft again writes a new message, and Undo brings the one before back',
+    name: 'Draft again writes a new message, and Undo in the Edit menu brings the one before back',
     async run(page) {
       await open(page, 1005)
       await drafted(page, 1005, 1, first)
       if ((await act(page).innerText()).trim() !== 'Draft again') return `after a draft the button reads ${await act(page).innerText()}`
       await drafted(page, 1005, 2, second)
-      await page.getByRole('button', { name: 'Undo' }).click()
+      await page.evaluate(() => document.activeElement?.blur())
+      await menu(page, 'undo')
       await page.waitForFunction((text) => document.querySelector('.first-message textarea')?.value === text, first)
       if ((await kept(page, 1005)) !== first) return 'Undo did not save the message before'
+      // Cmd+Y in the box, with nothing typed in it, does again what Cmd+Z
+      // took back, and the caret stays in the box.
+      await box(page).click()
+      await menu(page, 'redo')
+      await page.waitForFunction((text) => document.querySelector('.first-message textarea')?.value === text, second)
+      if (!(await page.evaluate(() => document.activeElement?.matches('.first-message textarea')))) return 'Cmd+Y took the caret out of the message'
       return ''
     },
   },

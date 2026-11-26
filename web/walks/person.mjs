@@ -2,10 +2,13 @@
 // walks/sidebar.mjs does. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
-import { drawn } from './lib/settled.mjs'
+import { drawn, quiet } from './lib/settled.mjs'
 
 const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.profiles[0].review), id)
 
+// Undo or Redo from the Edit menu, which the app hands the page as the
+// event undo, see menu.go.
+const menu = (page, how) => page.evaluate((how) => window._wails.dispatchWailsEvent({ name: 'undo', data: how }), how)
 const person = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()), id)
 const keepDraft = (page, id, draft) =>
   page.evaluate(([id, draft]) => fetch(`/api/people/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }) }), [id, draft])
@@ -349,7 +352,7 @@ const walks = [
   },
   {
     // A search can find someone else's LinkedIn profile. Not this person
-    // rejects it, and the toast's Undo brings it back as it was. Like
+    // rejects it, and Undo in the Edit menu brings it back as it was. Like
     // Connect, the button stays, pressed, and the same button again takes
     // it back. Tim found it gone once pressed, testing #67 on 22 November
     // 2026, and could not get anyone out of Rejected.
@@ -366,11 +369,12 @@ const walks = [
       if ((await review(page, 1001)) !== 'rejected') return 'the profile was not rejected'
       if (!(await notThem.isVisible())) return 'Not this person is gone once the profile is rejected'
       if ((await notThem.getAttribute('aria-pressed')) !== 'true') return 'Not this person is not pressed once the profile is rejected'
-      await page.locator('.toast').getByRole('button', { name: 'Undo' }).click()
+      if (await page.locator('.toast').getByRole('button', { name: 'Undo' }).count()) return 'a toast offers Undo, which the Edit menu has now'
+      await menu(page, 'undo')
       await linkedin.waitFor()
       const after = await review(page, 1001)
       if (after !== before) return `Undo left the profile ${after}, it was ${before}`
-      // Once the toast is gone, the same button takes it back.
+      // The same button takes it back too.
       await notThem.click()
       await linkedin.waitFor({ state: 'detached' })
       await page.locator('button[aria-label="Not this person"][aria-pressed="true"]').waitFor()
@@ -463,6 +467,146 @@ const walks = [
       if (JSON.stringify(await rows()) !== JSON.stringify(before)) wrong.push(`taken back, the list is ${await rows()}, was ${before}`)
       if ((await count('All')) !== all) wrong.push(`taken back, All counts ${await count('All')}, want ${all}`)
       return wrong.join('\n\t')
+    },
+  },
+  {
+    // Tim, 22 November 2026, #71: every change undone and redone from the
+    // Edit menu, the way FrameFairy does. Taking it back opens whom it
+    // changed, and a field being typed in keeps its own undo.
+    name: 'Undo and Redo in the Edit menu take back Connect and open the person, and a field being typed in undoes its own text',
+    async run(page) {
+      const connected = () => person(page, 1002).then((p) => p.connected)
+      await page.goto(`${url}/app/people/1002`)
+      const connect = page.locator('.detail-pane button.connect')
+      await connect.waitFor()
+      const was = await connected()
+      await connect.click()
+      await page.waitForFunction(async (was) => (await fetch('/api/people/1002').then((r) => r.json())).connected !== was, was)
+      await page.goto(`${url}/app/searches`)
+      await page.locator('main').waitFor()
+      await menu(page, 'undo')
+      await page.waitForURL('**/app/people/1002')
+      await page.locator(`.detail-pane button.connect[aria-pressed="${was}"]`).waitFor()
+      if ((await connected()) !== was) return 'Undo did not take Connect back'
+      await menu(page, 'redo')
+      await page.locator(`.detail-pane button.connect[aria-pressed="${!was}"]`).waitFor()
+      if ((await connected()) === was) return 'Redo did not connect again'
+      // Only the window Tim is in takes it: Report a Problem gets the
+      // same event, and Cmd+Z there takes nothing back here.
+      await page.evaluate(() => { window.hadFocus = document.hasFocus; document.hasFocus = () => false })
+      await quiet(page)
+      await menu(page, 'undo')
+      if ((await quiet(page)).includes('/api/undo')) return 'Undo in a window without the focus asked the app'
+      if ((await connected()) === was) return 'Undo in a window without the focus took Connect back'
+      await page.evaluate(() => { document.hasFocus = window.hadFocus })
+      // Typing in the notes, Undo is the field's.
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.click()
+      await page.keyboard.type('abc')
+      await menu(page, 'undo')
+      await page.waitForFunction(() => document.activeElement?.value !== undefined && !document.activeElement.value.endsWith('abc'))
+      if ((await connected()) === was) return 'Undo while typing took Connect back'
+      return ''
+    },
+  },
+  {
+    // Tim, testing #87 on 25 November 2026: he typed notes, clicked out
+    // and took them back with Cmd+Z, then clicked into the notes and
+    // pressed Cmd+Y, which did nothing, and Cmd+Z and Cmd+Y in the field
+    // put his words in two and three times. The field's undo knew
+    // nothing of the notes the app put back.
+    name: 'Cmd+Z and Cmd+Y in the notes after an undo from the menu never double the words, and with nothing of its own the field passes them on',
+    async run(page) {
+      const notesOf = () => person(page, 1003).then((p) => p.notes)
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.waitFor()
+      const was = await notesOf()
+      // The browser's own undo is never asked: in WebKit it knows nothing
+      // of what the app puts in, and doubles the words.
+      await page.evaluate(() => {
+        const exec = document.execCommand.bind(document)
+        window.asked = []
+        document.execCommand = (c, ...rest) => {
+          if (c === 'undo' || c === 'redo') window.asked.push(c)
+          return exec(c, ...rest)
+        }
+      })
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' woeifh weknd')
+      const typed = await notes.inputValue()
+      // Out of the field, onto the page, as a click beside it does.
+      await page.evaluate(() => document.activeElement.blur())
+      await page.waitForFunction(async (typed) => (await fetch('/api/people/1003').then((r) => r.json())).notes === typed, typed)
+        .catch(() => { throw new Error('the notes were not saved on leaving the field') })
+      await menu(page, 'undo')
+      await page.waitForFunction((was) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === was, was)
+        .catch(async () => { throw new Error(`Undo from the menu did not take the notes back`) })
+      await notes.click()
+      await quiet(page)
+      await menu(page, 'redo')
+      await quiet(page)
+      if ((await notes.inputValue()) !== typed) return `Cmd+Y in the notes left them ${JSON.stringify(await notes.inputValue())}, want the words back`
+      for (const how of ['undo', 'redo', 'undo', 'undo', 'redo', 'undo', 'redo', 'redo']) {
+        await menu(page, how)
+        await quiet(page)
+        const v = await notes.inputValue()
+        if (v.split('woeifh').length > 2) return `after ${how} the notes read ${JSON.stringify(v)}`
+      }
+      if ((await notesOf()).split('woeifh').length > 2) return 'the doubled words were saved'
+      const asked = await page.evaluate(() => window.asked)
+      if (asked.length) return `the browser's own undo was asked: ${asked.join(', ')}`
+      // Words typed and not saved yet stay, whatever the app's redo holds.
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' saved')
+      await page.evaluate(() => document.activeElement.blur())
+      await page.waitForFunction(async () => (await fetch('/api/people/1003').then((r) => r.json())).notes.endsWith(' saved'))
+      await menu(page, 'undo')
+      await page.waitForFunction(() => ![...document.querySelectorAll('.detail-pane textarea')].at(-1).value.endsWith(' saved'))
+      await notes.click()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' unsaved')
+      const unsaved = await notes.inputValue()
+      await quiet(page)
+      await menu(page, 'redo')
+      if ((await quiet(page)).includes('/api/redo')) return 'Cmd+Y with words not saved yet in the notes went to the app'
+      if ((await notes.inputValue()) !== unsaved) return `Cmd+Y wrote over words not saved yet: ${JSON.stringify(await notes.inputValue())}`
+      return ''
+    },
+  },
+  {
+    // One order across the field's steps and the app's: Cmd+Z in the
+    // notes takes the typing back, then Connect, and Cmd+Y brings Connect
+    // back first, then the typing (review of #87, 25 November 2026).
+    name: 'Cmd+Z twice in the notes takes back the typing and then Connect, and Cmd+Y twice brings both back in order',
+    async run(page) {
+      const connected = () => person(page, 1006).then((p) => p.connected)
+      await page.goto(`${url}/app/people/1006`)
+      const connect = page.locator('.detail-pane button.connect')
+      await connect.waitFor()
+      const was = await connected()
+      await connect.click()
+      await page.waitForFunction(async (was) => (await fetch('/api/people/1006').then((r) => r.json())).connected !== was, was)
+      const notes = page.locator('.detail-pane textarea').last()
+      await notes.click()
+      const before = await notes.inputValue()
+      await page.keyboard.press('End')
+      await page.keyboard.type(' met at the fair')
+      const typed = await notes.inputValue()
+      const pressed = (state) => page.locator(`.detail-pane button.connect[aria-pressed="${state}"]`).waitFor()
+      await menu(page, 'undo')
+      if ((await notes.inputValue()) !== before) return `the first Cmd+Z left the notes ${JSON.stringify(await notes.inputValue())}`
+      await menu(page, 'undo')
+      await pressed(was).catch(() => { throw new Error('the second Cmd+Z did not take Connect back') })
+      await menu(page, 'redo')
+      await pressed(!was).catch(() => { throw new Error('the first Cmd+Y did not bring Connect back') })
+      if ((await notes.inputValue()) !== before) return `the first Cmd+Y changed the notes to ${JSON.stringify(await notes.inputValue())}`
+      await menu(page, 'redo')
+      if ((await notes.inputValue()) !== typed) return `the second Cmd+Y left the notes ${JSON.stringify(await notes.inputValue())}, want the typing back`
+      if ((await connected()) === was) return 'Connect did not stay'
+      return ''
     },
   },
   {

@@ -15,6 +15,8 @@
   import { reporting } from '../lib/reporting.svelte'
   import { pasting } from '../lib/paste.svelte'
   import { api, onUndo } from '../lib/api'
+  import { undoHistory } from '../lib/history.svelte'
+  import { fieldStep, handedOn, keepUndo } from '../lib/fieldundo'
   import { typing } from '../lib/keys'
   import Icon, { type IconName } from '../lib/components/Icon.svelte'
   import Landing from '../lib/components/Landing.svelte'
@@ -67,9 +69,20 @@
   // Bugs is lit while the report window is open, see bugs.go.
   $effect(() => reporting.listen())
 
-  // Undo and Redo in the Edit menu come to the page, see menu.go. Here
-  // they undo the field being typed in, as the stock ones did.
-  $effect(() => onUndo((how) => typing() && document.execCommand(how)))
+  // Undo and Redo in the Edit menu come to the page, see menu.go. A
+  // field being typed in undoes its own text first, see lib/fieldundo.ts.
+  // Anywhere else, and in a field with nothing left to take, they take
+  // back the last change Tim made, kept by the app, see
+  // lib/history.svelte.ts.
+  function undo(how: 'undo' | 'redo') {
+    const on = typing() ? document.activeElement : null
+    if (on && fieldStep(on, how)) return
+    void undoHistory.step(how).then((done) => handedOn(on, how, done))
+  }
+  $effect(() => onUndo(undo))
+  // Every text field keeps its own steps, and the browser's undo is never
+  // asked, see lib/fieldundo.ts.
+  $effect(() => keepUndo(undo))
   let update = $derived(updates.shown)
   let updateDot = $derived(railDot(update))
   let updateTitle = $derived.by(() => {

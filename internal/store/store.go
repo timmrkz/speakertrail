@@ -287,6 +287,8 @@ type Store struct {
 	mu          sync.Mutex
 	data        *Data
 	now         func() time.Time
+	// hist is the undo and redo of Tim's changes, see history.go.
+	hist history
 }
 
 // Open reads the file in dir, or starts a new one there. now is the clock,
@@ -478,6 +480,11 @@ func (s *Store) Read(fn func(d *Data)) {
 func (s *Store) Update(fn func(d *Data) error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.update(fn)
+}
+
+// update is Update with the lock held.
+func (s *Store) update(fn func(d *Data) error) error {
 	before, err := json.Marshal(s.data)
 	if err != nil {
 		return err

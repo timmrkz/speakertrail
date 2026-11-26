@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
@@ -72,6 +73,14 @@ func TestDraftAFirstMessage(t *testing.T) {
 	if p.Draft != "" || p.DraftedAt != nil {
 		t.Errorf("emptied draft %q drafted at %v", p.Draft, p.DraftedAt)
 	}
+	// Undo in the Edit menu takes each back, the drafted message too.
+	for _, want := range []string{"Hallo Mara, danke!", "Hallo Mara,\n\nsuper cool", ""} {
+		call(t, a, "POST", "/api/undo", "{}", nil)
+		call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+		if !strings.HasPrefix(p.Draft, want) || (want == "") != (p.DraftedAt == nil) {
+			t.Errorf("after undo the draft is %q drafted at %v, want %q", p.Draft, p.DraftedAt, want)
+		}
+	}
 	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft/cancel", "{}", nil); code != http.StatusConflict {
 		t.Errorf("cancel with nothing under way: %d", code)
 	}
@@ -82,8 +91,10 @@ func TestDraftAFirstMessage(t *testing.T) {
 
 // A LinkedIn page pasted with nobody open finds whose it is by the links
 // Chrome copied with it, keeps it as their profile, and drafts the first
-// message of someone connected who has none, and Undo drafts nothing
-// (Tim's report of 24 November 2026, #88 and #89).
+// message of someone connected who has none (Tim's report of 24
+// November 2026, #88 and #89). Undo in the Edit menu takes back the
+// draft, then the paste. The paste that added someone is no step of its
+// own: the toast's Undo takes them out.
 func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	a, st, e := newAPI(t)
 	var added struct{ New []int64 }
@@ -104,7 +115,6 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"text": page, "links": []string{"/in/mara-s-beispiel/overlay/contact-info/", "/in/mara-s-beispiel/details/"}})
 	var out struct {
 		Person   personDetail
-		Was      store.Pasted
 		Named    bool
 		Drafting bool
 	}
@@ -117,9 +127,15 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	if p.Name != "Mara Beispiel" || !strings.Contains(p.Draft, "weil du töpferst.") {
 		t.Errorf("person %q, draft %q", p.Name, p.Draft)
 	}
-	undo, _ := json.Marshal(map[string]any{"as": out.Was})
-	if code := call(t, a, "PUT", "/api/people/"+itoa(id)+"/profile", string(undo), &out); code != http.StatusOK || out.Drafting {
-		t.Errorf("undo: %d, drafting %v", code, out.Drafting)
+	for _, what := range []string{"the draft", "the paste"} {
+		var u store.Undone
+		if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done {
+			t.Fatalf("undo of %s: %d %+v", what, code, u)
+		}
+	}
+	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+	if p.Draft != "" || p.ProfileReadAt != nil || p.Name == "Mara Beispiel" {
+		t.Errorf("after undo: person %q, draft %q, profile read at %v", p.Name, p.Draft, p.ProfileReadAt)
 	}
 	// The page of someone new adds them under the link in it, connected
 	// as it says, drafts their first message, and Undo takes them out.
@@ -128,6 +144,13 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 		t.Fatalf("someone new: %d %+v", code, out)
 	}
 	a.Drafts.Wait()
+	// Undo in the Edit menu takes back their draft, and nothing more.
+	for _, want := range []bool{true, false} {
+		var u store.Undone
+		if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || u.Done != want {
+			t.Fatalf("undo after adding: %d %+v, want done %v", code, u, want)
+		}
+	}
 	if code := call(t, a, "DELETE", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNoContent {
 		t.Errorf("undo someone new: %d", code)
 	}
@@ -140,5 +163,61 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	}
 	if code := call(t, a, "POST", "/api/people/profile", `{"text":" "}`, nil); code != http.StatusBadRequest {
 		t.Errorf("an empty paste: %d", code)
+	}
+}
+
+// Undo in the Edit menu of the page whose paste started a draft stops
+// the draft, as the paste's Undo toast did. An undo of the notes typed
+// meanwhile leaves it running.
+func TestUndoOfAPasteStopsTheDraftItStarted(t *testing.T) {
+	a, st, e := newAPI(t)
+	var added struct{ New []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/mara-s-beispiel"}`, &added)
+	e.Wait()
+	id := added.New[0]
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	asked := make(chan context.Context, 1)
+	a.Drafts = &draft.Drafter{Store: st, Host: host,
+		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		// The model writes until the draft is stopped.
+		Ask: func(ctx context.Context, _ *language.Server, _ []language.Message, _ json.RawMessage, _ func(string)) (language.Answer, error) {
+			asked <- ctx
+			<-ctx.Done()
+			return language.Answer{}, ctx.Err()
+		},
+		Pick: func(int) int { return 0 },
+	}
+	page := "Home\nMara Beispiel\n· 1st\nGründerin | Probe Keramik\nDortmund, North Rhine-Westphalia, Germany\nAbout\nIch töpfere."
+	body, _ := json.Marshal(map[string]any{"text": page, "links": []string{"/in/mara-s-beispiel/details/"}})
+	var out struct{ Drafting bool }
+	if code := call(t, a, "POST", "/api/people/profile", string(body), &out); code != http.StatusOK || !out.Drafting {
+		t.Fatalf("paste: %d %+v", code, out)
+	}
+	writing := <-asked
+	// Whatever the test finds, the draft ends with it.
+	t.Cleanup(func() { _ = a.Drafts.Cancel(id); a.Drafts.Wait() })
+	call(t, a, "PATCH", "/api/people/"+itoa(id), `{"notes":"Töpfert"}`, nil)
+	call(t, a, "POST", "/api/undo", "{}", nil)
+	if writing.Err() != nil {
+		t.Error("the undo of the notes stopped the draft")
+	}
+	// The page, from two requests at once: one takes it back, the other
+	// finds nothing left.
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() { call(t, a, "POST", "/api/undo", "{}", nil) })
+	}
+	wg.Wait()
+	// Cancel stops it before the undo answers.
+	if writing.Err() == nil {
+		t.Fatal("the undo of the page left the draft running")
+	}
+	a.Drafts.Wait()
+	var p personDetail
+	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
+	if p.Draft != "" || p.ProfileReadAt != nil || p.Notes != "" {
+		t.Errorf("after undo: draft %q, profile read at %v, notes %q", p.Draft, p.ProfileReadAt, p.Notes)
 	}
 }

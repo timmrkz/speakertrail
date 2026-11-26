@@ -8,10 +8,14 @@
 // (25 November). The app reads their name, headline and city from it and, for
 // someone who is waiting for a first message, starts it (#88). It never
 // requests LinkedIn itself: Tim opened the page. A toast says it was
-// kept, with Undo. The toast never names the person, since every toast
-// goes into the app's log.
+// kept, and Undo in the Edit menu takes it back, see history.svelte.ts,
+// which also stops the draft it started, see draft.Drafter.Undone.
+// Someone the page added is taken out by the toast's Undo, as for a
+// link, until adding moves into the history too, see issue #71. The
+// toast never names the person, since every toast goes into the app's
+// log.
 
-import { api, type Pasted } from './api'
+import { api } from './api'
 import { draftWatch } from './drafts.svelte'
 import { navigate, router } from './router.svelte'
 import { said } from './said'
@@ -53,8 +57,7 @@ function openPerson(): number {
 }
 
 class Pasting {
-  // Counts every profile kept or put back, so the person and the list
-  // read again.
+  // Counts every profile kept, so the person and the list read again.
   changed = $state(0)
 
   // Takes a paste from anywhere in the window. A page in a text box,
@@ -89,9 +92,8 @@ class Pasting {
         toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id, r.drafting) })
         return
       }
-      const undo = { label: 'Undo', run: () => void this.undo(id, r.was, r.drafting) }
-      if (r.named) toast.show(`Kept the page as their profile${drafting}`, 'plain', undo)
-      else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad', undo)
+      if (r.named) toast.show(`Kept the page as their profile${drafting}`)
+      else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad')
     } catch (e) {
       toast.show(errorText(e), 'bad')
     }
@@ -103,19 +105,6 @@ class Pasting {
       if (drafting) await api.cancelDraft(id).catch(() => {})
       await api.removePerson(id)
       if (openPerson() === id) navigate('/app/people')
-    } catch (e) {
-      fault(e)
-    } finally {
-      this.changed++
-    }
-  }
-
-  // Undo puts back what they were, and stops the draft the paste
-  // started, if it still runs.
-  private async undo(id: number, was: Pasted, drafting: boolean) {
-    try {
-      if (drafting) await api.cancelDraft(id).catch(() => {})
-      await api.pasteProfile(id, { as: was })
     } catch (e) {
       fault(e)
     } finally {

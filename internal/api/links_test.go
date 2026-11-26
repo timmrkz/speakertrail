@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -190,7 +191,6 @@ func TestPastingAProfile(t *testing.T) {
 			Read                 string     `json:"read"`
 			ProfileReadAt        *time.Time `json:"profile_read_at"`
 		}
-		Was   store.Pasted
 		Named bool
 	}
 	if code := call(t, a, "PUT", path, string(body), &out); code != http.StatusOK {
@@ -208,17 +208,13 @@ func TestPastingAProfile(t *testing.T) {
 			t.Errorf("kept %+v, text %q", p, p.LinkedIn.Text)
 		}
 	})
-	if out.Was.Name != "neu-hier-3" || out.Was.Text != "" {
-		t.Errorf("was %+v", out.Was)
-	}
-	// Undo.
-	undo, _ := json.Marshal(map[string]any{"as": out.Was})
-	if code := call(t, a, "PUT", path, string(undo), &out); code != http.StatusOK {
+	// Undo in the Edit menu puts back what they were.
+	if code := call(t, a, "POST", "/api/undo", "{}", nil); code != http.StatusOK {
 		t.Fatalf("undo: %d", code)
 	}
 	st.Read(func(d *store.Data) {
 		p := d.Person(added.New[0])
-		if p.Name != "neu-hier-3" || p.City != "" || p.LinkedIn.Text != "" || !p.ToRead {
+		if p.Name != "neu-hier-3" || p.City != "" || p.LinkedIn.Text != "" || p.ReadError != engine.NotIndexed {
 			t.Errorf("after Undo %+v", p)
 		}
 	})

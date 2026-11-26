@@ -67,3 +67,52 @@ export async function reads(page) {
       [path, n],
     )
 }
+
+// quiet resolves once the page asks nothing more: every request it sent
+// is answered, body and all, and two drawn frames after started none. It
+// gives the paths asked since the call before, so a walk proves a step
+// asked the app nothing, or something, by what the page did. A walk calls
+// it after a step whose requests it cannot name, like Undo that a field
+// may keep or hand on to the app. It counts from its first call on a
+// page, so a walk calls it once before the step.
+export function quiet(page) {
+  return page.evaluate(
+    () =>
+      new Promise((done) => {
+        if (!window.__flight) {
+          const flight = { open: 0, sent: 0, asked: [] }
+          window.__flight = flight
+          const send = window.fetch
+          window.fetch = function (input, init) {
+            flight.open++
+            flight.sent++
+            flight.asked.push(new URL(input instanceof Request ? input.url : String(input), location.href).pathname)
+            const out = send.call(this, input, init)
+            const end = () => {
+              flight.open--
+              dispatchEvent(new Event('walk-flight'))
+            }
+            out.then((r) => r.clone().arrayBuffer()).then(end, end)
+            return out
+          }
+        }
+        const flight = window.__flight
+        const check = () => {
+          if (flight.open > 0) {
+            addEventListener('walk-flight', check, { once: true })
+            return
+          }
+          const sent = flight.sent
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              if (flight.sent !== sent || flight.open > 0) return check()
+              const asked = flight.asked
+              flight.asked = []
+              done(asked)
+            }),
+          )
+        }
+        check()
+      }),
+  )
+}

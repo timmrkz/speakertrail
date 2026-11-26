@@ -146,7 +146,7 @@
   // over the page has asked.
   let clearing = $state(false)
   // What the last Clear took, while Cmd+Z can still bring it back and
-  // Cmd+Shift+Z take it again: whether it took words, the pictures, and
+  // Cmd+Y take it again: whether it took words, the pictures, and
   // whether it is undone now. The words go as one step of the field's
   // undo, and the pictures follow that step. Anything done after it ends
   // it, as in any editor.
@@ -511,7 +511,7 @@
   }
 
   // editing hears a key in the field before the browser makes the edit.
-  // Cmd+Z and Cmd+Shift+Z are the field's undo, see undo, and a word
+  // Cmd+Z and Cmd+Y are the field's undo, see undo, and a word
   // typed right after a word that was said gets a space in front of it,
   // as the letter is typed, so the two are one step.
   function editing(e: InputEvent) {

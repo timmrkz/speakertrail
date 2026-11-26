@@ -198,8 +198,15 @@ export interface PastedProfile {
 // take, and what it changed, see docs/api.md, Undo.
 export interface Undone {
   done: boolean
-  shows?: { kind: 'person'; id: number }
+  shows?: UndoThing
 }
+
+// What one step changed: a person, a search or an exclusion by its id,
+// the template, or a setting by its key, see store.Thing.
+export type UndoThing =
+  | { kind: 'person' | 'search' | 'exclusion'; id: number }
+  | { kind: 'template' }
+  | { kind: 'setting'; key: string }
 
 export interface LinksFound {
   new: number
@@ -888,9 +895,8 @@ export const api = {
   putTemplatePart: (name: string, variations: string[], at?: number) =>
     request<FirstMessageTemplate>('PUT', `/api/template/parts/${encodeURIComponent(name)}`, { variations, at }),
   deleteTemplatePart: (name: string) => request<FirstMessageTemplate>('DELETE', `/api/template/parts/${encodeURIComponent(name)}`, {}),
-  // Puts Tim's first template back, and putTemplate the one before.
+  // Puts Tim's first template back.
   resetTemplate: () => request<FirstMessageTemplate>('DELETE', '/api/template', {}),
-  putTemplate: (parts: TemplatePart[]) => request<FirstMessageTemplate>('PUT', '/api/template', { parts }),
   // The same seed makes the same picks.
   templateExample: (seed: number) => request<{ text: string }>('GET', `/api/template/example?seed=${seed}`).then((r) => r.text),
   startDraft: (id: number) => request<DraftJob>('POST', `/api/people/${id}/draft`, {}),

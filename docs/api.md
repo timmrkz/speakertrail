@@ -527,7 +527,6 @@ Tim's first template is `internal/store/first_message_template.json`.
 | `PUT /api/template/parts/{name}` | `{"variations": ["Hallo", ""], "at": 2}` gives the part its variations, or adds it at `at`, at the end without one. A part that is there keeps its place |
 | `DELETE /api/template/parts/{name}` | takes the part out. 404 for a part that is not there |
 | `DELETE /api/template` | puts Tim's first template back |
-| `PUT /api/template` | `{"parts": [...]}` puts a whole template in place, the one before a reset when it is undone |
 | `GET /api/template/example?seed=7` | `{"text": "Hallo [first_name], ..."}`, one message put together at random, with what the app and the model fill in shown by name. The same seed makes the same picks, so Settings keeps its example while the text of a variation changes. Adding or removing one, or a `#part#`, can change the picks after it. Without a seed the picks are new each time |
 
 Each change answers with the template:
@@ -617,15 +616,26 @@ page in WebKit, and put Tim's words in twice. See
 `POST /api/undo` takes back the last change Tim made, and `POST
 /api/redo` does again what the last undo took back. A change is one
 step: Connect, the notes, the first message, Draft, Not this person and
-a pasted profile, each on one person. A change that changed nothing is
-no step, and neither is anything a run does. Steps are kept while the
-app is open, up to 200, and a new step empties Redo. They answer what
-they changed, so the page opens it, or `done` false when there was
-nothing to take:
+a pasted profile, each on one person. So is a search added, paused or
+resumed, an exclusion added or removed, each change to the template,
+Put back the first template among them, a setting changed, and the
+browser profile LinkedIn opens in. A change that changed nothing is no
+step, and neither is anything a run does. Steps are kept while the app
+is open, up to 200, and a new step empties Redo. They answer what they
+changed, so the page opens it, or `done` false when there was nothing
+to take:
 
 ```json
 { "done": true, "shows": { "kind": "person", "id": 7 } }
 ```
+
+`kind` is `person`, `search` or `exclusion` with its `id`, `template`,
+or `setting` with its `key`, `linkedin_opens` for where LinkedIn opens.
+The page opens the person, Searches, or Settings. A search or an
+exclusion that was added is taken out by its undo, and one removed
+comes back with its id. A search a run took since, one a run under way
+takes, or one that found someone, stays, and so does an exclusion whose words were added again
+since: the undo answers 409, as below.
 
 An undo of a pasted page stops the draft the paste started, if it
 still runs, see `draft.Drafter.Undone`. An undo puts back only the
@@ -634,5 +644,6 @@ writes nothing and answers 409, "This has changed since, so it cannot be
 taken back", and every step behind it in the same list goes, since they
 rest on it.
 
-Searches, exclusions, the template, the settings and the people a run
-or a pasted page added follow, see issue #71. Until then they keep their Undo toasts.
+The people adding links or a pasted page added follow, see issue #71.
+Until then they keep their Undo toasts. The language model picked in
+Settings is no step, since picking one loads it.

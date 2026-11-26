@@ -7,7 +7,7 @@ import type { Plugin } from 'vite'
 import type {
   Activity, Appearance, DraftJob, FitLine, FitPart, FitSignal, Json, Person, PersonDetail, PrivateEvent, Profile,
   Run, RunFailure, Setting, Source, SourceStatus, UpdateChannel, UpdateState,
-  FirstMessageTemplate, TemplateField, TemplatePart,
+  FirstMessageTemplate, TemplateField, TemplatePart, UndoThing,
 } from '../src/lib/api.ts'
 import {
   addDays, berlin, buildRuns, buildSettings, buildSources, EVENT_SEEDS, hoursAgo, PERSON_INFO,
@@ -820,7 +820,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const p = s.people.find((x) => x.id === Number(m[1]))
     if (!p) return err(404, 'No such person')
     if (b.connected !== undefined && typeof b.connected !== 'boolean') return err(400, 'connected must be true or false')
-    edit(p, () => {
+    edit(s, { kind: 'person', id: p.id }, () => {
       if (typeof b.notes === 'string') p.notes = b.notes
       if (typeof b.draft === 'string') {
         p.draft = b.draft
@@ -836,7 +836,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const prof = p?.profiles.find((x) => x.id === Number(m[1]))
     if (!p || !prof) return err(404, 'No such profile')
     if (b.review !== 'open' && b.review !== 'confirmed' && b.review !== 'rejected') return err(400, 'review must be open, confirmed or rejected')
-    edit(p, () => {
+    edit(s, { kind: 'person', id: p.id }, () => {
       p.profiles = p.profiles.map((x) => (x === prof ? { ...x, review: b.review as Profile['review'] } : x))
     })
     return { status: 204 }
@@ -962,18 +962,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     const fields = Object.fromEntries(TEMPLATE_FIELDS.map((f) => [f.name, f.name === 'reaction_part' ? ' [reaction]' : `[${f.name}]`]))
     return ok({ text: expand(fields, 'origin', 0, seed ? seeded(Number(seed)) : Math.random) })
   }],
-  ['DELETE', /^\/api\/template$/, () => {
-    template = startTemplate()
+  ['DELETE', /^\/api\/template$/, (s) => {
+    edit(s, { kind: 'template' }, () => (template = startTemplate()))
     return ok(templateJSON())
   }],
-  ['PUT', /^\/api\/template$/, (_s, _m, _q, b) => {
-    const parts = (b.parts as TemplatePart[]).map((p) => ({ name: p.name, variations: [...p.variations] }))
-    const wrong = checkTemplate(parts)
-    if (wrong) return err(400, wrong)
-    template = parts
-    return ok(templateJSON())
-  }],
-  ['PUT', /^\/api\/template\/parts\/([^/]+)$/, (_s, m, _q, b) => {
+  ['PUT', /^\/api\/template\/parts\/([^/]+)$/, (s, m, _q, b) => {
     const name = decodeURIComponent(m[1])
     const parts = template.map((p) => ({ ...p }))
     const part = { name, variations: [...(b.variations as string[])] }
@@ -982,15 +975,15 @@ const ROUTES: [string, RegExp, Handler][] = [
     else parts.splice(typeof b.at === 'number' && b.at >= 0 && b.at <= parts.length ? b.at : parts.length, 0, part)
     const wrong = checkTemplate(parts)
     if (wrong) return err(400, wrong)
-    template = parts
+    edit(s, { kind: 'template' }, () => (template = parts))
     return ok(templateJSON())
   }],
-  ['DELETE', /^\/api\/template\/parts\/([^/]+)$/, (_s, m) => {
+  ['DELETE', /^\/api\/template\/parts\/([^/]+)$/, (s, m) => {
     const name = decodeURIComponent(m[1])
     if (!template.some((p) => p.name === name)) return err(404, `The template has no part ${name}.`)
     const why = keptWhy(name)
     if (why) return err(400, why)
-    template = template.filter((p) => p.name !== name)
+    edit(s, { kind: 'template' }, () => (template = template.filter((p) => p.name !== name)))
     return ok(templateJSON())
   }],
   ['GET', /^\/api\/drafts$/, (s) => ok([...drafts.values()].map((d) => draftJob(s, d)))],
@@ -1104,13 +1097,14 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (phrase.length > 60) return err(400, 'An exclusion is at most 60 characters')
     if (s.exclusions.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())) return err(409, 'This exclusion is already there')
     const id = s.nextId.exclusion++
-    s.exclusions.push({ id, phrase })
+    edit(s, { kind: 'exclusion', id }, () => s.exclusions.push({ id, phrase }))
     return { status: 201, body: exclusionsOf(s).find((x) => x.id === id) }
   }],
   ['DELETE', /^\/api\/exclusions\/(\d+)$/, (s, m) => {
-    const i = s.exclusions.findIndex((x) => x.id === Number(m[1]))
+    const id = Number(m[1])
+    const i = s.exclusions.findIndex((x) => x.id === id)
     if (i < 0) return err(404, 'Not found')
-    s.exclusions.splice(i, 1)
+    edit(s, { kind: 'exclusion', id }, () => s.exclusions.splice(i, 1))
     return { status: 204 }
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
@@ -1125,7 +1119,7 @@ const ROUTES: [string, RegExp, Handler][] = [
         category: kind === 'profile_search' ? 'Profile search' : 'Search', city, status: 'candidate', fetch_mode: 'auto', notes: '', checks: 0, empty_checks_in_row: 0, points: kind === 'profile_search' ? 2 : 0,
         health: 'never', health_note: '', discovered_from: 'Added by Tim', last_found: null, last_mode: 'http', last_error: '', last_http: 0, checked_hours_ago: null,
       }
-      s.sources.push(m)
+      edit(s, { kind: 'search', id: m.id }, () => s.sources.push(m))
       return { status: 201, body: sourceOut(m) }
     }
     const url = typeof b.url === 'string' ? b.url.trim() : ''
@@ -1143,11 +1137,13 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['PATCH', /^\/api\/sources\/(\d+)$/, (s, m, _q, b) => {
     const src = s.sources.find((x) => x.id === Number(m[1]))
     if (!src) return err(404, 'No such source')
-    if (typeof b.status === 'string') src.status = b.status as SourceStatus
-    if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
-    if (typeof b.notes === 'string') src.notes = b.notes
-    if (typeof b.name === 'string') src.name = b.name
-    if (typeof b.lists === 'string') src.kind = b.lists === 'startups' ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing'
+    edit(s, { kind: 'search', id: src.id }, () => {
+      if (typeof b.status === 'string') src.status = b.status as SourceStatus
+      if (b.fetch_mode === 'auto' || b.fetch_mode === 'http' || b.fetch_mode === 'browser') src.fetch_mode = b.fetch_mode
+      if (typeof b.notes === 'string') src.notes = b.notes
+      if (typeof b.name === 'string') src.name = b.name
+      if (typeof b.lists === 'string') src.kind = b.lists === 'startups' ? 'portfolio' : b.lists === 'businesses' ? 'directory' : 'listing'
+    })
     return ok(sourceOut(src, s))
   }],
   ['POST', /^\/api\/sources\/(\d+)\/check$/, (s, m) => {
@@ -1201,8 +1197,10 @@ const ROUTES: [string, RegExp, Handler][] = [
       if (!c) return err(400, `"${String(b.value).trim()}" is no city in NRW the app knows, like Köln, Bonn or Düsseldorf`)
       b.value = c
     }
-    row.value = b.value as Json
-    row.updated_at = clockDate().toISOString()
+    edit(s, { kind: 'setting', key: row.key }, () => {
+      row.value = b.value as Json
+      row.updated_at = clockDate().toISOString()
+    })
     return ok(row)
   }],
   // Like the app: whether the Exa key is saved, never the key.
@@ -1212,10 +1210,10 @@ const ROUTES: [string, RegExp, Handler][] = [
     return { status: 204 }
   }],
   ['GET', /^\/api\/linkedin$/, () => ok(where())],
-  ['PUT', /^\/api\/linkedin$/, (_s, _m, _q, b) => {
+  ['PUT', /^\/api\/linkedin$/, (s, _m, _q, b) => {
     const known = browsers.find((x) => x.app === b.app)?.profiles.some((p) => p.folder === b.folder)
     if (!known) return err(400, `There is no such profile in ${b.app}`)
-    Object.assign(linkedin, { app: String(b.app), folder: String(b.folder) })
+    edit(s, { kind: 'setting', key: 'linkedin_opens' }, () => Object.assign(linkedin, { app: String(b.app), folder: String(b.folder) }))
     return ok(where())
   }],
   // The mock opens nothing. It answers as the app does, a moment later.
@@ -1405,33 +1403,91 @@ function seeded(seed: number): () => number {
 }
 
 // Undo and Redo, like internal/store/history.go: a change Tim makes to a
-// person is one step, the fields it changed as they were before and
-// after. An undo puts back only those, and refuses when one changed since.
+// person, a search, an exclusion, the template or a setting is one step,
+// the fields it changed as they were before and after. An undo puts back
+// only those, and refuses when one changed since. A search or an
+// exclusion added is taken out by its undo, and one removed comes back
+// with its id.
 type Fields = Record<string, string | undefined>
 interface UndoStep {
-  id: number
-  before: Fields
-  after: Fields
+  thing: UndoThing
+  // Undefined is a thing that is not there.
+  before?: Fields
+  after?: Fields
 }
 const undoSteps = { undo: [] as UndoStep[], redo: [] as UndoStep[] }
 // The drafts a paste started, by person, with when the page was kept.
 const pastedDrafts = new Map<number, string | undefined>()
-function fieldsOf(p: PersonRow): Fields {
+function fieldsOf(o: object): Fields {
   const out: Fields = {}
-  for (const [k, v] of Object.entries(p)) out[k] = JSON.stringify(v)
+  for (const [k, v] of Object.entries(o)) out[k] = JSON.stringify(v)
   return out
 }
-function edit(p: PersonRow, fn: () => void) {
-  const before = fieldsOf(p)
-  fn()
-  const after = fieldsOf(p)
-  const step: UndoStep = { id: p.id, before: {}, after: {} }
-  for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
-    if (before[k] === after[k]) continue
-    step.before[k] = before[k]
-    step.after[k] = after[k]
+// The list a person, a search or an exclusion is kept in.
+function listOf(s: State, kind: 'person' | 'search' | 'exclusion'): { id: number }[] {
+  return kind === 'person' ? s.people : kind === 'search' ? s.sources : s.exclusions
+}
+function snap(s: State, t: UndoThing): Fields | undefined {
+  switch (t.kind) {
+    case 'template':
+      return { parts: JSON.stringify(template) }
+    case 'setting': {
+      if (t.key === 'linkedin_opens') return { value: JSON.stringify(linkedin) }
+      const row = s.settings.find((x: Setting) => x.key === t.key)
+      return row && { value: JSON.stringify(row.value) }
+    }
+    default: {
+      const x = listOf(s, t.kind).find((y) => y.id === t.id)
+      return x && fieldsOf(x)
+    }
   }
-  if (!Object.keys(step.after).length) return
+}
+function place(s: State, t: UndoThing, now: Fields | undefined, put: Fields | undefined) {
+  const parsed = (f: Fields) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined).map(([k, v]) => [k, JSON.parse(v!)]))
+  if (t.kind === 'template') {
+    template = JSON.parse(put!.parts!)
+    return
+  }
+  if (t.kind === 'setting') {
+    const value = JSON.parse(put!.value!)
+    if (t.key === 'linkedin_opens') Object.assign(linkedin, value)
+    else s.settings.find((x: Setting) => x.key === t.key)!.value = value
+    return
+  }
+  const list = listOf(s, t.kind)
+  const at = list.findIndex((y) => y.id === t.id)
+  if (!put) {
+    list.splice(at, 1)
+    return
+  }
+  if (!now) {
+    const i = list.findIndex((y) => y.id > t.id)
+    list.splice(i < 0 ? list.length : i, 0, parsed(put) as { id: number })
+    return
+  }
+  const row = list[at] as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(put)) {
+    if (v === undefined) delete row[k]
+    else row[k] = JSON.parse(v)
+  }
+}
+function edit(s: State, t: UndoThing, fn: () => void) {
+  const before = snap(s, t)
+  fn()
+  const after = snap(s, t)
+  let step: UndoStep
+  if (!before || !after) {
+    if (!before && !after) return
+    step = { thing: t, before, after }
+  } else {
+    step = { thing: t, before: {}, after: {} }
+    for (const k of new Set([...Object.keys(before), ...Object.keys(after)])) {
+      if (before[k] === after[k]) continue
+      step.before![k] = before[k]
+      step.after![k] = after[k]
+    }
+    if (!Object.keys(step.after!).length) return
+  }
   undoSteps.undo = [...undoSteps.undo, step].slice(-200)
   undoSteps.redo = []
 }
@@ -1441,28 +1497,25 @@ function undoStep(s: State, back: boolean) {
   const step = undoSteps[from].at(-1)
   if (!step) return ok({ done: false })
   const [want, put] = back ? [step.after, step.before] : [step.before, step.after]
-  const p = s.people.find((x) => x.id === step.id)
-  const now = p && fieldsOf(p)
-  if (!p || !now || Object.keys(want).some((k) => now[k] !== want[k])) {
+  const now = snap(s, step.thing)
+  if (!now !== !want || (want && now && Object.keys(want).some((k) => now[k] !== want[k]))) {
     undoSteps[from] = []
     return err(409, 'This has changed since, so it cannot be taken back')
   }
-  const row = p as unknown as Record<string, unknown>
-  for (const [k, v] of Object.entries(put)) {
-    if (v === undefined) delete row[k]
-    else row[k] = JSON.parse(v)
-  }
+  place(s, step.thing, now, put)
   undoSteps[from] = undoSteps[from].slice(0, -1)
   undoSteps[to] = [...undoSteps[to], step]
   // Like draft.Drafter.Undone: an undo of the page whose paste started a
   // draft stops it.
-  const started = pastedDrafts.get(p.id)
-  if (back && started !== undefined && started !== p.text_at) {
+  const t = step.thing
+  const p = t.kind === 'person' ? s.people.find((x) => x.id === t.id) : undefined
+  const started = p && pastedDrafts.get(p.id)
+  if (p && back && started !== undefined && started !== p.text_at) {
     pastedDrafts.delete(p.id)
     const d = drafts.get(p.id)
     if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
   }
-  return ok({ done: true, shows: { kind: 'person', id: p.id } })
+  return ok({ done: true, shows: step.thing })
 }
 
 // Spelled the way internal/search spells a name, without its initials
@@ -1499,7 +1552,7 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>, added = fal
     p.read_error = undefined
   }
   if (added) keep()
-  else edit(p, keep)
+  else edit(s, { kind: 'person', id: p.id }, keep)
   // Like the app: out of the run that had not read it yet, which no
   // longer waits for it.
   for (const q of reads.queue.filter((x) => x.id === p.id)) {
@@ -1551,7 +1604,7 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   if (ran >= whole) {
     if (!d.kept && p) {
       d.kept = true
-      edit(p, () => {
+      edit(s, { kind: 'person', id: p.id }, () => {
         p.draft = text
         p.drafted_at = new Date(d.from + whole).toISOString()
       })

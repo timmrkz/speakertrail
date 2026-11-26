@@ -1,13 +1,14 @@
 <script lang="ts">
   // The template a first message is put together from, in Settings. Each
   // part has its variations, and a draft picks one of each at random. A
-  // variation saves the moment it is left, and Undo in the toast puts the
-  // one before back, as for every setting. The app checks every change
-  // and says what is wrong, the window only shows it. See
+  // variation saves the moment it is left, and Undo in the Edit menu puts
+  // the one before back, as for every setting. The app checks every
+  // change and says what is wrong, the window only shows it. See
   // internal/store/template.go and docs/api.md, First message template.
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api, type FirstMessageTemplate, type TemplatePart } from '../api'
   import { plural } from '../format'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
   import { errorText, toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
@@ -15,6 +16,21 @@
 
   const tpl = new Load<FirstMessageTemplate>()
   tpl.run(api.template)
+  // What Undo and Redo in the Edit menu took back or did again shows at
+  // once, in the example too. Only a change after Settings opened counts.
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => {
+      errors = {}
+      void tpl.run(api.template, { quiet: true }).then(showExample)
+    })
+  })
+  // The template comes into view when Undo or Redo changed it.
+  let section: HTMLElement | undefined = $state()
+  $effect(() => {
+    if (undoHistory.reveal((t) => t.kind === 'template')) void tick().then(() => section && bringIntoView(section, 'nearest'))
+  })
 
   // One message put together by the app, with what the app and the model
   // fill in shown by name, so Tim sees how the parts fit. It keeps its
@@ -75,27 +91,22 @@
 
   const latest = (name: string) => tpl.data?.parts.find((p) => p.name === name)?.variations ?? []
 
-  // Gives a part the variations make makes of the ones it has then, and
-  // Undo the ones before.
-  async function put(name: string, make: (was: string[]) => string[], said: string) {
-    let was: string[] = []
-    const ok = await change(name, () => {
-      was = latest(name)
+  // Gives a part the variations make makes of the ones it has then.
+  function put(name: string, make: (was: string[]) => string[]): Promise<boolean> {
+    return change(name, () => {
+      const was = latest(name)
       const next = make(was)
       return JSON.stringify(next) === JSON.stringify(was) ? undefined : api.putTemplatePart(name, next)
     })
-    if (ok) {
-      toast.show(said, 'plain', { label: 'Undo', run: () => void change(name, () => api.putTemplatePart(name, was)) })
-    }
   }
 
   function edited(name: string, i: number, e: FocusEvent) {
     const value = (e.currentTarget as HTMLTextAreaElement).value
-    put(name, (was) => was.map((x, j) => (j === i ? value : x)), `Saved ${name}`)
+    put(name, (was) => was.map((x, j) => (j === i ? value : x)))
   }
 
   function removeVariation(name: string, i: number) {
-    put(name, (was) => was.filter((_, j) => j !== i), `Removed a variation of ${name}`)
+    put(name, (was) => was.filter((_, j) => j !== i))
   }
 
   // Escape puts back what is saved.
@@ -112,24 +123,19 @@
   async function addVariation(name: string, e: SubmitEvent) {
     e.preventDefault()
     const value = adding[name] ?? ''
-    await put(name, (was) => [...was, value], value ? `Added a variation to ${name}` : `Added an empty variation to ${name}`)
+    await put(name, (was) => [...was, value])
     if (!errors[name]) adding = { ...adding, [name]: '' }
   }
 
   // The × of a part the app keeps says why instead.
-  async function removePart(part: TemplatePart, at: number, e: MouseEvent) {
+  function removePart(part: TemplatePart, e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
     if (part.kept) {
       toast.show(part.kept)
       return
     }
-    if (await change(part.name, () => api.deleteTemplatePart(part.name))) {
-      toast.show(`Removed ${part.name}`, 'plain', {
-        label: 'Undo',
-        run: () => void change(part.name, () => api.putTemplatePart(part.name, part.variations, at)),
-      })
-    }
+    void change(part.name, () => api.deleteTemplatePart(part.name))
   }
 
   let newPart = $state('')
@@ -155,11 +161,8 @@
     }
   }
 
-  async function reset() {
-    const was = (tpl.data?.parts ?? []).map(({ name, variations }) => ({ name, variations }))
-    if (await change('', api.resetTemplate)) {
-      toast.show('Put back the first template', 'plain', { label: 'Undo', run: () => void change('', () => api.putTemplate(was)) })
-    }
+  function reset() {
+    void change('', api.resetTemplate)
   }
 
   // The part that is open, one at a time, so the list stays short enough
@@ -207,7 +210,7 @@
   const fieldBy = (by: string) => (by === 'model' ? 'the language model' : 'the app')
 </script>
 
-<section class="group template" aria-labelledby="head-template">
+<section class="group template" aria-labelledby="head-template" bind:this={section}>
   <div class="headrow">
     <h2 id="head-template">Template</h2>
     <span class="ask">
@@ -241,7 +244,7 @@
     </div>
 
     <div class="list parts">
-      {#each tpl.data.parts as part, at (part.name)}
+      {#each tpl.data.parts as part (part.name)}
         <details class="part" bind:this={rows[part.name]} bind:open={() => openPart === part.name, (v) => toggled(part.name, v)}>
           <summary>
             <span class="turn" aria-hidden="true"><Icon name="chevron" size={14} /></span>
@@ -250,7 +253,7 @@
             <!-- The app says why a part stays. Its × says it when pressed. -->
             <button class="btn icon quiet remove-part" type="button" aria-label="Remove {part.name}"
               aria-disabled={part.kept ? 'true' : undefined} disabled={working === part.name}
-              title={part.kept ?? 'Take the part out. Undo brings it back'} onclick={(e) => removePart(part, at, e)}>
+              title={part.kept ?? 'Take the part out. Undo brings it back'} onclick={(e) => removePart(part, e)}>
               <Icon name="x" />
             </button>
           </summary>

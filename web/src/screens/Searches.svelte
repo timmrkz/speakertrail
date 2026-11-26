@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte'
   import { api, type Source } from '../lib/api'
   import { fmtAgo, fmtDay, plural } from '../lib/format'
+  import { bringIntoView, undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -19,6 +21,23 @@
   })
   $effect(() => {
     document.title = 'Searches · Speaker Trail'
+  })
+  // What Undo and Redo in the Edit menu took back or did again shows at
+  // once. Only a change after Searches opened counts.
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => searches.run(() => api.sources({ kind: 'profile_search' }), { quiet: true }))
+  })
+  // A search Undo or Redo changed comes into view once the list holds it.
+  $effect(() => {
+    const ids = (searches.data ?? []).map((s) => s.id)
+    const t = undoHistory.reveal((t) => t.kind === 'search' && ids.includes(t.id))
+    if (t?.kind !== 'search') return
+    void tick().then(() => {
+      const row = document.querySelector<HTMLElement>(`li.search[data-id="${t.id}"]`)
+      if (row) bringIntoView(row)
+    })
   })
 
   // A person's "Found by" links here with the search's words, so the
@@ -68,7 +87,7 @@
     }
   }
 
-  // Pausing is undone with the same button.
+  // Pausing is undone with the same button, or Undo in the Edit menu.
   let busy = $state<number | null>(null)
   async function toggle(s: Source) {
     const status = s.status === 'retired' ? 'candidate' : 'retired'
@@ -129,7 +148,7 @@
     {:else}
       <ul class="list">
         {#each shown as s (s.id)}
-          <li class="search" class:paused={s.status === 'retired'}>
+          <li class="search" class:paused={s.status === 'retired'} data-id={s.id}>
             <span class="what">
               <b class="ellipsis">{s.query}</b>
               <span class="ellipsis sub">{#if s.people_connected}<span class="connected">{s.people_connected} connected</span>{' · '}{/if}{line(s)}</span>

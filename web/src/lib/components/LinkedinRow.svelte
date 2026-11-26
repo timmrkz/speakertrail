@@ -1,16 +1,34 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte'
   import { api, type LinkedinWhere } from '../api'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { errorText } from '../toast.svelte'
   import Pick from './Pick.svelte'
 
   // Where the LinkedIn button opens a profile: one of the browser profiles
   // on this Mac, the one logged in to LinkedIn. The list is read from the
   // browsers each time Settings opens, so a profile made since shows up.
-  // A pick saves at once, and Undo puts the one before it back.
+  // A pick saves at once, and Undo in the Edit menu puts the one before
+  // it back.
   let where = $state<LinkedinWhere | null>(null)
   let status = $state<'idle' | 'saving' | 'saved'>('idle')
   let error = $state('')
-  let before = $state<{ app: string; folder: string } | null>(null)
+
+  // What Undo and Redo took back or did again shows at once. Only a
+  // change after Settings opened counts.
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => {
+      status = 'idle'
+      api.linkedin().then((w) => (where = w)).catch((e) => (error = errorText(e)))
+    })
+  })
+  // Where LinkedIn opens comes into view when Undo or Redo changed it.
+  let section: HTMLElement | undefined = $state()
+  $effect(() => {
+    if (undoHistory.reveal((t) => t.kind === 'setting' && t.key === 'linkedin_opens')) void tick().then(() => section && bringIntoView(section))
+  })
 
   // The LinkedIn button sends here when nothing is chosen, so the menu is
   // brought into view and focused, ready to pick.
@@ -38,15 +56,13 @@
     return p ? `${where?.app} · ${p.name}` : ''
   })
 
-  async function choose(v: string, undoing = false) {
+  async function choose(v: string) {
     if (!where || !v) return
     const [app, folder] = JSON.parse(v) as [string, string]
-    const was = where.known ? { app: where.app, folder: where.folder } : null
     status = 'saving'
     error = ''
     try {
       where = await api.setLinkedin(app, folder)
-      before = undoing ? null : was
       status = 'saved'
     } catch (e) {
       status = 'idle'
@@ -55,7 +71,7 @@
   }
 </script>
 
-<section class="group" id="linkedin">
+<section class="group" id="linkedin" bind:this={section}>
   <h2>LinkedIn</h2>
   <div class="list">
     <div class="setting">
@@ -79,8 +95,7 @@
       <p class="foot small" aria-live="polite">
         {#if error}<span class="field-error">{error}</span>
         {:else if status === 'saving'}<span class="faint">Saving</span>
-        {:else if status === 'saved'}<span class="faint">Saved</span>{#if before}<button class="link" type="button"
-            onclick={() => before && choose(value(before.app, before.folder), true)}>Undo</button>{/if}{/if}
+        {:else if status === 'saved'}<span class="faint">Saved</span>{/if}
       </p>
     </div>
   </div>
@@ -99,8 +114,6 @@
   .editor { display: flex; justify-content: flex-end; min-width: 0; }
   .foot { grid-column: 1 / -1; display: flex; gap: var(--gap-control); justify-content: flex-end; margin: 0; }
   .foot:empty { display: none; }
-  .link { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-weight: 600; }
-  .link:hover { text-decoration: underline; }
   @media (max-width: 760px) {
     .setting { grid-template-columns: minmax(0, 1fr); }
     .editor, .foot { justify-content: flex-start; }

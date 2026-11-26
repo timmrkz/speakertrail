@@ -43,13 +43,13 @@ func (a *API) addExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
-	err := a.Store.Update(func(d *store.Data) error {
+	err := a.Store.Add(func(d *store.Data) (store.Thing, error) {
 		x, err := d.AddExclusion(body.Phrase, a.Store.Now())
 		if err != nil {
-			return err
+			return store.Thing{}, err
 		}
 		id = x.ID
-		return nil
+		return store.ExclusionThing(id), nil
 	})
 	switch {
 	case errors.Is(err, store.ErrExclusionExists):
@@ -77,13 +77,14 @@ func (a *API) addExclusion(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusCreated, out)
 }
 
-// deleteExclusion removes one. The people it hid come back.
+// deleteExclusion removes one. The people it hid come back. Undo in the
+// Edit menu puts it back.
 func (a *API) deleteExclusion(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	if a.update(w, r, func(d *store.Data) error {
+	if a.edit(w, r, store.ExclusionThing(id), func(d *store.Data) error {
 		if !d.DeleteExclusion(id) {
 			return errNotFound
 		}

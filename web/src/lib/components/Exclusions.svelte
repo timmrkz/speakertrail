@@ -1,16 +1,33 @@
 <script lang="ts">
+  import { tick, untrack } from 'svelte'
   import { api, type Exclusion } from '../api'
   import { plural } from '../format'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
   import { errorText, fault, toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
 
   // Tim's exclusions: words and phrases, like "Online Marketing", that
   // leave a person out of profile searches and People. Removing one brings
-  // the people it hid back, and Undo adds it again.
+  // the people it hid back, and Undo in the Edit menu puts it back.
   const list = new Load<Exclusion[]>()
   $effect(() => {
     list.run(api.exclusions)
+  })
+  // What Undo and Redo took back or did again shows at once. The list
+  // opens when it was an exclusion, and comes into view, so the change is
+  // seen, whichever page the step was taken on.
+  let open = $state(false)
+  let box: HTMLDetailsElement | undefined = $state()
+  const undoneAt = undoHistory.changed
+  $effect(() => {
+    if (undoHistory.changed === undoneAt) return
+    untrack(() => list.run(api.exclusions, { quiet: true }))
+  })
+  $effect(() => {
+    if (!undoHistory.reveal((t) => t.kind === 'exclusion')) return
+    open = true
+    void tick().then(() => box && bringIntoView(box, 'nearest'))
   })
   let all = $derived(list.data ?? [])
   let hiding = $derived(all.reduce((n, x) => n + x.people, 0))
@@ -55,7 +72,6 @@
     try {
       await api.deleteExclusion(x.id)
       list.data = all.filter((y) => y.id !== x.id)
-      toast.show(`Removed ${x.phrase}`, 'plain', { label: 'Undo', run: () => void add(x.phrase) })
     } catch (err) {
       fault(err)
     } finally {
@@ -64,7 +80,7 @@
   }
 </script>
 
-<details class="exclusions">
+<details class="exclusions" bind:open bind:this={box}>
   <summary title="Words that leave a person out of profile searches and People, matched in their headline and roles. People you connected with always stay">
     <span class="title">Exclusions</span>
     {#if list.data}<span class="faint small count">{all.length}{hiding ? `, hiding ${plural(hiding, 'person', 'people')}` : ''}</span>{/if}
@@ -77,7 +93,7 @@
         <li class="phrase">
           <span class="ellipsis">{x.phrase}</span>
           {#if x.people}<span class="num" title="People it hides now">{x.people}</span>{/if}
-          <button class="remove" type="button" aria-label="Remove {x.phrase}" title="Remove. The people it hides come back"
+          <button class="remove" type="button" aria-label="Remove {x.phrase}" title="Remove. The people it hides come back, and Undo puts it back"
             disabled={removing === x.id} onclick={() => remove(x)}><Icon name="x" size={14} /></button>
         </li>
       {/each}

@@ -113,3 +113,13 @@ func (d *Data) Hidden() map[int64]string {
 	}
 	return out
 }
+
+// exclusion gives the exclusion with the id, nil when there is none.
+func (d *Data) exclusion(id int64) *Exclusion {
+	for _, x := range d.Exclusions {
+		if x.ID == id {
+			return x
+		}
+	}
+	return nil
+}

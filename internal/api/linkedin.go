@@ -101,7 +101,7 @@ func (a *API) setLinkedin(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "There is no such profile in "+in.App)
 		return
 	}
-	if !a.update(w, r, func(d *store.Data) error {
+	if !a.edit(w, r, store.SettingThing(store.LinkedInOpensKey), func(d *store.Data) error {
 		d.LinkedInOpens = in
 		return nil
 	}) {

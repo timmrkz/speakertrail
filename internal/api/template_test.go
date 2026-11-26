@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,17 +64,23 @@ func TestTimEditsTheTemplate(t *testing.T) {
 	if code := call(t, a, "DELETE", "/api/template/parts/wave", "", &tj); code != http.StatusOK || strings.Contains(names(tj), "wave") {
 		t.Errorf("a part taken out: %d %s", code, names(tj))
 	}
-	// Undo puts it back where it was.
-	call(t, a, "PUT", "/api/template/parts/wave", `{"variations":["👋"],"at":1}`, &tj)
+	// Undo in the Edit menu puts it back where it was.
+	if code := call(t, a, "POST", "/api/undo", "{}", nil); code != http.StatusOK {
+		t.Errorf("undo of the part taken out: %d", code)
+	}
+	call(t, a, "GET", "/api/template", "", &tj)
 	before := tj
+	if !strings.Contains(names(before), "wave") {
+		t.Errorf("after undo the parts are %s, want wave back", names(before))
+	}
 	tj = templateJSON{}
 	if code := call(t, a, "DELETE", "/api/template", "", &tj); code != http.StatusOK || tj.Changed || names(tj) != first {
 		t.Errorf("reset: %d %s", code, names(tj))
 	}
-	raw, _ := json.Marshal(map[string]any{"parts": before.Parts})
-	body := string(raw)
-	if code := call(t, a, "PUT", "/api/template", body, &tj); code != http.StatusOK || names(tj) != names(before) {
-		t.Errorf("reset undone: %d %s", code, names(tj))
+	call(t, a, "POST", "/api/undo", "{}", nil)
+	call(t, a, "GET", "/api/template", "", &tj)
+	if names(tj) != names(before) || !tj.Changed {
+		t.Errorf("reset undone: %s", names(tj))
 	}
 	var ex map[string]string
 	if code := call(t, a, "GET", "/api/template/example", "", &ex); code != http.StatusOK ||

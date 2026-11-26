@@ -90,12 +90,15 @@ jobs:
       # apt, not dpkg, puts the kept packages in, since it orders them: the
       # image holds libasound2t64 older than the kept libasound2-data, which
       # breaks it, and dpkg -i unpacked that first and stopped (#87's run
-      # on 26 November 2026). --no-download keeps it to the files kept, and
-      # --no-install-recommends to what Playwright put in, which asks for
-      # no recommended packages either.
+      # on 26 November 2026). --no-install-recommends keeps it to what
+      # Playwright put in, which asks for no recommended packages either.
+      # apt fetches what the kept files leave out, after reading the lists
+      # Playwright read when they were kept. With --no-download it stopped
+      # on main at 81649e4, "Unable to fetch some archives", the first run
+      # to find the packages kept, without saying which it lacked.
       - name: Chromium for the walks, its packages kept
         if: steps.debs.outputs.cache-hit == 'true'
-        run: sudo apt-get install -y -q --no-download --no-install-recommends ~/debs/*.deb && npx playwright install --only-shell chromium
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends ~/debs/*.deb && npx playwright install --only-shell chromium
       - name: Walks
         working-directory: .
         run: make walks

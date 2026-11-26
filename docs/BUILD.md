@@ -131,8 +131,10 @@ keychain. The walks need Playwright's headless shell of Chromium alone.
 The system packages the jobs need, GTK and WebKit for `go` and what
 Chromium needs for `web`, came from Ubuntu's mirror on every run, in 30
 s to over three minutes (#97). What apt fetched is now kept in GitHub's
-cache as `.deb` files and installed from there with `dpkg`, with no
-mirror asked. Since what apt fetches depends on what the runner's image
+cache as `.deb` files and installed from there, GTK's with `dpkg`,
+with no mirror asked. Chromium's go in with apt, which reads the
+mirror's lists first and fetches only what the kept files leave out.
+Since what apt fetches depends on what the runner's image
 has installed, the cache is kept by the image's version, and for
 Chromium by `web/package-lock.json` too, which pins Playwright. Only
 main saves it. A new image fetches from the mirror once.

@@ -510,6 +510,11 @@ variation stands for a variation of the part `name`. An empty variation
 leaves the part out now and then, a part with no variation at all leaves
 it out always, and a variation written twice is picked twice as often. The app fills `#first_name#`, the language model `#portrait#`,
 `#reason#` and `#reaction_part#`, a space and the reaction or nothing.
+The first name is read from the name with the profile's link, skipping
+titles like "Dr. med." and leaving out degrees, pronouns and taglines,
+see [names.md](names.md). Where neither holds a first name for sure,
+like "Dr. Beispiel", `…` stands for Tim to write, and the prompt's
+`{{first_name}}` is the whole name.
 What they fill in is put in as it is, never read for `#name#` again.
 Tim's first template is `internal/store/first_message_template.json`.
 

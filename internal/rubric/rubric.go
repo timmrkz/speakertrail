@@ -15,11 +15,13 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/timmrkz/speakertrail/internal/names"
 )
 
 // Version changes whenever the rubric does, its words or its labels, so
 // everyone is scored again.
-const Version = 5
+const Version = 6
 
 // Where a passage comes from.
 const (
@@ -387,16 +389,12 @@ func splitRoles(roles string) []string {
 var largeForm = words(`ag|se|kgaa|group|gruppe|holding|konzern`)
 
 // namedAfter tells whether a small company carries the person's family
-// name.
+// name, without the titles and degrees around it.
 func namedAfter(org, name string) bool {
 	if largeForm.MatchString(org) {
 		return false
 	}
-	parts := strings.Fields(name)
-	if len(parts) < 2 {
-		return false
-	}
-	last := parts[len(parts)-1]
+	last := names.Family(name)
 	if len([]rune(last)) < 3 {
 		return false
 	}

@@ -1,6 +1,7 @@
 package rubric_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +57,20 @@ func TestYoung(t *testing.T) {
 	}
 	if s := rubric.Signals(rubric.Person{BornAbout: 1996, AgeReason: "First job from 2018", Now: now}); len(s) != 0 {
 		t.Errorf("about 30: %+v", s)
+	}
+}
+
+// A company carries someone's family name whatever stands around it, a
+// title before or a degree after.
+func TestNamedAfterThemWithTitles(t *testing.T) {
+	for _, name := range []string{"Dr. Erika Beispiel", "Erika Beispiel, MBA", "Erika Beispiel M.Sc.", "Dr. Beispiel"} {
+		var got []string
+		for _, s := range rubric.Signals(rubric.Person{Name: name, CurrentRoles: "Systemischer Coach, Beispiel Coaching"}) {
+			got = append(got, s.Key)
+		}
+		if !slices.Contains(got, "owner_operator") {
+			t.Errorf("%q at Beispiel Coaching: %v", name, got)
+		}
 	}
 }
 

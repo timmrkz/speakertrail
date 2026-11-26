@@ -118,7 +118,7 @@ func TestDraftsPickAtRandom(t *testing.T) {
 	r.d.Pick = nil
 	seen := map[string]bool{}
 	for range 200 {
-		seen[string(r.d.put(store.DefaultTemplate(), "Mara Beispiel"))[:40]] = true
+		seen[string(r.d.put(store.DefaultTemplate(), "Mara Beispiel", ""))[:40]] = true
 	}
 	if len(seen) < 5 {
 		t.Errorf("200 drafts began %d ways", len(seen))

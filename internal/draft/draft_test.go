@@ -169,6 +169,34 @@ func (r *rig) states(id int64) []string {
 	return out
 }
 
+// A first message greets the person by their first name, never by a
+// title before it, like "Dr." (Tim, 25 November 2026).
+func TestADraftGreetsTheFirstNameNotATitle(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Dr. med. Mara Beispiel", "# Dr. med. Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); p.Draft != written {
+			t.Errorf("draft %q, want %q", p.Draft, written)
+		}
+	})
+	// A title and a family name hold no first name, so … stands for Tim
+	// to write.
+	id = r.person(t, "Dr. Beispiel", "# Dr. Beispiel\n\n## About\n\nIch töpfere in Köln.")
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); !strings.HasPrefix(p.Draft, "Hallo "+Missing+", du bist") {
+			t.Errorf("draft %q", p.Draft)
+		}
+	})
+}
+
 func TestADraftIsWrittenAndKept(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
@@ -386,8 +414,8 @@ func TestDraftsFromSeveralGoroutines(t *testing.T) {
 // it. The person's part is the last turn.
 func TestThePromptIsSentInTwoTurns(t *testing.T) {
 	prompt := store.DefaultFirstMessagePrompt
-	a := Messages(prompt, "Mara Beispiel", "", "# Mara\n\nKeramik")
-	b := Messages(prompt, "Jonas Probe", "Sport!", "# Jonas\n\nJudo")
+	a := Messages(prompt, "Mara Beispiel", "", "", "# Mara\n\nKeramik")
+	b := Messages(prompt, "Jonas Probe", "", "Sport!", "# Jonas\n\nJudo")
 	if len(a) != 2 || a[0].Role != "system" || a[1].Role != "user" || a[0] != b[0] {
 		t.Fatalf("the turns differ in their first: %+v", a)
 	}
@@ -402,18 +430,29 @@ func TestThePromptIsSentInTwoTurns(t *testing.T) {
 	}
 	// A prompt that starts with a field is one turn, and the paragraph of
 	// the first field goes whole into the person's turn.
-	if m := Messages("{{profile}} and more", "", "", "P"); len(m) != 1 || m[0].Content != "P and more" {
+	if m := Messages("{{profile}} and more", "", "", "", "P"); len(m) != 1 || m[0].Content != "P and more" {
 		t.Errorf("a prompt starting with a field: %+v", m)
 	}
-	if m := Messages("Write.\n\nGreet her.\nAbout {{first_name}}: {{profile}}", "Mara Beispiel", "", "P"); len(m) != 2 || m[0].Content != "Write." || m[1].Content != "Greet her.\nAbout Mara: P" {
+	if m := Messages("Write.\n\nGreet her.\nAbout {{first_name}}: {{profile}}", "Mara Beispiel", "", "", "P"); len(m) != 2 || m[0].Content != "Write." || m[1].Content != "Greet her.\nAbout Mara: P" {
 		t.Errorf("a field in a line: %+v", m)
 	}
 }
 
 func TestFill(t *testing.T) {
-	got := Fill("Hi {{first_name}} ({{name}}). {{notes}}\n{{profile}}", "Mara Beispiel", "", "Profil mit {{name}} darin")
+	got := Fill("Hi {{first_name}} ({{name}}). {{notes}}\n{{profile}}", "Mara Beispiel", "", "", "Profil mit {{name}} darin")
 	if got != "Hi Mara (Mara Beispiel). none\nProfil mit {{name}} darin" {
 		t.Errorf("%q", got)
+	}
+	if got := Fill("Hi {{first_name}}.", "Prof. Dr. Mara Beispiel, MBA", "", "", ""); got != "Hi Mara." {
+		t.Errorf("a name with titles: %q", got)
+	}
+	// The profile's link says which word is the first name.
+	if got := Fill("Hi {{first_name}}.", "Beispiel Mara", "https://www.linkedin.com/in/mara-beispiel-1a2b", "", ""); got != "Hi Mara." {
+		t.Errorf("a name in the order of its link: %q", got)
+	}
+	// With no first name to be sure of, the model gets the whole name.
+	if got := Fill("Hi {{first_name}}.", "Dr. Beispiel", "", "", ""); got != "Hi Dr. Beispiel." {
+		t.Errorf("a title and a family name: %q", got)
 	}
 }
 

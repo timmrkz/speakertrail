@@ -633,8 +633,8 @@ to take:
 or `setting` with its `key`, `linkedin_opens` for where LinkedIn opens.
 The page opens the person, Searches, or Settings. A search or an
 exclusion that was added is taken out by its undo, and one removed
-comes back with its id. A search a run took since, or one that found
-someone, stays, and so does an exclusion whose words were added again
+comes back with its id. A search a run took since, one a run under way
+takes, or one that found someone, stays, and so does an exclusion whose words were added again
 since: the undo answers 409, as below.
 
 An undo of a pasted page stops the draft the paste started, if it

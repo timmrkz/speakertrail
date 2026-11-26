@@ -19,6 +19,10 @@ import (
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
+// testNow is the moment the app's tests say things happened at. A test
+// never reads the clock, see the testing skill.
+var testNow = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+
 // oneWay is how every name in a report is written.
 var oneWay = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+)*$`)
 
@@ -59,10 +63,10 @@ func TestAReportHoldsTheLogAndTheSettings(t *testing.T) {
 		if err := d.SetTemplatePart("greeting", []string{"Servus", ""}, -1); err != nil {
 			return err
 		}
-		if err := d.SetSetting(store.HomeCity, json.RawMessage(`"Köln"`), time.Now()); err != nil {
+		if err := d.SetSetting(store.HomeCity, json.RawMessage(`"Köln"`), testNow); err != nil {
 			return err
 		}
-		return d.SetSetting("profile_searches_per_run", json.RawMessage("7"), time.Now())
+		return d.SetSetting("profile_searches_per_run", json.RawMessage("7"), testNow)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -158,12 +162,12 @@ func TestAReportTakesPeopleAlongOnlyWhenAsked(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := st.Update(func(d *store.Data) error {
-		s, err := d.AddSearch("Floristin Münster", 1, time.Now())
+		s, err := d.AddSearch("Floristin Münster", 1, testNow)
 		if err != nil {
 			return err
 		}
 		d.AddFound(store.Found{URL: "https://www.linkedin.com/in/oda-brinkhege", Handle: "oda-brinkhege", Name: "Oda Brinkhege",
-			Headline: "Floristin und Inhaberin, Blumen Brinkhege", City: "Münster", Text: "Ich bin Oda, Floristin aus Münster."}, s, 1, time.Now())
+			Headline: "Floristin und Inhaberin, Blumen Brinkhege", City: "Münster", Text: "Ich bin Oda, Floristin aus Münster."}, s, 1, testNow)
 		return nil
 	}); err != nil {
 		t.Fatal(err)

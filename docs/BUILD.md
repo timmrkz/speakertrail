@@ -128,6 +128,15 @@ and a checkout makes every file new. Only main saves them. `macos` runs
 the keychain's tests every time, because the cache cannot see the Mac's
 keychain. The walks need Playwright's headless shell of Chromium alone.
 
+The system packages the jobs need, GTK and WebKit for `go` and what
+Chromium needs for `web`, came from Ubuntu's mirror on every run, in 30
+s to over three minutes (#97). What apt fetched is now kept in GitHub's
+cache as `.deb` files and installed from there with `dpkg`, with no
+mirror asked. Since what apt fetches depends on what the runner's image
+has installed, the cache is kept by the image's version, and for
+Chromium by `web/package-lock.json` too, which pins Playwright. Only
+main saves it. A new image fetches from the mirror once.
+
 A push to main starts every job. No branch rule requires a check, so
 a pull request of the docs alone waits on nothing. A Go test that read
 a file of `web/` or of the docs would not run on the pull request that

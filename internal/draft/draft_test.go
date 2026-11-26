@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -452,8 +451,14 @@ func TestTheWindowHearsChangesInOrder(t *testing.T) {
 	told := r.d.Told
 	r.d.Told = func(j Job) {
 		if j.State == "queued" {
-			for !slices.ContainsFunc(r.d.Jobs(), func(j Job) bool { return j.State == "done" }) {
-				runtime.Gosched()
+			// Held until the queue runs dry, which is after the draft
+			// ended, so the later changes wait to be told.
+			r.d.mu.Lock()
+			idle := r.d.idle
+			r.d.mu.Unlock()
+			<-idle
+			if !slices.ContainsFunc(r.d.Jobs(), func(j Job) bool { return j.State == "done" }) {
+				t.Error("the queue ran dry before the draft was done")
 			}
 		}
 		told(j)

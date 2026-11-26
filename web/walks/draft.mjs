@@ -6,6 +6,7 @@
 // would have. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn, reads } from './lib/settled.mjs'
 
 const first = 'Hallo Mara, danke fürs Vernetzen! Dein Studio in Köln hat mich neugierig gemacht. Hättest du Lust auf ein Gespräch? Tim'
 const second = 'Hallo Mara, schön, dass wir jetzt vernetzt sind. Magst du mein Gast sein? Tim'
@@ -302,12 +303,13 @@ const walks = [
         await held
         await route.fulfill({ json: [writing] })
       })
+      const answered = await reads(page)
       await page.goto(`${url}/app/people/1007`)
       await act(page).waitFor()
       await say(page, job(1007, 1, { state: 'done', text: first }))
       release()
-      await page.waitForResponse('**/api/drafts')
-      await page.waitForTimeout(100)
+      await answered('/api/drafts')
+      await drawn(page)
       if (await page.locator('.first-message .step').count()) return 'the draft went back to writing after it was done'
       return ''
     },

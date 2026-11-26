@@ -237,6 +237,8 @@ interface: web/node_modules/.package-lock.json
 	@printf 'ok  \tinterface types\n'
 	@out=$$(cd web && $(NPM) run --silent test 2>&1) || { echo "$$out"; exit 1; }
 	@printf 'ok  \tinterface tests\n'
+	@out=$$(cd web && $(NPM) run --silent lint 2>&1) || { echo "$$out"; exit 1; }
+	@printf 'ok  \tthe walks wait on no clock, web/eslint.config.mjs\n'
 
 # The walks drive the interface with invented data in Chromium, the way
 # FrameFairy's walks drive its own, see web/walks/. Every file there is

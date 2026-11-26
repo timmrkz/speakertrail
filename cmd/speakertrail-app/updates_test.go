@@ -124,7 +124,7 @@ func (cs *channelServer) publish(t *testing.T, builds ...[3]string) {
 		entry := updates.Build{
 			Channel: channel, Name: "#" + channel, Version: version, Commit: "abc1234",
 			URL: cs.srv.URL + path, Size: size, SHA256: hex.EncodeToString(digest),
-			Signature: updates.Sign(cs.key, digest), Published: time.Now(),
+			Signature: updates.Sign(cs.key, digest), Published: testNow,
 			Newest: cs.newest[channel], Conflict: cs.conflict[channel],
 		}
 		entry.Claim = updates.SignClaim(cs.key, entry)

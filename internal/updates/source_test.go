@@ -214,7 +214,7 @@ func TestTheNewerCopyOfTheListIsRead(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
-	now := time.Now().UTC().Truncate(time.Second)
+	now := publishedAt
 	r.set("/channels-a.json", writtenList(t, key, "0.3.0-main.2", now))
 	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", now.Add(-time.Minute)))
 	got, err := copiesOf(srv).Fetch(context.Background())
@@ -244,7 +244,7 @@ func TestACopyBeingReplacedIsNoGap(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
-	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", time.Now().UTC()))
+	r.set("/channels-b.json", writtenList(t, key, "0.3.0-main.1", publishedAt))
 	src := copiesOf(srv)
 	// A wait would be an hour, so a check that waited never ends, and go
 	// test's -timeout says so.
@@ -294,7 +294,7 @@ func TestChecksAtOnceWhileTheCopiesAreReplaced(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
-	start := time.Now().UTC().Truncate(time.Second)
+	start := publishedAt
 	lists := make([][]byte, 9)
 	for i := range lists {
 		lists[i] = writtenList(t, key, fmt.Sprintf("0.3.0-main.%d", i), start.Add(time.Duration(i)*time.Second))
@@ -345,7 +345,7 @@ func TestTheFollowedChannelsOwnEntryIsNewerThanTheList(t *testing.T) {
 	t.Parallel()
 	key := testKey(t)
 	r, srv := serveRelease(t)
-	now := time.Now().UTC().Truncate(time.Second)
+	now := publishedAt
 	listed := build(t, key, "pr-367", "0.3.0-pr367.5ae00f1", "https://example.com/old.zip", appZip(t, "old"))
 	listed.Name, listed.Published, listed.Newest = "#367 Search what was said", now.Add(-time.Hour), "abc4de25c523"
 	other := build(t, key, "main", "0.3.0-main.1", "https://example.com/main.zip", appZip(t, "main"))
@@ -439,7 +439,7 @@ func TestTheOwnEntryIsReadBesideTheList(t *testing.T) {
 	key := testKey(t)
 	asked := make(chan struct{})
 	var once sync.Once
-	list := writtenList(t, key, "0.3.0-main.1", time.Now().UTC())
+	list := writtenList(t, key, "0.3.0-main.1", publishedAt)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.URL.Path == "/channel-main.json" {
 			once.Do(func() { close(asked) })

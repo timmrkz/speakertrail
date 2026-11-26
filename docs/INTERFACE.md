@@ -61,9 +61,25 @@ Every walk file starts the mock through `web/walks/lib/mock.mjs`, where
 the mock answers at once, not a little later as in `make mock`. A walk
 that has to see an answer on its way holds that request with
 `page.route` and lets it go, and one that waits for an answer starts
-listening before the step that asks. `make walks` runs the files side
-by side, each with a mock of its own, so the walks of one file share a
-mock and leave it as the next one expects. Run one file with
+listening before the step that asks. Where the interface sends no event
+for a step, `web/walks/lib/settled.mjs` has the page's own: a frame
+drawn, the requests the page sent, and the answers it has read and acted
+on. A walk never sleeps, never waits for the network to be quiet and
+gives no wait a deadline of its own, and `web/eslint.config.mjs`, in
+`make interface`, refuses each.
+
+The mock keeps time by a clock of its own, which runs as the real one
+does, so in `make mock` a run or a download takes the seconds it would.
+A walk moves it on with `POST /api/mock/clock`, `{"ms": 10000}`, and what
+falls due by then happens at once, in order: `walks/links.mjs` moves a
+run past its reads that way, and the page's clock past its next look at
+the run with `page.clock`, rather than wait seconds for both.
+
+`make walks` runs the files side by side, each with a mock of its own, as
+many at once as the machine has cores but one. More at once is slower:
+all 15 at once took 113 s on a 4-core cloud session, three at once 92 s,
+since the walks keep every core busy. The walks of one file share a mock
+and leave it as the next one expects. Run one file with
 `cd web && node walks/look.mjs`.
 
 Look at every change at 390 by 844, the narrowest window, and at 1280 by 900, in

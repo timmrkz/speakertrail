@@ -38,6 +38,51 @@ interface Res {
 // request itself.
 const DELAY_MS = 280
 
+// The mock's clock. It runs as the real one does, so in `make mock` a
+// run, a download or a draft takes the seconds a person sees it take. A
+// walk moves it on with POST /api/mock/clock, and what falls due by then
+// happens at once, in order, so no walk waits seconds of real time for
+// the mock, #96.
+let ahead = 0
+const clockNow = (): number => Date.now() + ahead
+const clockDate = () => new Date(clockNow())
+// What the mock does later by its clock: once, or every so often.
+interface Timer { due: number; every: number; fn: () => void; real?: ReturnType<typeof setTimeout> }
+const timers = new Set<Timer>()
+function later(ms: number, fn: () => void, every = 0): () => void {
+  const t: Timer = { due: clockNow() + ms, every, fn }
+  timers.add(t)
+  arm(t)
+  return () => {
+    clearTimeout(t.real)
+    timers.delete(t)
+  }
+}
+function arm(t: Timer) {
+  clearTimeout(t.real)
+  t.real = setTimeout(() => fire(t), Math.max(0, t.due - clockNow()))
+}
+function fire(t: Timer) {
+  if (!timers.has(t)) return
+  if (t.every) {
+    t.due += t.every
+    arm(t)
+  } else timers.delete(t)
+  t.fn()
+}
+function moveClock(ms: number) {
+  const to = clockNow() + Math.max(0, ms)
+  for (;;) {
+    let next: Timer | undefined
+    for (const t of timers) if (t.due <= to && (!next || t.due < next.due)) next = t
+    if (!next) break
+    ahead = next.due - Date.now()
+    fire(next)
+  }
+  ahead = to - Date.now()
+  for (const t of timers) arm(t)
+}
+
 interface PersonRow {
   id: number
   name: string
@@ -186,9 +231,9 @@ const UPDATE_CHANNELS: UpdateChannel[] = [
   { id: 'pr-9', name: '#9 Speaker Trail as a Mac app, without Docker', version: '0.1.0-pr9.e808a87', conflict: false },
   { id: 'pr-12', name: '#12 A calmer layout, list and detail', version: '0.1.0-pr12.77aa310', conflict: true },
 ]
-const upd = { running: 'pr-9', picked: '', lookFrom: Date.now(), downloadFrom: 0 }
+const upd = { running: 'pr-9', picked: '', lookFrom: clockNow(), downloadFrom: 0 }
 function updateState(): UpdateState {
-  const now = Date.now()
+  const now = clockNow()
   const follows = upd.picked || upd.running
   const ch = UPDATE_CHANNELS.find((c) => c.id === follows)!
   const base: UpdateState = {
@@ -266,7 +311,7 @@ function signalsOf(p: PersonRow, apps: Appearance[]): FitSignal[] {
     if (!out.some((x) => x.key === key)) out.push({ key, label, for: isFor, passage, found_in })
   }
   // Some invented people have a profile with dates, some a recent post.
-  const year = new Date().getFullYear()
+  const year = clockDate().getFullYear()
   if (p.linkedin?.born_about && year - p.linkedin.born_about < 30) add('young', 'Likely under 30', true, `${p.linkedin.age_reason}, so about ${year - p.linkedin.born_about}`, 'LinkedIn profile')
   else if (!p.linkedin && p.id % 4 === 0) add('young', 'Likely under 30', true, `Bachelor from ${2015 + (p.id % 6)}, so about ${26 - (p.id % 6)}`, 'LinkedIn profile')
   for (const [re, key, label, isFor] of MOCK_RUBRIC) if (re.test(p.headline)) add(key, label, isFor, p.headline, 'title')
@@ -313,7 +358,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const contra = counted.filter((x) => !x.for).map((x) => x.label)
   const why = [...pro, ...contra].join(', ')
   const who = { key: 'who', label: 'Who they are', points: Math.round(40 * Math.max(-1, Math.min(1, (pro.length - contra.length) / 3))), why: why || 'Nothing beyond running their own business' }
-  const now = new Date()
+  const now = clockDate()
   const born = p.linkedin?.born_about
   const age = born ? now.getFullYear() - born : 0
   const younger = born
@@ -355,7 +400,7 @@ function fitParts(s: State, p: Person): FitPart[] {
 
 function personList(s: State, p: PersonRow): Person {
   const apps = appearancesOf(s, p.id)
-  const now = new Date().toISOString()
+  const now = clockDate().toISOString()
   const next = apps.find((a) => a.event.starts_at >= now)
   const signals = signalsOf(p, apps)
   const out: Person = {
@@ -526,7 +571,7 @@ const reads = { queue: [] as { id: number; run: number }[] }
 // READ_MS each. All the people are invented.
 function startRun(s: State, kind: Run['kind'], checks: number): Run {
   const run: Run = {
-    id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind, state: 'going', started_at: new Date().toISOString(), finished_at: null,
+    id: Math.max(0, ...s.runs.map((r) => r.id)) + 1, kind, state: 'going', started_at: clockDate().toISOString(), finished_at: null,
     sources_checked: 0, events_found: 0, events_new: 0, pages_read: 0, reads_failed: 0, startups_looked_up: 0, lookups_failed: 0,
     people_new: 0, errors: 0,
     progress: { checks, checks_done: 0, reads: 0, reads_done: 0, reads_expected: 0, lookups: 0, lookups_done: 0, lookups_expected: 0, now: [], seconds_left: null },
@@ -538,7 +583,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
     ['Frieda Faustmann', 'Coach, Faustmann Coaching'], ['Kemal Kastner', 'Inhaber, Kastner Kampfsport'],
     ['Rike Reimers', 'Yogalehrerin, Studio Reimers'], ['Paul Pannwitz', 'Gründer, Pannwitz Putzteam'],
   ]
-  const t = setInterval(() => {
+  const stop = later(1000, () => {
     const p = run.progress
     if (run.state !== 'going' || !p) {
       run.progress = null
@@ -548,9 +593,9 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
         if (person) person.read = 'next'
       }
       reads.queue = reads.queue.filter((x) => x.run !== run.id)
-      return clearInterval(t)
+      return stop()
     }
-    const since = new Date().toISOString()
+    const since = clockDate().toISOString()
     if (p.checks_done < p.checks) {
       p.checks_done = Math.min(p.checks, p.checks_done + 2)
       run.sources_checked = p.checks_done
@@ -568,7 +613,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
     for (const q of mine) {
       const person = s.people.find((x) => x.id === q.id)
       if (!person) continue
-      if (person.read === 'reading' && Date.now() - new Date(person.read_since!).getTime() >= READ_MS) {
+      if (person.read === 'reading' && clockNow() - new Date(person.read_since!).getTime() >= READ_MS) {
         readDone(person)
         p.reads_done++
         run.people_new++
@@ -591,10 +636,10 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
     const left = ((p.checks - p.checks_done) * 3) / SIDE_BY_SIDE + ((p.reads - p.reads_done) * READ_MS) / 1000 / SIDE_BY_SIDE
     p.seconds_left = left
     if (p.checks_done >= p.checks && p.reads_done >= p.reads) {
-      run.finished_at = new Date().toISOString()
+      run.finished_at = clockDate().toISOString()
       run.state = 'finished'
       run.progress = null
-      clearInterval(t)
+      stop()
     }
   }, 1000)
   return run
@@ -615,10 +660,15 @@ function readDone(p: PersonRow) {
   p.name = handle.split('-').filter((w) => !/^\d+$/.test(w)).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') || handle
   p.headline = 'Inhaberin, eigenes Studio'
   p.city = 'Köln'
-  p.linkedin = { born_about: 1995, age_reason: 'Bachelor from 2017', roles: p.headline, last_active: new Date().toISOString() }
+  p.linkedin = { born_about: 1995, age_reason: 'Bachelor from 2017', roles: p.headline, last_active: clockDate().toISOString() }
 }
 
 const ROUTES: [string, RegExp, Handler][] = [
+  // A walk moves the mock's clock, see moveClock.
+  ['POST', /^\/api\/mock\/clock$/, (_s, _m, _q, body) => {
+    moveClock(Number(body.ms) || 0)
+    return ok({ now: clockNow() })
+  }],
   ['GET', /^\/api\/people$/, (s, _m, q) => {
     const needle = (q.get('q') ?? '').toLowerCase()
     const sort = q.get('sort') || 'fit'
@@ -628,7 +678,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const hidden = hiddenBy(s)
     let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
     // Like the app: in the last 7 days, newest first.
-    const fresh = (p: Person) => Date.now() - new Date(p.first_seen).getTime() < 7 * 86400e3
+    const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < 7 * 86400e3
     // A search that holds links to profiles shows whom they lead to, under
     // any filter, and says how many are new.
     const found = profileLinks(q.get('q') ?? '')
@@ -679,7 +729,7 @@ const ROUTES: [string, RegExp, Handler][] = [
   ['POST', /^\/api\/people$/, (s, _m, _q, b) => {
     const found = profileLinks(String(b.text ?? ''))
     if (!found.profiles.length) return err(400, 'There is no link to a LinkedIn profile in it, like linkedin.com/in/name')
-    const at = new Date().toISOString()
+    const at = clockDate().toISOString()
     const added: number[] = []
     const here: number[] = []
     const connected: number[] = []
@@ -755,7 +805,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!top) return err(422, 'The page came without the link to their profile, and Exa knows nobody by its name and headline. Paste the link to their profile, then the page again')
     const id = Math.max(...s.people.map((x) => x.id)) + 1
     const added: PersonRow = {
-      id, name: lines[at - 1], headline: '', city: '', fit: 'other', first_seen: new Date().toISOString(), notes: '',
+      id, name: lines[at - 1], headline: '', city: '', fit: 'other', first_seen: clockDate().toISOString(), notes: '',
       profiles: [{ id: 50000 + id, platform: 'linkedin', url: `https://www.linkedin.com/in/${top}`, review: 'confirmed' }], affiliations: [],
       connected: /^[·•]?\s*(1st|1\.)$/.test(lines[at]), read: '',
     }
@@ -811,15 +861,15 @@ const ROUTES: [string, RegExp, Handler][] = [
   // the page shows here moves on only when it asks: on opening the page.
   ['GET', /^\/api\/updates$/, () => ok(updateState())],
   ['POST', /^\/api\/updates\/check$/, () => {
-    upd.lookFrom = Date.now()
+    upd.lookFrom = clockNow()
     return { status: 204 }
   }],
   ['POST', /^\/api\/updates\/follow$/, (_s, _m, _q, b) => {
     const ch = String(b.channel ?? '')
     if (!UPDATE_CHANNELS.some((c) => c.id === ch)) return err(409, `There is no channel ${ch}`)
     upd.picked = ch
-    upd.lookFrom = Date.now()
-    upd.downloadFrom = ch === upd.running ? 0 : Date.now() + 1200
+    upd.lookFrom = clockNow()
+    upd.downloadFrom = ch === upd.running ? 0 : clockNow() + 1200
     return ok(updateState())
   }],
   ['POST', /^\/api\/updates\/relaunch$/, () => {
@@ -842,7 +892,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: 'Speech model', state: 'failed', error: `There is no speech model called ${String(b.name)}` }
       return ok(speechJob)
     }
-    speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: m.title, state: 'running', from: Date.now() }
+    speechJob = { id: `speech-${speechJobs}`, kind: 'model', title: m.title, state: 'running', from: clockNow() }
     return ok(speechState().job)
   }],
   ['POST', /^\/api\/speech\/cancel$/, (_s, _m, _q, b) => {
@@ -870,7 +920,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       languageJob = { id: `language-${languageJobs}`, kind: 'model', title: 'Language model', state: 'failed', error: `There is no language model called ${String(b.name)}` }
       return ok(languageJob)
     }
-    languageJob = { id: `language-${languageJobs}`, kind: 'model', title: m.title, state: 'running', from: Date.now(), name: m.name }
+    languageJob = { id: `language-${languageJobs}`, kind: 'model', title: m.title, state: 'running', from: clockNow(), name: m.name }
     return ok(languageState().job)
   }],
   ['POST', /^\/api\/language\/cancel$/, (_s, _m, _q, b) => {
@@ -946,7 +996,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const was = drafts.get(p.id)
     if (was && !['done', 'failed', 'cancelled'].includes(draftJob(s, was).state)) return ok(draftJob(s, was))
     draftJobs++
-    const d: MockDraft = { id: `draft-${draftJobs}`, person_id: p.id, from: Date.now(), started_at: new Date().toISOString() }
+    const d: MockDraft = { id: `draft-${draftJobs}`, person_id: p.id, from: clockNow(), started_at: clockDate().toISOString() }
     drafts.set(p.id, d)
     return ok(draftJob(s, d))
   }],
@@ -1097,7 +1147,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const src = s.sources.find((x) => x.id === Number(m[1]))
     if (!src) return err(404, 'No such source')
     // Pretend the check finishes a few seconds later.
-    setTimeout(() => {
+    later(3000, () => {
       src.checked_hours_ago = 0
       src.checks++
       if (src.last_found === null) src.last_found = 2
@@ -1111,7 +1161,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const run = s.runs.find((r) => r.id === Number(m[1]))
     if (!run) return err(404, 'No such run')
     if (run.state !== 'going') return err(409, 'This run has already ended')
-    run.finished_at = new Date().toISOString()
+    run.finished_at = clockDate().toISOString()
     run.state = 'stopped'
     run.progress = null
     return { status: 204 }
@@ -1145,7 +1195,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       b.value = c
     }
     row.value = b.value as Json
-    row.updated_at = new Date().toISOString()
+    row.updated_at = clockDate().toISOString()
     return ok(row)
   }],
   // Like the app: whether the Exa key is saved, never the key.
@@ -1221,7 +1271,7 @@ function speechState() {
     const { from, ...rest } = speechJob
     job = rest
     if (speechJob.state === 'running' && from !== undefined) {
-      const ran = Date.now() - from
+      const ran = clockNow() - from
       if (ran >= SPEECH_MS + UNPACK_MS) {
         speechHere.add(SPEECH_MODELS[0].name)
         speechJob = { ...rest, state: 'done' }
@@ -1262,7 +1312,7 @@ function languageState() {
     const { from, name, ...rest } = languageJob
     job = rest
     if (languageJob.state === 'running' && from !== undefined) {
-      const ran = Date.now() - from
+      const ran = clockNow() - from
       if (ran >= LANGUAGE_MS) {
         if (name) languageHere.add(name)
         languageJob = { ...rest, state: 'done' }
@@ -1382,7 +1432,7 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>) {
       if (place) p.city = place.split(',')[0]
     }
     p.text = lines.slice(Math.max(at, 0)).join('\n')
-    p.text_at = new Date().toISOString()
+    p.text_at = clockDate().toISOString()
     if (p.read !== undefined) p.read = ''
     p.read_error = undefined
     // Like the app: out of the run that had not read it yet, which no
@@ -1398,7 +1448,7 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>) {
     if (last && !['done', 'failed', 'cancelled'].includes(lastState)) drafting = true
     else if (!p.draft && p.connected && using?.installed) {
       draftJobs++
-      drafts.set(p.id, { id: `draft-${draftJobs}`, person_id: p.id, from: Date.now(), started_at: new Date().toISOString() })
+      drafts.set(p.id, { id: `draft-${draftJobs}`, person_id: p.id, from: clockNow(), started_at: clockDate().toISOString() })
       drafting = true
     }
   }
@@ -1411,6 +1461,7 @@ const DRAFT_LOAD_MS = 3000
 const DRAFT_WRITE_MS = 5000
 const drafts = new Map<number, MockDraft>()
 let draftJobs = 0
+let draftSeq = clockNow()
 // An invented message, put together from the template, with an invented
 // hook, the way internal/draft does. The same picks for a whole draft.
 const draftTexts = new Map<string, string>()
@@ -1425,12 +1476,11 @@ function draftText(id: string, name: string): string {
 function draftJob(s: State, d: MockDraft): DraftJob {
   const p = s.people.find((x) => x.id === d.person_id)
   const using = languageState().models.find((m) => m.inUse && m.installed)
-  // The clock, so it grows with every answer, as Seq does in
-  // internal/draft.
-  const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: Date.now() }
+  // A number that grows with every answer, as Seq does in internal/draft.
+  const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: ++draftSeq }
   if (d.cancelled) return { ...base, state: 'cancelled', fraction: -1, seconds_left: null }
   if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
-  const ran = Date.now() - d.from
+  const ran = clockNow() - d.from
   const whole = DRAFT_LOAD_MS + DRAFT_WRITE_MS
   const text = draftText(d.id, p?.name ?? 'Mara Beispiel')
   if (ran >= whole) {
@@ -1470,7 +1520,7 @@ function logStatus() {
   if (logGone) return { path: '/Users/invented/Library/Logs/Speaker Trail/app.log', files: 1, bytes: 180, lines: 1, toasts: [] }
   return {
     path: '/Users/invented/Library/Logs/Speaker Trail/app.log', files: 2, bytes: 2_430_000, lines: 9_812,
-    toasts: [{ at: Date.now() - 3 * 60_000, text: 'Could not reach the app. Try again.' }],
+    toasts: [{ at: clockNow() - 3 * 60_000, text: 'Could not reach the app. Try again.' }],
   }
 }
 

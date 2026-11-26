@@ -6,6 +6,7 @@
 // them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { asking, drawn } from './lib/settled.mjs'
 
 // The report window, at its own size, with the draft the last walk left
 // sent off before it opens, so every walk starts from an empty report.
@@ -61,6 +62,7 @@ const walks = [
     // the order they were pressed.
     name: 'A picture put back stays, and Undo after Clear brings it back',
     async run(page) {
+      const sent = await asking(page)
       await openReport(page)
       await page.locator('textarea.telling').click()
       await page.keyboard.type('It froze.')
@@ -70,14 +72,12 @@ const walks = [
       // put back's until the page was looked at in between.
       const [pressed, press] = later()
       const [looked, look] = later()
-      let putBackAsked = false
       await page.route('**/api/report/remove', async (route) => {
         const answer = await route.fetch()
         await pressed
         await route.fulfill({ response: answer })
       })
       await page.route('**/api/report/put-back', async (route) => {
-        putBackAsked = true
         const answer = await route.fetch()
         await looked
         await route.fulfill({ response: answer })
@@ -90,8 +90,8 @@ const walks = [
       const removed = page.waitForResponse((r) => r.url().endsWith('/api/report/remove'))
       await page.locator('.tile .bin').click()
       await page.getByRole('button', { name: 'Put it back' }).click()
-      await page.waitForTimeout(0)
-      if (putBackAsked) return 'the put back was asked before the remove was answered'
+      await drawn(page)
+      if ((await sent()).includes('/api/report/put-back')) return 'the put back was asked before the remove was answered'
       const asked = page.waitForRequest((r) => r.url().endsWith('/api/report/put-back'))
       press()
       await removed
@@ -283,13 +283,12 @@ const walks = [
     // report, though Tab reaches them.
     name: 'Report and Clear do nothing with nothing to report, though Tab reaches them',
     async run(page) {
-      let made = false
+      const asked = await asking(page)
       await openReport(page)
-      page.on('request', (r) => { if (r.url().endsWith('/api/report/send')) made = true })
       await page.locator('button.make').click({ force: true })
       await page.locator('button.clear').click({ force: true })
-      await page.waitForTimeout(100)
-      if (made) return 'Report made a report of nothing'
+      await drawn(page)
+      if ((await asked()).includes('/api/report/send')) return 'Report made a report of nothing'
       if (await page.locator('dialog[open]').count()) return 'Clear asked to clear nothing'
       const greyed = await page.locator('button.make').evaluate((b) => getComputedStyle(b).backgroundColor === getComputedStyle(document.querySelector('button.clear')).backgroundColor)
       if (!greyed) return 'Report and Clear are not the same grey'

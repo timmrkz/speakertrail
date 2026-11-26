@@ -323,8 +323,8 @@ func certificate(t *testing.T, name string, parent *x509.Certificate, parentKey 
 	tmpl := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
 		Subject:               pkix.Name{CommonName: name},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(time.Hour),
+		NotBefore:             time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:              time.Date(2036, 1, 1, 0, 0, 0, 0, time.UTC),
 		IsCA:                  true,
 		BasicConstraintsValid: true,
 		KeyUsage:              x509.KeyUsageCertSign,

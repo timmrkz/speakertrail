@@ -68,10 +68,12 @@ Where a skill and `CLAUDE.md` disagree, `CLAUDE.md` wins here.
 | the interface's own unit tests | Vitest, `*.test.ts` in `web/src/lib/`, in `make interface` |
 | the race detector | on every Go test, `make unit` |
 | the test cache | Go's, kept in CI from main's last run, see CI in [BUILD.md](BUILD.md#ci) |
-| no test waits on the clock | golangci-lint's `forbidigo` refuses `time.Sleep`, `time.After` and the timers in a Go test, except in a synctest bubble, see `.golangci.yml`. The mock answers the walks at once, see `web/walks/lib/mock.mjs` |
+| no test waits on the clock or reads it | golangci-lint's `forbidigo` refuses `time.Sleep`, `time.After`, the timers and `time.Now`, `Since` and `Until` in a Go test, except in a synctest bubble, see `.golangci.yml`. The few tests whose code reads the real clock say why with a `//nolint:forbidigo` on the line, and `nolintlint` fails one that stops nothing, so a fixed line loses its exception. A new one is not refused by a tool, only seen in review. The mock answers the walks at once, see `web/walks/lib/mock.mjs` |
 | a test on the real disk says why | a comment that starts with "On the real disk" |
 | invented data | invented people, never a real name, see Personal data in `CLAUDE.md` |
-| not kept yet | No linter reads the walks for `waitForTimeout`, and the mock's runs, reads and downloads take seconds of real time, see #96. No mutation testing |
+| a clock the walk moves | the mock's, `POST /api/mock/clock`, and the page's, `page.clock`, see [INTERFACE.md](INTERFACE.md#the-harness) |
+| the walks wait on no clock | ESLint's own rules in `web/eslint.config.mjs`, in `make interface`, refuse `waitForTimeout`, `networkidle`, a deadline and a timer with a delay in `web/walks/` |
+| not kept yet | The walks of one file share one mock. No mutation testing |
 
 ## The ci skill in this project
 

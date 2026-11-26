@@ -5,15 +5,14 @@
 // answered on Tim's Mac: a title bar 30 high, the buttons from 12 to 72.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn, reads } from './lib/settled.mjs'
 
-// What the bar and the name are on screen, once the bar has taken the
-// height macOS gave it.
-async function seen(page) {
-  // The page asks once it is up. A bar that never takes the answer is
-  // measured as it stands, so the walk says how high it is.
-  await page
-    .waitForFunction(() => document.querySelector('header.titlebar')?.getAttribute('style')?.includes('--bar-h: 30px'), null, { timeout: 5000 })
-    .catch(() => {})
+// What the bar and the name are on screen, once the page has read what
+// macOS laid out and drawn it. A bar that does not take the answer is
+// measured as it stands, so the walk says how high it is.
+async function seen(page, answered) {
+  await answered('/api/chrome')
+  await drawn(page)
   return page.evaluate(() => {
     const box = (el) => el?.getBoundingClientRect()
     const bar = box(document.querySelector('header.titlebar'))
@@ -32,8 +31,9 @@ const walks = [
     // FrameFairy's walk, because half a point is what Tim saw there.
     name: 'The title bar is as tall as macOS laid it out, the name on its middle after the buttons',
     async run(page) {
+      const answered = await reads(page)
       await page.goto(`${url}/app/people`)
-      const s = await seen(page)
+      const s = await seen(page, answered)
       if (s.bar[1] !== 30) return `the title bar is ${s.bar[1]} px high, macOS laid it out 30 high`
       if (!s.name) return 'the title bar shows no name'
       const centre = s.bar[0] + 2 + (s.bar[1] - 3) / 2

@@ -74,9 +74,46 @@ func ParseHook(answer string) (Hook, error) {
 			return Hook{}, fmt.Errorf("its %s has %d letters, at least %d are asked for", f.name, n, f.min)
 		case n > f.max:
 			return Hook{}, fmt.Errorf("its %s has %d letters, at most %d fit", f.name, n, f.max)
+		case !latin(*f.v):
+			return Hook{}, fmt.Errorf("its %s has a character outside the Latin alphabet", f.name)
 		}
 	}
+	if n := len(strings.Fields(*raw.Portrait)); n > portraitWords {
+		return Hook{}, fmt.Errorf("its portrait has %d words, at most %d fit", n, portraitWords)
+	}
 	return Hook{Reason: *raw.Reason, Reaction: *raw.Reaction, Portrait: *raw.Portrait}, nil
+}
+
+// portraitWords is the most words a portrait may have. The prompt asks
+// for one or two, like "Coach", and three leaves room for "Arzt und
+// Gründer". More is a model that wrote on past the portrait into the rest
+// of the sentence, as in Tim's report of 26 November 2026.
+const portraitWords = 3
+
+// latin says whether text is written only in what a German message
+// needs: the letters and digits of the Latin alphabet, accents and all,
+// and punctuation, symbols and emojis. The model's vocabulary holds every
+// script, and now and then a quantized model writes a letter of another
+// one, like 創 in a German sentence (Tim's report, 26 November 2026). The
+// grammar from HookSchema allows any letter, so it is caught here.
+func latin(text string) bool {
+	for _, r := range text {
+		switch {
+		case unicode.IsLetter(r):
+			if !unicode.Is(unicode.Latin, r) {
+				return false
+			}
+		case unicode.IsDigit(r):
+			if r < '0' || r > '9' {
+				return false
+			}
+		case r >= 0x3000 && r <= 0x30ff, r >= 0xff00 && r <= 0xffef:
+			// The full stop, comma and spaces of Chinese and Japanese
+			// are not letters, but they are not German either.
+			return false
+		}
+	}
+	return true
 }
 
 // why says in a few words what was wrong with the JSON, never the model's

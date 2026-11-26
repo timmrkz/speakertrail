@@ -117,7 +117,8 @@ An act never names a person. Whatever shows a person's words is marked
 slides in on, the first message among them. A draft is logged by the
 person's id and its counts, how long it took and how much the model read
 and wrote, never by the profile, the prompt or the message. An answer of
-the model that did not fit the schema is logged with what did not fit,
+the model that did not fit the schema is logged with what did not fit
+and which of the two asks it was,
 never with the answer. A control
 there is named by its kind, `pressed a.prow`, or,
 for a button, by its own words, which are ours, `pressed button.btn

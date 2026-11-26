@@ -461,7 +461,11 @@ template in Settings, with one variation of each part picked at random.
 The language model writes only its hook, the parts `portrait`, `reason`
 and `reaction_part`, from their profile and the prompt in Settings,
 `hook_prompt`. It answers in JSON held to `draft.HookSchema`, which
-llama-server turns into a grammar and the app checks again. The prompt
+llama-server turns into a grammar and the app checks again. The app
+also checks that every part is written in the Latin alphabet, since the
+grammar lets the model write a letter of any script, and that the
+portrait has at most three words. An answer that does not fit is asked
+for once more. The prompt
 goes in two turns: the paragraphs before the one of its first field as a
 system turn, the same for every draft, and the rest, filled in for the
 person, as the user's. llama-server keeps a checkpoint where the last
@@ -488,7 +492,7 @@ read: a draft whose profile Exa lacks fails and says to paste it, see
 `done`, `failed` or `cancelled`. `text` is the message, from `writing` on
 with `…` where the model's parts go, and whole once it is done. What the
 model wrote in it is untrusted and shown as text. `problem` is set on a
-draft that is done when the model's answer did not fit the schema: the
+draft that is done when the model's answer did not fit twice: the
 message then has `…` where the model's parts go, for Tim to write, and
 `problem` says why in a sentence, never with the answer itself.
 `fraction` and `seconds_left` come from how long earlier drafts took, -1

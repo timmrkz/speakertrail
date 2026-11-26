@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/language"
@@ -28,6 +29,22 @@ func TestTheHookIsHeldToTheSchema(t *testing.T) {
 		{`{"reason":"du töpferst.","reac`, "stops before the JSON ends"},
 		{`Hallo Mara, schön dich zu sehen!`, "not JSON"},
 		{``, "empty"},
+		// Tim's report of 26 November 2026: a letter of another script in
+		// the middle of a German sentence, in a portrait that ran on.
+		{`{"reason":"du die Brücke zwischen Medizin und Sport schlägst.","reaction":"","portrait":"Macher um deine Geschichte als Arzt und創"}`, "portrait has"},
+		{`{"reason":"du die Brücke zwischen Medizin und Sport schlägst.","reaction":"","portrait":"Arzt und創"}`, "portrait has a character outside the Latin alphabet"},
+		{`{"reason":"du 創 töpferst.","reaction":"","portrait":"Töpferin"}`, "reason has a character outside the Latin alphabet"},
+		{`{"reason":"du töpferst.","reaction":"Toll。","portrait":"Töpferin"}`, "reaction has a character outside the Latin alphabet"},
+		{`{"reason":"du töpferst，","reaction":"","portrait":"Töpferin"}`, "reason has a character"},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"Гончар"}`, "portrait has a character"},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"도예가"}`, "portrait has a character"},
+		{`{"reason":"du töpferst.","reaction":"","portrait":"ポッター"}`, "portrait has a character"},
+		{`{"reason":"du seit ٢٠١٩ töpferst.","reaction":"","portrait":"Töpferin"}`, "reason has a character"},
+		// What German, names and emojis need stays.
+		{`{"reason":"du seit 2019 in Köln töpferst! 😄","reaction":"Großartig, oder? 🫠","portrait":"Café-Inhaberin"}`, ""},
+		{`{"reason":"du Crème brûlée à la Łódź machst.","reaction":"«Toll» – wirklich!","portrait":"Arzt und Gründer"}`, ""},
+		// A portrait is one or two words, and three for "Arzt und Gründer".
+		{`{"reason":"du töpferst.","reaction":"","portrait":"Macher um deine Geschichte"}`, "portrait has 4 words, at most 3 fit"},
 	} {
 		_, err := ParseHook(c.answer)
 		if (c.says == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.says)) {
@@ -53,11 +70,16 @@ func TestTheHookComesOnOneLine(t *testing.T) {
 func TestAnAnswerThatDoesNotFitStillDrafts(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "# Mara\n\n## About\n\nA")
+	var asks atomic.Int32
 	r.d.Ask = func(context.Context, *language.Server, []language.Message, json.RawMessage, func(string)) (language.Answer, error) {
+		asks.Add(1)
 		return language.Answer{Text: "Liebe Mara, du bist toll!", Finish: "stop"}, nil
 	}
 	r.d.Start(id)
 	r.d.Wait()
+	if asks.Load() != 2 {
+		t.Errorf("the model was asked %d times, twice at most", asks.Load())
+	}
 	j := r.d.Jobs()[0]
 	want := "Hallo Mara, du bist mir aufgefallen, weil …\n\nDeine Geschichte als …?"
 	if j.State != "done" || j.Text != want || !strings.Contains(j.Problem, "did not fit") || strings.Contains(j.Problem, "toll") {
@@ -123,4 +145,31 @@ func TestDraftsPickAtRandom(t *testing.T) {
 	if len(seen) < 5 {
 		t.Errorf("200 drafts began %d ways", len(seen))
 	}
+}
+
+// An answer that does not fit is asked for once more, so a slip of the
+// model, like a letter of another script in Tim's report of 26 November
+// 2026, never reaches the draft and still leaves him one to send.
+func TestAnAnswerThatDoesNotFitIsAskedAgain(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "# Mara\n\n## About\n\nA")
+	var asks atomic.Int32
+	r.d.Ask = func(context.Context, *language.Server, []language.Message, json.RawMessage, func(string)) (language.Answer, error) {
+		if asks.Add(1) == 1 {
+			return language.Answer{Text: `{"reason":"du töpferst.","reaction":"","portrait":"Töpferin und創"}`, Finish: "stop"}, nil
+		}
+		return language.Answer{Text: `{"reason":"du töpferst.","reaction":"","portrait":"Töpferin"}`, Finish: "stop"}, nil
+	}
+	r.d.Start(id)
+	r.d.Wait()
+	j := r.d.Jobs()[0]
+	want := "Hallo Mara, du bist mir aufgefallen, weil du töpferst.\n\nDeine Geschichte als Töpferin?"
+	if asks.Load() != 2 || j.State != "done" || j.Text != want || j.Problem != "" {
+		t.Errorf("asked %d times, the job: %+v", asks.Load(), j)
+	}
+	r.st.Read(func(d *store.Data) {
+		if p := d.Person(id); p.Draft != want {
+			t.Errorf("kept %q", p.Draft)
+		}
+	})
 }

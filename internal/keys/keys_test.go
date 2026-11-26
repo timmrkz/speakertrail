@@ -21,6 +21,8 @@ type memory struct {
 	// keptBack is how many reads macOS keeps the key back, with -128, as
 	// when the password box is closed.
 	keptBack int
+	// stuck is a keychain that refuses every delete.
+	stuck bool
 }
 
 func (m *memory) has() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.secret != "" }
@@ -37,7 +39,15 @@ func (m *memory) get() (string, int) {
 	}
 	return m.secret, 0
 }
-func (m *memory) remove() { m.mu.Lock(); defer m.mu.Unlock(); m.secret = "" }
+func (m *memory) remove() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.stuck {
+		return -25293
+	}
+	m.secret = ""
+	return 0
+}
 
 func (m *memory) count() int { m.mu.Lock(); defer m.mu.Unlock(); return m.reads }
 
@@ -67,11 +77,8 @@ func TestTheSavedKeyComesBeforeTheEnvironment(t *testing.T) {
 	if err := e.Set("two words"); err == nil {
 		t.Error("a key with a space was taken")
 	}
-	if err := e.Set(""); err != nil || key(e) != "from-the-terminal" {
-		t.Errorf("removing: %v, get %q", err, key(e))
-	}
-	if _, err := os.Stat(e.path); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the file is still there after removing: %v", err)
+	if err := e.Set(""); err != nil || key(e) != "from-the-terminal" || file(t, e) != "" {
+		t.Errorf("removing: %v, get %q, file %q", err, key(e), file(t, e))
 	}
 	delete(env, "EXA_API_KEY")
 	if e.Has() {
@@ -170,6 +177,56 @@ func TestAKeyKeptBackIsDeletedAndNeverAskedForAgain(t *testing.T) {
 		t.Errorf("asked again: %v, %d reads, want 1", err, m.count())
 	}
 	if !strings.Contains(logged.String(), "Save it again in Settings") || !strings.Contains(logged.String(), `"status":-128`) {
+		t.Errorf("log %s", logged.String())
+	}
+}
+
+// The review of #111: a delete macOS refuses after the box was closed
+// would leave the item, and every start would ask again. The empty file
+// says the keychain is done with, so no later start reads it, after a
+// key moved or after one kept back.
+func TestADeleteMacOSRefusesNeverAsksAgain(t *testing.T) {
+	for _, keptBack := range []int{0, 1} {
+		m := &memory{secret: "kept-in-the-keychain", keptBack: keptBack, stuck: true}
+		var logged safeBuffer
+		e := exa(t, m, nil, &logged)
+		want := "kept-in-the-keychain"
+		if keptBack > 0 {
+			want = ""
+		}
+		if key(e) != want || !m.has() {
+			t.Fatalf("kept back %d: get %q, still in the keychain %v", keptBack, key(e), m.has())
+		}
+		for range 3 {
+			start := &Exa{path: e.path, old: m, env: func(string) string { return "" }}
+			if key(start) != want || start.Has() != (want != "") {
+				t.Errorf("kept back %d: a later start reads %q, has %v", keptBack, key(start), start.Has())
+			}
+		}
+		if m.count() != 1 {
+			t.Errorf("kept back %d: the keychain was read %d times, want once", keptBack, m.count())
+		}
+		if !strings.Contains(logged.String(), "could not be deleted from the keychain") || !strings.Contains(logged.String(), `"status":-25293`) {
+			t.Errorf("log %s", logged.String())
+		}
+	}
+}
+
+// The review of #111: a key whose file cannot be written stays in the
+// keychain, so it is not lost, and this start still has it.
+func TestAKeyWhoseFileCannotBeWrittenStaysInTheKeychain(t *testing.T) {
+	m := &memory{secret: "kept-in-the-keychain"}
+	var logged safeBuffer
+	// The app's folder is a file, so no file can be written in it.
+	base := t.TempDir()
+	if err := os.WriteFile(filepath.Join(base, "app"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := &Exa{path: filepath.Join(base, "app", File), old: m, env: func(string) string { return "" }, log: slog.New(slog.NewJSONHandler(&logged, nil))}
+	if key(e) != "kept-in-the-keychain" || !m.has() {
+		t.Errorf("get %q, still in the keychain %v", key(e), m.has())
+	}
+	if !strings.Contains(logged.String(), `"level":"ERROR"`) || !strings.Contains(logged.String(), "stays in the keychain") {
 		t.Errorf("log %s", logged.String())
 	}
 }

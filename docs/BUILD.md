@@ -43,9 +43,11 @@ key left the keychain (Tim, 26 November 2026). The first run or draft of
 a newer build that finds no file reads the keychain item **Speaker
 Trail: Exa API key** once, which may ask for the password one last time,
 moves the key to the file and deletes the item, whatever macOS answered.
-Closing that box leaves no key, and Settings takes it again. Saving the
-key in Settings first deletes the item without reading it, so nothing
-asks at all.
+Closing that box leaves the file empty, and Settings takes the key
+again. Once the file is there, even empty, the keychain is never read
+again, also should macOS refuse to delete the item. Saving the key in
+Settings first deletes the item without reading it, so nothing asks at
+all.
 
 ## Where things are kept
 

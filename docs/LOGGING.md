@@ -94,8 +94,9 @@ key was read from the keychain, to move it to its file`, with `ms`,
 whether it was `found` and the keychain's `status`, `0` when it was and
 `-128` when the password box was closed. `ms` shows how long the box was
 on screen. Then `the Exa key was moved from the keychain to its file`,
-or a warning that macOS kept it back and it was deleted all the same.
-This happens once, and the keychain is never read again.
+or a warning that macOS kept it back. A delete macOS refuses is a
+warning with its `status`. This happens once, and the keychain is never
+read again.
 
 ### Acts
 

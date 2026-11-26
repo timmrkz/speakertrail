@@ -573,7 +573,7 @@ func TestSettingsShowsTheLastToasts(t *testing.T) {
 	at := func(i int) float64 { return float64(start.Add(time.Duration(i) * time.Second).UnixMilli()) }
 	theLog.said([]SaidLine{
 		{At: at(0), Level: "warn", Toast: true, Text: "three"},
-		{At: at(1), Level: "info", Text: "toast: Saved the Exa key in the keychain"},
+		{At: at(1), Level: "info", Text: "toast: Saved the Exa key"},
 		{At: at(2), Level: "warn", Toast: true, Text: "Could not reach the app. Try again."},
 		{At: at(3), Level: "warn", Toast: true, Text: "four"},
 		{At: at(4), Level: "warn", Text: "the window said \"toast\":true as words"},

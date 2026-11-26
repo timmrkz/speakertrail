@@ -336,27 +336,26 @@ func TestADraftWithoutAKeyOrAModelFails(t *testing.T) {
 	}
 }
 
-// The report of 21 November 2026: Tim closed the keychain's password box
-// on Draft, and the draft said the Exa key was missing. A key macOS kept
-// back says so, Draft again asks for it again, and with it the draft is
-// written.
-func TestADraftWhoseKeyWasKeptBackSaysSoAndDraftAgainWorks(t *testing.T) {
+// The report of 21 November 2026: Draft said the Exa key was missing when
+// it could not be read. A key that could not be read says so, Draft again
+// asks for it again, and with it the draft is written.
+func TestADraftWhoseKeyCouldNotBeReadSaysSoAndDraftAgainWorks(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "")
-	keptBack := errors.New("the password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow")
+	unread := errors.New("the Exa key's file could not be read. Save the key again in Settings")
 	var asked atomic.Int32
 	r.d.Finder = func() (Finder, error) {
 		if asked.Add(1) == 1 {
-			return nil, keptBack
+			return nil, unread
 		}
 		return r.finder, nil
 	}
 	r.d.Start(id)
 	r.d.Wait()
 	j := r.d.Jobs()[0]
-	want := "The app reads their profile text from Exa first, and the password box was closed, so macOS kept the Exa key back. Try again, and pick Always Allow."
+	want := "The app reads their profile text from Exa first, and the Exa key's file could not be read. Save the key again in Settings."
 	if j.State != "failed" || j.Error != want {
-		t.Fatalf("kept back: %s, %q, want %q", j.State, j.Error, want)
+		t.Fatalf("unread: %s, %q, want %q", j.State, j.Error, want)
 	}
 	if _, err := r.d.Start(id); err != nil {
 		t.Fatal(err)

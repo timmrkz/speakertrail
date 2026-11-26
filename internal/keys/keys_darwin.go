@@ -172,6 +172,8 @@ func (k keychain) put(secret string) error {
 	return nil
 }
 
-func (k keychain) remove() {
-	names(func(service, account *C.char) { C.st_remove(k.kc, service, account) })
+func (k keychain) remove() int {
+	status := 0
+	names(func(service, account *C.char) { status = int(C.st_remove(k.kc, service, account)) })
+	return status
 }

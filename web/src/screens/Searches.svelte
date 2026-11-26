@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api, type Source } from '../lib/api'
   import { fmtAgo, fmtDay, plural } from '../lib/format'
-  import { undoHistory } from '../lib/history.svelte'
+  import { bringIntoView, undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
   import { errorText, fault, toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
@@ -28,6 +28,16 @@
   $effect(() => {
     if (undoHistory.changed === undoneAt) return
     untrack(() => searches.run(() => api.sources({ kind: 'profile_search' }), { quiet: true }))
+  })
+  // A search Undo or Redo changed comes into view once the list holds it.
+  $effect(() => {
+    const ids = (searches.data ?? []).map((s) => s.id)
+    const t = undoHistory.reveal((t) => t.kind === 'search' && ids.includes(t.id))
+    if (t?.kind !== 'search') return
+    void tick().then(() => {
+      const row = document.querySelector<HTMLElement>(`li.search[data-id="${t.id}"]`)
+      if (row) bringIntoView(row)
+    })
   })
 
   // A person's "Found by" links here with the search's words, so the
@@ -138,7 +148,7 @@
     {:else}
       <ul class="list">
         {#each shown as s (s.id)}
-          <li class="search" class:paused={s.status === 'retired'}>
+          <li class="search" class:paused={s.status === 'retired'} data-id={s.id}>
             <span class="what">
               <b class="ellipsis">{s.query}</b>
               <span class="ellipsis sub">{#if s.people_connected}<span class="connected">{s.people_connected} connected</span>{' · '}{/if}{line(s)}</span>

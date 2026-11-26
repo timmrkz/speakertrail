@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { api, type Json, type Setting } from '../api'
   import { fmtAgo } from '../format'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { errorText } from '../toast.svelte'
 
   // One setting with an editor that fits its JSON type. Bare, it is the
@@ -97,6 +99,12 @@
     status = 'idle'
     error = ''
   })
+  // A setting Undo or Redo changed comes into view, however far down
+  // Settings it is.
+  let row: HTMLFormElement | undefined = $state()
+  $effect(() => {
+    if (undoHistory.reveal((t) => t.kind === 'setting' && t.key === setting.key)) void tick().then(() => row && bringIntoView(row))
+  })
 
   function toggle() {
     text = text === 'true' ? 'false' : 'true'
@@ -112,7 +120,7 @@
   }
 </script>
 
-<form class="setting" class:long class:bare onsubmit={save} novalidate>
+<form class="setting" class:long class:bare onsubmit={save} novalidate bind:this={row}>
   {#if !bare}
     <div class="info">
       <label for={id} class="desc">{setting.description || setting.key}</label>

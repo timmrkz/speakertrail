@@ -660,3 +660,39 @@ func TestSearchesAndExclusionsFromSeveralGoroutines(t *testing.T) {
 		}
 	})
 }
+
+// A run lists the searches it takes as it starts and changes nothing on
+// them until each check ends, so the search must stay while it runs.
+func TestASearchARunTakesNowStays(t *testing.T) {
+	s := open(t, t.TempDir())
+	id := s.add(t, addSearch("Yogalehrerin Köln"))
+	_ = s.Update(func(d *Data) error {
+		d.Runs = append(d.Runs, &Run{ID: d.NewID(), Kind: "manual", StartedAt: t0, Searches: []int64{id}})
+		return nil
+	})
+	if _, err := s.Undo(); !errors.Is(err, ErrChangedSince) {
+		t.Fatalf("undo said %v, want ErrChangedSince", err)
+	}
+	if s.search(id) == nil {
+		t.Error("the refused undo took out the search the run takes")
+	}
+}
+
+// A search put back by Redo whose words were added again since stays
+// one, as an exclusion does.
+func TestASearchAddedAgainSinceStaysOne(t *testing.T) {
+	s := open(t, t.TempDir())
+	id := s.add(t, addSearch("Floristin Bonn"))
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	_ = s.Update(func(d *Data) error {
+		_, err := d.AddSearch("floristin bonn", 0, t0)
+		return err
+	})
+	if _, err := s.Redo(); !errors.Is(err, ErrChangedSince) {
+		t.Fatalf("redo said %v, want ErrChangedSince", err)
+	}
+	if s.search(id) != nil {
+		t.Error("the refused redo put the first search back beside the second")
+	}
+}

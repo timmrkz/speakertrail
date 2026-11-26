@@ -430,10 +430,16 @@ func (d *Data) create(t Thing, put fields) error {
 
 // remove takes out a search or an exclusion a step added, or removed and
 // an undo put back. A search that found someone since stays, since they
-// say it found them.
+// say it found them, and so does one a run that has not ended takes,
+// since its call to Exa may already be paid for.
 func (d *Data) remove(t Thing) error {
 	switch t.Kind {
 	case "search":
+		for _, r := range d.Runs {
+			if r.FinishedAt.IsZero() && slices.Contains(r.Searches, t.ID) {
+				return ErrChangedSince
+			}
+		}
 		for _, p := range d.People {
 			if slices.ContainsFunc(p.FoundBy, func(f Sighting) bool { return f.SearchID == t.ID }) {
 				return ErrChangedSince

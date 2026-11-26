@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api, type Exclusion } from '../api'
   import { plural } from '../format'
-  import { undoHistory } from '../history.svelte'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
   import { errorText, fault, toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
@@ -14,16 +14,20 @@
   $effect(() => {
     list.run(api.exclusions)
   })
-  // What Undo and Redo took back or did again shows at once, and the
-  // list opens when it was an exclusion, so the change is seen.
+  // What Undo and Redo took back or did again shows at once. The list
+  // opens when it was an exclusion, and comes into view, so the change is
+  // seen, whichever page the step was taken on.
   let open = $state(false)
+  let box: HTMLDetailsElement | undefined = $state()
   const undoneAt = undoHistory.changed
   $effect(() => {
     if (undoHistory.changed === undoneAt) return
-    untrack(() => {
-      if (undoHistory.shows?.kind === 'exclusion') open = true
-      list.run(api.exclusions, { quiet: true })
-    })
+    untrack(() => list.run(api.exclusions, { quiet: true }))
+  })
+  $effect(() => {
+    if (!undoHistory.reveal((t) => t.kind === 'exclusion')) return
+    open = true
+    void tick().then(() => box && bringIntoView(box, 'nearest'))
   })
   let all = $derived(list.data ?? [])
   let hiding = $derived(all.reduce((n, x) => n + x.people, 0))
@@ -76,7 +80,7 @@
   }
 </script>
 
-<details class="exclusions" bind:open>
+<details class="exclusions" bind:open bind:this={box}>
   <summary title="Words that leave a person out of profile searches and People, matched in their headline and roles. People you connected with always stay">
     <span class="title">Exclusions</span>
     {#if list.data}<span class="faint small count">{all.length}{hiding ? `, hiding ${plural(hiding, 'person', 'people')}` : ''}</span>{/if}

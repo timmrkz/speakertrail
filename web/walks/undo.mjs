@@ -80,6 +80,25 @@ const walks0 = [
     },
   },
   {
+    // The review of #110: from another page, Searches opened with the
+    // exclusions closed, so the one that came back was not seen.
+    name: 'An exclusion removed and taken back from People opens Searches with the exclusions open',
+    async run(page) {
+      await searches(page)
+      const list = page.locator('details.exclusions')
+      await list.locator('summary').click()
+      await chip(page, 'Personal Branding').locator('button.remove').click()
+      await chip(page, 'Personal Branding').waitFor({ state: 'detached' })
+      await page.goto(`${url}/app/people`)
+      await page.locator('main').waitFor()
+      await menu(page, 'undo')
+      await page.waitForURL('**/app/searches')
+      await chip(page, 'Personal Branding').waitFor()
+      if (!(await list.evaluate((d) => d.open))) return 'the exclusions stayed closed, so the one that came back is not seen'
+      return ''
+    },
+  },
+  {
     name: 'A setting changed is put back by Undo in the Edit menu, which opens Settings, and the row has no Undo of its own',
     async run(page) {
       await page.goto(`${url}/app/settings`)
@@ -96,6 +115,13 @@ const walks0 = [
       await menu(page, 'undo')
       await page.waitForURL('**/app/settings')
       await page.waitForFunction((was) => document.querySelector('#set-profile_searches_per_run')?.value === was, was)
+      // The row is far down Settings, and comes into view (the review of
+      // #110).
+      const seen = await page.waitForFunction(() => {
+        const r = document.querySelector('#set-profile_searches_per_run')?.getBoundingClientRect()
+        return r && r.top >= 0 && r.bottom <= innerHeight
+      }, null, { timeout: 5000 }).then(() => '', () => page.evaluate(() => `the row stands at ${Math.round(document.querySelector('#set-profile_searches_per_run').getBoundingClientRect().top)} px in a window ${innerHeight} px tall`))
+      if (seen) return seen
       // Redo on the page itself, where the row shows it at once.
       await menu(page, 'redo')
       await page.waitForFunction(() => document.querySelector('#set-profile_searches_per_run')?.value === '12')

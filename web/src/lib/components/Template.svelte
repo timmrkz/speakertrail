@@ -8,7 +8,7 @@
   import { tick, untrack } from 'svelte'
   import { api, type FirstMessageTemplate, type TemplatePart } from '../api'
   import { plural } from '../format'
-  import { undoHistory } from '../history.svelte'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
   import { errorText, toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
@@ -25,6 +25,11 @@
       errors = {}
       void tpl.run(api.template, { quiet: true }).then(showExample)
     })
+  })
+  // The template comes into view when Undo or Redo changed it.
+  let section: HTMLElement | undefined = $state()
+  $effect(() => {
+    if (undoHistory.reveal((t) => t.kind === 'template')) void tick().then(() => section && bringIntoView(section, 'nearest'))
   })
 
   // One message put together by the app, with what the app and the model
@@ -205,7 +210,7 @@
   const fieldBy = (by: string) => (by === 'model' ? 'the language model' : 'the app')
 </script>
 
-<section class="group template" aria-labelledby="head-template">
+<section class="group template" aria-labelledby="head-template" bind:this={section}>
   <div class="headrow">
     <h2 id="head-template">Template</h2>
     <span class="ask">

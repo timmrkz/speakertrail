@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import { api, type LinkedinWhere } from '../api'
-  import { undoHistory } from '../history.svelte'
+  import { bringIntoView, undoHistory } from '../history.svelte'
   import { errorText } from '../toast.svelte'
   import Pick from './Pick.svelte'
 
@@ -23,6 +23,11 @@
       status = 'idle'
       api.linkedin().then((w) => (where = w)).catch((e) => (error = errorText(e)))
     })
+  })
+  // Where LinkedIn opens comes into view when Undo or Redo changed it.
+  let section: HTMLElement | undefined = $state()
+  $effect(() => {
+    if (undoHistory.reveal((t) => t.kind === 'setting' && t.key === 'linkedin_opens')) void tick().then(() => section && bringIntoView(section))
   })
 
   // The LinkedIn button sends here when nothing is chosen, so the menu is
@@ -66,7 +71,7 @@
   }
 </script>
 
-<section class="group" id="linkedin">
+<section class="group" id="linkedin" bind:this={section}>
   <h2>LinkedIn</h2>
   <div class="list">
     <div class="setting">

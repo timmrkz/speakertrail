@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -96,6 +95,18 @@ func (f *finder) People(ctx context.Context, query string, results int) ([]searc
 	}
 	return f.profiles, f.err
 }
+
+// heard is a log that hands a test every message the engine writes, so
+// the test goes on the moment a step is said, after what it saved.
+type heard chan string
+
+func (h heard) Enabled(context.Context, slog.Level) bool { return true }
+func (h heard) Handle(_ context.Context, r slog.Record) error {
+	h <- r.Message
+	return nil
+}
+func (h heard) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h heard) WithGroup(string) slog.Handler      { return h }
 
 func steps(title, org string, from int, school string, schoolFrom int) []search.Step {
 	return []search.Step{{Title: title, Org: org, From: from}, {Education: true, Title: "Bachelor", Org: school, From: schoolFrom, To: schoolFrom + 3}}
@@ -869,6 +880,8 @@ func TestALinkAddedFromSeveralGoroutinesIsReadOnce(t *testing.T) {
 func TestALinkAddedAgainAfterAFailedReadWaitsForTheNextRun(t *testing.T) {
 	f := &finder{hold: make(chan struct{}), readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}, err: errors.New("Exa answered 503")}
 	e, st := newEngine(t, f)
+	said := make(heard, 64)
+	e.Log = slog.New(said)
 	_ = st.Update(func(d *store.Data) error {
 		_, err := d.AddSearch("Yogalehrerin Bonn", 0, t0)
 		return err
@@ -885,16 +898,16 @@ func TestALinkAddedAgainAfterAFailedReadWaitsForTheNextRun(t *testing.T) {
 	f.hold <- struct{}{}
 	for got := <-f.started; got != ida.URL; got = <-f.started {
 	}
-	// The read fails while the search still runs.
+	// The read fails while the search still runs. The engine says so once
+	// the failure is saved.
 	f.readHold <- struct{}{}
-	for {
-		var failed bool
-		st.Read(func(d *store.Data) { failed = len(d.Run(id).Reads) == 1 })
-		if failed {
-			break
-		}
-		runtime.Gosched()
+	for msg := <-said; msg != "a profile could not be read"; msg = <-said {
 	}
+	st.Read(func(d *store.Data) {
+		if n := len(d.Run(id).Reads); n != 1 {
+			t.Fatalf("the failed read was said before it was saved, %d reads", n)
+		}
+	})
 	// Added again, nobody is read by this run, so no run reads for it.
 	out, err := e.Add(ida.URL)
 	if err != nil || out.Run != 0 || len(out.Here) != 1 {

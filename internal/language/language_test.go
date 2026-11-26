@@ -134,7 +134,7 @@ func TestInstallCheckAndRemove(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, m.Name), append([]byte("GGUF"), make([]byte, len(data)-4)...), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	later := time.Now().Add(time.Hour)
+	later := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 	os.Chtimes(filepath.Join(dir, m.Name), later, later)
 	if err := Check(m, dir); err == nil || !strings.Contains(err.Error(), "not the file it was") {
 		t.Errorf("a changed model was let through: %v", err)

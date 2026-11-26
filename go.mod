@@ -2,6 +2,10 @@ module github.com/timmrkz/speakertrail
 
 go 1.27
 
+// What npm installs for the interface is not ours to build or test, and
+// one of ESLint's packages, flatted, carries Go code of its own.
+ignore ./web/node_modules
+
 require (
 	github.com/dsnet/compress v0.0.0-20171208185109-cc9eb1d7ad76
 	github.com/gabstv/go-bsdiff v1.0.5
@@ -13,6 +17,7 @@ require (
 	github.com/wailsapp/wails/v3 v3.0.0-beta.23
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/sys v0.50.0
+	golang.org/x/text v0.39.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
@@ -28,5 +33,4 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
-	golang.org/x/text v0.39.0 // indirect
 )

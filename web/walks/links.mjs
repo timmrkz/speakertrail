@@ -38,14 +38,36 @@ const pressed = (page) => page.locator('main .filters button[aria-pressed="true"
 
 async function people(browser, width = 1280) {
   const page = await browser.newPage({ viewport: { width, height: 800 } })
+  // The page's clock runs as the real one does, until done moves it on.
+  await page.clock.install()
   await page.goto(`${url}/app/people`)
   await page.locator('main .prow').first().waitFor()
   return page
 }
 
-// The run the walk started ends, so the next finds the mock at rest.
+// Enter adds the links in the search, and the walk goes on once the page
+// holds the run they started, which New counts. A run the page never saw
+// going ends with no Run done, so moving the clock on before then lost
+// the toast, #96. The app's answer to the add is not enough: the page
+// learns of the run from its next look, see poll in src/lib/run.svelte.ts.
+async function add(page) {
+  await search(page).press('Enter')
+  await page.locator('main .filters button[title*="of this run"]').waitFor()
+}
+
+// The mock's clock moved on by ms, and the page's past its next look at
+// the run, GOING_MS in src/lib/run.svelte.ts, so the walk waits for
+// neither, #96.
+async function moveOn(page, ms) {
+  await page.request.post(`${url}/api/mock/clock`, { data: { ms } })
+  await page.clock.fastForward(2000)
+}
+
+// The run the walk started ends, so the next finds the mock at rest: its
+// clock moved on past the run's last read.
 async function done(page) {
-  await page.waitForFunction(() => document.querySelector('main button.start')?.textContent.trim() === 'Run', null, { timeout: 30000 })
+  await moveOn(page, 10000)
+  await page.waitForFunction(() => document.querySelector('main button.start')?.textContent.trim() === 'Run')
 }
 
 await walk('Links in the search turn Run into Add 2, Open, or a greyed Add, and the list answers them', async (browser) => {
@@ -72,14 +94,16 @@ await walk('Links in the search turn Run into Add 2, Open, or a greyed Add, and 
 await walk('Enter adds the people, shows them under New on top, fills each row while its profile is read, and New counts how far', async (browser) => {
   const page = await people(browser)
   await search(page).fill('https://www.linkedin.com/in/greta-probe-71 https://www.linkedin.com/in/neu-probe-73')
-  await search(page).press('Enter')
+  await add(page)
   await page.waitForFunction(() => document.querySelector('main .filters button[aria-pressed="true"]')?.textContent.startsWith('New'))
   expect('the search was not emptied', (await search(page).inputValue()) === '')
   // The two come first, newest on top, named by their handles.
   await page.locator('main .prow b', { hasText: 'greta-probe-71' }).waitFor()
   const first = await page.locator('main .prow b').evaluateAll((b) => b.slice(0, 2).map((x) => x.textContent))
   expect(`the list began with ${first}`, first.includes('greta-probe-71') && first.includes('neu-probe-73'))
-  // Each row fills while its profile is read, several at once.
+  // Each row fills while its profile is read, several at once. The
+  // reads start on the run's first second.
+  await moveOn(page, 1000)
   await page.locator('main .prow.reading .fill i').first().waitFor()
   const reading = await page.locator('main .prow.reading').count()
   expect(`${reading} rows were filled`, reading === 2)
@@ -139,7 +163,7 @@ await walk('Links pasted on People, not into a field, go into the search', async
 await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, and Undo in the Edit menu puts back their link name', async (browser) => {
   const page = await people(browser)
   await search(page).fill('https://www.linkedin.com/in/neu-probe-79')
-  await search(page).press('Enter')
+  await add(page)
   await done(page)
   // The toast of the run's end comes first, so it does not take the place
   // of the paste's.
@@ -175,7 +199,7 @@ await walk('A LinkedIn page pasted on someone Exa lacks becomes their profile, a
 await walk('A LinkedIn page pasted on another page, or into the search, opens whose it is and drafts their first message', async (browser) => {
   const page = await people(browser)
   await search(page).fill('https://www.linkedin.com/in/eva-s-neu-80')
-  await search(page).press('Enter')
+  await add(page)
   await done(page)
   await page.locator('main .prow', { hasText: 'eva-s-neu-80' }).locator('.sub', { hasText: 'Paste their LinkedIn page' }).waitFor()
   // Tim went to Settings, and pastes the page there, with the links
@@ -260,7 +284,9 @@ await walk('Links dropped on the window light all of it and are added, from any 
     at.dispatchEvent(new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }))
   })
   // It fades in, so it is read once it has.
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.landing')).opacity === '1', null, { timeout: 2000 })
+  await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))))
+  const lit = await page.evaluate(() => getComputedStyle(document.querySelector('.landing')).opacity)
+  expect(`the window was lit to ${lit}`, lit === '1')
   await page.evaluate(() => {
     const data = new DataTransfer()
     data.setData('text/uri-list', 'https://www.linkedin.com/in/jule-probe-75')

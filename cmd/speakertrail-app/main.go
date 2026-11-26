@@ -176,9 +176,9 @@ func main() {
 	report.said = func(d ReportDraft) { emit("report-draft", d) }
 	report.pick = func() ([]string, error) {
 		return app.Dialog.OpenFile().
-			SetTitle("Attach screenshots").
+			SetTitle("Attach screenshots or recordings").
 			CanChooseFiles(true).
-			AddFilter("Screenshots", "*.png;*.jpg;*.jpeg").
+			AddFilter("Screenshots and recordings", "*.png;*.jpg;*.jpeg;"+recordingPattern()).
 			PromptForMultipleSelection()
 	}
 	reports := reportMaker{report: report, st: e.Store}

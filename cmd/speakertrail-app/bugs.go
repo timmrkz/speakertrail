@@ -30,12 +30,12 @@ import (
 // a draft, kept in the app's folder until a report is made from it, so
 // closing the window loses nothing, and neither does the app crashing,
 // which may be the problem being reported. Ported from FrameFairy's
-// bugs.go, without screen recordings, which need the ffmpeg FrameFairy
-// ships and Speaker Trail does not. Its bound calls are routes here, see
-// report_api.go, and docs/LOGGING.md.
+// bugs.go, with its screen recordings, see recording.go. Its bound calls
+// are routes here, see report_api.go, and docs/LOGGING.md.
 
-// How many pictures a report takes, and how big a file each may be. They
-// are meant for screenshots, which a Mac's screen makes at a few MB.
+// How many pictures and recordings a report takes, and how big a file each
+// may be. They are meant for screenshots, which a Mac's screen makes at a
+// few MB, and short screen recordings, see recording.go.
 const (
 	picturesMax     = 10
 	pictureBytesMax = 10 << 20
@@ -55,6 +55,10 @@ type ReportPicture struct {
 	Name   string `json:"name"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+	// The ending a screen recording is kept under, "" for a picture. A
+	// recording is kept as it came, with no picture of its own and no
+	// size, see recording.go.
+	Recording string `json:"recording,omitempty"`
 	// Removed by the person, kept a while so it can be put back. A removed
 	// picture goes in no report and counts toward no limit.
 	Removed bool `json:"removed,omitempty"`
@@ -112,7 +116,7 @@ type reporting struct {
 	// it. Both are events in the app.
 	told func(open bool)
 	said func(ReportDraft)
-	// pick asks for pictures in the system's open box.
+	// pick asks for pictures and recordings in the system's open box.
 	pick func() ([]string, error)
 	// stop drops the recording the window had going, once the window is
 	// gone, CancelListening. Set by main.go.
@@ -380,7 +384,7 @@ func (r *reporting) takesPeople() bool {
 	return r.draft.People
 }
 
-// AttachPictures asks for pictures in the system's open box and attaches
+// AttachPictures asks for pictures and recordings in the system's open box and attaches
 // them. Cancelled, it attaches nothing and says nothing.
 func (r *reporting) AttachPictures() ReportDraft {
 	pick := r.pick
@@ -396,8 +400,8 @@ func (r *reporting) AttachPictures() ReportDraft {
 	return r.attachFiles("picked", paths)
 }
 
-// AttachPasted attaches a picture pasted into the report's field, its
-// bytes in base64, the way the window has them.
+// AttachPasted attaches a picture or a recording pasted into the
+// report's field, its bytes in base64, the way the window has them.
 func (r *reporting) AttachPasted(name, data string) ReportDraft {
 	if base64.StdEncoding.DecodedLen(len(data)) > pictureBytesMax+3 {
 		return r.attach("pasted", []handed{{name: name, err: errTooBig}})
@@ -409,7 +413,16 @@ func (r *reporting) AttachPasted(name, data string) ReportDraft {
 	return r.attach("pasted", []handed{{name: name, data: b, err: err}})
 }
 
-// RemovePicture removes a picture from the draft. It can be put back.
+// PastedTooBig turns away a paste too big to be read, by its name.
+func (r *reporting) PastedTooBig(name string) ReportDraft {
+	if name == "" {
+		name = "Pasted file"
+	}
+	return r.attach("pasted", []handed{{name: name, err: errTooBig}})
+}
+
+// RemovePicture removes a picture or a recording from the draft. It can
+// be put back.
 func (r *reporting) RemovePicture(id string) ReportDraft {
 	return r.markPicture(id, true)
 }
@@ -419,8 +432,8 @@ func (r *reporting) PutBackPicture(id string) ReportDraft {
 	return r.markPicture(id, false)
 }
 
-// ClearReport empties the draft, what was written and every picture,
-// once Clear has asked first. The pictures are removed the way
+// ClearReport empties the draft, what was written and every picture and
+// recording, once Clear has asked first. The pictures are removed the way
 // the bin removes one, so Cmd+Z in the window puts them back with
 // PutBackPicture, and the app's copies go at the next start or the next
 // report. Never the files they were handed over from. Issue #415.
@@ -449,12 +462,16 @@ func (r *reporting) markPicture(id string, removed bool) ReportDraft {
 		return r.shown("")
 	}
 	if !removed && r.count() >= picturesMax {
-		return r.shown(fmt.Sprintf("A report takes %d pictures at most", picturesMax))
+		return r.shown(fmt.Sprintf("A report takes %d pictures and recordings at most", picturesMax))
 	}
 	r.draft.Pictures[i].Removed = removed
-	how := "a picture was put back"
+	what := "a picture"
+	if r.draft.Pictures[i].Recording != "" {
+		what = "a recording"
+	}
+	how := what + " was put back"
 	if removed {
-		how = "a picture was removed"
+		how = what + " was removed"
 	}
 	theLog.line(zerolog.InfoLevel, "report").Str("picture", id).Msg(how)
 	if err := r.keep(); err != nil {
@@ -471,8 +488,8 @@ func (r *reporting) dropped(files []string) {
 	}
 }
 
-// handed is a picture handed to the report, with why it could not be
-// read.
+// handed is a picture or a recording handed to the report, with why it
+// could not be read.
 type handed struct {
 	name string
 	data []byte
@@ -538,14 +555,14 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	for i, g := range got {
 		name, pic, err := g.name, g.pic, g.err
 		if err == nil && r.count() >= picturesMax {
-			err = fmt.Errorf("would be more than the %d pictures a report takes", picturesMax)
+			err = fmt.Errorf("would be more than the %d pictures and recordings a report takes", picturesMax)
 		}
 		if err == nil {
 			r.draft.Next++
 			pic.ID = fmt.Sprintf("p%d", r.draft.Next)
 			pic.Name = name
 			if err = r.files.MkdirAll(r.dir, 0o700); err == nil {
-				err = writeAtomic(r.files, filepath.Join(r.dir, pic.ID+".png"), g.body)
+				err = writeAtomic(r.files, filepath.Join(r.dir, pic.ID+"."+pic.ending()), g.body)
 			}
 			if err != nil {
 				err = errors.New("could not be kept")
@@ -558,8 +575,13 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 		}
 		r.draft.Pictures = append(r.draft.Pictures, pic)
 		added++
+		what := "a picture was attached"
+		if pic.Recording != "" {
+			what = "a recording was attached"
+		}
 		theLog.line(zerolog.InfoLevel, "report").Str("how", how).Str("picture", pic.ID).Str("name", name).
-			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).Msg("a picture was attached")
+			Int("bytes", len(all[i].data)).Int("width", pic.Width).Int("height", pic.Height).
+			Str("recording", pic.Recording).Msg(what)
 	}
 	if added > 0 {
 		if err := r.keep(); err != nil {
@@ -570,8 +592,9 @@ func (r *reporting) attach(how string, all []handed) ReportDraft {
 	return r.shown(strings.Join(why, ". "))
 }
 
-// attachment reads a picture handed to the report, see picture, and
-// gives it as a PNG.
+// attachment reads what was handed to the report: a picture, see picture,
+// which it gives as a PNG, or a screen recording, which it gives as it
+// came, see recording.go.
 func (g handed) attachment(decoding func()) (ReportPicture, []byte, error) {
 	if decoding == nil {
 		decoding = func() {}
@@ -581,6 +604,9 @@ func (g handed) attachment(decoding func()) (ReportPicture, []byte, error) {
 	}
 	if len(g.data) > pictureBytesMax {
 		return ReportPicture{}, nil, errTooBig
+	}
+	if family := sniffRecording(g.data); family != "" {
+		return ReportPicture{Recording: recordingEnding(family, g.name)}, g.data, nil
 	}
 	return g.picture(decoding)
 }
@@ -683,11 +709,14 @@ func (r *reporting) load() {
 		if !pictureID.MatchString(p.ID) {
 			continue
 		}
+		if p.Recording != "" && !isRecordingEnding(p.Recording) {
+			continue
+		}
 		if p.Removed {
 			r.forget(p)
 			continue
 		}
-		if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+".png")); err != nil {
+		if _, err := r.files.Stat(filepath.Join(r.dir, p.ID+"."+p.ending())); err != nil {
 			continue
 		}
 		p.Name = tidyName(p.Name)
@@ -722,15 +751,33 @@ func (r *reporting) keep() error {
 // preview route serves.
 var pictureID = regexp.MustCompile(`^p[0-9]{1,9}$`)
 
-// forget lets go of the file a picture is kept in. It is the app's own
-// copy, never the file Tim handed over.
+// forget lets go of the file a picture or a recording is kept in. It is
+// the app's own copy, never the file Tim handed over.
 func (r *reporting) forget(p ReportPicture) {
-	_ = r.files.Remove(filepath.Join(r.dir, p.ID+".png"))
+	if p.Recording == "" || isRecordingEnding(p.Recording) {
+		_ = r.files.Remove(filepath.Join(r.dir, p.ID+"."+p.ending()))
+	}
 }
 
-// reportPictures gives the pictures that go in a report, in order, and
-// their ids, for clear.
-func (r *reporting) reportPictures() (ids []string, pictures [][]byte) {
+// ending is the ending the file of a picture or a recording is kept
+// under: "png" for a picture, which is always written again as one.
+func (p ReportPicture) ending() string {
+	if p.Recording != "" {
+		return p.Recording
+	}
+	return "png"
+}
+
+// sentFile is a picture or a recording as it goes in a report: the
+// ending it goes under, "png" for a picture, and its bytes.
+type sentFile struct {
+	ending string
+	data   []byte
+}
+
+// reportPictures gives the pictures and recordings that go in a report,
+// in order, and their ids, for clear.
+func (r *reporting) reportPictures() (ids []string, files []sentFile) {
 	if r == nil {
 		return nil, nil
 	}
@@ -741,12 +788,12 @@ func (r *reporting) reportPictures() (ids []string, pictures [][]byte) {
 		if p.Removed {
 			continue
 		}
-		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+".png")); err == nil {
+		if b, err := afero.ReadFile(r.files, filepath.Join(r.dir, p.ID+"."+p.ending())); err == nil {
 			ids = append(ids, p.ID)
-			pictures = append(pictures, b)
+			files = append(files, sentFile{p.ending(), b})
 		}
 	}
-	return ids, pictures
+	return ids, files
 }
 
 // clear lets go of the draft once a report is made from it, so the next
@@ -832,6 +879,6 @@ func writeAtomic(fsys afero.Fs, path string, body []byte) error {
 	return nil
 }
 
-// errNotKept is a file left out because it is not a picture the app can
-// read.
-var errNotKept = errors.New("is not a PNG or JPEG picture")
+// errNotKept is a file left out because it is neither a picture nor a
+// recording the app can read.
+var errNotKept = errors.New("is not a picture or a screen recording")

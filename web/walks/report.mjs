@@ -6,6 +6,7 @@
 // them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { asking, drawn } from './lib/settled.mjs'
 
 // The report window, at its own size, with the draft the last walk left
 // sent off before it opens, so every walk starts from an empty report.
@@ -61,6 +62,7 @@ const walks = [
     // the order they were pressed.
     name: 'A picture put back stays, and Undo after Clear brings it back',
     async run(page) {
+      const sent = await asking(page)
       await openReport(page)
       await page.locator('textarea.telling').click()
       await page.keyboard.type('It froze.')
@@ -70,14 +72,12 @@ const walks = [
       // put back's until the page was looked at in between.
       const [pressed, press] = later()
       const [looked, look] = later()
-      let putBackAsked = false
       await page.route('**/api/report/remove', async (route) => {
         const answer = await route.fetch()
         await pressed
         await route.fulfill({ response: answer })
       })
       await page.route('**/api/report/put-back', async (route) => {
-        putBackAsked = true
         const answer = await route.fetch()
         await looked
         await route.fulfill({ response: answer })
@@ -90,8 +90,8 @@ const walks = [
       const removed = page.waitForResponse((r) => r.url().endsWith('/api/report/remove'))
       await page.locator('.tile .bin').click()
       await page.getByRole('button', { name: 'Put it back' }).click()
-      await page.waitForTimeout(0)
-      if (putBackAsked) return 'the put back was asked before the remove was answered'
+      await drawn(page)
+      if ((await sent()).includes('/api/report/put-back')) return 'the put back was asked before the remove was answered'
       const asked = page.waitForRequest((r) => r.url().endsWith('/api/report/put-back'))
       press()
       await removed
@@ -117,6 +117,38 @@ const walks = [
       if (text !== 'It froze.' || pictures !== 1) return `after Undo the field reads ${JSON.stringify(text)} with ${pictures} pictures, want the words and 1`
       const draft = await page.evaluate(() => fetch('/api/report').then((r) => r.json()))
       if (draft.pictures.length !== 1) return `the draft holds ${draft.pictures.length} pictures after Undo`
+      return ''
+    },
+  },
+  {
+    // A screen recording pasted into the field is attached like a
+    // picture, and its tile shows the mark of a film and its name, since
+    // the app reads no picture out of it. Issue #49.
+    name: 'A recording pasted shows as a tile with its name',
+    async run(page) {
+      await openReport(page)
+      await page.locator('textarea.telling').click()
+      const pasted = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/report/pasted')
+      await page.evaluate(() => {
+        const box = new DataTransfer()
+        box.items.add(new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 113, 116, 32, 32])], 'Screen Recording.mov', { type: 'video/quicktime' }))
+        document.querySelector('textarea.telling').dispatchEvent(new ClipboardEvent('paste', { clipboardData: box, bubbles: true, cancelable: true }))
+      })
+      const sent = JSON.parse((await pasted).request().postData() ?? '{}')
+      if (sent.name !== 'Screen Recording.mov') return `the paste sent ${JSON.stringify(sent.name)}`
+      const figure = page.locator('.pictures figure')
+      await figure.locator('.film svg').waitFor()
+      const tile = await figure.evaluate((f) => ({
+        name: f.querySelector('.film .name').textContent.trim(),
+        label: f.getAttribute('aria-label'),
+        pictures: f.querySelectorAll('img').length,
+        inside: f.querySelector('.film .name').getBoundingClientRect().right <= f.getBoundingClientRect().right,
+      }))
+      if (tile.pictures !== 0) return 'the recording\'s tile asks for a picture the app has none of'
+      if (tile.name !== 'Screen Recording.mov') return `the recording's tile says ${JSON.stringify(tile.name)}`
+      if (!tile.inside) return 'the name on the recording\'s tile runs past its edge'
+      if (tile.label !== 'Screen Recording.mov, a screen recording') return `the recording's tile is read out as ${JSON.stringify(tile.label)}`
+      if ((await page.locator('textarea.telling').inputValue()) !== '') return 'the paste wrote into the field'
       return ''
     },
   },
@@ -170,7 +202,7 @@ const walks = [
         }
         return went.join(', ')
       }
-      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots', 'Dictate']
+      const row = ['Report', 'Clear', 'Take People along', 'Attach screenshots or recordings', 'Dictate']
       await openReport(page)
       const field = page.locator('textarea.telling')
       await field.click()
@@ -251,13 +283,12 @@ const walks = [
     // report, though Tab reaches them.
     name: 'Report and Clear do nothing with nothing to report, though Tab reaches them',
     async run(page) {
-      let made = false
+      const asked = await asking(page)
       await openReport(page)
-      page.on('request', (r) => { if (r.url().endsWith('/api/report/send')) made = true })
       await page.locator('button.make').click({ force: true })
       await page.locator('button.clear').click({ force: true })
-      await page.waitForTimeout(100)
-      if (made) return 'Report made a report of nothing'
+      await drawn(page)
+      if ((await asked()).includes('/api/report/send')) return 'Report made a report of nothing'
       if (await page.locator('dialog[open]').count()) return 'Clear asked to clear nothing'
       const greyed = await page.locator('button.make').evaluate((b) => getComputedStyle(b).backgroundColor === getComputedStyle(document.querySelector('button.clear')).backgroundColor)
       if (!greyed) return 'Report and Clear are not the same grey'

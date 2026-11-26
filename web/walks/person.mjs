@@ -2,6 +2,7 @@
 // walks/sidebar.mjs does. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn, quiet } from './lib/settled.mjs'
 
 const review = (page, id) => page.evaluate((id) => fetch(`/api/people/${id}`).then((r) => r.json()).then((p) => p.profiles[0].review), id)
 
@@ -295,7 +296,7 @@ const walks = [
       const closed = await look()
       await page.locator('.prow').nth(2).click()
       await page.locator('.detail-pane').waitFor()
-      await page.waitForTimeout(0)
+      await drawn(page)
       await page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished.catch(() => {}))))
       const open = await look()
       if (open !== closed) return `the list changed: closed ${closed}, open ${open}`
@@ -493,9 +494,9 @@ const walks = [
       // Only the window Tim is in takes it: Report a Problem gets the
       // same event, and Cmd+Z there takes nothing back here.
       await page.evaluate(() => { window.hadFocus = document.hasFocus; document.hasFocus = () => false })
+      await quiet(page)
       await menu(page, 'undo')
-      await page.evaluate(() => fetch('/api/people/1002'))
-      await page.waitForLoadState('networkidle')
+      if ((await quiet(page)).includes('/api/undo')) return 'Undo in a window without the focus asked the app'
       if ((await connected()) === was) return 'Undo in a window without the focus took Connect back'
       await page.evaluate(() => { document.hasFocus = window.hadFocus })
       // Typing in the notes, Undo is the field's.
@@ -537,19 +538,19 @@ const walks = [
       const typed = await notes.inputValue()
       // Out of the field, onto the page, as a click beside it does.
       await page.evaluate(() => document.activeElement.blur())
-      await page.waitForFunction(async (typed) => (await fetch('/api/people/1003').then((r) => r.json())).notes === typed, typed, { timeout: 3000 })
+      await page.waitForFunction(async (typed) => (await fetch('/api/people/1003').then((r) => r.json())).notes === typed, typed)
         .catch(() => { throw new Error('the notes were not saved on leaving the field') })
       await menu(page, 'undo')
-      await page.waitForFunction((was) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === was, was, { timeout: 3000 })
+      await page.waitForFunction((was) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === was, was)
         .catch(async () => { throw new Error(`Undo from the menu did not take the notes back`) })
       await notes.click()
+      await quiet(page)
       await menu(page, 'redo')
-      await page.waitForFunction((typed) => [...document.querySelectorAll('.detail-pane textarea')].at(-1).value === typed, typed, { timeout: 3000 })
-        .catch(() => {})
+      await quiet(page)
       if ((await notes.inputValue()) !== typed) return `Cmd+Y in the notes left them ${JSON.stringify(await notes.inputValue())}, want the words back`
       for (const how of ['undo', 'redo', 'undo', 'undo', 'redo', 'undo', 'redo', 'redo']) {
         await menu(page, how)
-        await page.waitForLoadState('networkidle')
+        await quiet(page)
         const v = await notes.inputValue()
         if (v.split('woeifh').length > 2) return `after ${how} the notes read ${JSON.stringify(v)}`
       }
@@ -568,11 +569,9 @@ const walks = [
       await page.keyboard.press('End')
       await page.keyboard.type(' unsaved')
       const unsaved = await notes.inputValue()
-      let asksApp = false
-      page.on('request', (r) => { if (new URL(r.url()).pathname === '/api/redo') asksApp = true })
+      await quiet(page)
       await menu(page, 'redo')
-      await page.waitForLoadState('networkidle')
-      if (asksApp) return 'Cmd+Y with words not saved yet in the notes went to the app'
+      if ((await quiet(page)).includes('/api/redo')) return 'Cmd+Y with words not saved yet in the notes went to the app'
       if ((await notes.inputValue()) !== unsaved) return `Cmd+Y wrote over words not saved yet: ${JSON.stringify(await notes.inputValue())}`
       return ''
     },
@@ -596,7 +595,7 @@ const walks = [
       await page.keyboard.press('End')
       await page.keyboard.type(' met at the fair')
       const typed = await notes.inputValue()
-      const pressed = (state) => page.locator(`.detail-pane button.connect[aria-pressed="${state}"]`).waitFor({ timeout: 3000 })
+      const pressed = (state) => page.locator(`.detail-pane button.connect[aria-pressed="${state}"]`).waitFor()
       await menu(page, 'undo')
       if ((await notes.inputValue()) !== before) return `the first Cmd+Z left the notes ${JSON.stringify(await notes.inputValue())}`
       await menu(page, 'undo')

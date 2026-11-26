@@ -513,6 +513,11 @@ variation stands for a variation of the part `name`. An empty variation
 leaves the part out now and then, a part with no variation at all leaves
 it out always, and a variation written twice is picked twice as often. The app fills `#first_name#`, the language model `#portrait#`,
 `#reason#` and `#reaction_part#`, a space and the reaction or nothing.
+The first name is read from the name with the profile's link, skipping
+titles like "Dr. med." and leaving out degrees, pronouns and taglines,
+see [names.md](names.md). Where neither holds a first name for sure,
+like "Dr. Beispiel", `…` stands for Tim to write, and the prompt's
+`{{first_name}}` is the whole name.
 What they fill in is put in as it is, never read for `#name#` again.
 Tim's first template is `internal/store/first_message_template.json`.
 
@@ -556,21 +561,23 @@ answer 409 with a sentence that can go in a toast.
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}], "people": false}`. Pictures removed a moment ago are left out |
+| `GET /api/report` | the draft, `{"text": "…", "pictures": [{"id": "p1", "name": "Screenshot….png", "width": 1440, "height": 900}], "people": false}`. A screen recording has `"recording": "mov"`, the ending it is kept under, and no size. Pictures removed a moment ago are left out |
 | `GET /api/report/window` | `{"open": true}` while the report window is open |
 | `POST /api/report/open` | `{"how": "bugs"}` opens the report window, or brings it to the front |
 | `POST /api/report/about` | `{"text": "…"}` opens it with the words of a toast after what was written |
 | `PUT /api/report/text` | `{"text": "…"}` keeps what was written |
-| `GET /api/report/picture?id=p1` | the picture itself, as PNG |
-| `POST /api/report/pick` | asks for pictures in a Finder dialog, PNG or JPEG |
-| `POST /api/report/pasted` | `{"name": "…", "data": "<base64>"}` adds a pasted picture |
+| `GET /api/report/picture?id=p1` | the picture itself, as PNG. A recording has none |
+| `POST /api/report/pick` | asks for pictures and recordings in a Finder dialog, PNG or JPEG, and MP4, MOV, M4V, MKV or WebM |
+| `POST /api/report/pasted?name=…` | `{"name": "…", "data": "<base64>"}` adds a pasted picture or recording. One too big to be read is turned away by the name in the address, with the reason in the draft |
 | `POST /api/report/remove` | `{"id": "p1"}` takes a picture out, and keeps it aside for Put it back |
 | `POST /api/report/put-back` | `{"id": "p1"}` puts it back |
 | `POST /api/report/clear` | empties the draft, and keeps it aside for Undo. People stays as it is |
 | `PUT /api/report/people` | `{"people": true}` takes People along, and answers the draft. Every new draft starts with it off |
 | `POST /api/report/send` | `{"what": "…"}` makes the report, with `people.json` when the draft takes People, a zip on the Desktop, shows it in Finder, closes the window and answers `{"path": "~/Desktop/Speaker Trail report 2026-11-16 10.15.zip"}` |
 
-At most 10 pictures, each at most 10 MB. The draft as it changes is sent
+At most 10 pictures and recordings, each at most 10 MB. A recording is
+told by its first bytes and kept as it came, see
+`cmd/speakertrail-app/recording.go`. The draft as it changes is sent
 as the Wails event `report-draft`, and whether the window is open as
 `report-window`. What goes into the zip is in
 [LOGGING.md](LOGGING.md), Report a Problem.

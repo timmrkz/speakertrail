@@ -1,0 +1,362 @@
+# Invented names written blind, by someone who had not seen the rules,
+# to measure them: the name, the part of the profile's link after /in/
+# or nothing, the first name a careful person greets them by, and ? for
+# the family name, which this set does not ask. Lines starting with
+# "# miss" are names read wrong today, see docs/names.md.
+
+# Plain German names
+Bernd Wöstmann	bernd-woestmann-61a2c7b9	Bernd	?
+Silvia Brauckmann		Silvia	?
+Carsten Lüdke	carsten-lüdke-0b4e2a17	Carsten	?
+Monika Wessels	monika-wessels-62b3a1a9	Monika	?
+Lars Hoppenrath	larshoppenrath-f8db3900	Lars	?
+Dirk Overbeck		Dirk	?
+Svenja Kortmann	svenja-kortmann-0a1f2e3d	Svenja	?
+Uwe Pannenbecker	uwe-pannenbecker-04a7b3e2	Uwe	?
+Gisela Thönnissen	gisela-thoennissen-3cc0c12b	Gisela	?
+Andreas Dreesen	andreas-dreesen-1b2c3d4e	Andreas	?
+Christine Herr	christine-herr-9f8e7d6c	Christine	?
+Dennis Graf	dennisgraf-48551265	Dennis	?
+Paul König	paul-koenig-2a3b4c5d	Paul	?
+Sophie Kaiser		Sophie	?
+Eva Rütten		Eva	?
+Nicole Wirtz	nicole-wirtz-83c1d0e5	Nicole	?
+Jürgen Kleinschmidt	juergen-kleinschmidt-3b9a0e12	Jürgen	?
+Björn Tewes	björn-tewes-d5709e3b	Björn	?
+Wiebke Hollenbeck		Wiebke	?
+Ole Petersen	ole-petersen-a1b2c3d4	Ole	?
+Frank Hermann	frank-hermann-5a6b7c8d	Frank	?
+Hermann Frank		Hermann	?
+Daniel Martin		Daniel	?
+Lorenz Martin		Lorenz	?
+Lena Paul-Simon	lena-paul-simon-605975dd	Lena	?
+Bo Lindqvist	bo-lindqvist-8bb9235e	Bo	?
+Ina Ma	ina-ma-3c5e7a91	Ina	?
+Sabine Wendt-Overhoff		Sabine	?
+Steffi Albring	stefanie-albring-3b4c5d6e	Steffi	?
+Thorben Elsner	thorben-elsner-b1c2d3e4	Thorben	?
+Ricarda Pöppelmann		Ricarda	?
+# Double first names and middle names
+Hans-Peter Wolters	hans-peter-wolters-1a2b3c4d	Hans-Peter	?
+Anne-Kathrin Pohl		Anne-Kathrin	?
+Karl-Heinz Bröckerhoff	karl-heinz-broeckerhoff-fb243274	Karl-Heinz	?
+Marie-Luise Hartwig		Marie-Luise	?
+Ann-Christin Overkamp	ann-christin-overkamp-5f6a7b8c	Ann-Christin	?
+# Judgement: "Anna Lena" without hyphen is a fixed double name used together.
+# miss	Anna Lena Brück	anna-lena-brück-2b3c4d5e	Anna Lena
+Stefan Michael Kurz	stefan-kurz-7d8e9f01	Stefan	?
+Julia Katharina Meyer		Julia	?
+Christoph M. Lindemann	christoph-lindemann-8f73b07d	Christoph	?
+Hans J. Weber	hans-weber-3c2b1a0d	Hans	?
+J. Peter Holm	peter-holm-2a1b0c9d	Peter	?
+# Academic and professional titles before the name, German
+Dr. med. Henrike Vollmer	henrike-vollmer-6e5d4c3b	Henrike	?
+Dr. med. dent. Konstantin Austermann	dr-konstantin-austermann-deda2ff4	Konstantin	?
+Dr.med.dent. Svea Hilgers		Svea	?
+Dr. rer. nat. Wiebke Janßen	wiebke-janssen-12ab34cd	Wiebke	?
+Prof. Dr. Henning Kluth	henning-kluth-414c26c0	Henning	?
+Prof. Dr.-Ing. habil. Reinhold Esser		Reinhold	?
+PD Dr. Almut Kerkhoff	almut-kerkhoff-0c9d8e7f	Almut	?
+Priv.-Doz. Dr. med. Benedikt Schoppe		Benedikt	?
+Dipl.-Ing. Ralf Kemper	ralf-kemper-a9b8c7d6	Ralf	?
+Dipl.-Kfm. Arne Voss		Arne	?
+Dipl.-Kffr. (FH) Heike Brandl	heike-brandl-5c4b3a2d	Heike	?
+Dipl. Betriebswirtin Tanja Röder		Tanja	?
+Dipl.Ing. Gregor Pütz	gregor-pütz-1f2e3d4c	Gregor	?
+Dipl-Ing Thorsten Ebbinghaus		Thorsten	?
+Dr Dr Wolfgang Rehbein	wolfgang-rehbein-8a7b6c5d	Wolfgang	?
+Dr. Dr. h.c. Ingeborg Lammers		Ingeborg	?
+Dr. h. c. mult. Waltraud Pesch	waltraud-pesch-97e0055e	Waltraud	?
+Prof. (FH) Dr. Matthias Grewe	matthias-grewe-2b1a0c9d	Matthias	?
+Prof. em. Dr. Gunther Teichert		Gunther	?
+Dr.-Ing. Lars Wember	lars-wember-91e7a460	Lars	?
+Dr.Henrik Ost	dr-henrik-ost-7e2d1d3e	Henrik	?
+Prof.Dr.Ute Lambrecht		Ute	?
+Professor Dr. Wilhelm Arnsberger	wilhelm-arnsberger-9d0e1f2a	Wilhelm	?
+Dr. med. Dr. med. dent. Philipp Arens, MSc	philipp-arens-msc-9f69a382	Philipp	?
+WP StB Dr. Carsten Imhoff	carsten-imhoff-4e3d2c1b	Carsten	?
+StB Dipl.-Kfm. Oliver Kamp		Oliver	?
+RAin Nicole Brandes		Nicole	?
+Rechtsanwältin Miriam Tacke	miriam-tacke-rechtsanwaeltin-a339eb06	Miriam	?
+Rechtsanwalt und Fachanwalt für Arbeitsrecht Sebastian Quast	sebastian-quast-1d26a140	Sebastian	?
+# miss	Zahnarzt Dr. Ben Achterberg		Ben
+Heilpraktikerin Birgit Teuber	birgit-teuber-heilpraktikerin-26c613c3	Birgit	?
+HP Psych Saskia Lohr		Saskia	?
+Frau Ilse Hartung	ilse-hartung-3cf349ca	Ilse	?
+Fr. Dr. Gaby Henke		Gaby	?
+Mag. Magdalena Moser	magdalena-moser-1a9b8c7d	Magdalena	?
+Ing. Ingo Lenz	ingo-lenz-8c4d2a10	Ingo	?
+Dr. Drita Berisha	drita-berisha-903825cd	Drita	?
+Drita Krasniqi		Drita	?
+DR. MED. BEATE LINNEMANN		Beate	?
+# Only a title and a family name, or only initials
+Dr. Brandauer			?
+Dr. Werner			?
+Dr. Vollbrecht	dr-vollbrecht-d6d23459		?
+RA Lohmann			?
+Frau Dr. Wendt			?
+Herr Dr. Hartung			?
+Dr. Ch. Lindemann			?
+A. Schmitz			?
+H.-J. Weber			?
+H.J. Brockmann	hj-brockmann-d5eb8313		?
+M.A. Kessler			?
+Schmitz, A.			?
+# miss	Kröger, MBA		
+# miss	Weber		
+# The handle tells what the name does not
+Dr. Siepmann	annette-siepmann-3d4e5f6a	Annette	?
+Dr. K. Overkamp	katharina-overkamp-7f6e5d4c	Katharina	?
+A. Schmitz	andrea-schmitz-8d9e0f1a	Andrea	?
+M. Kaya	merve-kaya-8b9a0c1d	Merve	?
+# miss	Kortenbach	ronja-kortenbach-ca449e65	Ronja
+# Austrian and Swiss titles
+Mag.a Doris Fink		Doris	?
+Mag. (FH) Gerald Pichler	gerald-pichler-6c7d8e9f	Gerald	?
+DI Florian Haider	florian-haider-7aaa56dc	Florian	?
+DI (FH) Manuela Stocker		Manuela	?
+Dr.in Verena Huber	verena-huber-2c3d4e5f	Verena	?
+Dr.ⁱⁿ Theresa Wallner		Theresa	?
+DDr. Alois Kranewitter		Alois	?
+MMag. Lukas Gruber	lukas-gruber-mmag-4e901e2e	Lukas	?
+Univ.-Prof. Dr. Elisabeth Pfandl		Elisabeth	?
+Ing. Mag. Bernhard Haslinger		Bernhard	?
+lic. phil. Reto Ammann	reto-ammann-9e8d7c6b	Reto	?
+lic. iur. Corinne Bachmann		Corinne	?
+dipl. Ing. ETH Urs Gisler	urs-gisler-7511755a	Urs	?
+eidg. dipl. Steuerexpertin Nadja Frei		Nadja	?
+# Degrees, certifications and credentials after the name
+Lena Groß, M.Sc.	lena-gross-msc-5ccad80e	Lena	?
+Fabian Weiler MBA		Fabian	?
+Anke Kramer, PCC	anke-kramer-pcc-2a30857d	Anke	?
+Sabine Ott - ICF ACC		Sabine	?
+Tobias Hahn, CFA	tobias-hahn-cfa-3108eacb	Tobias	?
+Heiko Strunk, Dipl.-Ing. Architekt		Heiko	?
+Nadine Burg, LL.M.	nadine-burg-llm-c3581a8d	Nadine	?
+Claudia Scholz B.A.		Claudia	?
+Marcel Brenner, MBA, CFP®	marcel-brenner-cfp-667e83ce	Marcel	?
+Dr. Jan Ostermann, MHBA		Jan	?
+Kathrin Vogel, PMP, CSM, SAFe® SPC	kathrin-vogel-pmp-fafee0e2	Kathrin	?
+Nora Klemm M.A. | Mediatorin		Nora	?
+Michael Kessler M.A.	michael-kessler-ma-56d4bf90	Michael	?
+Laura Fischer (MSc)	laura-fischer-5e4d3c2b	Laura	?
+Becker, Johanna, M.A.	johanna-becker-075c9a54	Johanna	?
+Werner Holt jr.	werner-holt-jr-51321ae4	Werner	?
+Lakshmi Iyer, PhD	lakshmi-iyer-phd-172e18e7	Lakshmi	?
+Dr Graham Bennett PhD	graham-bennett-phd-76d5cbdf	Graham	?
+# Pronouns
+Alex Brandt (sie/ihr)	alex-brandt-fe734b6c	Alex	?
+Robin Seidel (er/ihm)		Robin	?
+Charlie Weiß (they/them)	charlie-weiss-4d5e6f7a	Charlie	?
+Kim Hollmann (dey/deren)		Kim	?
+Jule Bertram she/her		Jule	?
+Dilan Ekinci (sie/ihr)		Dilan	?
+Lucía Navarro (she/her) | UX Designer	lucia-navarro-ux-2d147505	Lucía	?
+Dipl.-Psych. Corinna Wald (sie/ihr) | Psychotherapeutin	corinna-wald-283cd3da	Corinna	?
+# Nicknames in quotes or brackets: the name they want to be called
+Katharina „Kati“ Vogt	katharina-vogt-022778fa	Kati	?
+Johannes "Hannes" Lüttgen		Hannes	?
+Maximilian 'Max' Thiel	max-thiel-6b7c8d9e	Max	?
+Wilhelmina (Mina) Reuter		Mina	?
+Christopher (Chris) Baker	chris-baker-7f8a9b0c	Chris	?
+Rebecca 'Becky' Lane	rebecca-lane-3e4f5a6b	Becky	?
+Ekaterina (Katja) Volkova	ekaterina-volkova-7383c18e	Katja	?
+Małgorzata (Gosia) Kowal		Gosia	?
+Konstantinos (Kostas) Georgiou		Kostas	?
+Oluwaseun (Seun) Adeyemi		Seun	?
+Xiaoyu (Sophie) Chen	sophie-chen-73aa663f	Sophie	?
+Alexander aka Xander Bohm		Xander	?
+# A quoted tagline is not a nickname.
+Melanie "Die Mutmacherin" Graf	melanie-graf-afbaa71e	Melanie	?
+Nils Becker (Yogalehrer)		Nils	?
+# Maiden names
+Sandra Kühn (geb. Lohmann)	sandra-kuehn-663d12c0	Sandra	?
+Bettina Rohde geb. Assmann		Bettina	?
+Viktoria Schäfer (geb. Petrenko)	viktoria-schaefer-774d81d6	Viktoria	?
+# Taglines after separators
+Jens Hoffmeister | Steuerberater | Köln	jenshoffmeister-5aed6315	Jens	?
+Petra Lindner – Coach für Führungskräfte	petra-lindner-7720a1b4	Petra	?
+Marco Rossi • Fotograf	marco-rossi-b2a71c55	Marco	?
+Sven Lück - Tischlermeister	sven-lück-a83b21c0	Sven	?
+Daniela Brix, Heilpraktikerin für Psychotherapie	daniela-brix-3f2e1d0c	Daniela	?
+Moritz Esch // Webdesign & SEO	moritz-esch-78d6e584	Moritz	?
+Carina Wolff ~ Hochzeitsrednerin		Carina	?
+Timo Bremer :: Brand Strategist	timo-bremer-0d1c2b3a	Timo	?
+Hanna Ruhland ▪ Ernährungsberatung		Hanna	?
+Philip Strauch / Fotografie / Bonn	philip-strauch-549b5226	Philip	?
+Judith Albrecht — Systemische Beraterin (DGSF)		Judith	?
+Annika Berg, Grafikdesign & Illustration	annika-berg-design-8055daaa	Annika	?
+Anke Rösler | Partnerin bei Rösler & Brandt		Anke	?
+Ich helfe Selbstständigen, sichtbar zu werden | Franziska Sommer	franziska-sommer-1e2d3c4b	Franziska	?
+# Emoji anywhere
+🌸 Ines Hartmann 🌸	ines-hartmann-a6dc9822	Ines	?
+Ines🌸Hartwich		Ines	?
+Lea ☀️ Schubert		Lea	?
+Rainer Vosskuhl 🇩🇪	rainer-vosskuhl-48933591	Rainer	?
+Serhat Bozkurt 🇩🇪🇹🇷	serhat-bozkurt-2e3f4a5b	Serhat	?
+🧘‍♀️ Pia Lehmkuhl | Yin Yoga		Pia	?
+📸 Jasper Klein	jasperklein-df987332	Jasper	?
+🔨 Holger Pieper – Dachdeckermeister 🔨		Holger	?
+Sina 💛 Krause	sina-krause-1430db07	Sina	?
+Nina Krämer 🌿 Yoga & Achtsamkeit	nina-kraemer-d6d8a778	Nina	?
+Kerstin Faber ✨ Business Coach ✨		Kerstin	?
+Mareike Holt 🚀 Ich bringe dein Business auf Kurs	mareike-holt-5c6d7e8f	Mareike	?
+Dr. Kai Rehberg 👨‍⚕️ Hausarzt in Essen	kai-rehberg-93329a6f	Kai	?
+👋🏽 Hi, ich bin Melis Tuna	melis-tuna-cd2c8b8d	Melis	?
+# miss	Hey, I'm Grace Okoye 👋		Grace
+# Unicode bold, italic, script and other styled letters
+𝐂𝐚𝐫𝐨𝐥𝐚 𝐖𝐞𝐧𝐝𝐭	carola-wendt-3cbc7c70	Carola	?
+𝗦𝘁𝗲𝗳𝗮𝗻 𝗘𝘄𝗮𝗹𝗱		Stefan	?
+𝐽𝑜ℎ𝑎𝑛𝑛𝑎 𝑃𝑒𝑡𝑒𝑟𝑠	johanna-peters-6f7a8b9c	Johanna	?
+𝒞ℯ𝓁𝒾𝓃𝒶 ℛ𝒾𝓉𝓉ℯ𝓇		Celina	?
+𝓑𝓮𝓵𝓵𝓪 𝓜𝓸𝓻𝓮𝓷𝓸	bella-moreno-cb9d8990	Bella	?
+𝔐𝔞𝔯𝔦𝔢 𝔏𝔢𝔫𝔷		Marie	?
+ℍ𝕒𝕟𝕟𝕒𝕙 ℝ𝕠𝕥𝕙	hannah-roth-0b1c2d3e	Hannah	?
+𝙴𝚛𝚒𝚔 𝙰𝚛𝚗𝚍𝚝		Erik	?
+ᴋᴀᴛʜᴀʀɪɴᴀ ᴡᴏʟꜰ	katharina-wolf-7c8d9e0f	Katharina	?
+𝐉ü𝐫𝐠𝐞𝐧 𝐒𝐭𝐞𝐢𝐧𝐡𝐨𝐟𝐟	jurgen-steinhoff-52b23e15	Jürgen	?
+𝐁𝐣𝐨̈𝐫𝐧 𝐊𝐮𝐡𝐥𝐦𝐚𝐧𝐧		Björn	?
+𝐃𝐑. 𝐄𝐋𝐊𝐄 𝐌𝐀𝐑𝐖𝐈𝐓𝐙	elke-marwitz-26c22c5c	Elke	?
+𝗥𝗶𝗰𝗮𝗿𝗱𝗮 𝗕𝗲𝗿𝗴𝗺𝗮𝗻𝗻 | 𝘔𝘪𝘯𝘥𝘴𝘦𝘵 𝘊𝘰𝘢𝘤𝘩		Ricarda	?
+𝑪𝒐𝒂𝒄𝒉 Dominik Sauerland	dominik-sauerland-57922b39	Dominik	?
+# Invisible and odd whitespace, decomposed letters
+Günter Pohlmann	guenter-pohlmann-ed1b026b	Günter	?
+Ulla Brandt		Ulla	?
+Greta  Lohmeyer	greta-lohmeyer-d7163705	Greta	?
+​Tilo Hegemann		Tilo	?
+  Gesa Thiemann 		Gesa	?
+# All caps and all lowercase
+KLAUS-DIETER BRANDT	klaus-dieter-brandt-7b8c9d0e	Klaus-Dieter	?
+ANNE-SOPHIE KREMER		Anne-Sophie	?
+ÖZGÜR ACAR	ozgur-acar-4363684a	Özgür	?
+AYŞE KAYA		Ayşe	?
+İBRAHİM ÇELİK	ibrahim-celik-4f5e6d7c	İbrahim	?
+IŞIL TOPRAK		Işıl	?
+SEÁN O'CONNELL	sean-oconnell-565de23b	Seán	?
+sabine wenzel	sabine-wenzel-3d3da7da	Sabine	?
+jan-erik möller	jan-erik-möller-5b6c7d8e	Jan-Erik	?
+clemens von der aue	clemens-von-der-aue-143a10b8	Clemens	?
+Christian WEGENER		Christian	?
+# Family name first, with and without comma
+Schulte, Martina		Martina	?
+Kerkmann, Dr. Silke	silke-kerkmann-3e391449	Silke	?
+Böckmann, Gerrit, Dr.		Gerrit	?
+Van Dijk, Sanne		Sanne	?
+Al-Rashid, Omar		Omar	?
+HEINEN Ruth		Ruth	?
+BREUER Hendrik	hendrik-breuer-1d2e3f4a	Hendrik	?
+LIU Yanping		Yanping	?
+# miss	Krüger Gabriele		Gabriele
+Kessler Jonas	jonas-kessler-4a5b6c7d	Jonas	?
+Nguyễn Thị Hoa	hoa-nguyen-2f3a4b5c	Hoa	?
+# Nobility particles and titles
+Friederike von Haldenrode	friederike-von-haldenrode-a9bda479	Friederike	?
+Carl-Philipp Freiherr von Ellerbach		Carl-Philipp	?
+Dr. Leopold Graf zu Wehrstein	leopold-zu-wehrstein-90183331	Leopold	?
+von Haarbeck, Charlotte		Charlotte	?
+Isabel Freifrau von Moorbeck	isabel-von-moorbeck-8c4eea5f	Isabel	?
+# Role or business words before or around the name
+Coach Daniel Pohl	daniel-pohl-coach-c299bbef	Daniel	?
+# miss	Coach Imke		Imke
+Merle	coach-merle-659f7b27	Merle	?
+# miss	Yoga mit Svenja	yogamitsvenja-9dd216ae	Svenja
+Nele | Yoga Düsseldorf		Nele	?
+Fotografin Lisa Engel	lisa-engel-fotografie-dd4e6215	Lisa	?
+Fotograf Malte Siebert	malte-siebert-852f658a	Malte	?
+# miss	Hebamme Lotte Brinkmann	hebamme-lotte-c81acd0b	Lotte
+Tischlerei Holtkamp – Bernd Holtkamp	bernd-holtkamp-12b30cf6	Bernd	?
+# miss	Praxis Dr. Ulrike Sander	praxis-sander-66d17e7d	Ulrike
+# miss	Physiotherapie Jansen | Tobias Jansen		Tobias
+Gründerin & CEO Leonie Fuchs	leonie-fuchs-ceo-ac3b29eb	Leonie	?
+# miss	Konditormeisterin Frieda Sauer		Frieda
+Coach & Trainerin Susanne Ley	susanne-ley-coaching-03907c96	Susanne	?
+Inh. Karin Opitz	karin-opitz-59e4ea51	Karin	?
+# miss	Kanzlei Becker & Partner		
+# miss	Studio Lumen Fotografie	studio-lumen-3ab6d40e	
+# miss	Bäckerei Sonnenkorn		
+# Two people on one profile: no single first name to greet.
+# miss	Jonas & Lea | Hochzeitsfotografie	jonas-und-lea-c072b61d	
+# Turkish and Kurdish
+Elif Şahin	elif-şahin-3a2b1c0d	Elif	?
+Emre Öztürk	emreozturk-9707260a	Emre	?
+Hakan Koç	hakan-koc-369ac0d6	Hakan	?
+Özlem Yıldırım-Kraus		Özlem	?
+Gülşen Kaya-Becker	gülşen-kaya-becker-6581245a	Gülşen	?
+Av. Zeynep Arslan	zeynep-arslan-av-4ddb1efb	Zeynep	?
+Doç. Dr. Serkan Yıldız		Serkan	?
+Uzm. Dr. Burcu Aydın	burcu-aydin-1c2d3e4f	Burcu	?
+Rojda Aslan	rojda-aslan-08aa2a1b	Rojda	?
+Berivan Doğan		Berivan	?
+# Arabic and Persian
+Ahmad Al-Hassan	ahmad-al-hassan-6d5c4b3a	Ahmad	?
+# miss	Abdul Rahman Haddad	abdul-rahman-haddad-4e07ac20	Abdul Rahman
+Abdulrahman Saleh		Abdulrahman	?
+Mohamed El Amrani	mohamed-el-amrani-9a8b7c6d	Mohamed	?
+Fatima-Zahra El Idrissi		Fatima-Zahra	?
+Nour-Eddine Benali	nour-eddine-benali-5dd31fe6	Nour-Eddine	?
+Karim El-Sayed		Karim	?
+Dr. Rania Abou Khalil	rania-abou-khalil-2fa119cd	Rania	?
+Layla Ben Youssef		Layla	?
+Abdelkarim Bouazza	abdelkarim-bouazza-0f1e2d3c	Abdelkarim	?
+سارة يوسف | Sara Youssef	sara-youssef-69471ee9	Sara	?
+Mahsa Rahimi	mahsa-rahimi-7829426f	Mahsa	?
+Dr. Kourosh Jafari		Kourosh	?
+# Judgement: Seyed is an inherited honorific, the person is greeted by Ali.
+# miss	Seyed Ali Hosseini	seyed-ali-hosseini-5f4e3d2c	Ali
+Shirin Tavakoli-Hagen		Shirin	?
+# Polish, Russian, Ukrainian
+Grzegorz Nowicki	grzegorz-nowicki-f96c918f	Grzegorz	?
+Łukasz Wójcik	lukasz-wojcik-7a8b9c0d	Łukasz	?
+Małgorzata Wiśniewska-Koch	malgorzata-wisniewska-koch-9b8a7c6d	Małgorzata	?
+mgr inż. Paweł Zieliński		Paweł	?
+dr n. med. Agnieszka Wróbel	agnieszka-wrobel-3c4d5e6f	Agnieszka	?
+Dmitrij Wagner		Dmitrij	?
+Natalia Weiß		Natalia	?
+Irina Sergeevna Morozova	irina-morozova-2d3e4f5a	Irina	?
+Oksana Melnyk		Oksana	?
+Олена Бондар	olena-bondar-8e7d6c5b	Olena	?
+Светлана Орлова | Swetlana Orlowa		Swetlana	?
+# Italian, Spanish, Portuguese, French, Greek
+Dott. Giuseppe Marchetti	giuseppe-marchetti-5a4b3c2d	Giuseppe	?
+Dott.ssa Francesca Moretti		Francesca	?
+Avv. Giulia Esposito	giulia-esposito-avv-bfca9174	Giulia	?
+Arch. Lorenzo Bellini		Lorenzo	?
+Ing. Paolo Lombardi		Paolo	?
+# miss	Gian Marco Ferri	gian-marco-ferri-9b051243	Gian Marco
+# Judgement: Maria Grazia is one given name used together.
+# miss	Maria Grazia Romano		Maria Grazia
+Chiara D'Angelo	chiara-d-angelo-0e1f2a3b	Chiara	?
+Gianluca De Santis	gianluca-de-santis-562f80cd	Gianluca	?
+# miss	María José Fernández Ruiz	maria-jose-fernandez-ruiz-2fc82516	María José
+Javier Gómez Ortega		Javier	?
+Pilar de la Fuente		Pilar	?
+Gonçalo Ribeiro	goncalo-ribeiro-7b6a5c4d	Gonçalo	?
+# miss	Ana Paula Ferreira		Ana Paula
+Inês Carvalho	ines-carvalho-e232bbe8	Inês	?
+Thiago dos Santos	thiago-dos-santos-4c3b2a1d	Thiago	?
+Jean-Luc Moreau	jean-luc-moreau-d78fea26	Jean-Luc	?
+Hélène Dubois-Kramer		Hélène	?
+Dimitrios Papadakis	dimitrios-papadakis-4b5c6d7e	Dimitrios	?
+Eleni Karagianni	eleni-karagianni-f4a829aa	Eleni	?
+# Dutch
+Jan-Willem van Oosterhout	jan-willem-van-oosterhout-579ba5d2	Jan-Willem	?
+Femke ter Horst	femke-ter-horst-0a9b8c7d	Femke	?
+Pieter van 't Veld		Pieter	?
+Joost Hendriksen	joost-hendriksen-bff62934	Joost	?
+# Vietnamese, Chinese, Indian
+Lan Nguyen	lan-nguyen-6a7b8c9d	Lan	?
+Minh Nguyen-Weber	minh-nguyen-weber-3a4b5c6d	Minh	?
+Thanh Pham	thanh-pham-4d7755cc	Thanh	?
+Wei Zhang	wei-zhang-9c8b7a6d	Wei	?
+Priya Raghunathan	priya-raghunathan-0fc8a25b	Priya	?
+Dr. Anand Krishnamurthy		Anand	?
+Rahul Sharma-Klein	rahul-sharma-klein-816a238a	Rahul	?
+# African and English
+Chukwuemeka Okafor	chukwuemeka-okafor-1b0a9c8d	Chukwuemeka	?
+Kwame Mensah		Kwame	?
+Fatoumata Diallo	fatoumata-diallo-180d83a6	Fatoumata	?
+Tigist Haile	tigist-haile-5d6e7f8a	Tigist	?
+Ama Owusu-Becker		Ama	?
+Mr James Harrington		James	?
+Sarah-Jane Whitfield		Sarah-Jane	?
+Niamh McCarthy		Niamh	?

@@ -13,15 +13,15 @@ import (
 // open is sent as the event report-window, and what became of pictures
 // dropped on it as report-draft. See bugs.go and report.go.
 //
-//	GET  /api/report                the draft: what was written and the pictures
+//	GET  /api/report                the draft: what was written, the pictures and the recordings
 //	GET  /api/report/window         {"open": true} while the report window is open
-//	GET  /api/report/picture?id=p1  a picture of the draft, as PNG
+//	GET  /api/report/picture?id=p1  a picture of the draft, as PNG, none for a recording
 //	POST /api/report/open           {"how": "bugs"} opens the report window, or brings it forward
 //	POST /api/report/about          {"text": "…"} opens it as a report of a toast's words
 //	PUT  /api/report/text           {"text": "…"} keeps what was written
-//	POST /api/report/pick           asks for pictures in the open box, gives the draft
-//	POST /api/report/pasted         {"name": "…", "data": "base64"} attaches a pasted picture
-//	POST /api/report/remove         {"id": "p1"} takes a picture out, gives the draft
+//	POST /api/report/pick           asks for pictures and recordings in the open box, gives the draft
+//	POST /api/report/pasted?name=…  {"name": "…", "data": "base64"} attaches a pasted picture or recording
+//	POST /api/report/remove         {"id": "p1"} takes a picture or a recording out, gives the draft
 //	POST /api/report/put-back       {"id": "p1"} puts it back, gives the draft
 //	POST /api/report/clear          lets go of the draft, gives the empty one
 //	PUT  /api/report/people         {"people": true} takes People along, gives the draft
@@ -31,8 +31,8 @@ type reportAPI struct {
 	make func(what string) (string, error)
 }
 
-// reportBodyMax is the most a request may carry: a pasted picture of
-// 10 MB in base64, and room for its name.
+// reportBodyMax is the most a request may carry: a pasted picture or
+// recording of 10 MB in base64, and room for its name.
 const reportBodyMax = pictureBytesMax*4/3 + 4096
 
 func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -46,10 +46,25 @@ func (a reportAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		What   string `json:"what"`
 		People bool   `json:"people"`
 	}
-	if (r.Method == http.MethodPost || r.Method == http.MethodPut) && !readBody(w, r, reportBodyMax, &body) {
+	route := r.Method + " " + r.URL.Path
+	if route == "POST /api/report/pasted" {
+		// A paste bigger than a request may be is never read, so it is
+		// turned away by the name the window gives in the address, with
+		// the reason a file too big gets, not as a request gone wrong. A
+		// screen recording is often over 10 MB.
+		err := json.NewDecoder(http.MaxBytesReader(w, r.Body, reportBodyMax)).Decode(&body)
+		var over *http.MaxBytesError
+		if errors.As(err, &over) {
+			answer(w, http.StatusOK, a.r.PastedTooBig(r.URL.Query().Get("name")))
+			return
+		}
+		if err != nil {
+			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
+			return
+		}
+	} else if (r.Method == http.MethodPost || r.Method == http.MethodPut) && !readBody(w, r, reportBodyMax, &body) {
 		return
 	}
-	route := r.Method + " " + r.URL.Path
 	switch route {
 	case "GET /api/report":
 		answer(w, http.StatusOK, a.r.ReportDraft())

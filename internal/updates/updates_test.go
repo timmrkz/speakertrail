@@ -59,6 +59,10 @@ func appZip(t *testing.T, says string) []byte {
 	return buf.Bytes()
 }
 
+// publishedAt is when a test's builds were published and its lists written.
+// Nothing here reads the clock, so the tests read it neither.
+var publishedAt = time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
+
 func build(t *testing.T, key ed25519.PrivateKey, channel, version, url string, data []byte) Build {
 	t.Helper()
 	digest, size, err := Digest(bytes.NewReader(data))
@@ -68,7 +72,7 @@ func build(t *testing.T, key ed25519.PrivateKey, channel, version, url string, d
 	b := Build{
 		Channel: channel, Name: channel, Version: version, Commit: "abc1234",
 		URL: url, Size: size, SHA256: hex.EncodeToString(digest),
-		Signature: Sign(key, digest), Published: time.Now().UTC(),
+		Signature: Sign(key, digest), Published: publishedAt,
 	}
 	b.Claim = SignClaim(key, b)
 	return b
@@ -208,22 +212,36 @@ func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
 		}
 	}
 	// The list is untrusted and may be a megabyte: what it names is read
-	// once and kept up to maxEnded, so a long one costs no time.
-	var many []string
-	for i := range 40000 {
-		many = append(many, fmt.Sprintf("pr-%d", i%30000+1))
-	}
-	data, _ := json.Marshal(map[string]any{"channels": []any{}, "merged": many})
-	start := time.Now()
-	list, err = Parse(data)
+	// once and kept up to maxEnded. How long that takes is
+	// BenchmarkParseALongList's to say, not a deadline's.
+	list, err = Parse(longList())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(list.Merged) != maxEnded {
 		t.Errorf("kept %d merged, want %d", len(list.Merged), maxEnded)
 	}
-	if took := time.Since(start); took > time.Second { //nolint:forbidigo // measures the reading, waits on nothing
-		t.Errorf("reading a list naming %d pull requests took %v", len(many), took)
+}
+
+// longList is a list naming 40000 merged pull requests, 30000 of them
+// different, far past maxEnded.
+func longList() []byte {
+	var many []string
+	for i := range 40000 {
+		many = append(many, fmt.Sprintf("pr-%d", i%30000+1))
+	}
+	data, _ := json.Marshal(map[string]any{"channels": []any{}, "merged": many})
+	return data
+}
+
+// How long a check takes to read a list naming far more pull requests
+// than it keeps, about 7 ms on a 4-core cloud session.
+func BenchmarkParseALongList(b *testing.B) {
+	data := longList()
+	for b.Loop() {
+		if _, err := Parse(data); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -554,7 +572,7 @@ func TestAClaimSaysWhichBuild(t *testing.T) {
 	}
 	// What the claim leaves out is only shown, never installed by.
 	c := b
-	c.Name, c.URL, c.Published = "a new title", "https://example.com/elsewhere.zip", time.Now()
+	c.Name, c.URL, c.Published = "a new title", "https://example.com/elsewhere.zip", b.Published.Add(time.Hour)
 	if err := VerifyClaim(public, c); err != nil {
 		t.Errorf("a new title or address broke the claim: %v", err)
 	}

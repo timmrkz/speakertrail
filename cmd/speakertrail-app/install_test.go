@@ -202,7 +202,7 @@ func TestQuittingWithABuildReadyInstallsIt(t *testing.T) {
 // On the real disk: what is tested is the age the system gives a file.
 func TestOldLeftoversAreRemoved(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now()
+	now := time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC)
 	put := func(name, content string, age time.Duration) string {
 		p := filepath.Join(dir, name)
 		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {

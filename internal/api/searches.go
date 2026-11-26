@@ -124,13 +124,13 @@ func (a *API) addSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var id int64
-	err := a.Store.Update(func(d *store.Data) error {
+	err := a.Store.Add(func(d *store.Data) (store.Thing, error) {
 		s, err := d.AddSearch(body.Query, 0, a.Store.Now())
 		if err != nil {
-			return err
+			return store.Thing{}, err
 		}
 		id = s.ID
-		return nil
+		return store.SearchThing(id), nil
 	})
 	switch {
 	case errors.Is(err, store.ErrSearchExists):
@@ -143,7 +143,7 @@ func (a *API) addSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 // patchSearch pauses a search, status retired, or resumes it, any other
-// status, and changes its notes.
+// status, and changes its notes. Undo in the Edit menu takes it back.
 func (a *API) patchSearch(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -156,7 +156,7 @@ func (a *API) patchSearch(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	if !a.update(w, r, func(d *store.Data) error {
+	if !a.edit(w, r, store.SearchThing(id), func(d *store.Data) error {
 		s := d.Search(id)
 		if s == nil {
 			return errNotFound

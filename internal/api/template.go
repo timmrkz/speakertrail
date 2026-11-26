@@ -53,10 +53,10 @@ func (a *API) template(w http.ResponseWriter, r *http.Request) {
 
 // changeTemplate changes the template with fn and answers with it: 404
 // for a part that is not there, 400 with what is wrong when the template
-// that comes of it cannot work.
+// that comes of it cannot work. Undo in the Edit menu takes it back.
 func (a *API) changeTemplate(w http.ResponseWriter, r *http.Request, fn func(d *store.Data) error) {
 	var out templateJSON
-	if a.update(w, r, func(d *store.Data) error {
+	if a.edit(w, r, store.TemplateThing(), func(d *store.Data) error {
 		err := fn(d)
 		switch {
 		case errors.Is(err, store.ErrNoPart):
@@ -91,18 +91,6 @@ func (a *API) putTemplatePart(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) deleteTemplatePart(w http.ResponseWriter, r *http.Request) {
 	a.changeTemplate(w, r, func(d *store.Data) error { return d.RemoveTemplatePart(r.PathValue("name")) })
-}
-
-// putTemplate puts a whole template in place, the one before Reset when
-// it is undone.
-func (a *API) putTemplate(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Parts []store.Part `json:"parts"`
-	}
-	if !decode(w, r, &body) {
-		return
-	}
-	a.changeTemplate(w, r, func(d *store.Data) error { return d.SetTemplate(store.Template{Parts: body.Parts}) })
 }
 
 // resetTemplate puts Tim's first template back.

@@ -271,7 +271,7 @@ func (a *API) patchSetting(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out store.Setting
-	if !a.update(w, r, func(d *store.Data) error {
+	if !a.edit(w, r, store.SettingThing(key), func(d *store.Data) error {
 		if _, ok := d.Setting(key); !ok {
 			return errNotFound
 		}

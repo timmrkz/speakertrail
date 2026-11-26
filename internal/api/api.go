@@ -78,7 +78,6 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("PUT /api/linkedin", a.setLinkedin)
 	m.HandleFunc("POST /api/people/{id}/linkedin", a.openLinkedin)
 	m.HandleFunc("GET /api/template", a.template)
-	m.HandleFunc("PUT /api/template", a.putTemplate)
 	m.HandleFunc("DELETE /api/template", a.resetTemplate)
 	m.HandleFunc("GET /api/template/example", a.templateExample)
 	m.HandleFunc("PUT /api/template/parts/{name}", a.putTemplatePart)

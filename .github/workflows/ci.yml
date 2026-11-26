@@ -87,9 +87,13 @@ jobs:
       - name: Chromium for the walks, its packages from apt
         if: steps.debs.outputs.cache-hit != 'true'
         run: sudo apt-get clean && npx playwright install --with-deps --only-shell chromium && mkdir -p ~/debs && cp /var/cache/apt/archives/*.deb ~/debs/
+      # apt, not dpkg, puts the kept packages in, since it orders them: the
+      # image holds libasound2t64 older than the kept libasound2-data, which
+      # breaks it, and dpkg -i unpacked that first and stopped (#87's run
+      # on 26 November 2026). --no-download keeps it to the files kept.
       - name: Chromium for the walks, its packages kept
         if: steps.debs.outputs.cache-hit == 'true'
-        run: sudo dpkg -i ~/debs/*.deb && npx playwright install --only-shell chromium
+        run: sudo apt-get install -y -q --no-download ~/debs/*.deb && npx playwright install --only-shell chromium
       - name: Walks
         working-directory: .
         run: make walks

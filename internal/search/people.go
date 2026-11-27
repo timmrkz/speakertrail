@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // Profile is a LinkedIn profile as a search index holds it. The engine
@@ -53,7 +54,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 	body, _ := json.Marshal(map[string]any{
 		"query": query, "category": "people", "numResults": results,
 		// Enough of the text to reach the activity, which comes last.
-		"contents": map[string]any{"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never"},
+		"contents": map[string]any{"text": map[string]any{"maxCharacters": AskedChars}, "livecrawl": "never"},
 	})
 	var out struct {
 		Results []exaProfile `json:"results"`
@@ -98,7 +99,7 @@ func (e *Exa) People(ctx context.Context, query string, results int) ([]Profile,
 func (e *Exa) Profile(ctx context.Context, link string) (Profile, error) {
 	body, _ := json.Marshal(map[string]any{
 		"urls": []string{link},
-		"text": map[string]any{"maxCharacters": TextChars}, "livecrawl": "never",
+		"text": map[string]any{"maxCharacters": AskedChars}, "livecrawl": "never",
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, contentsURL(e.URL), bytes.NewReader(body))
 	if err != nil {
@@ -222,6 +223,79 @@ type exaProfile struct {
 	} `json:"entities"`
 }
 
+// AskedChars is how much of a profile's text Exa is asked for, more than
+// the app keeps, TextChars. Exa writes the activity last, after the jobs,
+// each with its own words about the company, so a long career ran past
+// 8000 characters and took the activity with it, and someone who posted
+// hours ago showed No activity on LinkedIn known (Tim's report of 27
+// November 2026). Exa bills a page, not its length.
+const AskedChars = 30000
+
+// shortened is a profile's text as Exa wrote it, at most TextChars long.
+// The activity, the sections with dated entries, keeps up to half of the
+// room, or what the rest leaves, and goes last as Exa has it. The rest
+// gives up its end, the oldest jobs and the education, before the
+// activity does. Both are cut at the end of a line.
+func shortened(text string) string {
+	if utf8.RuneCountInString(text) <= TextChars {
+		return text
+	}
+	var rest, activity []string
+	for i, section := range sectionsOf(text) {
+		if i > 0 && activityDate.MatchString(section) {
+			activity = append(activity, section)
+		} else {
+			rest = append(rest, section)
+		}
+	}
+	if len(activity) == 0 {
+		return cutAtLine(text, TextChars)
+	}
+	const between = 2
+	act := strings.Join(activity, "\n\n")
+	act = cutAtLine(act, max(TextChars/2, TextChars-between-utf8.RuneCountInString(strings.Join(rest, "\n\n"))))
+	head := cutAtLine(strings.Join(rest, "\n\n"), TextChars-between-utf8.RuneCountInString(act))
+	return head + "\n\n" + act
+}
+
+// sectionsOf splits a profile's text at its headings of the second
+// level, like "## Experience", each with its heading. The first is what
+// comes before the first heading: the name, the headline and the place.
+func sectionsOf(text string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(text); {
+		next := strings.Index(text[i:], "\n## ")
+		if next < 0 {
+			break
+		}
+		at := i + next + 1
+		if s := strings.TrimSpace(text[start:at]); s != "" {
+			out = append(out, s)
+		}
+		start, i = at, at
+	}
+	if s := strings.TrimSpace(text[start:]); s != "" {
+		out = append(out, s)
+	}
+	return out
+}
+
+// cutAtLine is text at most n characters long, cut at the end of its last
+// whole line, or inside a line when one line alone is longer than half
+// of n.
+func cutAtLine(text string, n int) string {
+	r := []rune(text)
+	if len(r) <= n {
+		return text
+	}
+	cut := string(r[:n])
+	if i := strings.LastIndex(cut, "\n"); i >= 0 && utf8.RuneCountInString(cut[:i]) >= n/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimSpace(cut)
+}
+
 // activityDate finds the date of one entry in a profile's activity, like
 // "[2026-07-22 · Kommentar zu …]".
 var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
@@ -231,7 +305,7 @@ var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
 func profilesOf(results []exaProfile) []Profile {
 	res := make([]Profile, 0, len(results))
 	for _, r := range results {
-		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: WithoutContact(strings.TrimSpace(r.Text))}
+		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: shortened(WithoutContact(strings.TrimSpace(r.Text)))}
 		for _, en := range r.Entities {
 			if en.Type == "person" {
 				if en.Properties.Name != "" {

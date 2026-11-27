@@ -231,3 +231,82 @@ func TestExaProfileByName(t *testing.T) {
 		t.Errorf("a link with no name: err = %v, asked %q", err, asked)
 	}
 }
+
+// longProfile is a profile as Exa's index writes one of someone with a
+// long career: the jobs, each with Exa's words about the company, run
+// past TextChars, and the activity comes last, under Social, as in Tim's
+// report of 27 November 2026.
+func longProfile() string {
+	var b strings.Builder
+	b.WriteString("# Erika Beispiel\n\nWir helfen Unternehmern zu wachsen\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n500 connections • 5,240 followers\n\n## About\n\nCoaching für Menschen mit viel Verantwortung.\n\n## Experience\n\n")
+	for i := range 60 {
+		fmt.Fprintf(&b, "### Geschäftsführerin - Beispiel %d GmbH\n\nJan 2021 - May 2023 in Köln\n\nBeispiel %d GmbH is a Business Consulting and Services company with 1-10 employees, founded in 2020. Headquartered in Cologne, North Rhine-Westphalia, Germany.\n\n", i, i)
+	}
+	b.WriteString("## Education\n\n### Bachelor at Beispiel Hochschule\n\n2016 - 2020 (4 years)\n\n")
+	b.WriteString("## Social\n\n### Linkedin\n\n")
+	b.WriteString("- [2026-11-25 · Erika Beispiel posted this] [Neues Programm ab Januar...](https://www.linkedin.com/posts/a)\n")
+	b.WriteString("- [2026-11-23 · Erika Beispiel liked this] [Ein Beitrag...](https://www.linkedin.com/posts/b)\n")
+	return b.String()
+}
+
+// A profile whose text runs past what the app keeps still shows its
+// activity, which Exa writes last. Exa is asked for more than is kept,
+// the date is read from all of it, and the text kept gives up the end of
+// the career before the activity. Before, the text was cut at 8000
+// characters by Exa itself, and someone who posted hours ago showed No
+// activity on LinkedIn known, Tim's report of 27 November 2026.
+func TestExaLongProfileKeepsActivity(t *testing.T) {
+	text := longProfile()
+	if len([]rune(text)) <= search.TextChars+2000 {
+		t.Fatalf("the profile is only %d characters", len([]rune(text)))
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text     struct{ MaxCharacters int } `json:"text"`
+			Contents struct {
+				Text struct{ MaxCharacters int } `json:"text"`
+			} `json:"contents"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+		}
+		limit := max(body.Text.MaxCharacters, body.Contents.Text.MaxCharacters)
+		if limit < len([]rune(text)) {
+			t.Errorf("%s asks for %d characters", r.URL.Path, limit)
+		}
+		limit = min(limit, len([]rune(text)))
+		answer, _ := json.Marshal(map[string]any{"results": []map[string]any{{
+			"title": "Erika Beispiel", "url": "https://www.linkedin.com/in/erika-beispiel", "text": string([]rune(text)[:limit]),
+			"entities": []map[string]any{{"type": "person", "properties": map[string]any{"name": "Erika Beispiel", "location": "Cologne, North Rhine-Westphalia, Germany"}}},
+		}}})
+		_, _ = w.Write(answer)
+	}))
+	t.Cleanup(srv.Close)
+	exa := &search.Exa{Key: "exa-test", URL: srv.URL + "/search"}
+	found, err := exa.People(t.Context(), "Coach Köln", 25)
+	if err != nil || len(found) != 1 {
+		t.Fatalf("people search: %d, %v", len(found), err)
+	}
+	read, err := exa.Profile(t.Context(), "https://www.linkedin.com/in/erika-beispiel")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for how, p := range map[string]search.Profile{"found": found[0], "read": read} {
+		if want := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC); !p.LastActive.Equal(want) {
+			t.Errorf("%s: last active %v, want %v", how, p.LastActive, want)
+		}
+		if n := len([]rune(p.Text)); n > search.TextChars {
+			t.Errorf("%s: %d characters kept", how, n)
+		}
+		head := strings.Index(p.Text, "## About")
+		job := strings.Index(p.Text, "### Geschäftsführerin - Beispiel 0 GmbH")
+		social := strings.Index(p.Text, "## Social\n\n### Linkedin\n\n- [2026-11-25 · Erika Beispiel posted this]")
+		if !strings.HasPrefix(p.Text, "# Erika Beispiel\n\nWir helfen") || head < 0 || job < head || social < job ||
+			!strings.HasSuffix(p.Text, "[Ein Beitrag...](https://www.linkedin.com/posts/b)") {
+			t.Errorf("%s: the text kept is\n%s", how, p.Text)
+		}
+		if strings.Contains(p.Text, "Beispiel 59 GmbH") {
+			t.Errorf("%s: the end of the career is kept, and the activity has less room", how)
+		}
+	}
+}

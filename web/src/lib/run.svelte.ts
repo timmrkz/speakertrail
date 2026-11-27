@@ -5,7 +5,7 @@
 import { api, type Added, type Run } from './api'
 import { draftWatch } from './drafts.svelte'
 import { fmtElapsed, fmtLeft, plural, runBrought } from './format'
-import { navigate, router } from './router.svelte'
+import { navigate } from './router.svelte'
 import { errorText, fault, toast } from './toast.svelte'
 
 const GOING_MS = 2000
@@ -105,8 +105,9 @@ class RunWatch {
   // was here already. One link that adds one person opens them under
   // New, with their first message being drafted, so it is ready sooner
   // (Tim, 27 November 2026, #115). Links dropped while others are added
-  // wait their turn rather than go lost. A toast says what was added,
-  // with Undo, which also stops the draft.
+  // wait their turn rather than go lost. A toast says what was added, and
+  // Undo in the Edit menu takes it back, and stops the draft, see
+  // history.svelte.ts.
   add(text: string): Promise<Added | null> {
     const next = this.adding.then(() => this.addNow(text))
     this.adding = next.catch(() => null)
@@ -133,9 +134,8 @@ class RunWatch {
       this.changed++
       const drafting = r.drafting ? ', and drafting the first message' : ''
       const said = r.new.length ? `Added ${plural(r.new.length, 'person', 'people')}${drafting}` : r.connected.length ? `Marked ${plural(r.connected.length, 'person', 'people')} connected` : ''
-      const undo = said ? { label: 'Undo', run: () => void this.undo(r) } : null
-      if (r.wait) toast.show(`${said || 'Added'}. ${r.wait}`, 'bad', undo)
-      else if (said) toast.show(said, 'plain', undo)
+      if (r.wait) toast.show(`${said || 'Added'}. ${r.wait}`, 'bad')
+      else if (said) toast.show(said)
       return r
     } catch (e) {
       if (!was) this.run = null
@@ -144,21 +144,6 @@ class RunWatch {
     } finally {
       this.busy = ''
       this.seq++
-      void this.poll()
-    }
-  }
-
-  // Takes back what adding did: whom it brought in goes again, and whom
-  // it marked connected is open again.
-  private async undo(r: Added) {
-    try {
-      await Promise.all([...r.new.map((id) => api.removePerson(id)), ...r.connected.map((id) => api.patchPerson(id, { connected: false }))])
-      const open = router.match('/app/people/:id')
-      if (open && r.new.includes(Number(open.id))) navigate('/app/people', { replace: true })
-    } catch (e) {
-      fault(e)
-    } finally {
-      this.changed++
       void this.poll()
     }
   }

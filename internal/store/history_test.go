@@ -696,3 +696,258 @@ func TestASearchAddedAgainSinceStaysOne(t *testing.T) {
 		t.Error("the refused redo put the first search back beside the second")
 	}
 }
+
+// ranAndFound has a run find two invented people and end, as the engine
+// does, and gives the run's id and theirs.
+func ranAndFound(t *testing.T, s *Store) (run int64, ids []int64) {
+	t.Helper()
+	if err := s.Update(func(d *Data) error {
+		if len(d.Searches) == 0 {
+			if _, err := d.AddSearch("Yogalehrerin Köln", 0, t0); err != nil {
+				return err
+			}
+		}
+		search := d.Searches[0]
+		run = d.NewID()
+		d.Runs = append(d.Runs, &Run{ID: run, Kind: "manual", StartedAt: t0})
+		for _, name := range []string{"ada-beispiel", "bea-probe"} {
+			p, _ := d.AddFound(Found{URL: "https://www.linkedin.com/in/" + name, Name: name, Text: "# " + name + "\nYogalehrerin"}, search, run, t0)
+			ids = append(ids, p.ID)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return run, ids
+}
+
+func endRun(t *testing.T, s *Store, run int64) {
+	t.Helper()
+	if err := s.EndRun(run, func(d *Data) error {
+		d.Run(run).FinishedAt = t0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A run is one step when it ends. Its undo takes out whom it found, their
+// profile texts too, and its redo puts them back with their ids.
+func TestUndoAndRedoARun(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	run, ids := ranAndFound(t, s)
+	endRun(t, s, run)
+	before := s.person(t, ids[1])
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if u.Said != "Took out 2 people the run found" || !slices.Equal(u.Gone, ids) || *u.Shows != PeopleThing() {
+		t.Errorf("undo = %+v", u)
+	}
+	open(t, dir).Read(func(d *Data) {
+		if len(d.People) != 0 || len(d.profileTexts()) != 0 {
+			t.Errorf("read back after undo: %d people, %d texts", len(d.People), len(d.profileTexts()))
+		}
+	})
+	u, err = s.Redo()
+	mustStep(t, "redo", u, err)
+	if u.Said != "Put back 2 people the run found" {
+		t.Errorf("redo said %q", u.Said)
+	}
+	if p := open(t, dir).person(t, ids[1]); !reflect.DeepEqual(p, before) {
+		t.Errorf("read back after redo %+v, want %+v", p, before)
+	}
+	// Undo again takes them out again.
+	u, err = s.Undo()
+	mustStep(t, "second undo", u, err)
+	if len(u.Gone) != 2 {
+		t.Errorf("the second undo took out %v", u.Gone)
+	}
+}
+
+// Someone Tim changed while the run went stays when it is undone, since
+// that change is still in Undo below the run, and the undo says so.
+// Undone first, that change no longer holds them.
+func TestUndoOfARunLeavesWhomTimChanged(t *testing.T) {
+	s := open(t, t.TempDir())
+	run, ids := ranAndFound(t, s)
+	_ = s.Edit(func(d *Data) error {
+		d.Person(ids[0]).Notes = "Kennt Bea"
+		return nil
+	}, PersonThing(ids[0]))
+	endRun(t, s, run)
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if u.Said != "Took out 1 person the run found. 1 you changed since stays" || !slices.Equal(u.Gone, ids[1:]) {
+		t.Errorf("undo = %+v", u)
+	}
+	if p := s.person(t, ids[0]); p.Notes != "Kennt Bea" {
+		t.Errorf("notes %q", p.Notes)
+	}
+	// Redone and undone again, it takes out only Bea again.
+	_, _ = s.Redo()
+	u, err = s.Undo()
+	mustStep(t, "undo of the run again", u, err)
+	if !slices.Equal(u.Gone, ids[1:]) {
+		t.Errorf("undo again took out %v", u.Gone)
+	}
+}
+
+func TestUndoOfARunWhoseEveryoneTimChanged(t *testing.T) {
+	s := open(t, t.TempDir())
+	run, ids := ranAndFound(t, s)
+	for _, id := range ids {
+		_ = s.Edit(func(d *Data) error {
+			d.Person(id).Connect(true, t0)
+			return nil
+		}, PersonThing(id))
+	}
+	endRun(t, s, run)
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if u.Said != "2 people the run found stay, since you changed them" || len(u.Gone) != 0 {
+		t.Errorf("undo = %+v", u)
+	}
+}
+
+func TestUndoOfARunAfterTimsChangeIsUndoneTakesEveryone(t *testing.T) {
+	s := open(t, t.TempDir())
+	run, ids := ranAndFound(t, s)
+	_ = s.Edit(func(d *Data) error {
+		d.Person(ids[0]).Connect(true, t0)
+		return nil
+	}, PersonThing(ids[0]))
+	// Tim takes the connect back while the run still goes.
+	_, _ = s.Undo()
+	endRun(t, s, run)
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if u.Said != "Took out 2 people the run found" {
+		t.Errorf("undo said %q", u.Said)
+	}
+	// Redo still holds the connect, behind the run.
+	u, err = s.Redo()
+	mustStep(t, "redo of the run", u, err)
+	u, err = s.Redo()
+	mustStep(t, "redo of the connect", u, err)
+	if p := s.person(t, ids[0]); !p.Connected {
+		t.Error("the connect did not come back")
+	}
+}
+
+// A run that found nobody new is no step, and someone Tim added from a
+// link while it went is no part of it: adding them is a step of its own.
+func TestARunIsAStepOnlyForWhomItsSearchesFound(t *testing.T) {
+	s := open(t, t.TempDir())
+	var run, added int64
+	_ = s.Update(func(d *Data) error {
+		run = d.NewID()
+		d.Runs = append(d.Runs, &Run{ID: run, Kind: "manual", StartedAt: t0})
+		return nil
+	})
+	_ = s.Bring(nil, func(d *Data) ([]int64, error) {
+		p, _, _ := d.AddLink("https://www.linkedin.com/in/neu-hier", "neu-hier", run, t0)
+		added = p.ID
+		return []int64{p.ID}, nil
+	})
+	endRun(t, s, run)
+	u, err := s.Undo()
+	mustStep(t, "undo", u, err)
+	if u.Said != "Took out 1 person you added" || !slices.Equal(u.Gone, []int64{added}) {
+		t.Errorf("undo = %+v, want adding taken back", u)
+	}
+	if u, err := s.Undo(); err != nil || u.Done {
+		t.Errorf("a second undo did %+v, %v, want nothing", u, err)
+	}
+}
+
+// The end of a run is no change Tim made, so it leaves Redo as it is.
+func TestTheEndOfARunLeavesRedo(t *testing.T) {
+	s, id := withPerson(t, t.TempDir())
+	_ = s.Edit(func(d *Data) error {
+		d.Person(id).Notes = "Ruft zurück"
+		return nil
+	}, PersonThing(id))
+	_, _ = s.Undo()
+	var run int64
+	_ = s.Update(func(d *Data) error {
+		run = d.NewID()
+		search := d.Searches[0]
+		d.Runs = append(d.Runs, &Run{ID: run, Kind: "manual", StartedAt: t0})
+		d.AddFound(Found{URL: "https://www.linkedin.com/in/bea-probe", Name: "Bea Probe"}, search, run, t0)
+		return nil
+	})
+	endRun(t, s, run)
+	u, err := s.Redo()
+	mustStep(t, "redo", u, err)
+	if p := s.person(t, id); p.Notes != "Ruft zurück" {
+		t.Errorf("notes after the redo %q", p.Notes)
+	}
+}
+
+// Someone here again under their link since the undo, found by another
+// run or added from a link, stays as they are, and the redo puts back
+// only the others.
+func TestARedoLeavesSomeoneHereAgain(t *testing.T) {
+	s := open(t, t.TempDir())
+	run, ids := ranAndFound(t, s)
+	endRun(t, s, run)
+	_, _ = s.Undo()
+	var again int64
+	_ = s.Update(func(d *Data) error {
+		p, _, _ := d.AddLink("https://www.linkedin.com/in/ada-beispiel", "ada-beispiel", 0, t0)
+		again = p.ID
+		return nil
+	})
+	u, err := s.Redo()
+	mustStep(t, "redo", u, err)
+	if u.Said != "Put back 1 person the run found. 1 is here again since and stays as they are" {
+		t.Errorf("redo said %q", u.Said)
+	}
+	s.Read(func(d *Data) {
+		if len(d.People) != 2 || d.Person(ids[0]) != nil || d.Person(again) == nil || d.Person(ids[1]) == nil {
+			t.Errorf("after the redo %d people", len(d.People))
+		}
+	})
+}
+
+// Runs end, links bring people in, and Undo and Redo take them out and
+// put them back from several goroutines at once, and nobody is ever in
+// the file twice.
+func TestRunsAndAddingFromSeveralGoroutines(t *testing.T) {
+	s := open(t, t.TempDir())
+	var wg sync.WaitGroup
+	for g := range 4 {
+		wg.Go(func() {
+			for i := range 10 {
+				run, _ := ranAndFound(t, s)
+				endRun(t, s, run)
+				_ = s.Bring(nil, func(d *Data) ([]int64, error) {
+					p, isNew, _ := d.AddLink(fmt.Sprintf("https://www.linkedin.com/in/probe-%d-%d", g, i%3), "probe", 0, t0)
+					if !isNew {
+						return nil, nil
+					}
+					return []int64{p.ID}, nil
+				})
+				for range 2 {
+					if _, err := s.Undo(); err != nil && !errors.Is(err, ErrChangedSince) {
+						t.Error(err)
+					}
+				}
+				if _, err := s.Redo(); err != nil && !errors.Is(err, ErrChangedSince) {
+					t.Error(err)
+				}
+			}
+		})
+	}
+	wg.Wait()
+	s.Read(func(d *Data) {
+		seen := map[string]bool{}
+		for _, p := range d.People {
+			if seen[p.LinkedIn.URL] {
+				t.Errorf("%s is in the file twice", p.LinkedIn.URL)
+			}
+			seen[p.LinkedIn.URL] = true
+		}
+	})
+}

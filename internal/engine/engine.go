@@ -330,8 +330,8 @@ type Added struct {
 	Run  int64   `json:"run"`
 	New  []int64 `json:"new"`
 	Here []int64 `json:"here"`
-	// Connected are those here already whom adding marked connected, so
-	// Undo can take that back.
+	// Connected are those here already whom adding marked connected, for
+	// the page to say.
 	Connected []int64 `json:"connected"`
 	Other     int     `json:"other"`
 }
@@ -376,7 +376,18 @@ func (e *Engine) Add(text string) (Added, error) {
 	now := e.Store.Now()
 	var run *store.Run
 	var read []int64
-	err := e.Store.Update(func(d *store.Data) error {
+	// Adding is one step, which Undo takes back: whom it brought in goes
+	// again, and whom it marked connected is open again.
+	here := func(d *store.Data) []store.Thing {
+		var out []store.Thing
+		for _, link := range profiles {
+			if p := d.PersonByProfile(link); p != nil && !slices.Contains(out, store.PersonThing(p.ID)) {
+				out = append(out, store.PersonThing(p.ID))
+			}
+		}
+		return out
+	}
+	err := e.Store.Bring(here, func(d *store.Data) ([]int64, error) {
 		runID := int64(0)
 		switch {
 		case g != nil:
@@ -410,7 +421,7 @@ func (e *Engine) Add(text string) (Added, error) {
 			}
 		}
 		if runID == 0 || len(read) == 0 {
-			return nil
+			return out.New, nil
 		}
 		if g != nil {
 			if r := d.Run(g.id); r != nil {
@@ -425,7 +436,7 @@ func (e *Engine) Add(text string) (Added, error) {
 			d.Runs = append(d.Runs, run)
 		}
 		out.Run = runID
-		return nil
+		return out.New, nil
 	})
 	if err != nil {
 		return out, err
@@ -447,22 +458,52 @@ func (e *Engine) Add(text string) (Added, error) {
 	return out, startErr
 }
 
-// Remove takes out again someone Tim added from a link, for Undo: out
-// of the queue of the going run, and out of the app. A read in hand
-// finishes and finds nobody to keep it for.
-func (e *Engine) Remove(id int64) error {
+// Undo takes back the last change Tim made, see store.Store.Undo, and
+// keeps the going run's queue in step with it: whom it took out, or no
+// longer reads, leaves the queue, as their link left the run.
+func (e *Engine) Undo() (store.Undone, error) { return e.step(e.Store.Undo) }
+
+// Redo does again what the last undo took back, and queues the profiles
+// of whom it put back that wait for their read.
+func (e *Engine) Redo() (store.Undone, error) { return e.step(e.Store.Redo) }
+
+func (e *Engine) step(fn func() (store.Undone, error)) (store.Undone, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if err := e.Store.Update(func(d *store.Data) error { return d.RemoveAdded(id) }); err != nil {
-		return err
+	u, err := fn()
+	g := e.going
+	if err != nil || !u.Done || g == nil {
+		return u, err
 	}
-	if g := e.going; g != nil {
-		g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person == id })
-		if _, now := g.reading[id]; !now {
-			g.readEnded(id)
+	var links []int64
+	var read []int64
+	e.Store.Read(func(d *store.Data) {
+		if r := d.Run(g.id); r != nil {
+			links = slices.Clone(r.Links)
+			for _, x := range r.Reads {
+				read = append(read, x.PersonID)
+			}
+		}
+	})
+	g.queue = slices.DeleteFunc(g.queue, func(j job) bool {
+		if j.person == 0 || slices.Contains(links, j.person) {
+			return false
+		}
+		// A draft that waits on their read has nothing left to wait for.
+		g.readEnded(j.person)
+		return true
+	})
+	for _, id := range links {
+		if _, now := g.reading[id]; !now && !slices.Contains(read, id) && !slices.Contains(g.queue, job{person: id}) {
+			g.queue = append(g.queue, job{person: id})
 		}
 	}
-	return nil
+	// Profiles before searches, since Tim waits for them.
+	slices.SortStableFunc(g.queue, func(a, b job) int { return cmpBool(a.person == 0, b.person == 0) })
+	if !g.ending {
+		e.hire(g)
+	}
+	return u, nil
 }
 
 // Paste keeps a profile page Tim copied in his browser as the profile of
@@ -471,7 +512,7 @@ func (e *Engine) Remove(id int64) error {
 // the going run has not begun is dropped. It is a change Tim makes, so
 // Undo in the Edit menu takes it back, see store.Edit, unless the page
 // just added them, see AddPage. Then it is part of adding them, which
-// the toast's Undo takes back as for a link, and no step of its own.
+// Undo takes back as for a link, and no step of its own.
 func (e *Engine) Paste(id int64, text string, added bool) (named bool, err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -559,10 +600,15 @@ func (e *Engine) AddPage(ctx context.Context, text string, hrefs []string) (id i
 			return 0, false, err
 		}
 	}
-	err = e.Store.Update(func(d *store.Data) error {
+	// Someone new is a step, which Undo takes out again, with the page
+	// the caller keeps as their profile.
+	err = e.Store.Bring(nil, func(d *store.Data) ([]int64, error) {
 		p, n := d.AddPage(link, page.Name, search.FirstDegree(text), e.Store.Now())
 		id, isNew = p.ID, n
-		return nil
+		if !n {
+			return nil, nil
+		}
+		return []int64{p.ID}, nil
 	})
 	return id, isNew, err
 }
@@ -768,7 +814,8 @@ func (e *Engine) run(g *going) {
 	if ctx.Err() != nil {
 		ended = "stopped"
 	}
-	if err := e.Store.Update(func(d *store.Data) error {
+	// The people it found new are one step, which Undo takes out again.
+	if err := e.Store.EndRun(g.id, func(d *store.Data) error {
 		if r := d.Run(g.id); r != nil {
 			r.FinishedAt, r.Ended = e.Store.Now(), ended
 		}

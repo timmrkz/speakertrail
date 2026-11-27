@@ -95,8 +95,8 @@ func TestDraftAFirstMessage(t *testing.T) {
 // Chrome copied with it, keeps it as their profile, and drafts the first
 // message of someone connected who has none (Tim's report of 24
 // November 2026, #88 and #89). Undo in the Edit menu takes back the
-// draft, then the paste. The paste that added someone is no step of its
-// own: the toast's Undo takes them out.
+// draft, then the paste. The paste that added someone is part of adding
+// them, which the next undo takes back.
 func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	a, st, e := newAPI(t)
 	var added struct{ New []int64 }
@@ -146,15 +146,16 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 		t.Fatalf("someone new: %d %+v", code, out)
 	}
 	a.Drafts.Wait()
-	// Undo in the Edit menu takes back their draft, and nothing more.
-	for _, want := range []bool{true, false} {
-		var u store.Undone
-		if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || u.Done != want {
-			t.Fatalf("undo after adding: %d %+v, want done %v", code, u, want)
-		}
+	// Undo in the Edit menu takes back their draft, then adding them.
+	var u store.Undone
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Shows.Kind != "person" {
+		t.Fatalf("undo of the draft: %d %+v", code, u)
 	}
-	if code := call(t, a, "DELETE", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNoContent {
-		t.Errorf("undo someone new: %d", code)
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Took out 1 person you added" {
+		t.Fatalf("undo of adding: %d %+v", code, u)
+	}
+	if code := call(t, a, "GET", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNotFound {
+		t.Errorf("someone new is still there after the undo: %d", code)
 	}
 	// Pasted as text alone, Exa is asked for the link by the name and
 	// headline, and knows only another name, so it says what is missing.
@@ -221,6 +222,54 @@ func TestUndoOfAPasteStopsTheDraftItStarted(t *testing.T) {
 	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
 	if p.Draft != "" || p.ProfileReadAt != nil || p.Notes != "" {
 		t.Errorf("after undo: draft %q, profile read at %v, notes %q", p.Draft, p.ProfileReadAt, p.Notes)
+	}
+}
+
+// Undo of a run takes out whom it found, and stops a first message still
+// being written for one of them, since nobody is left to keep it for.
+func TestUndoOfARunStopsTheDraftOfWhomItTakesOut(t *testing.T) {
+	a, st, _ := newAPI(t)
+	var id, run int64
+	_ = st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Töpferin Dortmund", 0, t0)
+		run = d.NewID()
+		d.Runs = append(d.Runs, &store.Run{ID: run, Kind: "manual", StartedAt: t0})
+		p, _ := d.AddFound(store.Found{URL: "https://www.linkedin.com/in/mara-s-beispiel", Name: "Mara Beispiel", Text: "# Mara Beispiel\nIch töpfere."}, s, run, t0)
+		id = p.ID
+		return nil
+	})
+	if err := st.EndRun(run, func(d *store.Data) error {
+		d.Run(run).FinishedAt = t0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	asked := make(chan context.Context, 1)
+	a.Drafts = &draft.Drafter{Store: st, Host: host,
+		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		// The model writes until the draft is stopped.
+		Ask: func(ctx context.Context, _ *language.Server, _ []language.Message, _ json.RawMessage, _ func(string)) (language.Answer, error) {
+			asked <- ctx
+			<-ctx.Done()
+			return language.Answer{}, ctx.Err()
+		},
+		Pick: func(int) int { return 0 },
+	}
+	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft", "{}", nil); code >= 300 {
+		t.Fatalf("draft: %d", code)
+	}
+	writing := <-asked
+	t.Cleanup(func() { _ = a.Drafts.Cancel(id); a.Drafts.Wait() })
+	var u store.Undone
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Took out 1 person the run found" {
+		t.Fatalf("undo: %d %+v", code, u)
+	}
+	// Cancel stops it before the undo answers.
+	if writing.Err() == nil {
+		t.Error("the undo of the run left the draft running")
 	}
 }
 
@@ -397,15 +446,19 @@ func TestUndoOfOneLinkStopsItsDraft(t *testing.T) {
 	}
 	reading(t, states)
 	var wg sync.WaitGroup
-	codes := make(chan int, 4)
+	took := make(chan bool, 4)
 	for range 4 {
-		wg.Go(func() { codes <- call(t, a, "DELETE", "/api/people/"+itoa(added.Open), "", nil) })
+		wg.Go(func() {
+			var u store.Undone
+			call(t, a, "POST", "/api/undo", "{}", &u)
+			took <- u.Done && u.Said == "Took out 1 person you added"
+		})
 	}
 	wg.Wait()
-	close(codes)
+	close(took)
 	removed := 0
-	for c := range codes {
-		if c == http.StatusNoContent {
+	for ok := range took {
+		if ok {
 			removed++
 		}
 	}

@@ -1,6 +1,6 @@
 // Walks through Report a Problem against the mock, in Chromium, the way
 // walks/logs.mjs does: the report window at /report, Dictate, the
-// pictures, Clear and its undo, and Report on a toast in the app's
+// pictures, Clear and its undo, and Report on what went wrong in the app's
 // window. The mock hears nothing, so Stop gives one invented sentence, as
 // the app gives what the speech model wrote down. `make walks` runs
 // them, and so does CI.
@@ -296,15 +296,16 @@ const walks = [
     },
   },
   {
-    // What went wrong in the app's window says so in a toast with Report,
-    // which opens Report a Problem with the toast's words in it.
-    name: 'A toast that says what went wrong offers Report',
+    // What went wrong in the app's window says so at the control that
+    // failed, with Report, which opens Report a Problem with its words in
+    // it (#72).
+    name: 'What went wrong at a control offers Report',
     async run(page) {
       await page.setViewportSize({ width: 390, height: 844 })
       await page.route('**/api/log/show', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"The log could not be shown"}' }))
       await page.goto(`${url}/app/settings`)
       await page.getByRole('button', { name: "Show the app's log in folder" }).click()
-      const report = page.locator('.toast.bad button', { hasText: 'Report' })
+      const report = page.locator('section.group:has(h2:text-is("Logs")) .problem button', { hasText: 'Report' })
       await report.waitFor()
       const about = page.waitForRequest((r) => r.url().endsWith('/api/report/about'))
       await report.click()

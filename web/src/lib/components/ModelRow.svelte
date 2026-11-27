@@ -30,12 +30,13 @@
 <script lang="ts" generics="M extends RowModel">
   import type { Snippet } from 'svelte'
   import { plural, size } from '../format'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText, Problem as Trouble } from '../problem.svelte'
   import Busy from './Busy.svelte'
   import Confirm from './Confirm.svelte'
   import Icon, { type IconName } from './Icon.svelte'
   import Info from './Info.svelte'
   import Pick from './Pick.svelte'
+  import Problem from './Problem.svelte'
 
   // A model in an area of its own: the model, the one line under it that
   // says how it stands, Download beside it while it is not here, Cancel
@@ -145,12 +146,21 @@
 
   // A model picked from the list is the one in use at once, here or not.
   // The line under it then says whether it still has to be downloaded.
+  // What went wrong picking a model or cancelling its download says so
+  // under its row, and removing one under that model's row, see
+  // lib/problem.svelte.ts. Why a download failed is the line under its
+  // name, which the app keeps.
+  const rowProblem = new Trouble()
+  const removeProblem = new Trouble()
+  let failedOn = $state('')
+
   async function choose(name: string) {
     failed = ''
+    rowProblem.clear()
     try {
       await pick?.onpick(name)
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      rowProblem.say(err)
       watch.read()
     }
   }
@@ -158,11 +168,12 @@
   async function cancel() {
     if (!running) return
     cancelling = true
+    rowProblem.clear()
     try {
       await stop(running.id)
     } catch (err) {
       cancelling = false
-      toast.show(errorText(err), 'bad')
+      rowProblem.say(err)
     }
     watch.read()
   }
@@ -191,10 +202,12 @@
 
   async function remove(name: string) {
     removing = null
+    removeProblem.clear()
+    failedOn = name
     try {
       await drop(name)
     } catch (err) {
-      toast.show(errorText(err), 'bad')
+      removeProblem.say(err)
     }
     watch.read()
   }
@@ -240,6 +253,7 @@
             disabled={!!running || starting} onpick={choose} />
         {/if}
       </div>
+      {#if rowProblem.text}<div class="failed"><Problem of={rowProblem} /></div>{/if}
     </div>
     {#if here.length > 0}
       <button class="setting disclose" type="button" aria-expanded={open} onclick={() => (open = !open)}>
@@ -260,6 +274,7 @@
               aria-label="Remove {m.title}" aria-haspopup="dialog" onclick={() => (removing = m.name)}>
               <Icon name="trash" />
             </button>
+            {#if failedOn === m.name && removeProblem.text}<div class="failed"><Problem of={removeProblem} /></div>{/if}
           </div>
         {/each}
       {/if}
@@ -303,6 +318,8 @@
     .actions.picks { grid-column: 2 / -1; }
   }
   .act { position: relative; }
+  /* What went wrong takes the whole width of its row, under the rest. */
+  .failed { grid-column: 1 / -1; min-width: 0; }
   .count { font-variant-numeric: tabular-nums; }
   .mark { display: flex; width: 14px; justify-content: center; color: var(--ink-3); }
   .mark.ok { color: var(--good); }

@@ -29,7 +29,8 @@ their profile is rejected. `new` holds whoever came in during the last
 `new_days` days, found by a search or added from a link, connected or
 not, never someone whose profile he rejected, and always the newest
 first. `new_days` is the setting of that name, 7 until Tim changes it in
-Settings, and comes with the answer so the interface can say it.
+Settings, at least 1, and comes with the answer so the interface can say
+it.
 
 When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:

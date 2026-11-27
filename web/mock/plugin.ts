@@ -1197,6 +1197,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     // counts whole ones, which every number setting does.
     if (typeof b.value === 'number' && b.value < 0) return err(400, `${row.key} takes a number of 0 or more`)
     if (typeof b.value === 'number' && !Number.isInteger(b.value)) return err(400, `${row.key} takes a whole number`)
+    if (row.key === 'new_days' && Number(b.value) < 1) return err(400, 'new_days takes 1 day or more')
     if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
     if (row.key === 'home_city' && String(b.value).trim() !== '') {
       const c = cityOf(String(b.value))

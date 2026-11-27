@@ -294,8 +294,17 @@ func TestListPeople(t *testing.T) {
 	}
 	days("30")
 	same("new for 30 days", list(PeopleQuery{Filter: "new"}), unknown, dana, young, old)
-	days("0")
-	same("new for no day", list(PeopleQuery{Filter: "new"}))
+	days("1")
+	same("new for a day", list(PeopleQuery{Filter: "new"}), unknown, dana, young)
+	// A number of days too large for a duration keeps everyone new,
+	// rather than turning negative and nobody.
+	days("1000000")
+	same("new for a million days", list(PeopleQuery{Filter: "new"}), unknown, dana, young, old)
+	days("1e30")
+	same("new for 1e30 days", list(PeopleQuery{Filter: "new"}), unknown, dana, young, old)
+	if err := d.SetSetting(NewDays, json.RawMessage(`0`), t0); err == nil {
+		t.Error("new for no day was taken, which hides whom links just added")
+	}
 	days("7")
 
 	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: now})

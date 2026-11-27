@@ -158,13 +158,17 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if len(detail.FitParts) != 4 || detail.FitScore != sum || p.FitScore != sum || sum <= 0 {
 		t.Errorf("fit %d in the list, %d on the person, parts %+v", p.FitScore, detail.FitScore, detail.FitParts)
 	}
-	// New holds her for as many days as the setting new_days says.
-	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":0}`, nil); code != http.StatusOK {
-		t.Fatalf("new for no day: %d", code)
+	// New holds her for as many days as the setting new_days says, at
+	// least one.
+	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":0}`, nil); code != http.StatusBadRequest {
+		t.Errorf("new for no day: %d", code)
+	}
+	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":3}`, nil); code != http.StatusOK {
+		t.Fatalf("new for 3 days: %d", code)
 	}
 	call(t, a, "GET", "/api/people?filter=new", "", &people)
-	if len(people.People) != 0 || people.Counts["new"] != 0 || people.NewDays != 0 {
-		t.Errorf("new for no day = %+v", people)
+	if len(people.People) != 1 || people.Counts["new"] != 1 || people.NewDays != 3 {
+		t.Errorf("new for 3 days = %+v", people)
 	}
 	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":2.5}`, nil); code != http.StatusBadRequest {
 		t.Errorf("a part of a day: %d", code)

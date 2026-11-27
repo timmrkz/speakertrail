@@ -64,15 +64,18 @@ const walks0 = [
     },
   },
   {
-    name: 'A part of a day is refused, and the setting keeps what it had',
+    name: 'No day and a part of a day are refused, and the setting keeps what it had',
     async run(page) {
       await page.goto(`${url}/app/settings`)
       const field = page.locator('#set-new_days')
       await field.fill('2.5')
       await field.blur()
       await page.locator('.setting').filter({ has: field }).locator('.field-error', { hasText: 'whole number' }).waitFor()
-      const value = await field.inputValue()
-      if (value !== '7') return `after 2.5 the field says ${value}`
+      if ((await field.inputValue()) !== '7') return `after 2.5 the field says ${await field.inputValue()}`
+      await field.fill('0')
+      await field.blur()
+      await page.locator('.setting').filter({ has: field }).locator('.field-error', { hasText: '1 day or more' }).waitFor()
+      if ((await field.inputValue()) !== '7') return `after 0 the field says ${await field.inputValue()}`
       return ''
     },
   },

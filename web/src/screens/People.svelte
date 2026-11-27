@@ -44,7 +44,11 @@
       return 'fit'
     }
   }
+  // The order Tim picked, while adding links turned it to Newest for a
+  // while, see below. Only an order he picked is kept.
+  let picked = $state<PeopleSort | null>(null)
   $effect(() => {
+    if (picked) return
     try {
       localStorage.setItem(SORT_KEY, sort)
     } catch {
@@ -114,6 +118,9 @@
 
   // People just added from links show under New, newest on top, the
   // search emptied for them. They may have been dropped on another page.
+  // New follows the order like every list, so the order turns to Newest,
+  // where the picker shows it, until Tim picks one or leaves New, and
+  // then his own comes back. It is never kept, so Best fit is not lost.
   $effect(() => {
     if (!runWatch.added) return
     untrack(() => {
@@ -121,7 +128,21 @@
       q = ''
       query = ''
       filter = 'new'
+      if (sort !== 'new') {
+        picked ??= sort
+        sort = 'new'
+      }
       reload++
+    })
+  })
+
+  // Leaving New brings back the order Tim picked.
+  $effect(() => {
+    if (filter === 'new') return
+    untrack(() => {
+      if (!picked) return
+      sort = picked
+      picked = null
     })
   })
 
@@ -164,7 +185,7 @@
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({
       ...f,
       count: f.value === 'new' && count ? `${count.done} of ${count.of}` : counts?.[f.value],
-      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : `Found or added in ${lastDays}, newest first`) : undefined,
+      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : `Found or added in ${lastDays}`) : undefined,
     })),
   )
 
@@ -184,7 +205,7 @@
     if (mode === 'open') return 'Open this person, marked connected'
     if (mode === 'none') return linked!.here.length ? 'Everyone these links lead to is here already' : "Not a link to a person's LinkedIn profile, like linkedin.com/in/name"
     if (going) return `${runSays(going, now, answeredAt)}. Stop this run: what is running finishes, the rest waits for the next run`
-    return 'Run the due searches now. Takes about a minute'
+    return 'Run the due searches now, and new ones in more cities when few are due. Takes about a minute'
   })
   function act() {
     if (mode === 'add' || mode === 'open') void runWatch.add(q)
@@ -430,7 +451,7 @@
       <div class="toolbar tight">
         <SearchInput bind:value={q} placeholder="Search or paste LinkedIn links" label="Search people" onsearch={(v) => (query = v)} onenter={enter} />
         <span class="sort">
-          <Pick label="Sort by" title="Order" value={sort} options={sorts} onpick={(v) => (sort = v as PeopleSort)} />
+          <Pick label="Sort by" title="Order" value={sort} options={sorts} onpick={(v) => ((picked = null), (sort = v as PeopleSort))} />
         </span>
         <button class="btn start" class:primary={!going || mode !== 'run'} type="button" onclick={act}
           disabled={runWatch.busy !== '' || mode === 'none' || (mode === 'run' && going !== null && going.id <= 0)}

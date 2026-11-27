@@ -114,6 +114,7 @@
 
   function line(s: Source): string {
     const parts: string[] = []
+    if (s.made_from) parts.push(`Made from ${s.made_from}`)
     if (s.last_checked_at) {
       parts.push(plural(s.people, 'person', 'people'))
       parts.push(`ran ${fmtAgo(s.last_checked_at)}`)

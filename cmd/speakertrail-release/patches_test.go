@@ -3,14 +3,17 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/timmrkz/speakertrail/internal/updates"
 )
@@ -74,7 +77,7 @@ func releaseServing(t *testing.T, files map[string][]byte) *httptest.Server {
 
 // basesFrom is pack's bases, read from the release srv serves.
 func basesFrom(srv *httptest.Server, names []string, log io.Writer) bases {
-	b := bases{from: srv.URL + "/dev/", client: srv.Client()}
+	b := bases{from: srv.URL + "/dev/", client: srv.Client(), most: patchesPerBuild}
 	for _, name := range names {
 		if p, ok := b.readParts([]string{name}, log)[name]; ok {
 			b.parts = append(b.parts, p)
@@ -194,6 +197,158 @@ func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "no patch of "+app) {
 		t.Errorf("the log does not say why the program has no patch:\n%s", log.String())
+	}
+}
+
+// builtBefore publishes n builds of the app, each with a program of its
+// own, as app-pr-1 to app-pr-n, and returns what the release serves and
+// the program of each, in that order.
+//
+// On the real disk: pack writes each build as files, and the release serves them.
+func builtBefore(t *testing.T, n int) (map[string][]byte, [][]byte) {
+	t.Helper()
+	app := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+	served := map[string][]byte{}
+	var olds [][]byte
+	for i := range n {
+		files := theApp("main")
+		old := programOf(append(append([]byte{}, code...), byte(i)))
+		files[app] = old
+		olds = append(olds, old)
+		for name, data := range published(t, packed(t, files), fmt.Sprintf("app-pr-%d.zip", i+1)) {
+			served[name] = data
+		}
+	}
+	return served, olds
+}
+
+// patchesFrom are the files the patches in out start from, sorted.
+func patchesFrom(t *testing.T, out string) []string {
+	t.Helper()
+	var got []string
+	for _, part := range partsIn(t, out).Parts {
+		for _, pt := range part.Patches {
+			got = append(got, pt.From)
+		}
+	}
+	slices.Sort(got)
+	return got
+}
+
+// sums are the SHA-256 of each program, sorted.
+func sums(programs ...[]byte) []string {
+	var out []string
+	for _, p := range programs {
+		out = append(out, sum(p))
+	}
+	slices.Sort(out)
+	return out
+}
+
+// A build has at most the patches it has room for, and those are from
+// the builds patched against that come first. The release holds at most
+// a thousand files, and patches from every build to every build filled
+// it.
+//
+// On the real disk: the release tool reads the zip, and writes the packed build, as files.
+func TestABuildHasThePatchesFromTheBuildsFirstThatItHasRoomFor(t *testing.T) {
+	release(t)
+	const n = 8
+	served, olds := builtBefore(t, n)
+	srv := releaseServing(t, served)
+	// The order they are patched against in, not the order they were made.
+	order := []int{5, 2, 7, 0, 3, 6, 1, 4}
+	var names []string
+	var first [][]byte
+	for _, i := range order {
+		names = append(names, fmt.Sprintf("app-pr-%d.parts.json", i+1))
+		first = append(first, olds[i])
+	}
+
+	files := theApp("main")
+	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = programOf(changed)
+	dir := t.TempDir()
+	in := filepath.Join(dir, "build.zip")
+	if err := os.WriteFile(in, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, most := range []int{0, 1, 3, patchesPerBuild} {
+		want := min(most, n)
+		out := filepath.Join(dir, fmt.Sprint("packed-", most))
+		var log bytes.Buffer
+		b := basesFrom(srv, names, &log)
+		b.most = most
+		if err := pack(in, out, packer, b, &log); err != nil {
+			t.Fatal(err)
+		}
+		if got := patchesFrom(t, out); !slices.Equal(got, sums(first[:want]...)) {
+			t.Errorf("with room for %d, the patches are from %.12v, want from the first %d", most, got, want)
+		}
+		patches, _ := filepath.Glob(filepath.Join(out, "patch-*"))
+		if len(patches) != want {
+			t.Errorf("with room for %d, %d patches were written, want %d", most, len(patches), want)
+		}
+	}
+}
+
+// pack, as publish.yml runs it, reads the channel list and the release's
+// files, has room for fewer patches once the release is nearly full, and
+// patches against the channel's own build before first, though it is the
+// oldest: the app that follows the channel is the one that updates.
+//
+// On the real disk: the workflow writes the list and the release's files, and the release tool reads them and writes the packed build.
+func TestPackPatchesFromTheChannelsBuildFirstOnANearlyFullRelease(t *testing.T) {
+	release(t)
+	served, olds := builtBefore(t, 3)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, ok := served[strings.TrimPrefix(r.URL.Path, "/dev/")]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(data)
+	}))
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	list := `{"channels":[` +
+		`{"channel":"pr-1","url":"https://github.com/timmrkz/speakertrail/releases/download/dev/app-pr-1.zip"},` +
+		`{"channel":"pr-2","url":"https://github.com/timmrkz/speakertrail/releases/download/dev/app-pr-2.zip"},` +
+		`{"channel":"pr-3","url":"https://github.com/timmrkz/speakertrail/releases/download/dev/app-pr-3.zip"}]}`
+	// pr-1 is the oldest build, and the release holds 799 files, which
+	// leaves room for a single patch.
+	var assets strings.Builder
+	assets.WriteString(`{"assets":[`)
+	at := now.Add(-3 * time.Hour)
+	for i := range 3 {
+		fmt.Fprintf(&assets, `{"name":"app-pr-%d.zip","createdAt":%q},{"name":"app-pr-%d.parts.json","createdAt":%q},`,
+			i+1, at.Add(time.Duration(i)*time.Hour).Format(time.RFC3339), i+1, at.Add(time.Duration(i)*time.Hour).Format(time.RFC3339))
+	}
+	for i := range maxAssets - keepFree - 1 - 7 {
+		fmt.Fprintf(&assets, `{"name":"piece-%d.zst","createdAt":%q},`, i, at.Format(time.RFC3339))
+	}
+	assets.WriteString(`{"name":"channels.json","createdAt":"2026-11-21T12:00:00Z"}]}`)
+	listPath, assetsPath := filepath.Join(dir, "channels.json"), filepath.Join(dir, "assets.json")
+	if err := os.WriteFile(listPath, []byte(list), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(assetsPath, []byte(assets.String()), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	files := theApp("main")
+	files["Speaker Trail.app/Contents/MacOS/speakertrail-app"] = programOf(changed)
+	in := filepath.Join(dir, "build.zip")
+	if err := os.WriteFile(in, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "packed")
+
+	if err := packCommand([]string{"-zip", in, "-out", out, "-from", srv.URL + "/dev/",
+		"-channel", "pr-1", "-list", listPath, "-assets", assetsPath}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := patchesFrom(t, out), sums(olds[0]); !slices.Equal(got, want) {
+		t.Errorf("the patches are from %.12v, want only from pr-1's build, %.12v", got, want)
 	}
 }
 

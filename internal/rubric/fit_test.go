@@ -86,14 +86,43 @@ func TestFitYounger(t *testing.T) {
 		born   int
 		points int
 	}{
-		{2002, 10}, {1996, 10}, {1991, 5}, {1987, 1}, {1986, 0}, {1970, 0}, {0, 5},
+		// Past 40 it goes below none, a point a year, down to -20 at 60
+		// (Tim, 27 November 2026: people around 50 should not make it to
+		// the top).
+		{2002, 10}, {1996, 10}, {1991, 5}, {1987, 1}, {1986, 0}, {1976, -10}, {1970, -16}, {1966, -20}, {1950, -20}, {0, 5},
 	} {
-		_, parts := Fit(FitPerson{BornAbout: tc.born, Now: now})
+		// Someone who wrote today, so the other parts have enough to give.
+		p := FitPerson{BornAbout: tc.born, LastActive: now, LastWrote: now, Wrote: true, Now: now}
+		fit, parts := Fit(p)
 		if got := part(t, parts, "younger"); got.Points != tc.points {
 			t.Errorf("born %d: %d points, want %d", tc.born, got.Points, tc.points)
 		}
+		if want := 30 + 10 + tc.points; fit != want || FitPoints(p) != want {
+			t.Errorf("born %d: fit %d and %d, want %d", tc.born, fit, FitPoints(p), want)
+		}
 	}
-	_, parts := Fit(FitPerson{BornAbout: 2000, AgeReason: "Bachelor from 2019", Now: now})
+	// Younger takes away no more than the other parts give, so the fit
+	// stays 0 or more, and the points under Why add up to it.
+	fit, parts := Fit(FitPerson{BornAbout: 1950, Now: now})
+	if got := part(t, parts, "younger").Points; fit != 0 || got != -10 || FitPoints(FitPerson{BornAbout: 1950, Now: now}) != 0 {
+		t.Errorf("with only Near you's 10: fit %d, Younger %d, want 0 and -10", fit, got)
+	}
+	// With Who they are below none too, both take from what is left, in
+	// the order of the parts.
+	older := FitPerson{BornAbout: 1966, Signals: []Signal{{Key: "funded"}}, LastActive: now, LastWrote: now, Wrote: true, Now: now}
+	fit, parts = Fit(older)
+	if who, younger := part(t, parts, "who").Points, part(t, parts, "younger").Points; fit != 7 || who != -13 || younger != -20 || FitPoints(older) != 7 {
+		t.Errorf("fit %d, who %d, younger %d, want 7, -13, -20", fit, who, younger)
+	}
+	// A 53 year old who shows a third more of Who they are than a 30 year
+	// old, alike in all else, comes after.
+	at := func(born int, sigs ...Signal) int {
+		return FitPoints(FitPerson{BornAbout: born, Signals: sigs, LastActive: now, LastWrote: now, Wrote: true, Now: now})
+	}
+	if old, young := at(1973, Signal{Key: "athlete", For: true}), at(1996); old >= young {
+		t.Errorf("53 with a signal %d, 30 without %d", old, young)
+	}
+	_, parts = Fit(FitPerson{BornAbout: 2000, AgeReason: "Bachelor from 2019", Now: now})
 	if got := part(t, parts, "younger").Why; got != "Bachelor from 2019, so about 26" {
 		t.Errorf("why %q", got)
 	}

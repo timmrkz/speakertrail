@@ -17,6 +17,7 @@
   import { pasteAsShown } from '../pastedlines'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
+  import { stepOut } from '../keys'
   import { errorText, Problem } from '../problem.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
@@ -259,7 +260,8 @@
   </div>
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle'; boxProblem.clear() }} onblur={save}></textarea>
+      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle'; boxProblem.clear() }} onblur={save}
+      onkeydown={(e) => stepOut(e, `person-row-${person.id}`)}></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
         title={copied ? 'Copied' : 'Copy the whole message'}>

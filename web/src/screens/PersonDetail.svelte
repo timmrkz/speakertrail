@@ -13,6 +13,7 @@
   import { pasteAsShown } from '../lib/pastedlines'
   import { errorText, Problem } from '../lib/problem.svelte'
   import { runWatch } from '../lib/run.svelte'
+  import { stepOut } from '../lib/keys'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
@@ -307,6 +308,7 @@
       </div>
       <div class="box">
         <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => { noteState = 'idle'; noteProblem.clear() }} onblur={saveNotes}
+          onkeydown={(e) => stepOut(e, `person-row-${p.id}`)}
           placeholder="Where you met, what to ask"></textarea>
         <ProblemNote of={noteProblem} over />
       </div>

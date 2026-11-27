@@ -31,10 +31,10 @@
 #    built nothing starts no Mac.
 # 3. publish, per channel, one after another and never stopped half way,
 #    checks the zip, packs it in parts, signs the zip and the stored zip,
-#    and uploads to the release dev the pieces and patches the release
-#    lacks, the zip, the stored zip packed with zstd, its parts and its
-#    entry. When it is a pull request's build, it marks the commit ready
-#    to update to.
+#    and uploads to the release dev the pieces the release lacks, the
+#    zip, the stored zip packed with zstd, its parts and its entry. When
+#    it is a pull request's build, it marks the commit ready to update
+#    to. The patches go up last.
 # 4. list, when a build ends, writes channels.json again from every entry.
 #    It also takes away the entry of any pull request that is not open any
 #    more, which is how a closed pull request leaves the list. A list job
@@ -427,7 +427,7 @@ jobs:
       # The files of this channel by name, never a pattern: one channel has
       # no business with another's entry. First every piece the release
       # does not hold yet, then the zip, the stored zip packed and the
-      # parts, then the patches, and the entry only once they are there,
+      # parts, and the entry only once they are there, the patches after,
       # because the app reads the entry of the channel it follows and
       # would be offered a build it cannot download yet. One command sends
       # its files side by side, so the small entry would be up long before
@@ -459,24 +459,6 @@ jobs:
           gh release upload dev "dist/$ZIP.zst" --clobber
           gh release upload dev "dist/${ZIP%.zip}.parts.json" --clobber
 
-      # A patch that cannot go up, on a release that is full, costs the app
-      # that file's piece, never the build its place on Updates. So this
-      # step may fail and the entry still goes up, and the run is warned.
-      - id: patches
-        if: steps.upload.outcome == 'success'
-        name: Upload the patches
-        continue-on-error: true
-        env:
-          PACKED: ${{ runner.temp }}/packed
-        run: |
-          for f in "$PACKED"/patch-*.bsdiff; do
-            [ -e "$f" ] || continue
-            name=$(basename "$f")
-            grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
-            gh release upload dev "$f" ||
-              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name"
-          done
-
       - id: entry
         if: steps.upload.outcome == 'success'
         name: Upload the entry
@@ -499,6 +481,28 @@ jobs:
           gh api "repos/$GH_REPO/statuses/$SHA" \
             -f state=success -f context="Ready to update to" \
             -f description="On the Updates page as $CHANNEL" >/dev/null
+
+      # The patches go up last, after the entry and the status, so a build
+      # is on Updates without waiting for them, about a minute and a half
+      # on 27 November 2026. Its parts name them already, and an app that
+      # finds one missing takes that file's piece instead, see Download in
+      # internal/updates/assemble.go. A patch that cannot go up, on a
+      # release that is full, costs the same piece, never the build its
+      # place on Updates. So this step may fail, and the run is warned.
+      - id: patches
+        if: steps.upload.outcome == 'success'
+        name: Upload the patches
+        continue-on-error: true
+        env:
+          PACKED: ${{ runner.temp }}/packed
+        run: |
+          for f in "$PACKED"/patch-*.bsdiff; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f")
+            grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
+            gh release upload dev "$f" ||
+              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name"
+          done
 
   # Also when publish was skipped, for a run that left no zip: the close
   # of a pull request is how it leaves the list. And when it failed or was

@@ -64,8 +64,10 @@ then on every build comes from GitHub.
    `sign` signs the zip and the stored zip with the key from the
    environment `updates`. The pieces the release does not hold yet go
    up to the pre-release `dev`, then the zip, the stored zip packed and
-   its parts, then the patches it lacks, and its entry last. The commit that was built gets the
-   status **Ready to update to** on the pull request.
+   its parts, then its entry. The commit that was built gets the status
+   **Ready to update to** on the pull request, and only then do the
+   patches it lacks go up. An app that updates before they are there
+   takes the piece of each file whose patch is missing.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. Of the newest two hundred that are

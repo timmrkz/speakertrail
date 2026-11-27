@@ -8,6 +8,23 @@ export function typing(): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!on?.isContentEditable
 }
 
+// Escape in a field of something open, like a person's notes, steps out
+// one level: the field lets go of the keyboard, which saves it as leaving
+// it always does, and the keyboard goes to the sheet the field is in, or
+// else to the row the thing stands on in its list, so the arrow keys go
+// on from there. The next Escape puts the thing away, from there. One
+// Escape never does both, since on a Mac Escape also ends Dictation, and
+// an Escape meant for that would close what was being dictated into.
+// What was typed always stays. Issue #85.
+export function stepOut(e: KeyboardEvent, row: string) {
+  if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing || e.metaKey || e.ctrlKey || e.altKey) return
+  const field = e.currentTarget as HTMLElement
+  e.preventDefault()
+  const to = field.closest<HTMLElement>('[role="dialog"]') ?? document.getElementById(row)
+  if (to) keyFocus(to)
+  if (document.activeElement === field) field.blur()
+}
+
 // The box over the page is asking something, see Confirm.svelte.
 export function asking(): boolean {
   return !!document.querySelector('dialog[open], [role="alertdialog"]')

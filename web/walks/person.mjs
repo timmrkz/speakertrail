@@ -351,6 +351,79 @@ const walks = [
     },
   },
   {
+    // Tim, 23 November 2026, issue #85: with the caret in the notes,
+    // Escape did nothing beside the list, so he had to click to put the
+    // person away, and in the narrow sheet it closed the person at once.
+    // Escape now steps out one level at a time, the same in both: the
+    // first leaves the field and saves it, the keyboard on the person's
+    // row or the sheet, the next puts the person away. One Escape never
+    // closes, since on a Mac Escape also ends Dictation.
+    name: 'Escape in the notes or the first message saves and leaves the field, and the next Escape puts the person away, beside the list and in the sheet',
+    async run(page) {
+      const wrong = []
+      await page.goto(`${url}/app/people`)
+      const was = await person(page, 1003)
+      for (const [w, h] of [[1280, 900], [390, 844]]) {
+        await page.setViewportSize({ width: w, height: h })
+        for (const [field, key] of [['#notes-1003', 'notes'], ['#message-text-1003', 'draft']]) {
+          const where = `${field.slice(1).replace('-1003', '')} at ${w} px`
+          await page.goto(`${url}/app/people/1003`)
+          const box = page.locator(field)
+          await box.waitFor()
+          await box.click()
+          await page.keyboard.press('ControlOrMeta+End')
+          const typed = ' Escape keeps this'
+          await page.keyboard.type(typed)
+          const saving = page.waitForResponse((r) => r.url().endsWith('/api/people/1003') && r.request().method() === 'PATCH')
+          await page.keyboard.press('Escape')
+          await drawn(page)
+          const after = await page.evaluate(() => {
+            const on = document.activeElement
+            return { path: location.pathname, on: on?.matches('[role="dialog"]') ? 'the sheet' : on?.id || on?.tagName.toLowerCase() }
+          })
+          const stuck = after.path !== '/app/people/1003' ? 'the first Escape put the person away'
+            : after.on === field.slice(1) ? 'Escape left the caret in the field' : ''
+          if (stuck) {
+            wrong.push(`${where}: ${stuck}`)
+            await page.evaluate(() => document.activeElement?.blur())
+            await drawn(page)
+            await page.evaluate(([key, value]) => fetch('/api/people/1003', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: value }) }), [key, was[key]])
+            continue
+          }
+          await saving
+          if (!(await person(page, 1003))[key].endsWith(typed)) wrong.push(`${where}: the first Escape did not save what was typed`)
+          const want = w < 1000 ? 'the sheet' : 'person-row-1003'
+          if (after.on !== want) wrong.push(`${where}: after the first Escape the keyboard is on ${after.on}, not ${want}`)
+          await page.keyboard.press('Escape')
+          await page.waitForFunction(() => location.pathname === '/app/people')
+          await page.evaluate(([key, value]) => fetch('/api/people/1003', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: value }) }), [key, was[key]])
+        }
+      }
+      // Beside the list the keyboard is on the person's row, so the arrow
+      // keys go on to the next person straight away.
+      await page.setViewportSize({ width: 1280, height: 900 })
+      await page.goto(`${url}/app/people/1003`)
+      await page.locator('#notes-1003').click()
+      await page.keyboard.press('Escape')
+      await page.keyboard.press('ArrowDown')
+      await drawn(page)
+      const next = await page.evaluate(() => ({ path: location.pathname, on: document.activeElement?.id }))
+      if (next.path === '/app/people/1003') wrong.push('ArrowDown after Escape did not open the next person')
+      else if (next.on !== `person-row-${next.path.split('/').pop()}`) wrong.push(`ArrowDown after Escape opened ${next.path} with the keyboard on ${next.on || 'nothing'}`)
+      // An Escape while text is being composed, as when Dictation ends on
+      // a Mac, is the input method's. It never closes the sheet, which
+      // would lose what was said. Review of #123.
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('#notes-1003')
+      await notes.click()
+      await notes.dispatchEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true })
+      await drawn(page)
+      if (await page.evaluate(() => location.pathname) !== '/app/people/1003') wrong.push('at 390 px an Escape while composing closed the sheet')
+      return wrong.join('\n\t')
+    },
+  },
+  {
     // A search can find someone else's LinkedIn profile. Not this person
     // rejects it, and Undo in the Edit menu brings it back as it was. Like
     // Connect, the button stays, pressed, and the same button again takes

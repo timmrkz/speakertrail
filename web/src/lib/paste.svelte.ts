@@ -10,16 +10,15 @@
 // requests LinkedIn itself: Tim opened the page. A toast says it was
 // kept, and Undo in the Edit menu takes it back, see history.svelte.ts,
 // which also stops the draft it started, see draft.Drafter.Undone.
-// Someone the page added is taken out by the toast's Undo, as for a
-// link, until adding moves into the history too, see issue #71. The
-// toast never names the person, since every toast goes into the app's
+// Someone the page added is taken out by Undo in the Edit menu, as for a
+// link, the page with them. The toast never names the person, since every toast goes into the app's
 // log.
 
 import { api } from './api'
 import { draftWatch } from './drafts.svelte'
 import { navigate, router } from './router.svelte'
 import { said } from './said'
-import { errorText, fault, toast } from './toast.svelte'
+import { errorText, toast } from './toast.svelte'
 
 // What someone Exa has no copy of says, on their row and when they are
 // open: what to do, not why (Tim, 23 November 2026).
@@ -88,27 +87,15 @@ class Pasting {
       if (r.drafting) void draftWatch.read()
       const drafting = r.drafting ? ', and drafting the first message' : ''
       if (r.added) {
-        // Someone new, whom Undo takes out again, as for a link.
-        toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id, r.drafting) })
+        // Someone new, whom Undo in the Edit menu takes out again, as
+        // for a link.
+        toast.show(`Added them from the page${drafting}`)
         return
       }
       if (r.named) toast.show(`Kept the page as their profile${drafting}`)
       else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad')
     } catch (e) {
       toast.show(errorText(e), 'bad')
-    }
-  }
-
-  // Undo of someone the page added takes them out, the draft first.
-  private async unadd(id: number, drafting: boolean) {
-    try {
-      if (drafting) await api.cancelDraft(id).catch(() => {})
-      await api.removePerson(id)
-      if (openPerson() === id) navigate('/app/people')
-    } catch (e) {
-      fault(e)
-    } finally {
-      this.changed++
     }
   }
 }

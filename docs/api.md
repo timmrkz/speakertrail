@@ -146,8 +146,8 @@ the one person of that name. Else a page without its own link is the
 open person's, as with the call above.
 
 A page nobody here has adds them, as a link does, and answers the same
-with `"added": true`, which the toast's Undo takes back with `DELETE
-/api/people/{id}`, as for a link. The page kept as their profile is part
+with `"added": true`. Adding them is a step that `POST /api/undo` takes
+back, as for a link, see [Undo](#undo). The page kept as their profile is part
 of adding them, no step of its own. Their link is the page's own in `links`: the one in
 the name on the page, else the one it holds most often. A page pasted
 as text alone has none, so Exa is asked once for a LinkedIn profile by
@@ -157,11 +157,6 @@ page says "· 1st". 422 when the link stays missing, or the page shows
 no name above how Tim is connected to them, 409 when more than one
 person has its name and no link tells them apart, or no Exa search is
 left this month, 400 for a paste with no text.
-
-`DELETE /api/people/{id}` takes out again someone added from a link, for
-Undo, and answers 204. A run that had not read their profile leaves it,
-one that read it keeps the read. 409 for someone a search found, 404 for
-an id nobody has.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
 `sightings`: each search that found the person, newest first. `draft` is
@@ -627,19 +622,40 @@ step: Connect, the notes, the first message, Draft, Not this person and
 a pasted profile, each on one person. So is a search added, paused or
 resumed, an exclusion added or removed, each change to the template,
 Put back the first template among them, a setting changed, and the
-browser profile LinkedIn opens in. A change that changed nothing is no
-step, and neither is anything a run does. Steps are kept while the app
-is open, up to 200, and a new step empties Redo. They answer what they
-changed, so the page opens it, or `done` false when there was nothing
-to take:
+browser profile LinkedIn opens in. Links added on People are one step, and
+so is a pasted page that added someone. A change that changed nothing
+is no step, and neither is a check or a read a run does. Steps are kept
+while the app is open, up to 200, and a new step empties Redo. They
+answer what they changed, so the page opens it, or `done` false when
+there was nothing to take:
 
 ```json
 { "done": true, "shows": { "kind": "person", "id": 7 } }
 ```
 
 `kind` is `person`, `search` or `exclusion` with its `id`, `template`,
-or `setting` with its `key`, `linkedin_opens` for where LinkedIn opens.
-The page opens the person, Searches, or Settings. A search or an
+`setting` with its `key`, `linkedin_opens` for where LinkedIn opens, or
+`people` for the people a run found or links or a page added.
+The page opens the person, Searches, Settings or People.
+
+A run is one step when it ends, finished or stopped: the people its
+searches found new. Whom Tim added from a link while it went are no
+part of it, adding them was a step of its own. The end of a run leaves
+Redo as it is, since Tim did nothing then. Its undo takes them out,
+their profile texts too, and stops a draft for them that still runs.
+Someone a step still in Undo changed, marked connected for example, was
+changed since the run found them and stays. The undo of links added
+takes out whom they brought in, and opens again whom they marked
+connected. A redo puts the people back with their ids, as they were
+when the undo took them out, but for someone here again under their
+link since, who stays as they are. Such a step says what it did in
+`said`, for the page to show:
+
+```json
+{ "done": true, "shows": { "kind": "people" }, "said": "Took out 10 people the run found. 2 you changed since stay" }
+```
+
+A run's searches and checks, and what it cost, stay as they were. A search or an
 exclusion that was added is taken out by its undo, and one removed
 comes back with its id. A search a run took since, one a run under way
 takes, or one that found someone, stays, and so does an exclusion whose words were added again
@@ -652,6 +668,5 @@ writes nothing and answers 409, "This has changed since, so it cannot be
 taken back", and every step behind it in the same list goes, since they
 rest on it.
 
-The people adding links or a pasted page added follow, see issue #71.
-Until then they keep their Undo toasts. The language model picked in
-Settings is no step, since picking one loads it.
+The language model picked in Settings is no step, since picking one
+loads it.

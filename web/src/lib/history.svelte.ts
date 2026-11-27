@@ -6,7 +6,8 @@
 // Searches for a search or an exclusion, Settings for the template or a
 // setting. Whatever shows it reads again when changed counts up, and the
 // part of the page that shows the thing brings it into view, by reveal,
-// whether it was open already or opens for it.
+// whether it was open already or opens for it. A step that took people
+// out or put them back opens People, and says what it did.
 
 import { api, type UndoThing } from './api'
 import { navigate, router } from './router.svelte'
@@ -17,6 +18,8 @@ function pageOf(t: UndoThing): string {
   switch (t.kind) {
     case 'person':
       return `/app/people/${t.id}`
+    case 'people':
+      return '/app/people'
     case 'search':
     case 'exclusion':
       return '/app/searches'
@@ -62,6 +65,7 @@ class UndoHistory {
       }
       this.toShow = done.shows ?? null
       this.changed++
+      if (done.said) toast.show(done.said)
       return true
     } catch (e) {
       toast.show(errorText(e), 'bad')

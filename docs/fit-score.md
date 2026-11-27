@@ -147,11 +147,19 @@ half and the part changes no order.
 | --- | --- |
 | 30 or younger | all of it |
 | 31 to 39 | a tenth less for every year past 30, so 35 has half |
-| 40 or older | none |
+| 40 | none |
+| 41 to 59 | below none, a tenth more for every year past 40, so 50 takes the part away |
+| 60 or older | minus twice the part |
 | not known | half |
 
 An age the headline gives beats the guess, as today. Nobody is left
-out for age.
+out for age. Like Who they are, Younger takes away no more than the
+other parts give, so the fit stays 0 or more.
+
+Tim, 27 November 2026, from a report: people around 50 should not make
+it to the top. With none from 40 on, a 53 year old stood ninth of his
+258 open people. Going on below none, the first person over 50 stands
+48th.
 
 ### 5. Like your picks
 

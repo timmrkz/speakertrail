@@ -76,7 +76,10 @@ const (
 )
 
 // OldUntil is the age from which Younger gives nothing. From YoungUntil
-// to it, the part falls by a tenth a year.
+// on, the part falls by a tenth a year, and past OldUntil it goes on
+// falling below none, down to minus twice the part at 60. Tim, 27
+// November 2026: people around 50 should not make it to the top. At no
+// more than none from 40, a 53 year old stood ninth of his open people.
 const OldUntil = 40
 
 // FitPerson is what the fit reads of a person.
@@ -110,20 +113,40 @@ var who = map[string]bool{
 }
 
 // Fit is a person's fit and its parts, in the order Why shows them. The
-// fit is the sum of the parts' points. Who they are can take points away,
-// but never more than the other parts give, so the fit is never below 0.
+// fit is the sum of the parts' points. Who they are and Younger can take
+// points away, but never more than the other parts give, so the fit is
+// never below 0.
 func Fit(p FitPerson) (int, []Part) {
 	parts := []Part{whoPart(p, true), activePart(p, true), nearPart(p, true), youngerPart(p, true)}
-	rest := parts[1].Points + parts[2].Points + parts[3].Points
-	parts[0].Points = max(parts[0].Points, -rest)
-	return parts[0].Points + rest, parts
+	pts := [4]int{parts[0].Points, parts[1].Points, parts[2].Points, parts[3].Points}
+	fit := sum(&pts)
+	for i := range parts {
+		parts[i].Points = pts[i]
+	}
+	return fit, parts
 }
 
 // FitPoints is the fit alone, the same as Fit gives, without writing why,
 // so a list of thousands is sorted by it quickly.
 func FitPoints(p FitPerson) int {
-	rest := activePart(p, false).Points + nearPart(p, false).Points + youngerPart(p, false).Points
-	return max(whoPart(p, false).Points, -rest) + rest
+	pts := [4]int{whoPart(p, false).Points, activePart(p, false).Points, nearPart(p, false).Points, youngerPart(p, false).Points}
+	return sum(&pts)
+}
+
+// sum adds up the points of the parts, after a part below none, in the
+// order of the parts, takes away no more than the others have left.
+func sum(pts *[4]int) int {
+	left := 0
+	for _, n := range pts {
+		left += max(n, 0)
+	}
+	for i, n := range pts {
+		if n < 0 {
+			pts[i] = max(n, -left)
+			left += pts[i]
+		}
+	}
+	return left
 }
 
 // points is a share of most, from none to all of it.
@@ -180,7 +203,7 @@ func youngerPart(p FitPerson, say bool) Part {
 	}
 	age := p.Now.Year() - p.BornAbout
 	// Points whole first, so no fraction near a half rounds the wrong way.
-	part.Points = int(math.Round(math.Max(0, math.Min(YoungerPoints, float64(YoungerPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
+	part.Points = int(math.Round(math.Max(-2*YoungerPoints, math.Min(YoungerPoints, float64(YoungerPoints*(OldUntil-age))/float64(OldUntil-YoungUntil)))))
 	part.Mark = mark(part.Points, YoungerPoints, true)
 	if !say {
 		return part

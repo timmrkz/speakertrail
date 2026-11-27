@@ -362,7 +362,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const born = p.linkedin?.born_about
   const age = born ? now.getFullYear() - born : 0
   const younger = born
-    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(0, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
+    ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(-20, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
     : { key: 'younger', label: 'Younger', points: pts(10, 0.5), why: 'Age not known' }
   const last = p.linkedin?.last_active
   const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -378,9 +378,14 @@ function fitParts(s: State, p: Person): FitPart[] {
       : d < 1
         ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
         : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
-  // Who they are takes away no more than the rest gives, so the fit
-  // stays 0 or more.
-  who.points = Math.max(who.points, -(active.points + near.points + younger.points))
+  // Who they are and Younger take away no more than the rest gives, in
+  // the order of the parts, so the fit stays 0 or more.
+  let left = [who, active, near, younger].reduce((n, x) => n + Math.max(x.points, 0), 0)
+  for (const x of [who, active, near, younger]) {
+    if (x.points >= 0) continue
+    x.points = Math.max(x.points, -left)
+    left += x.points
+  }
   // The lines under each part, as internal/api fitParts gives them: the
   // signals under Who they are, the why with a tick or a cross under
   // the others, the way rubric.Fit marks it.

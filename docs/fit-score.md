@@ -157,9 +157,10 @@ out for age. Like Who they are, Younger takes away no more than the
 other parts give, so the fit stays 0 or more.
 
 Tim, 27 November 2026, from a report: people around 50 should not make
-it to the top. With none from 40 on, a 53 year old stood ninth of his
-258 open people. Going on below none, the first person over 50 stands
-48th.
+it to the top. With none from 40 on, a 53 year old stood ninth of the
+302 people under All. Going on below none, the first person over 50
+stands 48th there. Under New, where he saw it, a 54 year old falls from
+first to 17th.
 
 ### 5. Like your picks
 
@@ -287,8 +288,8 @@ room with new ones, `store.Spread`. Each is a kind of person from a
 search that led to a connection, like "Gründer unter 30" of "Gründer
 unter 30 Köln", in one of the 30 biggest cities of NRW it was never asked
 in, the nearest to Where you are first. The kinds go by their
-connections, the most first, and take turns. A kind whose searches are
-mostly paused, or with a word of an exclusion, is left alone. Searches
+connections, the most first, and take turns. A kind with more searches paused than searches Tim
+added still going, or with words of an exclusion, is left alone. Searches
 says which search each was made from. Each costs one call to Exa against
 the month's budget, like any search.
 

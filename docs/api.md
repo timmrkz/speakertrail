@@ -225,8 +225,8 @@ makes new ones to fill the room, so Run always searches: a kind of person
 from a search that led to a connection, like "Gründer unter 30" of
 "Gründer unter 30 Köln", in one of the 30 biggest cities of NRW it was
 never asked in, the nearest to Where you are first. The kinds go by their
-connections, the most first, and take turns. A kind whose searches are
-mostly paused, or with a word of an exclusion, is left alone. Only when
+connections, the most first, and take turns. A kind with more searches paused than searches Tim
+added still going, or with words of an exclusion, is left alone. Only when
 no kind is left to spread is there nothing to search.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with

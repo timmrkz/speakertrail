@@ -76,7 +76,7 @@ func ReadProfile(ctx context.Context, r Reader, link string, reserve func() (boo
 var (
 	ErrNoKey    = errors.New("add the Exa key in Settings first, runs ask Exa for the profiles")
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
-	ErrNothing  = errors.New("every search ran lately, and none led to a connection to ask in another city yet. Add one in Searches, or resume a paused one")
+	ErrNothing  = errors.New("every search ran lately, and no kind of person that led to a connection has a city left to ask in. Add a search in Searches, or resume a paused one")
 	ErrNoLinks  = errors.New("there is no link to a LinkedIn profile in it, like linkedin.com/in/name")
 	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
 	// ErrUnread is a key that is saved and could not be read, like one

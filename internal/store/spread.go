@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/place"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 )
 
 // Spread makes up to n new profile searches for a run that has room, so
@@ -17,10 +18,10 @@ import (
 // never asked in. The kinds go by the connections they led to, the most
 // first, and take turns, each its nearest city to Where you are first.
 // Only the big cities are asked, see place.BigCities. A new search keeps
-// the search it was made from, so Searches can say so, and is paused or
-// removed like any other. Nothing is made from a kind with no connection
-// yet, from one whose searches are mostly paused, nor with a word an
-// exclusion leaves out.
+// the search it was made from, so Searches can say so, and is paused
+// like any other. Nothing is made from a kind with no connection yet,
+// from one with more searches paused than searches Tim added still
+// going, nor with words an exclusion leaves out.
 func (d *Data) Spread(n int, at time.Time) []*Search {
 	if n <= 0 {
 		return nil
@@ -49,9 +50,13 @@ func (d *Data) Spread(n int, at time.Time) []*Search {
 			order = append(order, k)
 		}
 		k.asked[city] = true
-		if s.Status == "retired" {
+		// A search a run made never speaks for its kind, only against it
+		// when paused, so pausing the searches Tim added stops a kind
+		// however far it spread.
+		switch {
+		case s.Status == "retired":
 			k.paused++
-		} else {
+		case s.From == "":
 			k.going++
 		}
 		y := yields[s.ID]
@@ -63,8 +68,8 @@ func (d *Data) Spread(n int, at time.Time) []*Search {
 	}
 	phrases := d.Phrases()
 	order = slices.DeleteFunc(order, func(k *kind) bool {
-		lower := strings.ToLower(k.name)
-		return k.connected == 0 || k.paused > k.going || slices.ContainsFunc(phrases, func(p string) bool { return p != "" && strings.Contains(lower, p) })
+		_, excluded := rubric.Excluded(k.name, phrases)
+		return k.connected == 0 || k.paused > k.going || excluded
 	})
 	slices.SortStableFunc(order, func(a, b *kind) int {
 		// The most connections first, then the larger share of the people

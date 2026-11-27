@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -107,8 +108,9 @@ func TestSpreadLeavesKindsTimDoesNotWant(t *testing.T) {
 			s.Pause(t0)
 		}
 	}
-	// An exclusion: a kind with its words is never asked.
-	if _, err := d.AddExclusion("unter 30", t0); err != nil {
+	// An exclusion: a kind with its words is never asked, in any case, as
+	// the exclusions Tim writes have capitals.
+	if _, err := d.AddExclusion("Unter 30", t0); err != nil {
 		t.Fatal(err)
 	}
 	if made := d.Spread(5, t0); len(made) != 0 {
@@ -122,5 +124,24 @@ func TestSpreadLeavesKindsTimDoesNotWant(t *testing.T) {
 	}
 	if got := queries(d.Spread(1, t0)); !slices.Equal(got, []string{"Yogalehrerin Düsseldorf"}) {
 		t.Errorf("made %q", got)
+	}
+}
+
+// Pausing the searches Tim added stops a kind, however many searches a
+// run made of it, which never speak for it.
+func TestSpreadStopsWhenTimPausesWhatHeAdded(t *testing.T) {
+	d := spreadData(t)
+	if len(d.Spread(10, t0)) != 10 {
+		t.Fatal("made too few")
+	}
+	for _, s := range d.Searches {
+		if s.Query == "Yogalehrerin Köln" || s.Query == "Yogalehrerin Bonn" {
+			s.Pause(t0)
+		}
+	}
+	for _, s := range d.Spread(10, t0) {
+		if strings.HasPrefix(s.Query, "Yogalehrerin") {
+			t.Errorf("made %s after Tim paused the searches he added", s.Query)
+		}
 	}
 }

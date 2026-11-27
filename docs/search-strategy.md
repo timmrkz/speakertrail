@@ -72,6 +72,9 @@ Everyone kept is scored with the rubric as before, with **Likely under
 
 A run takes the ten that are due (`profile_searches_per_run`), the best
 first, see [Connections steer the searches](#connections-steer-the-searches).
+When fewer are due, it makes new ones to fill the ten: kinds of person
+that led to connections, in more cities of NRW, see
+[fit-score.md](fit-score.md#how-the-fit-steers-the-searches).
 Each asks for 25 profiles (`profile_search_results`) and is due again
 after 30 days (`profile_search_check_days`).
 
@@ -156,6 +159,9 @@ show it.
 **Founders in English.** Many young founders write "Founder", not
 "Gründer". 18 starting searches ask for "young founder", "founder under
 30" and "student founder" in the five cities and NRW.
+
+**Since 27 November 2026** a run with room makes new searches itself, of
+the kinds that led to connections, in cities they were not asked in yet.
 
 **Next**: new searches made from what the people Tim connected with have
 in common.

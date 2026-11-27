@@ -3,6 +3,7 @@
 // live here too and show at once, before the server answers.
 
 import { api, type Added, type Run } from './api'
+import { draftWatch } from './drafts.svelte'
 import { fmtElapsed, fmtLeft, plural, runBrought } from './format'
 import { navigate, router } from './router.svelte'
 import { errorText, Problem } from './problem.svelte'
@@ -107,8 +108,11 @@ class RunWatch {
   // People or dropped on the window. Their profiles are read by the run
   // going, or by a run of their own that shows at once. People then
   // shows them under New, or opens the one person the links lead to who
-  // was here already. Links dropped while others are added wait their
-  // turn rather than go lost. A toast says what was added, with Undo.
+  // was here already. One link that adds one person opens them under
+  // New, with their first message being drafted, so it is ready sooner
+  // (Tim, 27 November 2026, #115). Links dropped while others are added
+  // wait their turn rather than go lost. A toast says what was added,
+  // with Undo, which also stops the draft.
   add(text: string): Promise<Added | null> {
     const next = this.adding.then(() => this.addNow(text))
     this.adding = next.catch(() => null)
@@ -128,13 +132,14 @@ class RunWatch {
     }
     try {
       const r = await api.addPeople(text)
-      if (r.open) navigate(`/app/people/${r.open}`)
-      else {
-        this.added = r
-        navigate('/app/people')
-      }
+      if (!r.open || r.new.length) this.added = r
+      navigate(r.open ? `/app/people/${r.open}` : '/app/people')
+      // The draft shows at once on the person, before the app's first
+      // word of it.
+      if (r.drafting) void draftWatch.read()
       this.changed++
-      const said = r.new.length ? `Added ${plural(r.new.length, 'person', 'people')}` : r.connected.length ? `Marked ${plural(r.connected.length, 'person', 'people')} connected` : ''
+      const drafting = r.drafting ? ', and drafting the first message' : ''
+      const said = r.new.length ? `Added ${plural(r.new.length, 'person', 'people')}${drafting}` : r.connected.length ? `Marked ${plural(r.connected.length, 'person', 'people')} connected` : ''
       const undo = said ? { label: 'Undo', run: () => void this.undo(r) } : null
       if (r.wait) toast.show(`${said || 'Added'}. ${r.wait}`, 'bad', undo)
       else if (said) toast.show(said, 'plain', undo)

@@ -590,3 +590,64 @@ func TestAPastedPageDraftsWhatDraftLacked(t *testing.T) {
 	}
 	r.d.Wait()
 }
+
+// A draft of someone whose profile a run reads asks Exa nothing itself
+// (#115). The run may end its read just before the draft looks, so what
+// it kept counts whether the draft waited or not, and a run that found
+// no copy since the draft was asked for is not asked again. A copy that
+// was missing before the draft was asked for is asked for again.
+func TestADraftTakesWhatTheRunRead(t *testing.T) {
+	r := newRig(t)
+	id := r.person(t, "Mara Beispiel", "")
+	var waits atomic.Int32
+	// The run reads it a moment before the draft would wait, so there is
+	// nothing to wait for.
+	r.d.Await = func(_ context.Context, personID int64) (bool, error) {
+		waits.Add(1)
+		return false, r.st.Update(func(d *store.Data) error {
+			d.SetProfileText(d.Person(personID), "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.", r.clock.Now())
+			return nil
+		})
+	}
+	if _, err := r.d.Start(id); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	if n := r.finder.asked.Load(); n != 0 || waits.Load() != 1 {
+		t.Errorf("asked Exa %d times, waited %d times", n, waits.Load())
+	}
+	if j := r.d.Jobs()[0]; j.State != "done" || j.Text != written {
+		t.Errorf("job %+v", j)
+	}
+
+	// A run found no copy of Ida's profile once before she was drafted.
+	ida := r.person(t, "Ida Probe", "")
+	read := func(runID int64) {
+		_ = r.st.Update(func(d *store.Data) error {
+			d.Runs = append(d.Runs, &store.Run{ID: runID, StartedAt: r.clock.Now(), Reads: []store.Read{{PersonID: ida, At: r.clock.Now(), Error: engine.NotIndexed}}})
+			return nil
+		})
+	}
+	read(101)
+	r.clock.Add(time.Minute)
+	r.finder.none.Store(true)
+	r.d.Await = func(context.Context, int64) (bool, error) { return false, nil }
+	if _, err := r.d.Start(ida); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	if n := r.finder.asked.Load(); n != 1 {
+		t.Errorf("a copy missing before the draft was asked for Exa %d times, want once", n)
+	}
+	// Then the run the draft waits on finds none either.
+	r.clock.Add(time.Minute)
+	r.d.Await = func(context.Context, int64) (bool, error) { read(102); return true, nil }
+	if _, err := r.d.Start(ida); err != nil {
+		t.Fatal(err)
+	}
+	r.d.Wait()
+	jobs := r.d.Jobs()
+	if n := r.finder.asked.Load(); n != 1 || jobs[len(jobs)-1].Error != Sentence(ErrNoCopy.Error()) || !jobs[len(jobs)-1].NoCopy {
+		t.Errorf("asked Exa %d times, want no more, and the draft %+v", n, jobs[len(jobs)-1])
+	}
+}

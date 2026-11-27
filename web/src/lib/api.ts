@@ -224,10 +224,12 @@ export interface Added {
   // Those here already whom adding marked connected, for Undo.
   connected: number[]
   other: number
-  // The one person here the links lead to, to open, when they add
-  // nobody new.
+  // The person to open: the one here the links lead to, when they add
+  // nobody new, or the one they add, when they lead to nobody else.
   open?: number
   wait?: string
+  // Whether the first message to the one person added is being drafted.
+  drafting: boolean
 }
 
 export interface LinkedInFacts {
@@ -563,6 +565,8 @@ export interface DraftJob {
   error?: string
   // Why a draft that is done lacks the model's part, with … in its place.
   problem?: string
+  // Whether it failed because Exa's index has no copy of their profile.
+  no_copy?: boolean
   // Higher for every change than for the one before it, of any draft, so
   // an answer that arrives after a newer event is told apart from it.
   seq: number
@@ -796,7 +800,7 @@ export const api = {
   // Every file of the log goes, after Settings asked. It gives the log as
   // it is then: the one line that says so.
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
-  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null }>('GET', `/api/people${qs(q)}`),
+  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null; new_days: number }>('GET', `/api/people${qs(q)}`),
   addPeople: (text: string) => request<Added>('POST', '/api/people', { text }),
   // Takes out again someone added from a link, for Undo.
   removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),

@@ -12,6 +12,7 @@
   import { undoHistory } from '../lib/history.svelte'
   import { pasteAsShown } from '../lib/pastedlines'
   import { errorText, Problem } from '../lib/problem.svelte'
+  import { runWatch } from '../lib/run.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
@@ -64,6 +65,20 @@
       }
     })
   }
+
+  // Someone whose profile the run reads now, or has still to read, like
+  // the one person a link just added and opened, shows what the read
+  // found once it is in: their name, headline, city and fit, or that Exa
+  // has no copy (#115). The run's every answer is a look, and only while
+  // the read is under way.
+  const tickAt = runWatch.tick
+  $effect(() => {
+    if (runWatch.tick === tickAt) return
+    untrack(() => {
+      const read = person.data?.read
+      if (read === 'reading' || read === 'waiting') void reread()
+    })
+  })
 
   // Undo and Redo in the Edit menu may have changed anything about them,
   // so the notes are read again as well, and the first message starts

@@ -149,6 +149,7 @@ func main() {
 			}
 			return reader, nil
 		},
+		Await: e.AwaitRead,
 		Told: func(j draft.Job) {
 			if app != nil {
 				app.Event.Emit("draft", j)

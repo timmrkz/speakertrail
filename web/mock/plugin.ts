@@ -651,9 +651,13 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
 function readDone(p: PersonRow) {
   const handle = p.name
   p.read_since = undefined
+  // A draft that waited on the read goes on, see draft.Drafter.Await.
+  const waiting = drafts.get(p.id)
+  if (waiting?.reads && waiting.readAt === undefined) waiting.readAt = clockNow()
   if (handle.includes('neu')) {
     p.read = 'not_indexed'
     p.read_error = "Not in Exa's index yet"
+    if (waiting?.reads) waiting.error = NO_COPY
     return
   }
   p.read = ''
@@ -677,8 +681,9 @@ const ROUTES: [string, RegExp, Handler][] = [
     // with, less whom the exclusions hide.
     const hidden = hiddenBy(s)
     let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
-    // Like the app: in the last 7 days, newest first.
-    const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < 7 * 86400e3
+    // Like the app: in the last new_days days, newest first.
+    const newDays = Number(setting(s, 'new_days') ?? 7)
+    const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < newDays * 86400e3
     // A search that holds links to profiles shows whom they lead to, under
     // any filter, and says how many are new.
     const found = profileLinks(q.get('q') ?? '')
@@ -722,9 +727,10 @@ const ROUTES: [string, RegExp, Handler][] = [
       return ok({
         people: here.map((p) => personList(s, p)), counts,
         links: { new: found.profiles.length - here.length, here: here.map((p) => p.id), other: found.other, act: actOf(found.profiles.length - here.length, here.length, found.other) },
+        new_days: newDays,
       })
     }
-    return ok({ people: list, counts, links: null })
+    return ok({ people: list, counts, links: null, new_days: newDays })
   }],
   ['POST', /^\/api\/people$/, (s, _m, _q, b) => {
     const found = profileLinks(String(b.text ?? ''))
@@ -756,8 +762,20 @@ const ROUTES: [string, RegExp, Handler][] = [
       run.progress!.reads_expected = run.progress!.reads
       reads.queue.push(...added.map((id) => ({ id, run: run!.id })))
     }
-    const open = actOf(added.length, here.length, found.other) === 'open' ? here[0] : undefined
-    return ok({ run: run?.id ?? 0, new: added, here, connected, other: found.other, open })
+    let open = actOf(added.length, here.length, found.other) === 'open' ? here[0] : undefined
+    // Like the app: one link that adds one person and nothing else opens
+    // them and starts their first message, which waits for the run's
+    // read of their profile (#115).
+    let drafting = false
+    if (added.length === 1 && !here.length && !found.other) {
+      open = added[0]
+      if (languageState().models.some((x) => x.inUse && x.installed)) {
+        draftJobs++
+        drafts.set(open, { id: `draft-${draftJobs}`, person_id: open, from: clockNow(), started_at: at, reads: true })
+        drafting = true
+      }
+    }
+    return ok({ run: run?.id ?? 0, new: added, here, connected, other: found.other, open, drafting })
   }],
   ['DELETE', /^\/api\/people\/(\d+)$/, (s, m) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -770,6 +788,9 @@ const ROUTES: [string, RegExp, Handler][] = [
       if (run?.progress) run.progress.reads = run.progress.reads_expected = run.progress.reads - 1
     }
     reads.queue = reads.queue.filter((x) => x.id !== p.id)
+    // Like the app: their draft has nobody left to write to.
+    const d = drafts.get(p.id)
+    if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
     return { status: 204 }
   }],
   ['PUT', /^\/api\/people\/(\d+)\/profile$/, (s, m, _q, b) => {
@@ -1191,6 +1212,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!row) return err(404, 'No such setting')
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
+    // Like the app: a number is 0 or more, and whole where the setting
+    // counts whole ones, which every number setting does.
+    if (typeof b.value === 'number' && b.value < 0) return err(400, `${row.key} takes a number of 0 or more`)
+    if (typeof b.value === 'number' && !Number.isInteger(b.value)) return err(400, `${row.key} takes a whole number`)
+    if (row.key === 'new_days' && Number(b.value) < 1) return err(400, 'new_days takes 1 day or more')
     if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
     if (row.key === 'home_city' && String(b.value).trim() !== '') {
       const c = cityOf(String(b.value))
@@ -1574,7 +1600,13 @@ function pasteOn(s: State, p: PersonRow, b: Record<string, unknown>, added = fal
 }
 
 // A first message being drafted, worked out from the clock.
-type MockDraft = { id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean }
+// One that reads waits for the run's read of the profile, until readAt,
+// and fails with error when Exa has no copy.
+type MockDraft = {
+  id: string; person_id: number; from: number; started_at: string; cancelled?: boolean; kept?: boolean
+  reads?: boolean; readAt?: number; error?: string
+}
+const NO_COPY = 'Exa has no copy of their profile. Open it in Chrome, copy all of the page with ⌘A and ⌘C, and paste it here with ⌘V.'
 const DRAFT_LOAD_MS = 3000
 const DRAFT_WRITE_MS = 5000
 const drafts = new Map<number, MockDraft>()
@@ -1598,8 +1630,16 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: ++draftSeq }
   if (d.cancelled) return { ...base, state: 'cancelled', fraction: -1, seconds_left: null }
   if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
-  const ran = clockNow() - d.from
+  if (d.error) return { ...base, state: 'failed', error: d.error, no_copy: d.error === NO_COPY, fraction: -1, seconds_left: null }
   const whole = DRAFT_LOAD_MS + DRAFT_WRITE_MS
+  // Like the app: how far it is, from how long a read, a load and a
+  // write take, never past 95 % until it is done.
+  const expected = (d.reads ? READ_MS : 0) + whole
+  const sofar = clockNow() - d.from
+  const share = Math.min(sofar / expected, 0.95)
+  const left = Math.max(expected - sofar, 0) / 1000
+  if (d.reads && d.readAt === undefined) return { ...base, state: 'reading', fraction: share, seconds_left: left }
+  const ran = clockNow() - (d.reads ? d.readAt! : d.from)
   const text = draftText(d.id, p?.name ?? 'Mara Beispiel')
   if (ran >= whole) {
     if (!d.kept && p) {
@@ -1611,10 +1651,11 @@ function draftJob(s: State, d: MockDraft): DraftJob {
     }
     return { ...base, state: 'done', text, fraction: 1, seconds_left: 0 }
   }
-  const left = (whole - ran) / 1000
-  if (ran < DRAFT_LOAD_MS) return { ...base, state: 'loading', fraction: ran / whole, seconds_left: left }
+  const fraction = d.reads ? share : ran / whole
+  const secondsLeft = d.reads ? left : (whole - ran) / 1000
+  if (ran < DRAFT_LOAD_MS) return { ...base, state: 'loading', fraction, seconds_left: secondsLeft }
   // While the model writes, the message is there with … for its part.
-  return { ...base, state: 'writing', text: text.replace('du dein eigenes Studio aufgebaut hast!', '…').replace('Gründerin', '…'), fraction: ran / whole, seconds_left: left }
+  return { ...base, state: 'writing', text: text.replace('du dein eigenes Studio aufgebaut hast!', '…').replace('Gründerin', '…'), fraction, seconds_left: secondsLeft }
 }
 
 // The draft of a report and the recordings Dictate started.

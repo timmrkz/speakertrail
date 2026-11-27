@@ -9,7 +9,9 @@ import (
 	"testing"
 
 	"github.com/timmrkz/speakertrail/internal/draft"
+	"github.com/timmrkz/speakertrail/internal/engine"
 	"github.com/timmrkz/speakertrail/internal/language"
+	"github.com/timmrkz/speakertrail/internal/search"
 	"github.com/timmrkz/speakertrail/internal/store"
 )
 
@@ -219,5 +221,204 @@ func TestUndoOfAPasteStopsTheDraftItStarted(t *testing.T) {
 	call(t, a, "GET", "/api/people/"+itoa(id), "", &p)
 	if p.Draft != "" || p.ProfileReadAt != nil || p.Notes != "" {
 		t.Errorf("after undo: draft %q, profile read at %v, notes %q", p.Draft, p.ProfileReadAt, p.Notes)
+	}
+}
+
+// countedFinder is the invented index of finder, holding every read of a
+// profile until gate is closed and counting the reads of each link.
+type countedFinder struct {
+	finder
+	gate chan struct{}
+	mu   sync.Mutex
+	read map[string]int
+}
+
+func (f *countedFinder) Profile(ctx context.Context, link string) (search.Profile, error) {
+	f.mu.Lock()
+	f.read[link]++
+	f.mu.Unlock()
+	select {
+	case <-f.gate:
+	case <-ctx.Done():
+		return search.Profile{}, ctx.Err()
+	}
+	return f.finder.Profile(ctx, link)
+}
+
+func (f *countedFinder) reads(link string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.read[link]
+}
+
+// newDraftingAPI is an API that drafts, with Exa's reads held at gate
+// and every state of a draft told on states.
+func newDraftingAPI(t *testing.T) (*API, *engine.Engine, *countedFinder, chan draft.Job) {
+	t.Helper()
+	a, st, _ := newAPI(t)
+	f := &countedFinder{gate: make(chan struct{}), read: map[string]int{}}
+	e := &engine.Engine{Store: st, Finder: func() (engine.Finder, error) { return f, nil }}
+	a.Engine = e
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	states := make(chan draft.Job, 256)
+	a.Drafts = &draft.Drafter{Store: st, Host: host, Await: e.AwaitRead,
+		Model:  func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		Finder: func() (draft.Finder, error) { return f, nil },
+		Ask: func(context.Context, *language.Server, []language.Message, json.RawMessage, func(string)) (language.Answer, error) {
+			return language.Answer{Text: `{"reason":"du ein Studio hast.","reaction":"","portrait":"Inhaberin"}`, Finish: "stop"}, nil
+		},
+		Pick: func(int) int { return 0 },
+		Told: func(j draft.Job) { states <- j },
+	}
+	return a, e, f, states
+}
+
+// reading waits until the draft reads the profile, and so waits on the
+// run, or asks Exa itself.
+func reading(t *testing.T, states chan draft.Job) {
+	t.Helper()
+	for j := range states {
+		if j.State == "reading" {
+			return
+		}
+		if j.Ended() {
+			t.Fatalf("the draft ended before it read: %+v", j)
+		}
+	}
+}
+
+// One link that adds one new person opens them and starts their first
+// message at once (Tim, 27 November 2026, #115). The draft waits for the
+// run's read of the profile rather than ask Exa for it a second time,
+// and greets the name the read found.
+func TestOneLinkOpensThePersonAndDrafts(t *testing.T) {
+	a, e, f, states := newDraftingAPI(t)
+	var added struct {
+		New      []int64
+		Open     int64
+		Drafting bool
+	}
+	if code := call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/ida-probe"}`, &added); code != http.StatusOK ||
+		len(added.New) != 1 || added.Open != added.New[0] || !added.Drafting {
+		t.Fatalf("add: %d %+v", code, added)
+	}
+	reading(t, states)
+	close(f.gate)
+	e.Wait()
+	a.Drafts.Wait()
+	if n := f.reads("https://www.linkedin.com/in/ida-probe"); n != 1 {
+		t.Errorf("Exa was asked %d times for the profile, want once", n)
+	}
+	var p personDetail
+	call(t, a, "GET", "/api/people/"+itoa(added.Open), "", &p)
+	if p.Name != "Ida Probe" || !strings.HasPrefix(p.Draft, "Hallo Ida,") || !strings.Contains(p.Draft, "weil du ein Studio hast.") {
+		t.Errorf("person %q, draft %q", p.Name, p.Draft)
+	}
+}
+
+// A link Exa's index lacks ends the draft with what to do, without asking
+// Exa again for what the run just found missing.
+func TestOneLinkNotInTheIndexAsksExaOnce(t *testing.T) {
+	a, e, f, states := newDraftingAPI(t)
+	var added struct {
+		Open     int64
+		Drafting bool
+	}
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/neu-hier-3"}`, &added)
+	if added.Open == 0 || !added.Drafting {
+		t.Fatalf("add: %+v", added)
+	}
+	reading(t, states)
+	close(f.gate)
+	e.Wait()
+	a.Drafts.Wait()
+	if n := f.reads("https://www.linkedin.com/in/neu-hier-3"); n != 1 {
+		t.Errorf("Exa was asked %d times for the profile, want once", n)
+	}
+	var jobs []draft.Job
+	call(t, a, "GET", "/api/drafts", "", &jobs)
+	if len(jobs) != 1 || jobs[0].State != "failed" || jobs[0].Error != draft.Sentence(draft.ErrNoCopy.Error()) || !jobs[0].NoCopy {
+		t.Errorf("jobs %+v", jobs)
+	}
+}
+
+// Several links, or one new person with any other link, land on People
+// under New as before, and start no draft. Without the Exa key the one
+// person still opens, and no draft starts, since their profile waits
+// for the next run.
+func TestManyLinksOpenNobodyAndDraftNothing(t *testing.T) {
+	a, _, f, _ := newDraftingAPI(t)
+	close(f.gate)
+	for _, text := range []string{
+		"https://www.linkedin.com/in/ida-probe linkedin.com/in/neu-hier-3",
+		"https://www.linkedin.com/in/mara-probe https://www.linkedin.com/company/probe-gmbh",
+		"https://www.linkedin.com/in/ida-probe linkedin.com/in/lea-probe",
+	} {
+		var added struct {
+			Open     int64
+			Drafting bool
+		}
+		if code := call(t, a, "POST", "/api/people", `{"text":"`+text+`"}`, &added); code != http.StatusOK || added.Open != 0 || added.Drafting {
+			t.Errorf("%s: %d %+v", text, code, added)
+		}
+	}
+	a.Engine.Wait()
+	a.Drafts.Wait()
+	if jobs := a.Drafts.Jobs(); len(jobs) != 0 {
+		t.Errorf("drafts %+v", jobs)
+	}
+	a.Engine.Finder = func() (engine.Finder, error) { return nil, engine.ErrNoKey }
+	var added struct {
+		New      []int64
+		Open     int64
+		Drafting bool
+		Wait     string
+	}
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/ohne-schluessel"}`, &added)
+	if len(added.New) != 1 || added.Open != added.New[0] || added.Drafting || added.Wait == "" {
+		t.Errorf("without a key: %+v", added)
+	}
+}
+
+// Undo of the link, from several goroutines at once, takes the person
+// out and stops their draft while it waits for the run, and the run
+// keeps nothing of them.
+func TestUndoOfOneLinkStopsItsDraft(t *testing.T) {
+	a, e, f, states := newDraftingAPI(t)
+	var added struct {
+		Open     int64
+		Drafting bool
+	}
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/ida-probe"}`, &added)
+	if !added.Drafting {
+		t.Fatalf("add: %+v", added)
+	}
+	reading(t, states)
+	var wg sync.WaitGroup
+	codes := make(chan int, 4)
+	for range 4 {
+		wg.Go(func() { codes <- call(t, a, "DELETE", "/api/people/"+itoa(added.Open), "", nil) })
+	}
+	wg.Wait()
+	close(codes)
+	removed := 0
+	for c := range codes {
+		if c == http.StatusNoContent {
+			removed++
+		}
+	}
+	if removed != 1 {
+		t.Errorf("%d of the undos took them out, want 1", removed)
+	}
+	a.Drafts.Wait()
+	if jobs := a.Drafts.Jobs(); len(jobs) != 1 || jobs[0].State != "cancelled" {
+		t.Errorf("jobs %+v", jobs)
+	}
+	close(f.gate)
+	e.Wait()
+	if code := call(t, a, "GET", "/api/people/"+itoa(added.Open), "", nil); code != http.StatusNotFound {
+		t.Errorf("after undo: %d", code)
 	}
 }

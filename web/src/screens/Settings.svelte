@@ -38,10 +38,13 @@
     (settings.data ?? []).filter((s) => !q || `${s.key} ${s.description}`.toLowerCase().includes(q.toLowerCase())),
   )
   // The prompt a first message is written from sits with the language
-  // model that writes it, the rest are about searches.
+  // model that writes it, how long someone stays under New with People,
+  // and the rest are about searches.
   const drafting = new Set(['hook_prompt'])
+  const ofPeople = new Set(['new_days'])
   let forDrafts = $derived(matches.filter((s) => drafting.has(s.key)))
-  let forSearches = $derived(matches.filter((s) => !drafting.has(s.key)))
+  let forPeople = $derived(matches.filter((s) => ofPeople.has(s.key)))
+  let forSearches = $derived(matches.filter((s) => !drafting.has(s.key) && !ofPeople.has(s.key)))
 
   function saved(s: Setting) {
     if (settings.data) settings.data = settings.data.map((x) => (x.key === s.key ? s : x))
@@ -96,6 +99,16 @@
       <!-- The rest of a first message, picked at random from Tim's
            variations, beside the prompt for the model's part. -->
       <Template />
+    {/if}
+    {#if forPeople.length}
+      <section class="group">
+        <h2>People</h2>
+        <div class="list">
+          {#each forPeople as s (s.key)}
+            <SettingRow setting={s} onsaved={saved} />
+          {/each}
+        </div>
+      </section>
     {/if}
     {#if forSearches.length}
       <section class="group">

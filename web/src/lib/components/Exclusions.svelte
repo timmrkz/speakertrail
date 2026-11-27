@@ -4,8 +4,10 @@
   import { plural } from '../format'
   import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
-  import { errorText, fault, toast } from '../toast.svelte'
+  import { Problem as Trouble } from '../problem.svelte'
+  import { toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
+  import Problem from './Problem.svelte'
 
   // Tim's exclusions: words and phrases, like "Online Marketing", that
   // leave a person out of profile searches and People. Removing one brings
@@ -33,19 +35,21 @@
   let hiding = $derived(all.reduce((n, x) => n + x.people, 0))
 
   let phrase = $state('')
-  let error = $state('')
+  // What went wrong adding or removing one says so under the field,
+  // see lib/problem.svelte.ts.
+  const problem = new Trouble()
   let busy = $state(false)
   let field: HTMLInputElement | undefined = $state()
 
   async function add(input: string): Promise<boolean> {
     busy = true
-    error = ''
+    problem.clear()
     try {
       const x = await api.addExclusion(input)
       list.data = [...all, x].sort((a, b) => a.phrase.localeCompare(b.phrase, 'de'))
       return true
     } catch (err) {
-      error = errorText(err)
+      problem.say(err)
       return false
     } finally {
       busy = false
@@ -56,7 +60,7 @@
     e.preventDefault()
     const input = phrase.trim()
     if (!input) {
-      error = 'Enter a word or phrase, like Online Marketing'
+      problem.needs('Enter a word or phrase, like Online Marketing')
       field?.focus()
       return
     }
@@ -69,11 +73,12 @@
   let removing = $state<number | null>(null)
   async function remove(x: Exclusion) {
     removing = x.id
+    problem.clear()
     try {
       await api.deleteExclusion(x.id)
       list.data = all.filter((y) => y.id !== x.id)
     } catch (err) {
-      fault(err)
+      problem.failed(err)
     } finally {
       removing = null
     }
@@ -101,10 +106,10 @@
     <form class="add" onsubmit={submit} novalidate>
       <label class="sr-only" for="new-exclusion">New exclusion</label>
       <input bind:this={field} bind:value={phrase} id="new-exclusion" class="input" type="text" placeholder="Online Marketing"
-        autocomplete="off" maxlength="60" aria-invalid={error ? 'true' : undefined} aria-describedby={error ? 'exclusion-err' : undefined} />
+        autocomplete="off" maxlength="60" aria-invalid={problem.text ? 'true' : undefined} aria-describedby={problem.text ? 'exclusion-err' : undefined} />
       <button class="btn" type="submit" disabled={busy}><Icon name="plus" />{busy ? 'Adding' : 'Add'}</button>
     </form>
-    {#if error}<p id="exclusion-err" class="field-error" role="alert">{error}</p>{/if}
+    <Problem of={problem} id="exclusion-err" />
   {/if}
 </details>
 

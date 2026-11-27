@@ -4,10 +4,12 @@
   import { fmtAgo, fmtDay, plural } from '../lib/format'
   import { bringIntoView, undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
-  import { errorText, fault, toast } from '../lib/toast.svelte'
+  import { Problem as Trouble } from '../lib/problem.svelte'
+  import { toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Exclusions from '../lib/components/Exclusions.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Problem from '../lib/components/Problem.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
 
@@ -61,7 +63,9 @@
   let paused = $derived(all.filter((s) => s.status === 'retired').length)
 
   let newQuery = $state('')
-  let addError = $state('')
+  // What went wrong adding says so under the field, and pausing or
+  // resuming a search on its row, see lib/problem.svelte.ts.
+  const addProblem = new Trouble()
   let addBusy = $state(false)
   let field: HTMLInputElement | undefined = $state()
 
@@ -69,19 +73,19 @@
     e.preventDefault()
     const input = newQuery.trim()
     if (!input) {
-      addError = 'Enter a kind of person and a place, like Yogalehrerin Köln'
+      addProblem.needs('Enter a kind of person and a place, like Yogalehrerin Köln')
       field?.focus()
       return
     }
     addBusy = true
-    addError = ''
+    addProblem.clear()
     try {
       const s = await api.addProfileSearch(input)
       searches.data = [s, ...all]
       newQuery = ''
       toast.show(`Added ${s.query}. The next run takes it first`)
     } catch (err) {
-      addError = errorText(err)
+      addProblem.say(err)
     } finally {
       addBusy = false
     }
@@ -89,14 +93,18 @@
 
   // Pausing is undone with the same button, or Undo in the Edit menu.
   let busy = $state<number | null>(null)
+  const rowProblem = new Trouble()
+  let failedOn = $state<number | null>(null)
   async function toggle(s: Source) {
     const status = s.status === 'retired' ? 'candidate' : 'retired'
     busy = s.id
+    rowProblem.clear()
+    failedOn = s.id
     try {
       const n = await api.patchSource(s.id, { status })
       searches.data = all.map((x) => (x.id === n.id ? n : x))
     } catch (err) {
-      fault(err)
+      rowProblem.failed(err)
     } finally {
       busy = null
     }
@@ -121,11 +129,11 @@
   <form class="add" onsubmit={add} novalidate>
     <label class="sr-only" for="new-search">New search</label>
     <input bind:this={field} bind:value={newQuery} id="new-search" class="input" type="text" placeholder="Yogalehrerin Köln" autocomplete="off"
-      maxlength="200" aria-invalid={addError ? 'true' : undefined} aria-describedby={addError ? 'search-err' : undefined}
+      maxlength="200" aria-invalid={addProblem.text ? 'true' : undefined} aria-describedby={addProblem.text ? 'search-err' : undefined}
       title="A kind of person and a place. Exa finds their LinkedIn profiles, and only people in NRW who were active lately and run their own business are kept" />
     <button class="btn primary" type="submit" disabled={addBusy}><Icon name="plus" />{addBusy ? 'Adding' : 'Add'}</button>
   </form>
-  {#if addError}<p id="search-err" class="field-error" role="alert">{addError}</p>{/if}
+  <Problem of={addProblem} id="search-err" />
 
   <Exclusions />
 
@@ -160,6 +168,7 @@
               title={s.status === 'retired' ? 'Runs take this search again' : 'Runs leave this search out until you resume it'}>
               {s.status === 'retired' ? 'Resume' : 'Pause'}
             </button>
+            {#if failedOn === s.id && rowProblem.text}<div class="failed"><Problem of={rowProblem} /></div>{/if}
           </li>
         {/each}
       </ul>
@@ -185,6 +194,7 @@
   .note { font-size: 12px; color: var(--warn); }
   .note.bad { color: var(--bad); }
   .paused .what { opacity: .5; }
+  .failed { grid-column: 1 / -1; min-width: 0; }
   /* Room for the longer word, so the button keeps its width. */
   @media (max-width: 520px) { .search { padding: 12px 14px; } }
 </style>

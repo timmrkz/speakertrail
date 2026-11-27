@@ -28,6 +28,15 @@ export class Problem {
     this.put(errorText(e), true)
   }
 
+  // needs says what a field typed wrong needs, like a search with no
+  // words. It is not something that went wrong, so Settings, Logs leaves
+  // it out.
+  needs(text: string) {
+    said(`field: ${text}`, { level: 'info' })
+    this.text = text
+    this.report = false
+  }
+
   // clear takes it away, when the place is used again.
   clear() {
     this.text = ''

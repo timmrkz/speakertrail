@@ -109,7 +109,7 @@ const walks = [
     },
   },
   {
-    name: 'The message is Tim’s to change, a double click selects all of it, and the copy mark copies it',
+    name: 'The message is Tim’s to change, and the copy mark copies all of it',
     async run(page) {
       // The app's web view refuses the window's own clipboard, as Tim saw
       // testing #60 on 22 November 2026, so the walk refuses it too.
@@ -118,9 +118,6 @@ const walks = [
       })
       await open(page, 1004)
       await drafted(page, 1004, 1, first)
-      await box(page).dblclick()
-      const sel = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value.length])
-      if (sel[0] !== 0 || sel[1] !== sel[2]) return `a double click selects ${sel[0]} to ${sel[1]} of ${sel[2]}`
       await box(page).fill(`${first} PS`)
       await box(page).blur()
       await page.locator('.first-message .state').filter({ hasText: 'Saved' }).waitFor()
@@ -145,9 +142,10 @@ const walks = [
   },
   {
     // Tim, 24 November 2026: a double click whose second press is held
-    // and dragged picks a phrase word by word, as everywhere on the Mac,
-    // and the select all of a plain double click must not take it over.
-    name: 'A double click held and dragged selects word by word, not all of the message',
+    // and dragged picks a phrase word by word, as everywhere on the Mac.
+    // And since #112 a plain double click selects one word, not the whole
+    // message, as in any other text box.
+    name: 'A double click selects a word, and held and dragged selects word by word',
     async run(page) {
       await open(page, 1009)
       await drafted(page, 1009, 1, first)
@@ -184,10 +182,12 @@ const walks = [
       if (s.all) return 'a double click held and dragged down a line selects all of the message'
       if (s.start !== 0 || !s.picked.includes('Vernetzen')) return `a drag down a line selects ${JSON.stringify(s.picked)}`
       if (/\w/.test(s.value[s.end] ?? '')) return `the drag down a line ends inside a word, at ${JSON.stringify(s.picked)}`
-      // A plain double click afterwards still takes all of it.
-      await box(page).dblclick()
-      const sel = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value.length])
-      if (sel[0] !== 0 || sel[1] !== sel[2]) return `a double click after a drag selects ${sel[0]} to ${sel[1]} of ${sel[2]}`
+      // A plain double click afterwards, on "danke", selects that word
+      // and nothing more.
+      await page.mouse.dblclick(x + 110, y)
+      const [start, end, value] = await box(page).evaluate((t) => [t.selectionStart, t.selectionEnd, t.value])
+      const word = value.slice(start, end)
+      if (word.trim() !== 'danke') return `a double click on "danke" selects ${JSON.stringify(word)}`
       return ''
     },
   },
@@ -231,7 +231,7 @@ const walks = [
       const line = page.locator('.first-message .box .refused')
       await line.waitFor()
       const said = (await line.innerText()).trim()
-      if (said !== 'Could not copy the message. Select it and press Cmd+C.') return `the line says ${JSON.stringify(said)}`
+      if (said !== 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.') return `the line says ${JSON.stringify(said)}`
       if (await page.locator('.toast').count()) return 'a toast shows too'
       const [b, l] = await Promise.all([box(page).boundingBox(), line.boundingBox()])
       if (l.y < b.y || l.y + l.height > b.y + b.height || l.x < b.x || l.x + l.width > b.x + b.width) return 'the line is not over the box'

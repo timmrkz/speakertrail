@@ -59,6 +59,11 @@
   const people = new Load<Person[]>()
   // How many each filter shows, so an empty filter never hides the rest.
   let counts = $state<Record<PeopleFilter, number> | null>(null)
+  // How many days someone stays under New, the setting new_days, as the
+  // app said with the list. A week until it answers.
+  let newDays = $state(7)
+  let lastDays = $derived(newDays === 1 ? 'the last day' : `the last ${plural(newDays, 'day')}`)
+  let nobodyNew = $derived(newDays === 7 ? 'Nobody new this week' : `Nobody new in ${lastDays}`)
 
   $effect(() => {
     document.title = 'People · Speaker Trail'
@@ -72,6 +77,7 @@
   const fetchPeople = (params: { q: string; sort: PeopleSort; filter: PeopleFilter }) => async () => {
     const r = await api.people(params)
     counts = r.counts
+    newDays = r.new_days
     // An answer to a search since changed says nothing of this one.
     if (params.q === query) links = r.links
     return r.people
@@ -178,7 +184,7 @@
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({
       ...f,
       count: f.value === 'new' && count ? `${count.done} of ${count.of}` : counts?.[f.value],
-      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : 'Found or added in the last 7 days') : undefined,
+      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : `Found or added in ${lastDays}`) : undefined,
     })),
   )
 
@@ -396,7 +402,7 @@
     if (filter === 'rejected') {
       return { title: 'Nobody rejected', text: query ? 'Nobody whose profile you rejected matches this search.' : 'People whose LinkedIn profile you said is not them show here.' }
     }
-    if (filter === 'new' && open) return { title: 'Nobody new this week', text: `${plural(open, 'person', 'people')} ${found}, none of them found or added in the last 7 days.` }
+    if (filter === 'new' && open) return { title: nobodyNew, text: `${plural(open, 'person', 'people')} ${found}, none of them found or added in ${lastDays}.` }
     const matches = (n: number) => (n === 1 ? 'matches' : 'match')
     if (connected && rejected && query) return { title: 'Only under Connected and Rejected', text: `${plural(connected, 'person', 'people')} you connected with and ${rejected} whose profile you rejected match this search.`, show: 'connected' }
     if (connected && query) return { title: 'Only under Connected', text: `${plural(connected, 'person', 'people')} you connected with ${matches(connected)} this search.`, show: 'connected' }
@@ -404,7 +410,7 @@
     if (connected && !rejected) return { title: 'Everyone is connected', text: `${plural(connected, 'person', 'people')} found so far, all of them connected. Press Run to find more.`, show: 'connected' }
     if (rejected && !connected) return { title: 'Nobody left to go through', text: `${plural(rejected, 'person', 'people')} found so far, all of them rejected. Press Run to find more.`, show: 'rejected' }
     if (connected) return { title: 'Nobody left to go through', text: `${plural(connected + rejected, 'person', 'people')} found so far, ${connected} connected and ${rejected} rejected. Press Run to find more.`, show: 'connected' }
-    return { title: filter === 'new' ? 'Nobody new this week' : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
+    return { title: filter === 'new' ? nobodyNew : 'Nobody here yet', text: query ? 'Nobody matches this search.' : PRESS_RUN }
   })
 
   // Keep the list in step with changes made in the sheet.

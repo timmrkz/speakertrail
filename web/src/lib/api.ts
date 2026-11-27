@@ -799,7 +799,7 @@ export const api = {
   // Every file of the log goes, after Settings asked. It gives the log as
   // it is then: the one line that says so.
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
-  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null }>('GET', `/api/people${qs(q)}`),
+  people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null; new_days: number }>('GET', `/api/people${qs(q)}`),
   addPeople: (text: string) => request<Added>('POST', '/api/people', { text }),
   // Takes out again someone added from a link, for Undo.
   removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),

@@ -425,6 +425,7 @@ export function buildSettings(): Setting[] {
     ['probation_weeks', 3, 'Weeks a new search may find nobody before runs leave it out'],
     ['retire_after_empty_checks', 4, 'Runs in a row without anyone new before a search is left out'],
     ['home_city', '', 'Where you are, a city in NRW like Köln. People nearer to it come first'],
+    ['new_days', 7, 'Days someone stays under New after a search found them or you added them'],
     ['hook_prompt', HOOK_PROMPT, 'What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them'],
   ]
   return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))

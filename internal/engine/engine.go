@@ -138,6 +138,9 @@ type going struct {
 	// started, and reading the people whose profiles are read now.
 	running map[int64]time.Time
 	reading map[int64]time.Time
+	// awaited are closed once the run reads no more of a person's
+	// profile, for a draft that waits on it, see AwaitRead.
+	awaited map[int64]chan struct{}
 	// log is the engine's log with the act that started the run.
 	log *slog.Logger
 }
@@ -477,7 +480,14 @@ func (e *Engine) step(fn func() (store.Undone, error)) (store.Undone, error) {
 			}
 		}
 	})
-	g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person != 0 && !slices.Contains(links, j.person) })
+	g.queue = slices.DeleteFunc(g.queue, func(j job) bool {
+		if j.person == 0 || slices.Contains(links, j.person) {
+			return false
+		}
+		// A draft that waits on their read has nothing left to wait for.
+		g.readEnded(j.person)
+		return true
+	})
 	for _, id := range links {
 		if _, now := g.reading[id]; !now && !slices.Contains(read, id) && !slices.Contains(g.queue, job{person: id}) {
 			g.queue = append(g.queue, job{person: id})
@@ -540,6 +550,7 @@ func (e *Engine) Paste(id int64, text string, added bool) (named bool, err error
 		// A read Exa is still asked for no longer counts, the row says
 		// it is read.
 		delete(g.reading, id)
+		g.readEnded(id)
 	}
 	return named, nil
 }
@@ -744,6 +755,50 @@ func (e *Engine) Reading() (reading map[int64]time.Time, waiting []int64) {
 	return reading, waiting
 }
 
+// AwaitRead waits while the going run reads the profile of person id,
+// or has it still to read, and says whether it did. A draft of someone
+// with no profile text asks it first, so the run and the draft never
+// both ask Exa for one profile (#115). It returns at once when the run
+// has nothing of theirs to read, and early when ctx ends.
+func (e *Engine) AwaitRead(ctx context.Context, id int64) (bool, error) {
+	e.mu.Lock()
+	g := e.going
+	if g == nil {
+		e.mu.Unlock()
+		return false, nil
+	}
+	_, reading := g.reading[id]
+	if !reading && !slices.Contains(g.queue, job{person: id}) {
+		e.mu.Unlock()
+		return false, nil
+	}
+	if g.awaited == nil {
+		g.awaited = map[int64]chan struct{}{}
+	}
+	ended, ok := g.awaited[id]
+	if !ok {
+		ended = make(chan struct{})
+		g.awaited[id] = ended
+	}
+	e.mu.Unlock()
+	select {
+	case <-ended:
+	case <-g.done:
+	case <-ctx.Done():
+		return true, ctx.Err()
+	}
+	return true, nil
+}
+
+// readEnded lets go of whoever waits on the read of a person's profile,
+// once it is read, dropped or taken out. Engine.mu is held.
+func (g *going) readEnded(id int64) {
+	if ended, ok := g.awaited[id]; ok {
+		close(ended)
+		delete(g.awaited, id)
+	}
+}
+
 // run waits until the run's workers are done, and saves its end.
 func (e *Engine) run(g *going) {
 	defer close(g.done)
@@ -876,6 +931,7 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 	defer func() {
 		e.mu.Lock()
 		delete(g.reading, id)
+		g.readEnded(id)
 		e.mu.Unlock()
 	}()
 	if ctx.Err() != nil {

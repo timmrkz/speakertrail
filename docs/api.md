@@ -25,9 +25,12 @@ Someone Tim connected with is only under `connected`, and someone whose
 profile he rejected only under `rejected`. `all` holds the
 people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
-their profile is rejected. `new` holds whoever came in during the last 7
-days, found by a search or added from a link, connected or not, never
-someone whose profile he rejected, and always the newest first.
+their profile is rejected. `new` holds whoever came in during the last
+`new_days` days, found by a search or added from a link, connected or
+not, never someone whose profile he rejected, and always the newest
+first. `new_days` is the setting of that name, 7 until Tim changes it in
+Settings, at least 1, and comes with the answer so the interface can say
+it.
 
 When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:
@@ -39,7 +42,7 @@ the links add nobody. `people` are those here, under any filter. Without
 links, `links` is null.
 
 ```json
-{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" } }
+{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" }, "new_days": 7 }
 ```
 
 People whom one of Tim's exclusions leaves out are not in the list or the
@@ -61,7 +64,9 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 }
+  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 },
+  "links": null,
+  "new_days": 7
 }
 ```
 
@@ -86,9 +91,18 @@ in the link, and has a run read their profiles: the run going, or a run
 of its own that reads only those and asks no search. Words and other
 links in the text are passed over. Someone here already is only marked
 connected. It answers `{"run": 12, "new": [31, 32], "here": [7],
-"connected": [7], "other": 1}`: `connected` are those here whom it marked
-connected, and `open` is the one person here when the links lead to that
-person alone. `run` is 0 when there is no profile to read: without the
+"connected": [7], "other": 1, "drafting": false}`: `connected` are those here whom it marked
+connected, and `open` is the person to open: the one here when the
+links lead to that person alone, or the one they add when they add one
+person and lead to nobody else, no one here and no other link (Tim, 27
+November 2026, #115). For that one person the app also starts the first
+message, as `POST /api/people/{id}/draft` does, and `drafting` says it
+did. The draft waits for the run's read of their profile rather than
+ask Exa for it again, so one profile is one read, and is written from
+the name the read found. Without the Exa key or budget, or without a
+language model, the person still opens and no draft starts. Several
+links, or one new person with any other link, open nobody and start no
+draft. `run` is 0 when there is no profile to read: without the
 Exa key or budget the people are added all the same, and `wait` says why
 their profiles wait for the next run. A profile the going run read
 already, or failed to, waits for the next run too, so no run reads one
@@ -247,7 +261,9 @@ until Tim sets it. It takes a city the app knows in any spelling, like
 `"Cologne"`, and keeps its German name, `"Köln"`. Any other place gets
 400. Where LinkedIn opens is not one of them, it has its own endpoints
 below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
-value of the wrong kind gets 400, an unknown key 404.
+value of the wrong kind gets 400, so does a negative number, and a part
+of a number where the setting counts whole ones, like `2.5` days. An
+unknown key gets 404.
 
 `GET /api/keys` says whether the Exa key is saved and how many searches
 this month used, never the key itself:
@@ -487,13 +503,18 @@ A draft is
 `state` is `queued`, `reading` (their profile from Exa, when the app has
 no text of it yet, by the link and then by the name in it, like a run's
 read: a draft whose profile Exa lacks fails and says to paste it, see
-`PUT /api/people/{id}/profile`), `loading` (the model, when it is not loaded), `writing`,
+`PUT /api/people/{id}/profile`. While the going run reads their profile,
+or has it still to read, the draft waits for that read instead, and
+when the run found no copy it fails without asking Exa again), `loading` (the model, when it is not loaded), `writing`,
 `done`, `failed` or `cancelled`. `text` is the message, from `writing` on
 with `…` where the model's parts go, and whole once it is done. What the
 model wrote in it is untrusted and shown as text. `problem` is set on a
 draft that is done when the model's answer did not fit twice: the
 message then has `…` where the model's parts go, for Tim to write, and
 `problem` says why in a sentence, never with the answer itself.
+`no_copy` is true on a draft that failed because Exa's index has no
+copy of their profile, which the person shows already, so the draft
+need not say it again.
 `fraction` and `seconds_left` come from how long earlier drafts took, -1
 and null before there was one. `error` says why a draft failed, in a
 sentence that can go on screen. `seq` is higher for every change than for
@@ -642,11 +663,13 @@ A run is one step when it ends, finished or stopped: the people its
 searches found new. Whom Tim added from a link while it went are no
 part of it, adding them was a step of its own. The end of a run leaves
 Redo as it is, since Tim did nothing then. Its undo takes them out,
-their profile texts too, and stops a draft for them that still runs.
+their profile texts too.
 Someone a step still in Undo changed, marked connected for example, was
 changed since the run found them and stays. The undo of links added
 takes out whom they brought in, and opens again whom they marked
-connected. A redo puts the people back with their ids, as they were
+connected. Whoever an undo takes out, their draft under way stops and
+ends `cancelled`, and a draft that waits on the run's read of their
+profile stops waiting. A redo puts the people back with their ids, as they were
 when the undo took them out, but for someone here again under their
 link since, who stays as they are. Such a step says what it did in
 `said`, for the page to show:

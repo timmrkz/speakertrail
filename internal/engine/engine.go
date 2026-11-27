@@ -817,8 +817,12 @@ func (e *Engine) check(ctx context.Context, g *going, id int64) {
 	// Every check is a line, by ids and counts and never by whom it
 	// found, which is personal data.
 	if c.Error == "" {
+		longest := 0
+		for _, prof := range profiles {
+			longest = max(longest, prof.Length)
+		}
 		g.log.Debug("a search was asked", "run", g.id, "search", id, "ms", c.DurationMS,
-			"profiles", len(profiles), "found", c.PeopleFound, "new", c.PeopleNew)
+			"profiles", len(profiles), "found", c.PeopleFound, "new", c.PeopleNew, "longest", longest)
 	}
 }
 
@@ -889,6 +893,11 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 			return nil
 		}
 		switch {
+		case errors.Is(err, search.ErrNotIndexed) && p.LinkedIn.Text != "":
+			// Asked again for a text Exa once gave, see
+			// store.Data.readCutAgain, the profile keeps the one it has.
+			r.Error = NotIndexed
+			p.ToRead = false
 		case errors.Is(err, search.ErrNotIndexed):
 			// Said without the link, which is personal data.
 			r.Error = NotIndexed
@@ -917,7 +926,7 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 	if r.Error != "" {
 		g.log.Warn("a profile could not be read", "run", g.id, "person", id, "ms", r.DurationMS, "error", r.Error)
 	} else {
-		g.log.Debug("a profile was read", "run", g.id, "person", id, "ms", r.DurationMS)
+		g.log.Debug("a profile was read", "run", g.id, "person", id, "ms", r.DurationMS, "characters", prof.Length)
 	}
 }
 

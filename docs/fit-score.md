@@ -109,14 +109,19 @@ halves every 30 days:
 Writing says more than a like. A reaction counts half as much as a post
 or a comment of the same day, so a comment a week ago can count for
 more than a like yesterday. The kind is read from the profile's
-activity lines, `rubric.Writing`: an entry like "Gefällt mir" or
-"Likes" is a reaction, anything else, like "Kommentar", is writing. So
+activity lines, `rubric.Writing`. Exa's index writes the name first,
+like "Erika Beispiel liked this": "liked this" and "reacted on this"
+are a reaction, so is an entry that starts with "Gefällt mir" or
+"Likes". Anything else, like "posted this", "shared this", "reposted
+this", "commented on a post" or "replied to a comment", is writing. So
 a word for a reaction the app does not know counts as writing. Whom the
 app has no profile text of, mostly people found before 20 November
 2026, counts as reacting, since most people on LinkedIn do not post:
 only 11 of 60 had in six months, in a test on 30 September 2026. A
-search that finds them again brings the text. The words Exa's index uses were seen only in the tests, a
-cloud session cannot reach Exa, so Tim's own people are the check.
+search that finds them again brings the text. The words Exa's index
+uses were read from Tim's own people in his report of 27 November 2026,
+where about 1000 of 2400 entries were likes that had counted as
+writing.
 
 The date is what Exa's index last saw, which can be weeks old. It is
 refreshed whenever a search finds the person again.

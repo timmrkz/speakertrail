@@ -169,6 +169,31 @@ func TestWriting(t *testing.T) {
 	}
 }
 
+// Exa's index writes an entry with the person's name before what they
+// did, like "Erika Beispiel liked this". A like or a reaction there is a
+// reaction too. Before, only an entry that starts with the kind was, so
+// in Tim's report of 27 November 2026 about 1000 likes of 2400 entries
+// counted as writing.
+func TestWritingAsExaWritesIt(t *testing.T) {
+	for line, wrote := range map[string]bool{
+		"Erika Beispiel liked this":           false,
+		"Erika Beispiel reacted on this":      false,
+		"Dr. med. Erika Beispiel liked this":  false,
+		"Erika Beispiel commented on a post":  true,
+		"Erika Beispiel replied to a comment": true,
+		"Erika Beispiel posted this":          true,
+		"Erika Beispiel shared this":          true,
+		"Erika Beispiel reposted this":        true,
+		"Posted · 3 reactions, 2 comments":    true,
+		"Reshared · 4 reactions":              true,
+	} {
+		got, known := Writing("## Social\n\n### Linkedin\n\n- [2026-11-02 · " + line + "] [Ein Beitrag...](https://www.linkedin.com/posts/x)\n")
+		if !known || got.IsZero() != !wrote {
+			t.Errorf("%q: wrote %v, known %v, want wrote %v", line, got, known, wrote)
+		}
+	}
+}
+
 // A row shows FitPoints and the person Fit, so the two never disagree.
 func TestFitPointsIsFit(t *testing.T) {
 	now := day("2026-11-21")

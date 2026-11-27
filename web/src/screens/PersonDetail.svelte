@@ -12,6 +12,7 @@
   import { undoHistory } from '../lib/history.svelte'
   import { pasteAsShown } from '../lib/pastedlines'
   import { errorText, fault } from '../lib/toast.svelte'
+  import { stepOut } from '../lib/keys'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
@@ -279,6 +280,7 @@
         </span>
       </div>
       <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
+        onkeydown={(e) => stepOut(e, `person-row-${p.id}`)}
         placeholder="Where you met, what to ask"></textarea>
     </section>
   </article>

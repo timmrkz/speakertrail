@@ -62,9 +62,9 @@ then on every build comes from GitHub.
    [The Developer ID](#the-developer-id). `speakertrail-release pack`
    writes the build again in parts, see What an update downloads below.
    `sign` signs the zip and the stored zip with the key from the
-   environment `updates`. The pieces and patches the release does not
-   hold yet go up to the pre-release `dev`, then the zip, the stored zip
-   packed, its parts and its entry. The commit that was built gets the
+   environment `updates`. The pieces the release does not hold yet go
+   up to the pre-release `dev`, then the zip, the stored zip packed and
+   its parts, then the patches it lacks, and its entry last. The commit that was built gets the
    status **Ready to update to** on the pull request.
 3. `scripts/channel-list.sh` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
@@ -81,13 +81,11 @@ then on every build comes from GitHub.
    every build, also one whose publish failed, so a full release always
    makes room again.
 
-GitHub lets a release hold 1,000 files. On 27 November 2026 `dev` held
-them all: every build kept patches from every other, eight pull requests
-were open, and an hour of pushes stayed. Every publish failed for an
-hour and the builds of #123, #124 and #125 never reached Updates. Now a
-build has at most sixty patches, fewer once the release holds more than
-800 files, and a patch that cannot be uploaded costs the app that file's
-piece, never the build its place on Updates.
+GitHub lets a release hold 1,000 files, and refuses an upload past them.
+A build has at most sixty patches, fewer once `dev` holds more than 740
+files and none from 800. The patches go up in a step of their own after
+the build, which may fail: a patch that cannot be uploaded costs the app
+that file's piece, never the build its place on Updates.
 
 A build takes a few minutes after the push. A version reads like
 `0.1.0-pr9.e808a87`: the app's version, the channel and the commit.
@@ -116,8 +114,9 @@ Only what changed, and of a file that changed, only the difference.
   newest eight that left it, such as the last build of a pull request
   just merged. The parts name each patch by the SHA-256 of the file it
   starts from. A patch is kept only where it weighs less than the piece.
-  A build has at most sixty, from the newest of those builds first,
-  since the one an app runs is most likely among them. A build older than the one running was published before it, so
+  A build has at most sixty: first from the channel's build before it,
+  then from main's, then from the newest of the rest, since the app
+  that updates most likely runs one of those. A build older than the one running was published before it, so
   picking it takes the piece.
 - **The app puts the build together.** It writes the stored zip from the
   files it already has with the same bytes, a file made from its own and

@@ -44,12 +44,13 @@ func packCommand(args []string) error {
 	from := fs.String("from", updates.EntriesURL, "the folder of the release the builds patched against are read from")
 	listPath := fs.String("list", "", "the channel list, to patch against the builds it names")
 	assetsPath := fs.String("assets", "", "the release's files, as gh release view dev --json assets writes them")
+	channel := fs.String("channel", "", "the channel the build is of, whose build before it is patched against first")
 	_ = fs.Parse(args)
 	b := bases{from: *from, client: &http.Client{}}
 	if r, err := readRelease(*listPath, *assetsPath); err != nil {
 		fmt.Printf("::warning::The release could not be read, so this build has no patches: %v\n", err)
 	} else {
-		names := r.bases()
+		names := r.bases(*channel, "main")
 		read := b.readParts(names, os.Stdout)
 		for _, name := range names {
 			if p, ok := read[name]; ok {

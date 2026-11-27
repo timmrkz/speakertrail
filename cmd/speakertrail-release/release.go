@@ -41,8 +41,8 @@ const leftBases = 8
 const keptFor = 30 * time.Minute
 
 // maxAssets is how many files GitHub lets one release hold. An upload
-// past it is refused, and on 27 November 2026 every publish failed for
-// an hour, so the builds of three pull requests never reached Updates.
+// past it is refused. On 27 November 2026 every publish failed from 16:12
+// to 16:55 UTC, and three pull requests waited for their builds.
 const maxAssets = 1000
 
 // keepFree is how many files of the release a build's patches leave
@@ -118,10 +118,13 @@ func (r dev) holds(name string) bool {
 
 // bases names the parts files of the builds a new build is patched
 // against: every build the channel list names, and the newest leftBases
-// that left it. Only what the release holds, each once, the newest first,
-// since the build an app runs is most likely one of the newest, and the
-// patches from those are the ones a build keeps when it may not have all.
-func (r dev) bases() []string {
+// that left it. Only what the release holds, each once. The listed builds
+// of the channels first come first, in that order, and the rest the
+// newest first. A new build has patches from the first ones when it may
+// not have all: an app that runs the channel's build before is the one
+// most likely to update, then one that runs main, then one that runs a
+// build made lately.
+func (r dev) bases(first ...string) []string {
 	var out []string
 	add := func(name string) {
 		if r.holds(name) && !slices.Contains(out, name) {
@@ -146,7 +149,19 @@ func (r dev) bases() []string {
 	slices.SortStableFunc(out, func(a, b string) int {
 		return r.created(b).Compare(r.created(a))
 	})
-	return out
+	var front []string
+	for _, channel := range first {
+		for _, b := range r.list.Channels {
+			u, err := url.Parse(b.URL)
+			if b.Channel != channel || err != nil {
+				continue
+			}
+			if name := updates.PartsName(path.Base(u.Path)); slices.Contains(out, name) && !slices.Contains(front, name) {
+				front = append(front, name)
+			}
+		}
+	}
+	return append(front, slices.DeleteFunc(out, func(name string) bool { return slices.Contains(front, name) })...)
 }
 
 // created is when the release's file of this name was uploaded.
@@ -160,7 +175,8 @@ func (r dev) created(name string) time.Time {
 }
 
 // patchRoom is how many patches a new build may have: patchesPerBuild,
-// or fewer when the release is close to holding maxAssets files.
+// fewer once the release holds more than maxAssets less keepFree less
+// patchesPerBuild files, 740, and none from maxAssets less keepFree, 800.
 func (r dev) patchRoom() int {
 	return max(0, min(patchesPerBuild, maxAssets-keepFree-len(r.assets)))
 }

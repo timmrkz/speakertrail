@@ -188,6 +188,31 @@ func TestTheBuildsThatLeftTheListKeepTheirPiecesAndNotTheirPatches(t *testing.T)
 	}
 }
 
+// A new build is patched first against the listed builds of the channels
+// named, in that order, its own channel's and main's, and then against
+// the rest, the newest first.
+func TestTheChannelsBuildsArePatchedAgainstFirst(t *testing.T) {
+	r := onDev(t, []string{"main", "pr-5", "pr-6"}, []asset{
+		{"app-main.parts.json", now.Add(-5 * time.Hour)},
+		{"app-pr-5.parts.json", now.Add(-9 * time.Hour)},
+		{"app-pr-6.parts.json", now.Add(-time.Hour)},
+		{"app-pr-7.parts.json", now.Add(-2 * time.Hour)},
+	})
+	for _, c := range []struct {
+		first []string
+		want  []string
+	}{
+		{nil, []string{"app-pr-6.parts.json", "app-pr-7.parts.json", "app-main.parts.json", "app-pr-5.parts.json"}},
+		{[]string{"pr-5", "main"}, []string{"app-pr-5.parts.json", "app-main.parts.json", "app-pr-6.parts.json", "app-pr-7.parts.json"}},
+		{[]string{"main", "main"}, []string{"app-main.parts.json", "app-pr-6.parts.json", "app-pr-7.parts.json", "app-pr-5.parts.json"}},
+		{[]string{"pr-9", "main"}, []string{"app-main.parts.json", "app-pr-6.parts.json", "app-pr-7.parts.json", "app-pr-5.parts.json"}},
+	} {
+		if got := r.bases(c.first...); !slices.Equal(got, c.want) {
+			t.Errorf("with %v first, the builds patched against are\n%v\nwant\n%v", c.first, got, c.want)
+		}
+	}
+}
+
 // A build has room for patchesPerBuild patches, and for fewer once the
 // release comes close to the most files GitHub lets it hold, so a
 // publish never fails for a full release.

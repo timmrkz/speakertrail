@@ -93,15 +93,15 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 		}
 		at += part.Size
 	}
-	// At most b.most, the patches from the newest builds, and of those the
-	// largest files first, whose patches save the most.
+	// At most b.most, the patches from the builds patched against first,
+	// and of those the largest files first, whose patches save the most.
 	slices.SortStableFunc(jobs, func(a, c *job) int {
 		return cmp.Or(cmp.Compare(rank[a.old.SHA256], rank[c.old.SHA256]),
 			cmp.Compare(p.Parts[c.part].Size, p.Parts[a.part].Size),
 			cmp.Compare(a.part, c.part), cmp.Compare(a.old.SHA256, c.old.SHA256))
 	})
 	if len(jobs) > b.most {
-		fmt.Fprintf(log, "%d patches could be made, and %d are, from the newest builds\n", len(jobs), max(b.most, 0))
+		fmt.Fprintf(log, "%d patches could be made, and %d are, from the builds patched against first\n", len(jobs), max(b.most, 0))
 		jobs = jobs[:max(b.most, 0)]
 	}
 	work := make(chan *job)

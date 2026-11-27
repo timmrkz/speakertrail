@@ -64,9 +64,11 @@ var testCerts = [][]byte{
 	ber(0x30, ber(0x30, []byte("Developer ID Certification Authority"))),
 }
 
-// otherCerts are what a renewed certificate would be.
+// otherCerts are what a renewed certificate would be, of the same length,
+// so a signature with it is as long and only the certificate tells them
+// apart.
 var otherCerts = [][]byte{
-	ber(0x30, ber(0x30, []byte("Developer ID Application: an invented developer, renewed"))),
+	ber(0x30, ber(0x30, []byte("Developer ID Application: an invented developeR"))),
 	testCerts[1],
 }
 
@@ -124,13 +126,32 @@ func TestALibrarySignedAgainIsTheSameSignedCode(t *testing.T) {
 	other.cms = testCMS(testCerts, 1, false)
 	adhoc := speech
 	adhoc.signed, adhoc.flags, adhoc.ident = true, flagAdhoc, "com.speakertrail.app.libonnxruntime"
+	// Of the same length as fresh, so only the blob tells them apart.
+	sameLength := func(p program) []byte {
+		p.signed, p.flags, p.team = true, flagRuntime, "TEAM123456"
+		if p.ident == "" {
+			p.ident = "com.speakertrail.app.libonnxruntime"
+		}
+		p.cms = testCMS(testCerts, 1, true)
+		return p.bytes()
+	}
+	otherIdent, entitled, otherEntitled := speech, speech, speech
+	otherIdent.ident = "com.speakertrail.app.libonnxruntimX"
+	entitled.entitled, otherEntitled.entitled = "<a/>", "<b/>"
+	if err := sameSignedCode(sameLength(entitled), sameLength(entitled)); err != nil {
+		t.Errorf("the same entitlements: %v", err)
+	}
+	if err := sameSignedCode(sameLength(entitled), sameLength(otherEntitled)); err == nil {
+		t.Error("other entitlements of the same length: taken as the same signed code")
+	}
 	cases := map[string][]byte{
-		"its code changed":      signedAt(changed, 1, testCerts, false),
-		"another identifier":    other.bytes(),
-		"a renewed certificate": signedAt(speech, 1, otherCerts, false),
-		"signed ad hoc":         adhoc.bytes(),
-		"no program":            []byte("a licence"),
-		"another architecture":  signedAt(program{cpu: 0x01000007, links: speech.links}, 1, testCerts, false),
+		"its code changed":                      signedAt(changed, 1, testCerts, false),
+		"another identifier":                    other.bytes(),
+		"another identifier of the same length": sameLength(otherIdent),
+		"a renewed certificate":                 signedAt(speech, 1, otherCerts, true),
+		"signed ad hoc":                         adhoc.bytes(),
+		"no program":                            []byte("a licence"),
+		"another architecture":                  signedAt(program{cpu: 0x01000007, links: speech.links}, 1, testCerts, false),
 	}
 	for name, earlier := range cases {
 		if err := sameSignedCode(fresh, earlier); err == nil {
@@ -180,7 +201,7 @@ func TestHardenKeepsTheSignedBytesOfALibraryThatDidNotChange(t *testing.T) {
 	renewed := speech
 	renewed.signed, renewed.flags, renewed.team = true, flagRuntime, "TEAM123456"
 	renewed.ident = codeIdentifier("libsherpa-onnx-cxx-api.dylib")
-	renewed.cms = testCMS(otherCerts, 9, false)
+	renewed.cms = testCMS(otherCerts, 9, true)
 	keep("Contents/Frameworks/libsherpa-onnx-cxx-api.dylib", renewed.bytes())
 
 	after := bundle(t)

@@ -156,6 +156,11 @@ func (s installStep) run() error {
 	if err := undo(s.folder, s.stop, s.launch); err != nil {
 		return err
 	}
+	// It said it started as it was ended, so it stayed and was opened
+	// again.
+	if failedBuild(s.folder) != s.version {
+		return nil
+	}
 	return fmt.Errorf("%s did not say it started within %v, so the build before was put back", s.version, startedWithin)
 }
 

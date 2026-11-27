@@ -13,7 +13,8 @@ import (
 
 // GitHub's REST API as far as an upload, a file of the repository and
 // the open pull requests go: a release that is not there is made by the
-// first upload, a file of the same name is replaced, a file comes back as
+// first upload, a file of the same name is replaced, a new file goes up
+// without the release read again, a file comes back as
 // it was sent, and a fork's pull request is never one of ours.
 func TestTheRESTClientAsksGitHubAsItAnswers(t *testing.T) {
 	t.Parallel()
@@ -42,7 +43,8 @@ func TestTheRESTClientAsksGitHubAsItAnswers(t *testing.T) {
 		case "DELETE /repos/o/r/releases/assets/9":
 			w.WriteHeader(http.StatusNoContent)
 		case "POST /upload/assets":
-			if r.URL.Query().Get("name") != "channels.json" || r.Header.Get("Content-Type") != "application/json" {
+			kind := map[string]string{"channels.json": "application/json", "piece-0a": "application/octet-stream"}[r.URL.Query().Get("name")]
+			if kind == "" || r.Header.Get("Content-Type") != kind {
 				t.Errorf("uploaded %s as %s", r.URL.Query().Get("name"), r.Header.Get("Content-Type"))
 			}
 			_, _ = io.WriteString(w, `{}`)
@@ -68,6 +70,15 @@ func TestTheRESTClientAsksGitHubAsItAnswers(t *testing.T) {
 		"DELETE /repos/o/r/releases/assets/9 POST /upload/assets"
 	if got := strings.Join(asked, " "); got != want {
 		t.Errorf("asked %s", got)
+	}
+	// A new piece goes straight to where the release takes files, read
+	// once, without the release read again.
+	asked = nil
+	if err := g.add("piece-0a", []byte("piece")); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(asked, " "); got != "POST /upload/assets" {
+		t.Errorf("a new piece asked %s", got)
 	}
 	file, err := g.fileAt("cmd/speakertrail-app/appfiles.go", "abc")
 	if err != nil || string(file) != "const appVersion = \"0.3.0\"\n" {

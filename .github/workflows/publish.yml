@@ -90,7 +90,10 @@ jobs:
       # list without it cannot be checked.
       - name: Write the channel list from every entry
         run: speakertrail-release channels
+      # Also when the list could not be written, as when it was a job of
+      # its own.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: speakertrail-release unstick
 
   # Whether the build left a zip, asked on Linux, so a run that built
@@ -422,5 +425,8 @@ jobs:
       # release.go.
       - name: Write the channel list from every entry
         run: speakertrail-release channels
+      # Also when the list could not be written, as when it was a job of
+      # its own.
       - name: Cancel a publish stuck before the environment
+        if: ${{ !cancelled() }}
         run: speakertrail-release unstick

@@ -721,8 +721,8 @@ func (c *updating) checkOnce() {
 		return
 	}
 	commit, _ := rel.Metadata["commit"].(string)
-	// A build that went in and did not start is not taken again by
-	// itself. The next build of the channel is.
+	// A build that went in and did not start is not taken again, not
+	// even when its channel is picked. The next build of the channel is.
 	if c.failed != nil && c.failed() == rel.Version {
 		theLog.line(zerolog.InfoLevel, "updates").Str("channel", rel.Channel).Str("build", rel.Version).
 			Msg("the channel's newest build did not start before, so it is not taken again")

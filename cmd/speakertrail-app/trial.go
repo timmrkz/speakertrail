@@ -40,7 +40,8 @@ import (
 // The app's files go back with the build because an older build drops
 // what it does not know when it writes, and refuses a file of a newer
 // store.Version. A build that did not start is written down in
-// update-failed.json, and the app does not take it by itself again. See
+// update-failed.json, and the app never takes it again, not even when
+// its channel is picked. See
 // docs/UPDATES.md.
 const (
 	// envLoadCheck asks the program only to be loaded, and to end.

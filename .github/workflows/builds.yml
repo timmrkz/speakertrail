@@ -79,8 +79,6 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-      # To check main's signature on the release tool, see the step tool.
-      attestations: read
     outputs:
       channel: ${{ steps.which.outputs.channel }}
       number: ${{ steps.which.outputs.number }}
@@ -88,8 +86,6 @@ jobs:
       # needs says false for a commit that needs no build of its own, and
       # nothing when it did not run.
       build: ${{ steps.needs.outputs.build || steps.which.outputs.build }}
-      # true when main's code has no signed release tool that fits it yet.
-      tool: ${{ steps.tool.outputs.built }}
     # A close builds nothing, so nothing here runs for it, and build stays
     # empty. The checkout is the commit pushed, or for a pull request the
     # merge GitHub made, whose workflow this is, so the tool and this file
@@ -135,29 +131,6 @@ jobs:
           SHA: ${{ steps.which.outputs.sha }}
         run: go run ./cmd/speakertrail-release needs-build -channel "$CHANNEL" -commit "$SHA"
 
-      # Whether main's signed release tool still fits main's code. Only
-      # the tool knows what it is built from, so this job asks it, holding
-      # no token that writes, and the job tool below builds and signs a
-      # new one when it does not. See .github/actions/release-tool.
-      - id: tool
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: ./.github/actions/release-tool
-
-  # The release tool for publish.yml, built and signed on main after a
-  # change to what it is built from, see release-tool.yml. Not cancelled
-  # by a newer push: a build of older code does not fit newer code, and
-  # the next push to main builds again.
-  tool:
-    needs: which
-    if: github.ref == 'refs/heads/main' && needs.which.outputs.tool == 'true'
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    concurrency:
-      group: release-tool-${{ github.ref }}
-      cancel-in-progress: false
-    uses: ./.github/workflows/release-tool.yml
 
   build:
     needs: which

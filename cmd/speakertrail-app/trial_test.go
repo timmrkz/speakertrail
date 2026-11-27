@@ -143,6 +143,38 @@ func TestABuildThatDoesNotStartIsUndone(t *testing.T) {
 	}
 }
 
+// A build that says it started just as Relaunch gave up on it and ended
+// it stays, and is opened again, since it did start. Nothing is put back
+// and it is not written down as failed.
+//
+// On the real disk: an update moves a bundle and the app's files.
+func TestABuildThatSaysItStartedAsItIsEndedStays(t *testing.T) {
+	s, opened, stopped := relaunched(t, func(s installStep) {
+		if _, err := startTrial(s.folder, s.version, 77, nil); err != nil {
+			t.Fatal(err)
+		}
+		appFiles(t, s.folder, map[string]string{appFileName: "new people", textsName: "texts"})
+	})
+	s.stop = func(pid int) {
+		*stopped = append(*stopped, pid)
+		if err := endTrial(s.folder, s.version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.run(); err != nil {
+		t.Errorf("the step said a build that started did not: %v", err)
+	}
+	if len(*opened) != 2 || (*opened)[1] != "new" {
+		t.Errorf("opened %v, want the new build twice", *opened)
+	}
+	if says(t, s.target) != "new" || appFile(t, s.folder, appFileName) != "new people" {
+		t.Errorf("the app says %q with %q", says(t, s.target), appFile(t, s.folder, appFileName))
+	}
+	if failedBuild(s.folder) != "" {
+		t.Errorf("written down as failed: %q", failedBuild(s.folder))
+	}
+}
+
 // A build the system does not load never goes in: the app stays as it
 // was, is opened again on Relaunch, and the build is written down as one
 // that did not start.

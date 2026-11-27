@@ -375,12 +375,21 @@ design above:
   `SPEAKERTRAIL_LOAD_CHECK=1`, which ends it at the start of `main`, so
   a build that cannot load is never put in place. On quit, the third
   start of a build that never said it started undoes it. Updates says
-  "The newest build did not start" until a newer one comes.
+  "The newest build did not start" until a newer one comes, and such a
+  build is never taken again, even when Tim picks its channel.
 - 6. The app refuses an older build of its channel even when Tim picks
   it on Updates, not only by itself. Going back is a pick of another
   channel, as before.
 - 7. `needs-build` runs on Linux, in the job `which` of `builds.yml`, so
-  a commit that needs no build of its own starts no Mac.
+  a commit that needs no build of its own starts no Mac. The uploads go
+  one after another, as in FrameFairy, not side by side as simulation 5
+  says. A new piece or patch goes up without the release read first,
+  which FrameFairy's upload does for every file, about a second each
+  with `dev` at 756 files.
+- The times of the table above are estimates until the first publishes
+  after the merge are measured, and a Relaunch now also waits for the
+  load check and the copies of the app's files, which nobody has timed
+  yet, #132.
 - 8. FrameFairy keeps one build of the tool, for Linux. Here publish
   signs on a Mac, so `release-tool.yml` builds and signs one for Linux
   and one for the Mac, and the key is over what the tool is built from
@@ -389,7 +398,11 @@ design above:
   set up. Here `self` asks `go list` and stamps the folders into the
   build beside the key, so `fits` reads them from the tool itself. A
   package the tool comes to import is named by an import line in a
-  folder it already reads, so the key changes with it. FrameFairy's
+  folder it already reads, so the key changes with it. And
+  `release-tool.yml` runs on every push to main by itself, where
+  FrameFairy's `builds.yml` calls it, so a tool that fails to build never
+  fails the run that publish waits for, and main's build of the app
+  still reaches Updates. FrameFairy's
   reasons are its records
   `docs/decisions/2026-11-24-the-release-tool-built-once.md` and
   `2026-11-25-the-release-tool-keys-itself.md`.

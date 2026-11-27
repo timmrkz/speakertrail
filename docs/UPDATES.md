@@ -221,7 +221,8 @@ build before and the copies go.
 The files go back with the build, because an older build drops the
 fields it does not know when it writes, and refuses a file of a newer
 `store.Version`. A build that did not start is written down in
-`update-failed.json`, and the app does not take it by itself again.
+`update-failed.json`, and the app never takes it again, not even when
+Tim picks its channel on Updates.
 Updates says **The newest build did not start**, with the build before
 running, and the next build of the channel goes in as usual.
 
@@ -351,9 +352,10 @@ nothing in it:
   key the tool carries, a hash over what it is built from, is the key of
   the checkout's code, see `cmd/speakertrail-release/self.go`. Otherwise,
   right after a change to the tool, it builds the tool there without the
-  cache, as every such job did before. `builds.yml` asks on each push to
-  main and has `release-tool.yml` build and sign a new one when it no
-  longer fits. Every step that holds a key runs that one program, so
+  cache, as every such job did before. `release-tool.yml` asks on each
+  push to main and builds and signs a new one when it no longer fits. It
+  is a workflow of its own, so a tool that fails to build never holds
+  back main's build of the app. Every step that holds a key runs that one program, so
   `go` and its compiler never see either key. The key goes
   into a keychain made for the run, marked so it cannot be exported
   again, and the keychain is deleted at the end, also when signing

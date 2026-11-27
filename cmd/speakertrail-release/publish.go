@@ -252,7 +252,7 @@ func uploadOnce(gh releaseHub, packed, name string, there map[string]bool) error
 	if err != nil {
 		return err
 	}
-	if err := gh.upload(name, data); err != nil {
+	if err := gh.add(name, data); err != nil {
 		now, aerr := assetNames(gh)
 		if aerr != nil || !now[name] {
 			return err

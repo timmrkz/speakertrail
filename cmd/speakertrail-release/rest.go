@@ -62,6 +62,10 @@ type releaseHub interface {
 	// upload puts a file into the release dev, in place of one of the
 	// same name, and makes the release first if there is none.
 	upload(name string, data []byte) error
+	// add puts a file into the release dev that it does not hold, and
+	// fails when it does. It skips the read of the whole release that
+	// upload makes first, about a second for every piece and patch.
+	add(name string, data []byte) error
 	// remove takes a file away from the release.
 	remove(a hubAsset) error
 	// rename gives a file of the release another name.
@@ -105,6 +109,8 @@ type restGitHub struct {
 	// release is the release its files are of, dev unless it says
 	// another.
 	release releaseInfo
+	// uploadAt is where the release takes new files, once read.
+	uploadAt string
 }
 
 // releaseInfo is a release the tool keeps files in, and how it is made
@@ -433,6 +439,27 @@ func (g *restGitHub) upload(name string, data []byte) error {
 		}
 	}
 	at, _, _ := strings.Cut(r.UploadURL, "{")
+	g.uploadAt = at
+	return g.post(at, name, data)
+}
+
+func (g *restGitHub) add(name string, data []byte) error {
+	if g.uploadAt == "" {
+		r, err := g.current()
+		if errors.Is(err, errNotFound) {
+			return g.upload(name, data)
+		}
+		if err != nil {
+			return err
+		}
+		g.uploadAt, _, _ = strings.Cut(r.UploadURL, "{")
+	}
+	return g.post(g.uploadAt, name, data)
+}
+
+// post sends a file to where the release takes new files, as the kind
+// its name says.
+func (g *restGitHub) post(at, name string, data []byte) error {
 	kind := "application/octet-stream"
 	switch path.Ext(name) {
 	case ".json":

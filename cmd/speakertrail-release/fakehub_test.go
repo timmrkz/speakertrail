@@ -151,6 +151,16 @@ func (f *fakeHub) upload(name string, data []byte) error {
 	return nil
 }
 
+func (f *fakeHub) add(name string, data []byte) error {
+	f.mu.Lock()
+	_, there := f.files[name]
+	f.mu.Unlock()
+	if there {
+		return errors.New("already_exists")
+	}
+	return f.upload(name, data)
+}
+
 func (f *fakeHub) remove(a hubAsset) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

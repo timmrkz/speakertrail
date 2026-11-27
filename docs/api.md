@@ -27,7 +27,8 @@ people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
 their profile is rejected. `new` holds whoever came in during the last 7
 days, found by a search or added from a link, connected or not, never
-someone whose profile he rejected, and always the newest first.
+someone whose profile he rejected, in the order `sort` asks for like
+every filter.
 
 When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:

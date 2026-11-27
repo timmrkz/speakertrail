@@ -266,7 +266,8 @@ func TestListPeople(t *testing.T) {
 	}
 	// Someone Tim connected with is only under Connected, so All holds
 	// whom he can still reach out to. New holds whoever came in during
-	// the last week, connected too, the newest first, whatever the order.
+	// the last week, connected too, in the order asked for like every
+	// filter (Tim, 27 November 2026: Best fit did nothing under New).
 	// The best fit first: with nothing else known, the youngest, then
 	// whose age is not known.
 	same("best fit first", list(PeopleQuery{}), dana, unknown, old)
@@ -274,8 +275,9 @@ func TestListPeople(t *testing.T) {
 	same("new", list(PeopleQuery{Sort: "new"}), unknown, dana, old)
 	same("name", list(PeopleQuery{Sort: "name"}), unknown, old, dana)
 	same("fit", list(PeopleQuery{Sort: "fit"}), dana, unknown, old)
-	same("new", list(PeopleQuery{Filter: "new"}), unknown, dana, young)
-	same("new, whatever the order", list(PeopleQuery{Filter: "new", Sort: "name"}), unknown, dana, young)
+	same("new, the best fit first", list(PeopleQuery{Filter: "new"}), dana, young, unknown)
+	same("new, the newest first", list(PeopleQuery{Filter: "new", Sort: "new"}), unknown, dana, young)
+	same("new, by name", list(PeopleQuery{Filter: "new", Sort: "name"}), unknown, young, dana)
 	same("connected", list(PeopleQuery{Filter: "connected"}), young)
 	same("words", list(PeopleQuery{Q: "dana"}), dana)
 	same("words of someone connected", list(PeopleQuery{Q: "cem"}))
@@ -317,7 +319,7 @@ func TestListPeople(t *testing.T) {
 	// comes back on Undo. Someone connected stays under Connected.
 	dana.LinkedIn.Review = "rejected"
 	same("rejected leaves all", list(PeopleQuery{}), unknown, old)
-	same("rejected leaves new", list(PeopleQuery{Filter: "new"}), unknown, young)
+	same("rejected leaves new", list(PeopleQuery{Filter: "new", Sort: "new"}), unknown, young)
 	same("rejected", list(PeopleQuery{Filter: "rejected"}), dana)
 	same("words of someone rejected", list(PeopleQuery{Q: "dana"}))
 	same("words of someone rejected, under Rejected", list(PeopleQuery{Q: "dana", Filter: "rejected"}), dana)

@@ -107,6 +107,8 @@
 
   // People just added from links show under New, newest on top, the
   // search emptied for them. They may have been dropped on another page.
+  // New follows the order like every list, so the order turns to Newest,
+  // where the picker shows it and Best fit is one pick away.
   $effect(() => {
     if (!runWatch.added) return
     untrack(() => {
@@ -114,6 +116,7 @@
       q = ''
       query = ''
       filter = 'new'
+      sort = 'new'
       reload++
     })
   })
@@ -157,7 +160,7 @@
     ] as { value: PeopleFilter; label: string }[]).map((f) => ({
       ...f,
       count: f.value === 'new' && count ? `${count.done} of ${count.of}` : counts?.[f.value],
-      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : 'Found or added in the last 7 days, newest first') : undefined,
+      title: f.value === 'new' ? (count ? `${count.done} of ${count.of} searches and profiles of this run are done` : 'Found or added in the last 7 days') : undefined,
     })),
   )
 

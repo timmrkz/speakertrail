@@ -677,7 +677,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     // with, less whom the exclusions hide.
     const hidden = hiddenBy(s)
     let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
-    // Like the app: in the last 7 days, newest first.
+    // Like the app: in the last 7 days.
     const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < 7 * 86400e3
     // A search that holds links to profiles shows whom they lead to, under
     // any filter, and says how many are new.
@@ -715,8 +715,6 @@ const ROUTES: [string, RegExp, Handler][] = [
       const rank = (p: Person) => ['active', 'unknown', 'quiet', 'dissolved', 'gone'].indexOf(p.activity?.state ?? 'unknown')
       list.sort((a, b) => (a.next_appearance?.starts_at ?? '9999').localeCompare(b.next_appearance?.starts_at ?? '9999') || rank(a) - rank(b) || a.name.localeCompare(b.name))
     }
-    // New is newest first, whatever the order, like the app.
-    if (filter === 'new') list.sort((a, b) => b.first_seen.localeCompare(a.first_seen) || a.name.localeCompare(b.name))
     if (linked) {
       const here = s.people.filter((p) => found.profiles.includes(linkOf(p) ?? ''))
       return ok({

@@ -280,8 +280,9 @@ type PeopleQuery struct {
 // so All shrinks to whom he can still reach out to.
 // Connected comes first, since a person he connected with is real
 // whatever the profile. New is whoever came in during the last week,
-// connected or not, the newest first whatever the order, so those just
-// added stand on top. Whom an exclusion leaves out is in no list,
+// connected or not, in the order Tim chose like every list, the best fit
+// first unless he picks another (Tim, 27 November 2026: Best fit did
+// nothing under New). Whom an exclusion leaves out is in no list,
 // unless Tim connected with them. They stay in the file, so removing the exclusion brings them
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
@@ -324,8 +325,7 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 			out = append(out, p)
 		}
 	}
-	// New is the newest first, whatever the order.
-	if q.Sort == "fit" && q.Filter != "new" {
+	if q.Sort == "fit" {
 		// Each fit once, then sorted by it, rather than worked out again on
 		// every comparison.
 		fit := d.Fitter(q.Now)
@@ -348,12 +348,8 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	newest := func(a, b *Person) int {
 		return cmp.Or(b.FirstSeen.Compare(a.FirstSeen), cmp.Compare(b.ID, a.ID))
 	}
-	sort := q.Sort
-	if q.Filter == "new" {
-		sort = "new"
-	}
 	slices.SortStableFunc(out, func(a, b *Person) int {
-		switch sort {
+		switch q.Sort {
 		case "new":
 			return newest(a, b)
 		case "name":

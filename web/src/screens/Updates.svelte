@@ -10,7 +10,7 @@
   import { api } from '../lib/api'
   import { runWatch } from '../lib/run.svelte'
   import { said } from '../lib/said'
-  import { errorText } from '../lib/toast.svelte'
+  import { errorText } from '../lib/problem.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Info from '../lib/components/Info.svelte'

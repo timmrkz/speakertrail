@@ -7,7 +7,6 @@
   import Report from './Report.svelte'
   import Landing from '../lib/components/Landing.svelte'
   import TitleBar from '../lib/components/TitleBar.svelte'
-  import Toast from '../lib/components/Toast.svelte'
   import { titleBar } from '../lib/chrome.svelte'
   import { theme, type ThemeChoice } from '../lib/theme.svelte'
 
@@ -31,9 +30,6 @@
 <div class="shell">
   <TitleBar title="Report a Problem" />
   <main id="main" class="main"><Report /></main>
-  <!-- What went wrong, over the window. A toast here is about the report
-       itself, so it offers no Report of its own. -->
-  <Toast report={false} />
   <!-- Where a picture dragged over the window would land: all of it. -->
   <Landing />
 </div>

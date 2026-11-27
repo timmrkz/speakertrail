@@ -3,7 +3,7 @@
   import { api, type Json, type Setting } from '../api'
   import { fmtAgo } from '../format'
   import { bringIntoView, undoHistory } from '../history.svelte'
-  import { errorText } from '../toast.svelte'
+  import { errorText } from '../problem.svelte'
 
   // One setting with an editor that fits its JSON type. Bare, it is the
   // editor alone, named by the heading above it, labelledby, with no row

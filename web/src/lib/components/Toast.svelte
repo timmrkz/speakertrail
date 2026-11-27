@@ -3,12 +3,11 @@
   import { api } from '../api'
   import { reporting, reportTitle } from '../reporting.svelte'
 
-  // report says whether a toast about a failure the person cannot put
-  // right offers Report here, see toast.report, which opens Report a
-  // Problem with its words in it, the way FrameFairy's toasts do. The report window's own toasts are about the
-  // report, so they offer none. There is one report at a time: while the
-  // report window is open, Report is greyed out and says why.
-  let { report = true }: { report?: boolean } = $props()
+  // A toast about a failure the person cannot put right offers Report,
+  // see toast.report, which opens Report a Problem with its words in it,
+  // the way FrameFairy's toasts do. There is one report at a time: while
+  // the report window is open, Report is greyed out and says why. The
+  // report window says what went wrong over its field and has no toast.
 
   function reportIt() {
     const words = toast.message
@@ -25,7 +24,7 @@
         <!-- The action is taken before the toast goes: hiding it empties
              toast.action, and a const in the template reads it again. -->
         <button class="act" type="button" onclick={() => { const run = toast.action?.run; toast.hide(); run?.() }}>{toast.action.label}</button>
-      {:else if report && toast.report}
+      {:else if toast.report}
         <button class="act" type="button" disabled={reporting.open} title={reportTitle()} onclick={reportIt}>Report</button>
       {/if}
     </div>

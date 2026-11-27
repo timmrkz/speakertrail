@@ -10,7 +10,8 @@
 
 import { api, type UndoThing } from './api'
 import { navigate, router } from './router.svelte'
-import { errorText, toast } from './toast.svelte'
+import { errorText } from './problem.svelte'
+import { toast } from './toast.svelte'
 
 // The page that shows a thing an undo changed.
 function pageOf(t: UndoThing): string {
@@ -64,6 +65,8 @@ class UndoHistory {
       this.changed++
       return true
     } catch (e) {
+      // Undo and Redo in the Edit menu have no control of their own, so a
+      // toast says what went wrong (Tim, 27 November 2026, #72).
       toast.show(errorText(e), 'bad')
       return false
     } finally {

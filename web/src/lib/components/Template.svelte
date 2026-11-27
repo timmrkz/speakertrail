@@ -10,7 +10,8 @@
   import { plural } from '../format'
   import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText } from '../problem.svelte'
+  import { toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
   import Info from './Info.svelte'
 

@@ -1,5 +1,9 @@
 // One short message at the bottom of the screen, with an optional action
-// like Undo.
+// like Undo. What went wrong at a control says so at the control, see
+// lib/problem.svelte.ts, so a toast says what went wrong only where there
+// is no control: Undo or Redo in the Edit menu, a page pasted anywhere in
+// the window and the Undo of a toast that is gone (Tim, 27 November 2026,
+// #72).
 //
 // Every toast goes into the app's log. One about something that went
 // wrong is a warning marked as a toast, so Settings can list it again
@@ -48,13 +52,3 @@ class Toast {
 }
 
 export const toast = new Toast()
-
-export function errorText(e: unknown): string {
-  return e instanceof Error ? e.message : 'Something went wrong'
-}
-
-// fault says what went wrong in a failure the person cannot put right,
-// with Report beside it.
-export function fault(e: unknown) {
-  toast.show(errorText(e), 'bad', null, true)
-}

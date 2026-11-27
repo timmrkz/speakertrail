@@ -13,6 +13,7 @@
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Icon from '../lib/components/Icon.svelte'
   import Pick from '../lib/components/Pick.svelte'
+  import Problem from '../lib/components/Problem.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
   import PersonDetail from './PersonDetail.svelte'
@@ -432,6 +433,7 @@
           <Icon name={mode === 'add' || mode === 'none' ? 'plus' : mode === 'open' ? 'chevron' : going ? 'stop' : 'run'} />{runLabel}
         </button>
       </div>
+      <Problem of={runWatch.problem} />
       <div class="segmented filters" role="group" aria-label="Show">
         {#each filters as f (f.value)}
           <button type="button" aria-pressed={filter === f.value} onclick={() => (filter = f.value)} title={f.title}>

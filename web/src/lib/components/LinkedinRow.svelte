@@ -2,7 +2,7 @@
   import { tick, untrack } from 'svelte'
   import { api, type LinkedinWhere } from '../api'
   import { bringIntoView, undoHistory } from '../history.svelte'
-  import { errorText } from '../toast.svelte'
+  import { errorText } from '../problem.svelte'
   import Pick from './Pick.svelte'
 
   // Where the LinkedIn button opens a profile: one of the browser profiles

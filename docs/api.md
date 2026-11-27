@@ -564,7 +564,7 @@ can. `changed` says the template is not Tim's first one any more.
 keeps the draft of a report in `~/Library/Application Support/Speaker
 Trail/report`, so a draft outlives the window and the app. See
 `cmd/speakertrail-app/report_api.go`, `bugs.go` and `report.go`. Errors
-answer 409 with a sentence that can go in a toast.
+answer 409 with a sentence the window shows over the field of the report.
 
 | Request | What it does |
 | --- | --- |

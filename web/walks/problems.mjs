@@ -63,6 +63,43 @@ const walks0 = [
       return ''
     },
   },
+  {
+    name: 'Run the app refuses says why under Run, with no toast, and goes once a run starts',
+    async run(page) {
+      await page.route('**/api/runs', (route) => route.request().method() === 'POST'
+        ? route.fulfill({ status: 409, json: { error: 'Paste the Exa key in Settings first.' } })
+        : route.fallback())
+      await page.goto(`${url}/app/people`)
+      const run = page.locator('.controls button.start', { hasText: 'Run' })
+      await run.click()
+      const line = page.locator('.controls .problem')
+      await line.waitFor()
+      // Theirs to put right, so no Report.
+      if ((await words(line)) !== 'Paste the Exa key in Settings first.') return `the line says ${JSON.stringify(await words(line))}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      if ((await run.innerText()).trim() !== 'Run') return `the button says ${await run.innerText()}`
+      await page.unroute('**/api/runs')
+      await run.click()
+      await line.waitFor({ state: 'detached' })
+      await page.locator('.controls button.start', { hasText: 'Stop' }).click()
+      await page.locator('.controls button.start', { hasText: 'Run' }).waitFor()
+      return ''
+    },
+  },
+  {
+    // Undo in the Edit menu has no control of its own, so what went wrong
+    // with it is a toast, as Tim chose on 27 November 2026.
+    name: 'Undo in the Edit menu the app refuses says so in a toast',
+    async run(page) {
+      await page.route('**/api/undo', (route) => route.fulfill({ status: 500, json: { error: 'The file could not be written.' } }))
+      await page.goto(`${url}/app/searches`)
+      await page.locator('li.search').first().waitFor()
+      await page.evaluate(() => window._wails.dispatchWailsEvent({ name: 'undo', data: 'undo' }))
+      await page.locator('.toast.bad', { hasText: 'The file could not be written.' }).waitFor()
+      if (await page.locator('.problem').count()) return 'it shows at a control too'
+      return ''
+    },
+  },
 ]
 
 const walks = walks0.filter((w) => !process.env.ONLY || w.name.includes(process.env.ONLY))

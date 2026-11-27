@@ -15,7 +15,6 @@
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
   import { pasteAsShown } from '../pastedlines'
-  import { PASTE_HINT } from '../paste.svelte'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
@@ -231,7 +230,7 @@
   // Nor does one that says what the person says above it already, that
   // Exa has no copy of their profile, which a draft started by adding
   // their link often ends with (#115).
-  const told = $derived(person.read === 'not_indexed' && job?.error === PASTE_HINT)
+  const told = $derived(person.read === 'not_indexed' && !!job?.no_copy)
   const failed = $derived(job?.state === 'failed' && !stale && !told ? (job.error ?? 'The draft stopped.') : '')
   // A draft the model's answer did not fit has … where its part goes, and
   // says why until the next draft.

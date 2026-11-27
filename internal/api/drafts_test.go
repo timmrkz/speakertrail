@@ -339,7 +339,7 @@ func TestOneLinkNotInTheIndexAsksExaOnce(t *testing.T) {
 	}
 	var jobs []draft.Job
 	call(t, a, "GET", "/api/drafts", "", &jobs)
-	if len(jobs) != 1 || jobs[0].State != "failed" || jobs[0].Error != draft.Sentence(draft.ErrNoCopy.Error()) {
+	if len(jobs) != 1 || jobs[0].State != "failed" || jobs[0].Error != draft.Sentence(draft.ErrNoCopy.Error()) || !jobs[0].NoCopy {
 		t.Errorf("jobs %+v", jobs)
 	}
 }

@@ -1623,7 +1623,7 @@ function draftJob(s: State, d: MockDraft): DraftJob {
   const base = { id: d.id, person_id: d.person_id, started_at: d.started_at, model: using?.title, seq: ++draftSeq }
   if (d.cancelled) return { ...base, state: 'cancelled', fraction: -1, seconds_left: null }
   if (!using) return { ...base, state: 'failed', error: 'Download a language model in Settings first. It writes the message on this Mac.', fraction: -1, seconds_left: null }
-  if (d.error) return { ...base, state: 'failed', error: d.error, fraction: -1, seconds_left: null }
+  if (d.error) return { ...base, state: 'failed', error: d.error, no_copy: d.error === NO_COPY, fraction: -1, seconds_left: null }
   const whole = DRAFT_LOAD_MS + DRAFT_WRITE_MS
   // Like the app: how far it is, from how long a read, a load and a
   // write take, never past 95 % until it is done.

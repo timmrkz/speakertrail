@@ -11,6 +11,7 @@
 // `make walks` runs it.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
+import { drawn } from './lib/settled.mjs'
 
 let failed = 0
 async function walk(name, fn) {
@@ -168,8 +169,25 @@ await walk('One link opens the person it adds, under New, with their first messa
   await page.evaluate(() => fetch('/api/drafts').then((r) => r.json())
     .then((jobs) => jobs.forEach((data) => window._wails.dispatchWailsEvent({ name: 'draft', data }))))
   await progress.waitFor({ state: 'detached' })
-  const message = await page.locator('main .first-message textarea').inputValue()
-  expect(`the message began "${message.slice(0, 20)}"`, message.startsWith('Hallo Pia,'))
+  // The message the app kept comes in once the person is read again.
+  await page.waitForFunction(() => document.querySelector('main .first-message textarea')?.value.startsWith('Hallo Pia,'))
+})
+
+await walk('One link Exa lacks opens the person, who says once to paste their page', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/neu-probe-83')
+  await add(page)
+  await page.locator('main article.person[aria-label="neu-probe-83"]').waitFor()
+  await page.locator('main .first-message .draft-progress').waitFor()
+  await done(page)
+  await page.locator('main .paste-hint').waitFor()
+  // The app tells the window the draft failed, as walks/draft.mjs does.
+  await page.evaluate(() => fetch('/api/drafts').then((r) => r.json())
+    .then((jobs) => jobs.forEach((data) => window._wails.dispatchWailsEvent({ name: 'draft', data }))))
+  await page.locator('main .first-message .draft-progress').waitFor({ state: 'detached' })
+  await drawn(page)
+  const said = await page.locator('main article.person').evaluate((a) => a.textContent.split("Exa has no copy of their profile").length - 1)
+  expect(`the person says ${said} times that Exa has no copy`, said === 1)
 })
 
 await walk('Undo takes whom one link brought in out again, and stops their draft', async (browser) => {

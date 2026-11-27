@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/rubric"
@@ -1189,8 +1190,8 @@ func TestAPageAddsSomeoneNew(t *testing.T) {
 
 // A draft waits on the run that reads a profile rather than ask Exa for
 // it again (#115). AwaitRead, from several goroutines at once, returns
-// once the read is kept, at once for someone the run does not read,
-// early when its context ends, and as soon as a paste kept the profile.
+// once the read is kept, at once for someone the run does not read, and
+// early when its context ends.
 func TestAwaitReadFromSeveralGoroutines(t *testing.T) {
 	f := &finder{readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
 	e, st := newEngine(t, f)
@@ -1225,17 +1226,74 @@ func TestAwaitReadFromSeveralGoroutines(t *testing.T) {
 			e.Reading()
 		})
 	}
-	pasted := make(chan struct{})
-	go func() {
-		defer close(pasted)
-		_, _ = e.AwaitRead(context.Background(), neuID)
-	}()
-	if _, err := e.Paste(neuID, "Neu Hier\nCoach in Bonn\nInfo\nIch coache.", false); err != nil {
-		t.Fatal(err)
-	}
-	// The paste lets the waiter go while Exa is still asked.
-	<-pasted
 	close(f.readHold)
 	wg.Wait()
 	e.Wait()
+	st.Read(func(d *store.Data) {
+		if p := d.Person(neuID); p.ReadError != NotIndexed {
+			t.Errorf("the other read %+v", p)
+		}
+	})
+}
+
+// A draft waiting on a read is let go as soon as nothing is left to wait
+// for: a paste kept the profile while Exa is still asked for it, or Undo
+// took out someone the run had still to read (review of #121). The
+// bubble says when every goroutine waits, so the test knows each waiter
+// waits before it lets it go.
+func TestAwaitReadEndsWithAPasteOrUndo(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &finder{readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+		e, _ := newEngine(t, f)
+		out, err := e.Add(ida.URL + " linkedin.com/in/neu-hier-3 linkedin.com/in/lea-probe-4 linkedin.com/in/mia-probe-5 linkedin.com/in/ole-probe-6")
+		if err != nil || len(out.New) != 5 {
+			t.Fatalf("Add = %+v, %v", out, err)
+		}
+		synctest.Wait()
+		// Four are read side by side, and the fifth waits its turn.
+		_, waiting := e.Reading()
+		if len(waiting) != 1 || waiting[0] == out.New[0] {
+			t.Fatalf("waiting %v", waiting)
+		}
+		read, queued := out.New[0], waiting[0]
+		ended := map[int64]chan struct{}{}
+		for _, id := range []int64{read, queued} {
+			done := make(chan struct{})
+			ended[id] = done
+			go func() {
+				defer close(done)
+				if waited, err := e.AwaitRead(context.Background(), id); !waited || err != nil {
+					t.Errorf("person %d: waited %v, %v", id, waited, err)
+				}
+			}()
+		}
+		synctest.Wait()
+		over := func(id int64) bool {
+			select {
+			case <-ended[id]:
+				return true
+			default:
+				return false
+			}
+		}
+		if over(read) || over(queued) {
+			t.Fatal("a waiter did not wait")
+		}
+		if _, err := e.Paste(read, "Ida Probe\nGründerin | Probe Werkstatt\nInfo\nIch drechsle.", false); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if !over(read) || over(queued) {
+			t.Errorf("after the paste: the one pasted let go %v, the other %v", over(read), over(queued))
+		}
+		if err := e.Remove(queued); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		if !over(queued) {
+			t.Error("Undo of someone queued did not let their waiter go")
+		}
+		close(f.readHold)
+		e.Wait()
+	})
 }

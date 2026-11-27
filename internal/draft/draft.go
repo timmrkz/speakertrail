@@ -57,6 +57,10 @@ type Job struct {
 	// answer did not fit the schema, so the message has … there for Tim
 	// to write.
 	Problem string `json:"problem,omitempty"`
+	// NoCopy says a failed draft failed because Exa's index has no copy
+	// of their profile, ErrNoCopy, so the window need not say it a second
+	// time beside the person's own line of it.
+	NoCopy bool `json:"no_copy,omitempty"`
 	// Seq is higher for every change than for the one before it, of any
 	// draft, so the window keeps the newer of an answer and an event.
 	Seq int64 `json:"seq"`
@@ -248,7 +252,7 @@ func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
 		d.mu.Unlock()
 		return Job{}, false
 	}
-	noCopy := there && was.State == "failed" && was.Error == Sentence(ErrNoCopy.Error())
+	noCopy := there && was.State == "failed" && was.NoCopy
 	if !empty || !connected && !noCopy {
 		d.mu.Unlock()
 		return Job{}, false
@@ -426,7 +430,7 @@ func (d *Drafter) run(ctx context.Context, id int64) {
 		case ctx.Err() != nil, errors.Is(err, errGone):
 			j.State, j.Text = "cancelled", ""
 		default:
-			j.State, j.Error = "failed", Sentence(err.Error())
+			j.State, j.Error, j.NoCopy = "failed", Sentence(err.Error()), errors.Is(err, ErrNoCopy)
 		}
 	})
 	if err != nil && ctx.Err() == nil && !errors.Is(err, errGone) {

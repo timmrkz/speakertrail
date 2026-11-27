@@ -508,6 +508,9 @@ model wrote in it is untrusted and shown as text. `problem` is set on a
 draft that is done when the model's answer did not fit twice: the
 message then has `…` where the model's parts go, for Tim to write, and
 `problem` says why in a sentence, never with the answer itself.
+`no_copy` is true on a draft that failed because Exa's index has no
+copy of their profile, which the person shows already, so the draft
+need not say it again.
 `fraction` and `seconds_left` come from how long earlier drafts took, -1
 and null before there was one. `error` says why a draft failed, in a
 sentence that can go on screen. `seq` is higher for every change than for

@@ -565,6 +565,8 @@ export interface DraftJob {
   error?: string
   // Why a draft that is done lacks the model's part, with … in its place.
   problem?: string
+  // Whether it failed because Exa's index has no copy of their profile.
+  no_copy?: boolean
   // Higher for every change than for the one before it, of any draft, so
   // an answer that arrives after a newer event is told apart from it.
   seq: number

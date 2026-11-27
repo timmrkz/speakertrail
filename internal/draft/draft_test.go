@@ -647,7 +647,7 @@ func TestADraftTakesWhatTheRunRead(t *testing.T) {
 	}
 	r.d.Wait()
 	jobs := r.d.Jobs()
-	if n := r.finder.asked.Load(); n != 1 || jobs[len(jobs)-1].Error != Sentence(ErrNoCopy.Error()) {
+	if n := r.finder.asked.Load(); n != 1 || jobs[len(jobs)-1].Error != Sentence(ErrNoCopy.Error()) || !jobs[len(jobs)-1].NoCopy {
 		t.Errorf("asked Exa %d times, want no more, and the draft %+v", n, jobs[len(jobs)-1])
 	}
 }

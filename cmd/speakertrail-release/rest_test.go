@@ -59,7 +59,7 @@ func TestTheRESTClientAsksGitHubAsItAnswers(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	g := &restGitHub{api: srv.URL, repo: "o/r", token: "token", client: srv.Client()}
+	g := &restGitHub{api: srv.URL, repo: "o/r", token: "token", client: srv.Client(), release: devBuilds}
 
 	if err := g.upload("channels.json", []byte("{}")); err != nil {
 		t.Fatal(err)

@@ -104,6 +104,14 @@ func main() {
 		err = notPublishedCommand(os.Args[2:])
 	case "needs-build":
 		err = needsBuildCommand(os.Args[2:])
+	case "self":
+		err = selfCommand(os.Args[2:], os.Stdout)
+	case "fits":
+		err = fitsCommand(os.Stdout)
+	case "keep":
+		g := gitHubFromEnv()
+		g.release = toolBuilds
+		err = keepCommand(os.Args[2:], g, os.Stdout)
 	case "conflicts":
 		err = conflictsCommand(os.Args[2:])
 	case "build-plan":
@@ -118,7 +126,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -built C -commit C | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
 	os.Exit(2)
 }
 

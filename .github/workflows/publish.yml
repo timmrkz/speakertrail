@@ -74,26 +74,24 @@ jobs:
       # What became of a commit's build, and the publish runs that wait.
       actions: write
       statuses: read
+      # To check main's signature on the release tool.
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache, as in publish: main's Go cache is written by jobs that
-      # run third-party build code, and this job holds a token that
-      # writes the release, #55.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Build the release tool
-        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
+      # main's signed build of the release tool, or built here with no
+      # cache, as in publish: main's Go cache is written by jobs that run
+      # third-party build code, and this job holds a token that writes
+      # the release, #55.
+      - uses: ./.github/actions/release-tool
       # Until the key is made the tool says so and writes nothing, since a
       # list without it cannot be checked.
       - name: Write the channel list from every entry
-        run: '"$RUNNER_TEMP/speakertrail-release" channels'
+        run: speakertrail-release channels
       - name: Cancel a publish stuck before the environment
-        run: '"$RUNNER_TEMP/speakertrail-release" unstick'
+        run: speakertrail-release unstick
 
   # Whether the build left a zip, asked on Linux, so a run that built
   # nothing starts no Mac: the close of a pull request, a push to a branch
@@ -151,6 +149,8 @@ jobs:
       pull-requests: read
       actions: read
       statuses: write
+      # To check main's signature on the release tool.
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
@@ -158,21 +158,17 @@ jobs:
       # main, the default for a workflow_run, never the branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # No cache. The Go cache of main is written by builds.yml and ci.yml
-      # too, while they run npm's install scripts, cgo and cmake on
-      # third-party code, and Go trusts what it compiled before. Restored
-      # here, it would build the tool that holds the Developer ID.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      # The release tool is built once, here, in a step without any
-      # secret, and every step after runs that program. So the secrets
-      # reach only the tool itself, never go, its compiler or what it
-      # downloads.
-      - name: Build the release tool
-        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
+      # The release tool is put on the path once, here, in a step without
+      # any secret, and every step after runs that program. So the
+      # secrets reach only the tool itself, never go, its compiler or
+      # what it downloads. It is main's build of this code, signed by
+      # main's release-tool.yml, or, right after a change to the tool,
+      # built here with no cache. The Go cache of main is written by
+      # builds.yml and ci.yml too, while they run npm's install scripts,
+      # cgo and cmake on third-party code, and Go trusts what it compiled
+      # before. Restored here, it would build the tool that holds the
+      # Developer ID. See .github/actions/release-tool.
+      - uses: ./.github/actions/release-tool
 
       # What the build is a build of, from GitHub's record of the run and
       # not from anything the build wrote, and only a commit its
@@ -186,7 +182,7 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
           RUN: ${{ github.event.workflow_run.id }}
         run: >-
-          "$RUNNER_TEMP/speakertrail-release" publish-plan
+          speakertrail-release publish-plan
           -run "$RUN" -event "$EVENT" -branch "$BRANCH" -commit "$SHA"
 
       - if: steps.which.outputs.run == 'true'
@@ -223,7 +219,7 @@ jobs:
         env:
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! "$RUNNER_TEMP/speakertrail-release" check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/said.txt"; then
+          if ! speakertrail-release check -zip "dist/$ZIP" 2> "$RUNNER_TEMP/said.txt"; then
             mv "$RUNNER_TEMP/said.txt" "$RUNNER_TEMP/refused.txt"
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
@@ -245,7 +241,7 @@ jobs:
         run: |
           gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
           gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
-          "$RUNNER_TEMP/speakertrail-release" signed-before -list "$RUNNER_TEMP/channels.json" \
+          speakertrail-release signed-before -list "$RUNNER_TEMP/channels.json" \
             -assets "$RUNNER_TEMP/assets.json" -channel "$CHANNEL" -out "$RUNNER_TEMP/kept"
 
       # Every build Tim gets is signed again with his Developer ID and the
@@ -264,7 +260,7 @@ jobs:
           SPEAKERTRAIL_DEVELOPER_ID_PASSWORD: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID_PASSWORD }}
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! "$RUNNER_TEMP/speakertrail-release" harden -zip "dist/$ZIP" -kept "$RUNNER_TEMP/kept" 2> "$RUNNER_TEMP/said.txt"; then
+          if ! speakertrail-release harden -zip "dist/$ZIP" -kept "$RUNNER_TEMP/kept" 2> "$RUNNER_TEMP/said.txt"; then
             mv "$RUNNER_TEMP/said.txt" "$RUNNER_TEMP/refused.txt"
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
@@ -291,7 +287,7 @@ jobs:
         # The release's files and the channel list are the ones the step
         # before read, so the builds patched against are the same.
         run: |
-          if ! "$RUNNER_TEMP/speakertrail-release" pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
+          if ! speakertrail-release pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
             -channel "$CHANNEL" -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" \
             2> "$RUNNER_TEMP/said.txt"; then
             mv "$RUNNER_TEMP/said.txt" "$RUNNER_TEMP/refused.txt"
@@ -342,7 +338,7 @@ jobs:
         # with it and the hardened runtime throughout, so it is never lost
         # on the way without anyone seeing.
         run: |
-          if ! "$RUNNER_TEMP/speakertrail-release" sign -team "$TEAM" \
+          if ! speakertrail-release sign -team "$TEAM" \
             -made "$MADE" -current "$RUNNER_TEMP/current/channel-$CHANNEL.json" \
             -zip "dist/$ZIP" -parts "$RUNNER_TEMP/packed/parts.json" \
             -channel "$CHANNEL" -name "$NAME" \
@@ -366,7 +362,7 @@ jobs:
           CHANNEL: ${{ steps.which.outputs.channel }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: >-
-          "$RUNNER_TEMP/speakertrail-release" publish -zip "dist/$ZIP" -as "$ZIP"
+          speakertrail-release publish -zip "dist/$ZIP" -as "$ZIP"
           -packed "$RUNNER_TEMP/packed" -entry "dist/channel-$CHANNEL.json"
           -channel "$CHANNEL" -commit "$SHA"
 
@@ -380,7 +376,7 @@ jobs:
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: >-
-          "$RUNNER_TEMP/speakertrail-release" not-published -commit "$SHA"
+          speakertrail-release not-published -commit "$SHA"
           -run "$GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID"
           -refusal "$RUNNER_TEMP/refused.txt"
 
@@ -405,20 +401,18 @@ jobs:
       # What became of a commit's build, and the publish runs that wait.
       actions: write
       statuses: read
+      # To check main's signature on the release tool.
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # No cache, as in publish: main's Go cache is written by jobs that
-      # run third-party build code, and this job holds a token that
-      # writes the release, #55.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-      - name: Build the release tool
-        run: go build -o "$RUNNER_TEMP/speakertrail-release" ./cmd/speakertrail-release
+      # main's signed build of the release tool, or built here with no
+      # cache, as in publish: main's Go cache is written by jobs that run
+      # third-party build code, and this job holds a token that writes
+      # the release, #55.
+      - uses: ./.github/actions/release-tool
       # The list, and then what no build reaches any more: a zip no entry
       # points at, with its packed zip, the parts of every build no new
       # build is patched against, every piece no remaining parts name, and
@@ -427,6 +421,6 @@ jobs:
       # job has not seen yet. See channels.go and unreachable in
       # release.go.
       - name: Write the channel list from every entry
-        run: '"$RUNNER_TEMP/speakertrail-release" channels'
+        run: speakertrail-release channels
       - name: Cancel a publish stuck before the environment
-        run: '"$RUNNER_TEMP/speakertrail-release" unstick'
+        run: speakertrail-release unstick

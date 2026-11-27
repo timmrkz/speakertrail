@@ -1,6 +1,7 @@
 # Updates reach the app sooner, and safer
 
-Proposed, waiting for Tim's go. Nothing of it is built yet. Builds on
+Built in #130, all eight issues below, on Tim's go of 27 November
+2026. What differs from this design is under Built. Builds on
 [2026-11-20-an-update-downloads-only-what-changed.md](2026-11-20-an-update-downloads-only-what-changed.md).
 
 ## The problem
@@ -362,3 +363,33 @@ In this order, the cheapest large gain first:
    FrameFairy, part of #57. Size medium.
 8. The release tool built once on main and attested, from FrameFairy.
    Size medium.
+
+## Built
+
+All eight, in #130, in that order. Where the build differs from the
+design above:
+
+- 5. The new build ends its trial the first time the interface asks
+  `GET /api/updates`, so a build whose window never loads is undone
+  too. Before the swap the step starts the new program once with
+  `SPEAKERTRAIL_LOAD_CHECK=1`, which ends it at the start of `main`, so
+  a build that cannot load is never put in place. On quit, the third
+  start of a build that never said it started undoes it. Updates says
+  "The newest build did not start" until a newer one comes.
+- 6. The app refuses an older build of its channel even when Tim picks
+  it on Updates, not only by itself. Going back is a pick of another
+  channel, as before.
+- 7. `needs-build` runs on Linux, in the job `which` of `builds.yml`, so
+  a commit that needs no build of its own starts no Mac.
+- 8. FrameFairy keeps one build of the tool, for Linux. Here publish
+  signs on a Mac, so `release-tool.yml` builds and signs one for Linux
+  and one for the Mac, and the key is over what the tool is built from
+  on either. FrameFairy works out the folders the tool reads with a
+  parser of the commit's imports, since its action asks before Go is
+  set up. Here `self` asks `go list` and stamps the folders into the
+  build beside the key, so `fits` reads them from the tool itself. A
+  package the tool comes to import is named by an import line in a
+  folder it already reads, so the key changes with it. FrameFairy's
+  reasons are its records
+  `docs/decisions/2026-11-24-the-release-tool-built-once.md` and
+  `2026-11-25-the-release-tool-keys-itself.md`.

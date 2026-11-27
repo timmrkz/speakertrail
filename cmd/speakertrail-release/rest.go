@@ -102,15 +102,29 @@ type waitingRun struct {
 type restGitHub struct {
 	api, repo, token string
 	client           *http.Client
+	// release is the release its files are of, dev unless it says
+	// another.
+	release releaseInfo
 }
 
-// The release the builds live in, made by the first upload when there is
-// none.
-const (
-	devTag   = "dev"
-	devTitle = "Builds to update to"
-	devBody  = "The builds of main and of each open pull request, for the app to update itself to while it is being made. See docs/UPDATES.md."
-)
+// releaseInfo is a release the tool keeps files in, and how it is made
+// when there is none yet.
+type releaseInfo struct {
+	tag, title, body string
+}
+
+// devBuilds is the release dev, the builds to update to.
+var devBuilds = releaseInfo{
+	tag: "dev", title: "Builds to update to",
+	body: "The builds of main and of each open pull request, for the app to update itself to while it is being made. See docs/UPDATES.md.",
+}
+
+// toolBuilds is the release release-tool, main's signed builds of this
+// tool, see .github/workflows/release-tool.yml.
+var toolBuilds = releaseInfo{
+	tag: "release-tool", title: "Release tool",
+	body: "The builds of speakertrail-release the workflows run, see .github/workflows/release-tool.yml.",
+}
 
 // gitHubFromEnv is GitHub as the workflow hands it over: GH_TOKEN and
 // GH_REPO, which every job that runs the tool sets.
@@ -124,7 +138,7 @@ func gitHubFromEnv() *restGitHub {
 		repo = os.Getenv("GITHUB_REPOSITORY")
 	}
 	return &restGitHub{api: api, repo: repo, token: os.Getenv("GH_TOKEN"),
-		client: &http.Client{Timeout: 5 * time.Minute}}
+		client: &http.Client{Timeout: 5 * time.Minute}, release: devBuilds}
 }
 
 // errNotFound is GitHub's 404, which for a release or a file means it is
@@ -356,7 +370,7 @@ type devRelease struct {
 // many as a release can hold.
 func (g *restGitHub) current() (devRelease, error) {
 	var r devRelease
-	err := g.get("releases/tags/"+devTag, &r)
+	err := g.get("releases/tags/"+url.PathEscape(g.release.tag), &r)
 	return r, err
 }
 
@@ -401,8 +415,8 @@ func (g *restGitHub) upload(name string, data []byte) error {
 	r, err := g.current()
 	if errors.Is(err, errNotFound) {
 		body, _ := json.Marshal(map[string]any{
-			"tag_name": devTag, "target_commitish": "main", "name": devTitle,
-			"prerelease": true, "make_latest": "false", "body": devBody,
+			"tag_name": g.release.tag, "target_commitish": "main", "name": g.release.title,
+			"prerelease": true, "make_latest": "false", "body": g.release.body,
 		})
 		// One made by a run beside this one is as good.
 		_ = g.call(http.MethodPost, "releases", bytes.NewReader(body), "application/json", nil)

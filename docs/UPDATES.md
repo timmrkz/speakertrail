@@ -341,10 +341,20 @@ nothing in it:
 - It runs only `security`, `codesign` and `ditto`, from `/usr/bin`,
   never a program found through `PATH`.
 - It reads both secrets once and takes them out of its environment, so
-  no program it starts sees them. The release tool is built once, in a
-  step before, without them and without the Go cache, which builds of
-  third-party code write too. Every step that holds a key runs that one
-  program, so `go` and its compiler never see either key. The key goes
+  no program it starts sees them. The release tool is put on the path
+  once, in a step before, without them, by
+  `.github/actions/release-tool`. It is main's build of the tool, made by
+  `.github/workflows/release-tool.yml` without the Go cache, which builds
+  of third-party code write too, and signed there with a build
+  attestation. The action runs it only when the attestation says main's
+  `release-tool.yml` made it on GitHub's own runner, and only when the
+  key the tool carries, a hash over what it is built from, is the key of
+  the checkout's code, see `cmd/speakertrail-release/self.go`. Otherwise,
+  right after a change to the tool, it builds the tool there without the
+  cache, as every such job did before. `builds.yml` asks on each push to
+  main and has `release-tool.yml` build and sign a new one when it no
+  longer fits. Every step that holds a key runs that one program, so
+  `go` and its compiler never see either key. The key goes
   into a keychain made for the run, marked so it cannot be exported
   again, and the keychain is deleted at the end, also when signing
   fails.

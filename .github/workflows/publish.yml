@@ -351,11 +351,13 @@ jobs:
         name: Pack it in parts
         env:
           ZIP: ${{ steps.which.outputs.zip }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
         run: |
           gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
           gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
           if ! "$RUNNER_TEMP/speakertrail-release" pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
-            -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" 2> "$RUNNER_TEMP/refused.txt"; then
+            -channel "$CHANNEL" -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" \
+            2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi
@@ -423,28 +425,28 @@ jobs:
             gh release view dev >/dev/null
 
       # The files of this channel by name, never a pattern: one channel has
-      # no business with another's entry. First every piece and patch the
-      # release does not hold yet, then the zip, the stored zip packed and
-      # the parts, and the entry only once they are there, because the app
-      # reads the entry of the channel it follows and would be offered a
-      # build it cannot download yet. One command sends its files side by
-      # side, so the small entry would be up long before the zip. A piece
-      # or a patch is named by the SHA-256 of what it makes, so one that is
-      # there already is the same and stays. The stored zip itself is never
-      # uploaded: the app puts it together or unpacks it.
+      # no business with another's entry. First every piece the release
+      # does not hold yet, then the zip, the stored zip packed and the
+      # parts, then the patches, and the entry only once they are there,
+      # because the app reads the entry of the channel it follows and
+      # would be offered a build it cannot download yet. One command sends
+      # its files side by side, so the small entry would be up long before
+      # the zip. A piece or a patch is named by the SHA-256 of what it
+      # makes, so one that is there already is the same and stays. The
+      # stored zip itself is never uploaded: the app puts it together or
+      # unpacks it.
       - id: upload
         if: steps.sign.outcome == 'success'
-        name: Upload the build and its entry
+        name: Upload the build
         env:
           ZIP: ${{ steps.which.outputs.zip }}
-          CHANNEL: ${{ steps.which.outputs.channel }}
           PACKED: ${{ runner.temp }}/packed
         run: |
           gh release view dev --json assets --jq '.assets[].name' > "$RUNNER_TEMP/there.txt"
           # Another channel's publish may upload the same piece at the same
           # moment. It holds the same bytes, so one that is there once the
           # upload failed is uploaded.
-          for f in "$PACKED"/piece-*.zst "$PACKED"/patch-*.bsdiff; do
+          for f in "$PACKED"/piece-*.zst; do
             [ -e "$f" ] || continue
             name=$(basename "$f")
             grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
@@ -456,7 +458,31 @@ jobs:
           cp "$PACKED/parts.json" "dist/${ZIP%.zip}.parts.json"
           gh release upload dev "dist/$ZIP.zst" --clobber
           gh release upload dev "dist/${ZIP%.zip}.parts.json" --clobber
-          gh release upload dev "dist/channel-$CHANNEL.json" --clobber
+
+      # A patch that cannot go up, on a release that is full, costs the app
+      # that file's piece, never the build its place on Updates. So this
+      # step may fail and the entry still goes up, and the run is warned.
+      - id: patches
+        if: steps.upload.outcome == 'success'
+        name: Upload the patches
+        continue-on-error: true
+        env:
+          PACKED: ${{ runner.temp }}/packed
+        run: |
+          for f in "$PACKED"/patch-*.bsdiff; do
+            [ -e "$f" ] || continue
+            name=$(basename "$f")
+            grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
+            gh release upload dev "$f" ||
+              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name"
+          done
+
+      - id: entry
+        if: steps.upload.outcome == 'success'
+        name: Upload the entry
+        env:
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: gh release upload dev "dist/channel-$CHANNEL.json" --clobber
 
       # This workflow runs from main, so its checks show on main's commit
       # and not on the pull request. The pull request learns its build is
@@ -465,7 +491,7 @@ jobs:
       # replaced before it runs. The app reads the entry of the channel it
       # follows, so the build is there for it from now on.
       - name: Mark the commit ready to update to
-        if: steps.upload.outcome == 'success' && steps.which.outputs.channel != 'main'
+        if: steps.entry.outcome == 'success' && steps.which.outputs.channel != 'main'
         env:
           SHA: ${{ github.event.workflow_run.head_sha }}
           CHANNEL: ${{ steps.which.outputs.channel }}
@@ -475,13 +501,15 @@ jobs:
             -f description="On the Updates page as $CHANNEL" >/dev/null
 
   # Also when publish was skipped, for a run that left no zip: the close
-  # of a pull request is how it leaves the list.
+  # of a pull request is how it leaves the list. And when it failed or was
+  # cancelled: the list is written from the entries there are, and only
+  # this job makes room on the release. It once ran only after a publish
+  # that worked, so a full release stayed full.
   list:
     needs: publish
     if: >-
       always() && github.event.action == 'completed' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
@@ -514,11 +542,12 @@ jobs:
         name: Write the channel list from every entry
         run: sh scripts/channel-list.sh
 
-      # A zip no entry points at is gone an hour after it was made, with
-      # its packed zip, and so are the parts of every build no new build is
-      # patched against and every piece and patch no remaining parts name.
-      # Not at once: a publish that runs beside this job may have uploaded
-      # files whose entry this job has not seen yet. A piece that goes all
+      # A zip no entry points at is gone half an hour after it was made,
+      # with its packed zip, and so are the parts of every build no new
+      # build is patched against, every piece no remaining parts name, and
+      # every patch no listed build's parts name. Not at once: a publish
+      # that runs beside this job may have uploaded files whose entry this
+      # job has not seen yet. A piece that goes all
       # the same, because a publish found it there and did not upload it
       # again, costs the app the packed zip of that one build, never the
       # update. The release tool names what goes, gh removes it. See

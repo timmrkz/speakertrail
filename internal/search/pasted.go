@@ -9,8 +9,8 @@ import (
 	"github.com/timmrkz/speakertrail/internal/place"
 )
 
-// TextChars is how much of a profile's text the app keeps, the most Exa
-// is asked for and the most of a page Tim pastes. A first message is
+// TextChars is how much of a profile's text the app keeps, of what Exa
+// gives, see AskedChars, and of a page Tim pastes. A first message is
 // written from it by a model that reads 8192 tokens.
 const TextChars = 8000
 

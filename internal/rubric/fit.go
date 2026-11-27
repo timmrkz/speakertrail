@@ -269,11 +269,13 @@ func nearPart(p FitPerson, say bool) Part {
 // date and what kind of entry it is.
 var activityLine = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) · ([^\]\n]*)`)
 
-// reaction finds an entry that is only a reaction, a like and its kin.
-// Anything else, a post, a comment or a share, counts as writing, so a
-// word this misses makes a reaction count as much as writing, as all
-// activity did before.
-var reaction = regexp.MustCompile(`(?i)^(?:gefällt (?:mir|\w+)|likes?\b|liked\b|reagiert\w*|reacted\b|reaction\b|reaktion\b)`)
+// reaction finds an entry that is only a reaction, a like and its kin,
+// with the kind first, like "Gefällt mir: …", or after the person's name,
+// as Exa's index writes it, like "Erika Beispiel liked this" or "…
+// reacted on this" (Tim's report of 27 November 2026). Anything else, a
+// post, a comment or a share, counts as writing, so a word this misses
+// makes a reaction count as much as writing, as all activity did before.
+var reaction = regexp.MustCompile(`(?i)^(?:gefällt (?:mir|\w+)|likes?\b|liked\b|reagiert\w*|reacted\b|reaction\b|reaktion\b)|\b(?:liked|reacted (?:on|to)) this$`)
 
 // Writing reads a profile's text for the newest entry of its activity that
 // is a post or a comment rather than a reaction. Known is false when the

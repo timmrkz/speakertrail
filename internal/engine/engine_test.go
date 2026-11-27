@@ -1297,3 +1297,52 @@ func TestAwaitReadEndsWithAPasteOrUndo(t *testing.T) {
 		e.Wait()
 	})
 }
+
+// Someone whose text Exa cut before the activity is read again by the
+// next run, and keeps the activity now. Someone Exa no longer holds
+// keeps the text they have, with no line that Exa lacks them (Tim's
+// report of 27 November 2026).
+func TestATextCutBeforeTheActivityIsReadAgain(t *testing.T) {
+	cut := "# Lea Beispiel\n\n## Experience\n\n" + strings.Repeat("### Gründerin - Beispiel GmbH\n\nBeispiel GmbH is a company in Köln.\n\n", 120)
+	lea, gone := invented[0], invented[1]
+	full := lea
+	full.LastActive = t0.AddDate(0, 0, -2)
+	full.Text = "# Lea Beispiel\n\n## Experience\n\n### Gründerin\n\n## Social\n\n- [2026-11-08 · Lea Beispiel posted this] [Ein Beitrag](https://www.linkedin.com/posts/x)"
+	f := &finder{read: map[string]search.Profile{linkedIn(lea.URL): full}}
+	dir := t.TempDir()
+	st, err := store.Open(dir, func() time.Time { return t0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := map[string]int64{}
+	if err := st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Gründerin Köln", 0, t0)
+		for _, prof := range []search.Profile{lea, gone} {
+			p, _ := d.AddFound(store.Found{URL: linkedIn(prof.URL), Name: prof.Name, Text: strings.ReplaceAll(cut, "Lea Beispiel", prof.Name)}, s, 1, t0)
+			ids[prof.Name] = p.ID
+		}
+		// As a file from a build before.
+		d.CutRead = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err = store.Open(dir, func() time.Time { return t0 }); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{Store: st, Finder: func() (Finder, error) { return f, nil }}
+	if _, _, err := e.Start("manual", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		p := d.Person(ids[lea.Name])
+		if p.ToRead || p.ReadError != "" || !p.LinkedIn.LastActive.Equal(full.LastActive) || p.LinkedIn.Text != full.Text {
+			t.Errorf("read again: to read %v, %q, last active %v", p.ToRead, p.ReadError, p.LinkedIn.LastActive)
+		}
+		q := d.Person(ids[gone.Name])
+		if q.ToRead || q.ReadError != "" || !strings.HasPrefix(q.LinkedIn.Text, "# Udo Berater") {
+			t.Errorf("not in the index now: to read %v, %q", q.ToRead, q.ReadError)
+		}
+	})
+}

@@ -18,7 +18,8 @@ import { api } from './api'
 import { draftWatch } from './drafts.svelte'
 import { navigate, router } from './router.svelte'
 import { said } from './said'
-import { errorText, toast } from './toast.svelte'
+import { errorText } from './problem.svelte'
+import { toast } from './toast.svelte'
 
 // What someone Exa has no copy of says, on their row and when they are
 // open: what to do, not why (Tim, 23 November 2026).
@@ -95,6 +96,9 @@ class Pasting {
       if (r.named) toast.show(`Kept the page as their profile${drafting}`)
       else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad')
     } catch (e) {
+      // A page pasted anywhere in the window has no control of its own,
+      // so a toast says what went wrong with it (Tim, 27 November 2026,
+      // #72).
       toast.show(errorText(e), 'bad')
     }
   }

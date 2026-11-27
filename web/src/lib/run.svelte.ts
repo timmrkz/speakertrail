@@ -5,8 +5,9 @@
 import { api, type Added, type Run } from './api'
 import { draftWatch } from './drafts.svelte'
 import { fmtElapsed, fmtLeft, plural, runBrought } from './format'
-import { navigate } from './router.svelte'
-import { errorText, fault, toast } from './toast.svelte'
+import { navigate, router } from './router.svelte'
+import { Problem } from './problem.svelte'
+import { toast } from './toast.svelte'
 
 const GOING_MS = 2000
 const QUIET_MS = 5000
@@ -22,6 +23,10 @@ class RunWatch {
   // What the last links added brought, until People has shown it under
   // New, see shown.
   added = $state<Added | null>(null)
+  // What went wrong starting or stopping a run, or adding links, which
+  // People says under Run, where it was asked for, see
+  // lib/problem.svelte.ts.
+  problem = new Problem()
   private timer: ReturnType<typeof setTimeout> | undefined
   private users = 0
   private seq = 0
@@ -83,6 +88,7 @@ class RunWatch {
     if (this.busy || this.run) return
     this.busy = 'starting'
     this.ended = null
+    this.problem.clear()
     // A run shows at once, starting, until the server has queued its work.
     this.run = placeholder()
     try {
@@ -90,7 +96,7 @@ class RunWatch {
       if (!r.started) toast.show('A run is already going')
     } catch (e) {
       this.run = null
-      toast.show(errorText(e), 'bad')
+      this.problem.say(e)
     } finally {
       this.busy = ''
       this.seq++
@@ -119,6 +125,7 @@ class RunWatch {
 
   private async addNow(text: string): Promise<Added | null> {
     this.busy = 'adding'
+    this.problem.clear()
     const was = this.run
     if (!was) {
       this.ended = null
@@ -134,12 +141,17 @@ class RunWatch {
       this.changed++
       const drafting = r.drafting ? ', and drafting the first message' : ''
       const said = r.new.length ? `Added ${plural(r.new.length, 'person', 'people')}${drafting}` : r.connected.length ? `Marked ${plural(r.connected.length, 'person', 'people')} connected` : ''
-      if (r.wait) toast.show(`${said || 'Added'}. ${r.wait}`, 'bad')
+      // Added, but their profiles wait for something, like the Exa key,
+      // which is said under Run, where the links went in.
+      if (r.wait) this.problem.say(`${said || 'Added'}. ${r.wait}`)
       else if (said) toast.show(said)
       return r
     } catch (e) {
       if (!was) this.run = null
-      toast.show(errorText(e), 'bad')
+      // Links dropped on another page say what went wrong on People,
+      // where they would have shown.
+      this.problem.say(e)
+      if (!router.path.startsWith('/app/people')) navigate('/app/people')
       return null
     } finally {
       this.busy = ''
@@ -152,6 +164,7 @@ class RunWatch {
     const run = this.run
     if (this.busy || !run || run.id <= 0) return
     this.busy = 'stopping'
+    this.problem.clear()
     // The run shows as stopped at once. What is running finishes by itself.
     this.run = null
     this.ended = { ...run, state: 'stopped', progress: null, finished_at: new Date().toISOString() }
@@ -161,7 +174,7 @@ class RunWatch {
     } catch (e) {
       this.run = run
       this.ended = null
-      fault(e)
+      this.problem.failed(e)
     } finally {
       this.busy = ''
       this.seq++

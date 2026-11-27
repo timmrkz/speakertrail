@@ -161,9 +161,16 @@ unless the window's clock is more than a minute off.
 - An act that took over 150 ms from the hand to the first frame drawn
   after it, at `warn`, with how much of that time the window was still
   busy with something else before it heard the act.
-- Every toast. One about something that went wrong is a `warn` line
-  marked `"toast":true`. One that says what was done is an `info` line.
-  A toast that ran out, was replaced or acted on says so at `info`.
+- Everything the window says went wrong, at the control that failed or
+  in a toast where there is none, see `lib/problem.svelte.ts`. It is a
+  `warn` line marked `"toast":true`, a name kept from when every one was
+  a toast. What the person has to do first, a field typed wrong, a
+  search there already or a choice to make in Settings, is an `info`
+  line, since nothing went wrong. The Exa key, a setting, where LinkedIn
+  opens, the template and Updates still say theirs without a line in the
+  log, issue #126. A toast that says what was done
+  is an `info` line, and one that ran out, was replaced or acted on says
+  so at `info`.
 
 ### Settings, Logs
 
@@ -176,12 +183,12 @@ since. The folder button, Show in folder, shows the log in Finder. The
 trash can removes every file of it after asking, and the next line starts
 a new log that says how many files, bytes and lines went.
 
-Under it are the last five toasts about something that went wrong, read
-back from the lines marked `"toast":true`, newest first, a toast said
-again once, where it was said last, so one that ran out unread is not
-lost. Each has Report beside it, as in FrameFairy, which opens Report a
-Problem with the toast's words in it. So does a toast on screen about a
-failure Tim cannot put right himself, such as a person that could not be
+Under it are the last five things the window said went wrong, read back
+from the lines marked `"toast":true`, newest first, one said again once,
+where it was said last, so one gone unread is not lost. Each has Report
+beside it, as in FrameFairy, which opens Report a Problem with its words
+in it. So does what went wrong on screen, at a control or in a toast,
+when Tim cannot put it right himself, such as a person that could not be
 saved, as FrameFairy marks one. A missing key or a spent budget is his to
 put right and offers none.
 
@@ -190,7 +197,7 @@ put right and offers none.
 | Level | What it is for |
 | --- | --- |
 | `error` | something failed: a run that could not be saved, a request that failed, a panic, an error in the window |
-| `warn` | something went wrong and the app carried on: a search that failed, a check for updates that failed, a request slower than 150 ms, an act slower than 150 ms to reach the screen, a toast about something that went wrong |
+| `warn` | something went wrong and the app carried on: a search that failed, a check for updates that failed, a request slower than 150 ms, an act slower than 150 ms to reach the screen, what the window said went wrong |
 | `info` | the acts, the app starting, a run starting and ending, a channel picked, a toast that said what was done |
 | `debug` | the steps between: every check of a run, a search stopped, the title bar measured |
 | `trace` | lines that come with every step of something that repeats |

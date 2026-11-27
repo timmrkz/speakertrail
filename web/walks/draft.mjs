@@ -133,7 +133,7 @@ const walks = [
       await page.waitForFunction(() => document.querySelector('.first-message button.copy')?.getAttribute('aria-label') === 'Copied')
       const copied = (await asked).postDataJSON().text
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
-      if (await page.locator('.first-message .refused, .toast').count()) return 'a copy that worked says something went wrong'
+      if (await page.locator('.first-message .problem, .toast').count()) return 'a copy that worked says something went wrong'
       // The tick stays while it shows, with the pointer gone.
       await page.mouse.move(0, 0)
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the tick hides with the pointer away'
@@ -228,13 +228,40 @@ const walks = [
       await drafted(page, 1001, 1, first)
       await box(page).hover()
       await page.locator('.first-message button.copy').click()
-      const line = page.locator('.first-message .box .refused')
+      const line = page.locator('.first-message .box .problem')
       await line.waitFor()
       const said = (await line.innerText()).trim()
       if (said !== 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.') return `the line says ${JSON.stringify(said)}`
       if (await page.locator('.toast').count()) return 'a toast shows too'
       const [b, l] = await Promise.all([box(page).boundingBox(), line.boundingBox()])
       if (l.y < b.y || l.y + l.height > b.y + b.height || l.x < b.x || l.x + l.width > b.x + b.width) return 'the line is not over the box'
+      return ''
+    },
+  },
+  {
+    // A message the app could not save says so over the box, and Draft
+    // writes nothing over it. Typing takes the words away, since they
+    // cover the first line of the message (the review of #124).
+    name: 'Draft after a save the app refused says so over the message and starts no draft, and typing takes it away',
+    async run(page) {
+      await open(page, 1001)
+      let started = 0
+      await page.route(/\/api\/people\/1001\/draft$/, (route) => { started++; return route.fallback() })
+      await page.route('**/api/people/1001', (route) => route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'The file could not be written.' } })
+        : route.fallback())
+      await box(page).fill('Hallo Mara')
+      await act(page).click()
+      const line = page.locator('.first-message .box .problem')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'The file could not be written. Report') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      await drawn(page)
+      if (started) return 'Draft started over the message it could not save'
+      await box(page).press('End')
+      await page.keyboard.type('!')
+      await line.waitFor({ state: 'detached' })
       return ''
     },
   },

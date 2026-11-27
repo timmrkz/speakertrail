@@ -14,7 +14,7 @@ import (
 // draft.Drafter.Undone, and one that took people out stops their drafts,
 // since there is nobody left to keep them for.
 func (a *API) undo(w http.ResponseWriter, r *http.Request) {
-	u, err := a.Store.Undo()
+	u, err := a.Engine.Undo()
 	if err == nil && a.Drafts != nil {
 		if u.Shows != nil && u.Shows.Kind == "person" {
 			a.Drafts.Undone(u.Shows.ID)
@@ -29,7 +29,7 @@ func (a *API) undo(w http.ResponseWriter, r *http.Request) {
 
 // redo does again what the last undo took back.
 func (a *API) redo(w http.ResponseWriter, r *http.Request) {
-	u, err := a.Store.Redo()
+	u, err := a.Engine.Redo()
 	a.sendUndone(w, r, u, err)
 }
 

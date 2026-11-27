@@ -655,7 +655,12 @@ link since, who stays as they are. Such a step says what it did in
 { "done": true, "shows": { "kind": "people" }, "said": "Took out 10 people the run found. 2 you changed since stay" }
 ```
 
-A run's searches and checks, and what it cost, stay as they were. A search or an
+A run's searches and checks, and what it cost, stay as they were. A
+run that still goes no longer reads whom an undo took out, or no longer
+asks a read for, and reads whom a redo put back who waits for theirs,
+so its count of reads holds. After a run, its step is above every change
+Tim made while it went, so the first Undo takes the run and the next
+takes those changes. A search or an
 exclusion that was added is taken out by its undo, and one removed
 comes back with its id. A search a run took since, one a run under way
 takes, or one that found someone, stays, and so does an exclusion whose words were added again

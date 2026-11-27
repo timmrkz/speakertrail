@@ -338,6 +338,7 @@ func (s *Store) step(back bool) (Undone, error) {
 		} else {
 			out.Said = st.people.putBack(d)
 		}
+		d.tidyRuns()
 		return nil
 	})
 	if errors.Is(err, ErrChangedSince) {
@@ -364,6 +365,27 @@ func (s *Store) step(back bool) (Undone, error) {
 	}
 	out.Shows = &shows
 	return out, nil
+}
+
+// tidyRuns keeps the profiles a run that has not ended reads in step with
+// an undo or a redo, so its count of reads holds: whose read is no longer
+// wanted, taken out or asked for no more, leaves it. A read it did stays.
+// Someone a redo puts back who waits for their read joins it, see putBack.
+func (d *Data) tidyRuns() {
+	for _, r := range d.Runs {
+		if !r.FinishedAt.IsZero() {
+			continue
+		}
+		r.Links = slices.DeleteFunc(r.Links, func(id int64) bool {
+			p := d.Person(id)
+			return !r.read(id) && (p == nil || !p.ToRead)
+		})
+	}
+}
+
+// read says whether the run read the person's profile, or tried to.
+func (r *Run) read(id int64) bool {
+	return slices.ContainsFunc(r.Reads, func(x Read) bool { return x.PersonID == id })
 }
 
 // takeOut takes out the people a step brought in, but for those a step
@@ -404,6 +426,13 @@ func (b *brought) putBack(d *Data) string {
 		p.LinkedIn.Text = ""
 		d.People = insertByID(d.People, &p, func(o *Person) int64 { return o.ID })
 		d.SetProfileText(&p, g.LinkedIn.Text, g.LinkedIn.TextAt)
+		// Someone who waits for their read joins the run that goes now,
+		// as they joined it when added.
+		for _, r := range d.Runs {
+			if p.ToRead && r.FinishedAt.IsZero() && !r.read(p.ID) && !slices.Contains(r.Links, p.ID) {
+				r.Links = append(r.Links, p.ID)
+			}
+		}
 		back++
 	}
 	switch {
@@ -706,11 +735,10 @@ func setValueFields[T any](x *T, put fields) error {
 // undo refuse, as FrameFairy leaves what follows from a clip out of its
 // changes. The next run works them out again.
 //
-// Whether a run reads someone's profile, and why the last read failed, are
-// the run's too: adding someone here already asks for their profile once
-// more, and a run that read it since does not make the undo of adding
-// them refuse.
-var derived = map[string]bool{"signals": true, "score": true, "rubric": true, "to_read": true, "read_error": true}
+// Whether a run reads someone's profile is the run's too: adding someone
+// here already whose read failed asks for it once more, and a run that
+// read it since does not make the undo of adding them refuse.
+var derived = map[string]bool{"signals": true, "score": true, "rubric": true, "to_read": true}
 
 // linkedInPrefix marks the fields of a person's LinkedIn profile, so a
 // change to one of them is a change to that field alone.

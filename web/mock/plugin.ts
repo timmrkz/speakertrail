@@ -1572,6 +1572,14 @@ function undoStep(s: State, back: boolean) {
         }
         const i = s.people.findIndex((y) => y.id > g.id)
         s.people.splice(i < 0 ? s.people.length : i, 0, g)
+        // Like the app: someone who waits for their read joins the run
+        // that goes now.
+        const going = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
+        if ((g.read === 'waiting' || g.read === 'reading') && going?.progress) {
+          g.read = 'waiting'
+          reads.queue.push({ id: g.id, run: going.id })
+          going.progress.reads = going.progress.reads_expected = going.progress.reads + 1
+        } else if (g.read === 'reading') g.read = 'next'
         back++
       }
       b.gone = []

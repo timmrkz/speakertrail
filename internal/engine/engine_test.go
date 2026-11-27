@@ -965,6 +965,117 @@ func TestUndoOfAddingTakesWhomItAddedOutOfTheRun(t *testing.T) {
 	})
 }
 
+// Links added while a run goes, undone and done again, are read once, and
+// the run's count of reads holds, since Undo and Redo keep its queue in
+// step.
+func TestUndoAndRedoOfAddingWhileARunGoesReadsOnce(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), readHold: make(chan struct{}), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-f.started
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	if u, err := e.Undo(); err != nil || len(u.Gone) != 1 {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	if u, err := e.Redo(); err != nil || !u.Done {
+		t.Fatalf("redo = %+v, %v", u, err)
+	}
+	close(f.readHold)
+	close(f.hold)
+	e.Wait()
+	f.mu.Lock()
+	links := slices.Clone(f.links)
+	f.mu.Unlock()
+	if len(links) != 1 {
+		t.Errorf("Exa read %v, want Ida once", links)
+	}
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); len(r.Links) != 1 || len(r.Reads) != 1 {
+			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
+		}
+	})
+}
+
+// A read job a worker took while Undo had taken the person out is gone,
+// so the Redo that puts them back queues their read again, and the run
+// reads them before it ends.
+func TestRedoQueuesTheReadAgain(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	// Five searches: four take every worker, the fifth waits behind the read.
+	_ = st.Update(func(d *store.Data) error {
+		for _, q := range []string{"Gründerin Bonn", "Gründerin Essen", "Gründerin Dortmund", "Gründerin Münster"} {
+			if _, err := d.AddSearch(q, 0, t0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range SideBySide {
+		<-f.started
+	}
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	// One worker lets go of its search, and takes whatever is queued next,
+	// up to the fifth search.
+	f.hold <- struct{}{}
+	for got := <-f.started; got == ida.URL; got = <-f.started {
+	}
+	if _, err := e.Redo(); err != nil {
+		t.Fatal(err)
+	}
+	close(f.hold)
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); len(r.Links) != 1 || len(r.Reads) != 1 {
+			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
+		}
+	})
+}
+
+// Someone here already whose read failed is asked for again when their
+// link is added again. Once the run read them, Undo of adding them still
+// opens them again, and their profile stays.
+func TestUndoOfAddingSomeoneReadSince(t *testing.T) {
+	f := &finder{read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	var who int64
+	_ = st.Update(func(d *store.Data) error {
+		p, _, _ := d.AddLink(ida.URL, "ida-probe", 0, t0)
+		p.Connect(false, t0)
+		p.ToRead, p.ReadError = false, NotIndexed
+		who = p.ID
+		return nil
+	})
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	u, err := e.Undo()
+	if err != nil || !u.Done {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(who)
+		if p.Connected || p.Name != ida.Name || p.ToRead {
+			t.Errorf("after the undo connected %v, named %q, to read %v", p.Connected, p.Name, p.ToRead)
+		}
+	})
+}
+
 // A run is one step when it ends: Undo takes out whom it found, and Redo
 // puts them back as they were.
 func TestUndoOfARunTakesOutWhomItFound(t *testing.T) {

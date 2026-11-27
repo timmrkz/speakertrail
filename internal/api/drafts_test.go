@@ -222,3 +222,51 @@ func TestUndoOfAPasteStopsTheDraftItStarted(t *testing.T) {
 		t.Errorf("after undo: draft %q, profile read at %v, notes %q", p.Draft, p.ProfileReadAt, p.Notes)
 	}
 }
+
+// Undo of a run takes out whom it found, and stops a first message still
+// being written for one of them, since nobody is left to keep it for.
+func TestUndoOfARunStopsTheDraftOfWhomItTakesOut(t *testing.T) {
+	a, st, _ := newAPI(t)
+	var id, run int64
+	_ = st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Töpferin Dortmund", 0, t0)
+		run = d.NewID()
+		d.Runs = append(d.Runs, &store.Run{ID: run, Kind: "manual", StartedAt: t0})
+		p, _ := d.AddFound(store.Found{URL: "https://www.linkedin.com/in/mara-s-beispiel", Name: "Mara Beispiel", Text: "# Mara Beispiel\nIch töpfere."}, s, run, t0)
+		id = p.ID
+		return nil
+	})
+	if err := st.EndRun(run, func(d *store.Data) error {
+		d.Run(run).FinishedAt = t0
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	host := &language.Host{Launch: func(context.Context, string) (*language.Server, error) { return &language.Server{}, nil }}
+	t.Cleanup(host.Close)
+	m := language.Models()[0]
+	asked := make(chan context.Context, 1)
+	a.Drafts = &draft.Drafter{Store: st, Host: host,
+		Model: func() (language.Model, string, error) { return m, "/models/" + m.Name, nil },
+		// The model writes until the draft is stopped.
+		Ask: func(ctx context.Context, _ *language.Server, _ []language.Message, _ json.RawMessage, _ func(string)) (language.Answer, error) {
+			asked <- ctx
+			<-ctx.Done()
+			return language.Answer{}, ctx.Err()
+		},
+		Pick: func(int) int { return 0 },
+	}
+	if code := call(t, a, "POST", "/api/people/"+itoa(id)+"/draft", "{}", nil); code >= 300 {
+		t.Fatalf("draft: %d", code)
+	}
+	writing := <-asked
+	t.Cleanup(func() { _ = a.Drafts.Cancel(id); a.Drafts.Wait() })
+	var u store.Undone
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Took out 1 person the run found" {
+		t.Fatalf("undo: %d %+v", code, u)
+	}
+	// Cancel stops it before the undo answers.
+	if writing.Err() == nil {
+		t.Error("the undo of the run left the draft running")
+	}
+}

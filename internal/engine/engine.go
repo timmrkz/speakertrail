@@ -450,6 +450,47 @@ func (e *Engine) Add(text string) (Added, error) {
 	return out, startErr
 }
 
+// Undo takes back the last change Tim made, see store.Store.Undo, and
+// keeps the going run's queue in step with it: whom it took out, or no
+// longer reads, leaves the queue, as their link left the run.
+func (e *Engine) Undo() (store.Undone, error) { return e.step(e.Store.Undo) }
+
+// Redo does again what the last undo took back, and queues the profiles
+// of whom it put back that wait for their read.
+func (e *Engine) Redo() (store.Undone, error) { return e.step(e.Store.Redo) }
+
+func (e *Engine) step(fn func() (store.Undone, error)) (store.Undone, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	u, err := fn()
+	g := e.going
+	if err != nil || !u.Done || g == nil {
+		return u, err
+	}
+	var links []int64
+	var read []int64
+	e.Store.Read(func(d *store.Data) {
+		if r := d.Run(g.id); r != nil {
+			links = slices.Clone(r.Links)
+			for _, x := range r.Reads {
+				read = append(read, x.PersonID)
+			}
+		}
+	})
+	g.queue = slices.DeleteFunc(g.queue, func(j job) bool { return j.person != 0 && !slices.Contains(links, j.person) })
+	for _, id := range links {
+		if _, now := g.reading[id]; !now && !slices.Contains(read, id) && !slices.Contains(g.queue, job{person: id}) {
+			g.queue = append(g.queue, job{person: id})
+		}
+	}
+	// Profiles before searches, since Tim waits for them.
+	slices.SortStableFunc(g.queue, func(a, b job) int { return cmpBool(a.person == 0, b.person == 0) })
+	if !g.ending {
+		e.hire(g)
+	}
+	return u, nil
+}
+
 // Paste keeps a profile page Tim copied in his browser as the profile of
 // the person id, see search.Pasted and store.Data.Paste, and reports
 // whether the name on the page is the one in their link. A read of them

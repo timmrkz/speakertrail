@@ -1,15 +1,15 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
-  import { api, type Source } from '../lib/api'
+  import { api, ApiError, type Source } from '../lib/api'
   import { fmtAgo, fmtDay, plural } from '../lib/format'
   import { bringIntoView, undoHistory } from '../lib/history.svelte'
   import { Load } from '../lib/load.svelte'
-  import { Problem as Trouble } from '../lib/problem.svelte'
+  import { Problem } from '../lib/problem.svelte'
   import { toast } from '../lib/toast.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import Exclusions from '../lib/components/Exclusions.svelte'
   import Icon from '../lib/components/Icon.svelte'
-  import Problem from '../lib/components/Problem.svelte'
+  import ProblemNote from '../lib/components/ProblemNote.svelte'
   import SearchInput from '../lib/components/SearchInput.svelte'
   import Skeleton from '../lib/components/Skeleton.svelte'
 
@@ -65,7 +65,7 @@
   let newQuery = $state('')
   // What went wrong adding says so under the field, and pausing or
   // resuming a search on its row, see lib/problem.svelte.ts.
-  const addProblem = new Trouble()
+  const addProblem = new Problem()
   let addBusy = $state(false)
   let field: HTMLInputElement | undefined = $state()
 
@@ -85,7 +85,9 @@
       newQuery = ''
       toast.show(`Added ${s.query}. The next run takes it first`)
     } catch (err) {
-      addProblem.say(err)
+      // One that is there already is not something that went wrong.
+      if (err instanceof ApiError && err.status === 409) addProblem.needs(err.message)
+      else addProblem.say(err)
     } finally {
       addBusy = false
     }
@@ -93,7 +95,7 @@
 
   // Pausing is undone with the same button, or Undo in the Edit menu.
   let busy = $state<number | null>(null)
-  const rowProblem = new Trouble()
+  const rowProblem = new Problem()
   let failedOn = $state<number | null>(null)
   async function toggle(s: Source) {
     const status = s.status === 'retired' ? 'candidate' : 'retired'
@@ -133,7 +135,7 @@
       title="A kind of person and a place. Exa finds their LinkedIn profiles, and only people in NRW who were active lately and run their own business are kept" />
     <button class="btn primary" type="submit" disabled={addBusy}><Icon name="plus" />{addBusy ? 'Adding' : 'Add'}</button>
   </form>
-  <Problem of={addProblem} id="search-err" />
+  <ProblemNote of={addProblem} id="search-err" />
 
   <Exclusions />
 
@@ -168,7 +170,7 @@
               title={s.status === 'retired' ? 'Runs take this search again' : 'Runs leave this search out until you resume it'}>
               {s.status === 'retired' ? 'Resume' : 'Pause'}
             </button>
-            {#if failedOn === s.id && rowProblem.text}<div class="failed"><Problem of={rowProblem} /></div>{/if}
+            {#if failedOn === s.id && rowProblem.text}<div class="failed"><ProblemNote of={rowProblem} /></div>{/if}
           </li>
         {/each}
       </ul>

@@ -239,6 +239,33 @@ const walks = [
     },
   },
   {
+    // A message the app could not save says so over the box, and Draft
+    // writes nothing over it. Typing takes the words away, since they
+    // cover the first line of the message (the review of #124).
+    name: 'Draft after a save the app refused says so over the message and starts no draft, and typing takes it away',
+    async run(page) {
+      await open(page, 1001)
+      let started = 0
+      await page.route(/\/api\/people\/1001\/draft$/, (route) => { started++; return route.fallback() })
+      await page.route('**/api/people/1001', (route) => route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'The file could not be written.' } })
+        : route.fallback())
+      await box(page).fill('Hallo Mara')
+      await act(page).click()
+      const line = page.locator('.first-message .box .problem')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'The file could not be written. Report') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      await drawn(page)
+      if (started) return 'Draft started over the message it could not save'
+      await box(page).press('End')
+      await page.keyboard.type('!')
+      await line.waitFor({ state: 'detached' })
+      return ''
+    },
+  },
+  {
     name: 'Draft again writes a new message, and Undo in the Edit menu brings the one before back',
     async run(page) {
       await open(page, 1005)

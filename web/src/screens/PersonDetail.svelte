@@ -11,12 +11,12 @@
   import { PASTE_HINT, pasting } from '../lib/paste.svelte'
   import { undoHistory } from '../lib/history.svelte'
   import { pasteAsShown } from '../lib/pastedlines'
-  import { Problem as Trouble } from '../lib/problem.svelte'
+  import { errorText, Problem } from '../lib/problem.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
-  import Problem from '../lib/components/Problem.svelte'
+  import ProblemNote from '../lib/components/ProblemNote.svelte'
 
   // onmoved follows once the app took a change that moves the person to
   // another list, connected or the profile rejected, or turned it down,
@@ -34,8 +34,8 @@
   let noteState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle')
   // What went wrong with the row of buttons says so under it, and with
   // the notes over them, see lib/problem.svelte.ts.
-  const rowProblem = new Trouble()
-  const noteProblem = new Trouble()
+  const rowProblem = new Problem()
+  const noteProblem = new Problem()
 
   // The parent keys this by id, so the id never changes here.
   function load() {
@@ -119,6 +119,7 @@
     const next: Review = of.review === 'rejected' ? 'confirmed' : 'rejected'
     reviewing = true
     rowProblem.clear()
+    needsChoice = false
     showReview(of, next)
     try {
       await review(of, next)
@@ -160,8 +161,11 @@
     try {
       await api.openLinkedin(id)
     } catch (err) {
+      // A choice still to make in Settings is not something that went
+      // wrong, so it stays out of Settings, Logs.
       needsChoice = err instanceof ApiError && err.choose
-      rowProblem.say(err)
+      if (needsChoice) rowProblem.needs(errorText(err))
+      else rowProblem.say(err)
     } finally {
       opening = false
     }
@@ -175,6 +179,7 @@
     const before = person.data.connected
     deciding = true
     rowProblem.clear()
+    needsChoice = false
     person.data = { ...person.data, connected: !before }
     onupdate?.(person.data)
     try {
@@ -233,9 +238,9 @@
           <p class="paste-hint small">{PASTE_HINT}</p>
         {/if}
         {#if needsChoice}
-          <Problem of={rowProblem}>Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.</Problem>
+          <ProblemNote of={rowProblem}>Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.</ProblemNote>
         {:else}
-          <Problem of={rowProblem} />
+          <ProblemNote of={rowProblem} />
         {/if}
       </div>
     {/snippet}
@@ -286,9 +291,9 @@
         </span>
       </div>
       <div class="box">
-        <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
+        <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => { noteState = 'idle'; noteProblem.clear() }} onblur={saveNotes}
           placeholder="Where you met, what to ask"></textarea>
-        <Problem of={noteProblem} over />
+        <ProblemNote of={noteProblem} over />
       </div>
     </section>
   </article>

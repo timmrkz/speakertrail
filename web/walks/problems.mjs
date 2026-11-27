@@ -60,6 +60,13 @@ const walks0 = [
       const needs = page.locator('#search-err')
       await needs.waitFor()
       if ((await words(needs)) !== 'Enter a kind of person and a place, like Yogalehrerin Köln') return `the search says ${JSON.stringify(await words(needs))}`
+      // A search there already is not something that went wrong, so it
+      // offers no Report.
+      const query = await page.locator('li.search b').first().innerText()
+      await page.locator('#new-search').fill(query)
+      await page.locator('form.add button[type="submit"]').first().click()
+      await needs.filter({ hasText: 'there already' }).waitFor()
+      if (await needs.getByRole('button', { name: 'Report' }).count()) return 'a search there already offers Report'
       return ''
     },
   },

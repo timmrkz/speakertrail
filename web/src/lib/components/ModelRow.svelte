@@ -30,13 +30,13 @@
 <script lang="ts" generics="M extends RowModel">
   import type { Snippet } from 'svelte'
   import { plural, size } from '../format'
-  import { errorText, Problem as Trouble } from '../problem.svelte'
+  import { errorText, Problem } from '../problem.svelte'
   import Busy from './Busy.svelte'
   import Confirm from './Confirm.svelte'
   import Icon, { type IconName } from './Icon.svelte'
   import Info from './Info.svelte'
   import Pick from './Pick.svelte'
-  import Problem from './Problem.svelte'
+  import ProblemNote from './ProblemNote.svelte'
 
   // A model in an area of its own: the model, the one line under it that
   // says how it stands, Download beside it while it is not here, Cancel
@@ -150,8 +150,8 @@
   // under its row, and removing one under that model's row, see
   // lib/problem.svelte.ts. Why a download failed is the line under its
   // name, which the app keeps.
-  const rowProblem = new Trouble()
-  const removeProblem = new Trouble()
+  const rowProblem = new Problem()
+  const removeProblem = new Problem()
   let failedOn = $state('')
 
   async function choose(name: string) {
@@ -253,7 +253,7 @@
             disabled={!!running || starting} onpick={choose} />
         {/if}
       </div>
-      {#if rowProblem.text}<div class="failed"><Problem of={rowProblem} /></div>{/if}
+      {#if rowProblem.text}<div class="failed"><ProblemNote of={rowProblem} /></div>{/if}
     </div>
     {#if here.length > 0}
       <button class="setting disclose" type="button" aria-expanded={open} onclick={() => (open = !open)}>
@@ -274,7 +274,7 @@
               aria-label="Remove {m.title}" aria-haspopup="dialog" onclick={() => (removing = m.name)}>
               <Icon name="trash" />
             </button>
-            {#if failedOn === m.name && removeProblem.text}<div class="failed"><Problem of={removeProblem} /></div>{/if}
+            {#if failedOn === m.name && removeProblem.text}<div class="failed"><ProblemNote of={removeProblem} /></div>{/if}
           </div>
         {/each}
       {/if}

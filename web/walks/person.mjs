@@ -399,6 +399,42 @@ const walks = [
       if ((await line.getByRole('link', { name: 'Settings' }).count()) !== 1) return `the line says ${await line.innerText()}`
       const text = (await linkedin.innerText()).trim()
       if (text !== 'LinkedIn') return `the button says ${text} once the answer is in`
+      // What goes wrong next says its own words, not LinkedIn's (the
+      // review of #124).
+      await page.route('**/api/people/1002', (route) => route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'The file could not be written.' } })
+        : route.fallback())
+      await page.locator('.actions button.connect').click()
+      await line.filter({ hasText: 'The file could not be written.' }).waitFor()
+      if (await line.getByRole('link', { name: 'Settings' }).count()) return 'Connect refused still says to choose where LinkedIn opens'
+      return ''
+    },
+  },
+  {
+    // Notes the app could not save say so over the notes, and typing
+    // takes it away, since it covers their first line (the review of
+    // #124).
+    name: 'Notes the app could not save say so over them, and typing takes it away',
+    async run(page) {
+      await page.route('**/api/people/1004', (route) => route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'The file could not be written.' } })
+        : route.fallback())
+      await page.goto(`${url}/app/people/1004`)
+      const notes = page.locator('#notes-1004')
+      await notes.fill('Met at a meetup')
+      await notes.blur()
+      const line = page.locator('.person .box .problem')
+      await line.waitFor()
+      if ((await line.innerText()).trim() !== 'The file could not be written. Report') return `the line says ${await line.innerText()}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      const [b, l] = await Promise.all([notes.boundingBox(), line.boundingBox()])
+      if (l.y < b.y || l.y + l.height > b.y + b.height) return 'the line is not over the notes'
+      await notes.press('End')
+      await page.keyboard.type('.')
+      await line.waitFor({ state: 'detached' })
+      await page.unroute('**/api/people/1004')
+      await notes.fill('')
+      await notes.blur()
       return ''
     },
   },

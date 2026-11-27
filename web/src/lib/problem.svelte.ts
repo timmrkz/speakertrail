@@ -1,6 +1,6 @@
 // What went wrong, said at the control it went wrong at, never in a
 // toast over the window (Tim, testing #60 on 22 November 2026, #72). Each
-// place that can fail keeps one Problem, and Problem.svelte draws it
+// place that can fail keeps one Problem, and ProblemNote.svelte draws it
 // where the click was: under a row of buttons or a field, or over the top
 // of a text box. It stays until the place is used again, so it is read,
 // and it goes into the app's log the way a toast about something that
@@ -28,9 +28,10 @@ export class Problem {
     this.put(errorText(e), true)
   }
 
-  // needs says what a field typed wrong needs, like a search with no
-  // words. It is not something that went wrong, so Settings, Logs leaves
-  // it out.
+  // needs says what the person has to do first: what a field typed wrong
+  // needs, like a search with no words or one that is there already, or a
+  // choice still to make in Settings. Nothing went wrong, so Settings,
+  // Logs leaves it out.
   needs(text: string) {
     said(`field: ${text}`, { level: 'info' })
     this.text = text

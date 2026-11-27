@@ -1112,7 +1112,7 @@ const ROUTES: [string, RegExp, Handler][] = [
     const kind = b.kind === 'profile_search' ? 'profile_search' : 'search_query'
     if (b.kind !== undefined && b.kind !== 'profile_search' && b.kind !== 'search_query') return err(400, 'kind must be search_query or profile_search')
     if (query) {
-      if (s.sources.some((x) => x.kind === kind && x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'This search is already there')
+      if (s.sources.some((x) => x.kind === kind && x.query?.toLowerCase() === query.toLowerCase())) return err(409, 'That search is there already')
       const city = ['Köln', 'Düsseldorf', 'Dortmund', 'Essen', 'Duisburg', 'Bochum', 'Wuppertal', 'Bielefeld', 'Bonn', 'Münster', 'Aachen'].find((c) => query.includes(c)) ?? ''
       const m: MockSource = {
         id: s.nextId.source++, name: query, kind, url: null, query,

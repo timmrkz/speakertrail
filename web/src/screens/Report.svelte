@@ -8,8 +8,8 @@
   import Icon from '../lib/components/Icon.svelte'
   import Info from '../lib/components/Info.svelte'
   import Confirm from '../lib/components/Confirm.svelte'
-  import Problem from '../lib/components/Problem.svelte'
-  import { Problem as Trouble } from '../lib/problem.svelte'
+  import ProblemNote from '../lib/components/ProblemNote.svelte'
+  import { Problem } from '../lib/problem.svelte'
   // A line in the app's log. said is the words being dictated here.
   import { said as log } from '../lib/said'
   import { changed, Dictating, edit, type Ask, type Span } from '../lib/dictating'
@@ -35,7 +35,7 @@
   // November 2026, #72). Beside the buttons it wrapped over three lines
   // and stood where nothing else was about it, and a toast over the
   // window said it far from the report. It goes with the next press.
-  const problem = new Trouble()
+  const problem = new Problem()
   const oops = (text: string) => problem.say(text)
 
   // Dictate: the words appear in the field while they are said, where the
@@ -814,7 +814,7 @@
       oncompositionstart={() => (composing = true)}
       oncompositionend={composed}
       onpaste={pasted}></textarea>
-      <Problem of={problem} over />
+      <ProblemNote of={problem} over />
     </div>
     <!-- The row is written in the order Tab takes, Report first, so Enter,
          Tab, Enter ends a dictation and makes the report, and drawn from

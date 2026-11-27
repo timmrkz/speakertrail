@@ -17,10 +17,10 @@
   import { pasteAsShown } from '../pastedlines'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
-  import { errorText, Problem as Trouble } from '../problem.svelte'
+  import { errorText, Problem } from '../problem.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
-  import Problem from './Problem.svelte'
+  import ProblemNote from './ProblemNote.svelte'
 
   let { person, row, onsaved }: {
     person: PersonDetail
@@ -56,7 +56,7 @@
   // What went wrong with the message, a draft that could not start or
   // stop, a save or a copy, says so over the top of the box, where the
   // click was (Tim, testing #60 on 22 November 2026, #72).
-  const boxProblem = new Trouble()
+  const boxProblem = new Problem()
 
   // A draft that ends done is kept by the app: take it from there, the
   // way it was saved.
@@ -88,10 +88,12 @@
       return
     }
     // What is typed and not yet saved is saved first, so Undo in the Edit
-    // menu can bring it back.
-    await save()
-    starting = true
+    // menu can bring it back. A save that failed says so over the box and
+    // keeps the draft from writing over what it could not save.
     boxProblem.clear()
+    await save()
+    if (saveState === 'error') return
+    starting = true
     try {
       draftWatch.put(await api.startDraft(person.id))
     } catch (e) {
@@ -253,14 +255,14 @@
   </div>
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}></textarea>
+      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle'; boxProblem.clear() }} onblur={save}></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
         title={copied ? 'Copied' : 'Copy the whole message'}>
         <Icon name={copied ? 'check' : 'copy'} />
       </button>
     {/if}
-    <Problem of={boxProblem} over />
+    <ProblemNote of={boxProblem} over />
   </div>
   {#if running}
     <div class="draft-progress" aria-live="polite">

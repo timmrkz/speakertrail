@@ -274,7 +274,7 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   November 2026. `walks/draft.mjs` and `walks/pick.mjs` walk its states.
 - **What went wrong says so at the control that failed.** Each place
   that can fail keeps a `Problem`, `lib/problem.svelte.ts`, and
-  `Problem.svelte` draws it there: a line of red words under a row of
+  `ProblemNote.svelte` draws it there: a line of red words under a row of
   buttons, a row or a field, the way a field typed wrong says so, or over
   the top of a text box on the box's own ground with an edge in red, as
   the first message and Report a Problem have it. Tim asked for it
@@ -283,8 +283,16 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   again, and a failure Tim cannot put right offers Report. Only what has
   no control of its own, Undo or Redo in the Edit menu, a page pasted
   anywhere in the window and the Undo of a toast that is gone, is a red
-  toast (Tim, 27 November 2026). `walks/problems.mjs` refuses requests
-  on each kind of place and finds the words there and no toast.
+  toast (Tim, 27 November 2026). Two more stay toasts on purpose: links
+  added that wait for the Exa key, since the toast holds their Undo, and
+  a run that ended with failures, which says how the whole run went. A
+  field typed wrong, a search or exclusion there already and a choice
+  still to make in Settings say so the same way, with `needs`, and stay
+  out of Settings, Logs, since nothing went wrong. The Exa key, a
+  setting, where LinkedIn opens, the template and Updates still keep a
+  line of their own at the control, issue #126. `walks/problems.mjs`
+  refuses requests on each kind of place and finds the words there and
+  no toast.
 - **Opening something never relays out what is beside it.** A row has the
   same lines at any width, so a person opening only narrows the list. A
   container query on a pane that another pane squeezes brings the shuffle

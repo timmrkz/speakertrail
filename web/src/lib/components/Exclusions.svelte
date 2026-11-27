@@ -1,13 +1,13 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
-  import { api, type Exclusion } from '../api'
+  import { api, ApiError, type Exclusion } from '../api'
   import { plural } from '../format'
   import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
-  import { Problem as Trouble } from '../problem.svelte'
+  import { Problem } from '../problem.svelte'
   import { toast } from '../toast.svelte'
   import Icon from './Icon.svelte'
-  import Problem from './Problem.svelte'
+  import ProblemNote from './ProblemNote.svelte'
 
   // Tim's exclusions: words and phrases, like "Online Marketing", that
   // leave a person out of profile searches and People. Removing one brings
@@ -37,7 +37,7 @@
   let phrase = $state('')
   // What went wrong adding or removing one says so under the field,
   // see lib/problem.svelte.ts.
-  const problem = new Trouble()
+  const problem = new Problem()
   let busy = $state(false)
   let field: HTMLInputElement | undefined = $state()
 
@@ -49,7 +49,9 @@
       list.data = [...all, x].sort((a, b) => a.phrase.localeCompare(b.phrase, 'de'))
       return true
     } catch (err) {
-      problem.say(err)
+      // One that is there already is not something that went wrong.
+      if (err instanceof ApiError && err.status === 409) problem.needs(err.message)
+      else problem.say(err)
       return false
     } finally {
       busy = false
@@ -109,7 +111,7 @@
         autocomplete="off" maxlength="60" aria-invalid={problem.text ? 'true' : undefined} aria-describedby={problem.text ? 'exclusion-err' : undefined} />
       <button class="btn" type="submit" disabled={busy}><Icon name="plus" />{busy ? 'Adding' : 'Add'}</button>
     </form>
-    <Problem of={problem} id="exclusion-err" />
+    <ProblemNote of={problem} id="exclusion-err" />
   {/if}
 </details>
 

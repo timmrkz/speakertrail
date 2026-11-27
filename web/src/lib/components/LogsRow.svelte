@@ -2,10 +2,10 @@
   import { Events } from '@wailsio/runtime'
   import { api, type LogStatus } from '../api'
   import { plural, size } from '../format'
-  import { Problem as Trouble } from '../problem.svelte'
+  import { Problem } from '../problem.svelte'
   import Confirm from './Confirm.svelte'
   import Icon from './Icon.svelte'
-  import Problem from './Problem.svelte'
+  import ProblemNote from './ProblemNote.svelte'
   import { reporting, reportTitle } from '../reporting.svelte'
 
   // The app's own log, the file a report takes along, in an area of its
@@ -20,10 +20,10 @@
   const folder = $derived(log.path.replace(/[\\/][^\\/]*$/, ''))
   // What went wrong with the log says so under its row, see
   // lib/problem.svelte.ts.
-  const problem = new Trouble()
+  const problem = new Problem()
   // and Report on a logged one that could not open Report a Problem
   // under that one.
-  const reportProblem = new Trouble()
+  const reportProblem = new Problem()
   let reportedAt = $state(-1)
 
   async function read() {
@@ -92,7 +92,7 @@
           <Icon name="trash" />
         </button>
       </div>
-      {#if problem.text}<div class="failed"><Problem of={problem} /></div>{/if}
+      {#if problem.text}<div class="failed"><ProblemNote of={problem} /></div>{/if}
     </div>
     {#each log.toasts as t, i (i)}
       <!-- A toast the app showed about something that went wrong, in its
@@ -107,7 +107,7 @@
         </div>
         <button class="btn quiet report" type="button" disabled={reporting.open} title={reportTitle()}
           onclick={() => { reportProblem.clear(); reportedAt = t.at; api.reportAbout(t.text).catch((err) => reportProblem.say(err)) }}>Report</button>
-        {#if reportedAt === t.at && reportProblem.text}<div class="failed"><Problem of={reportProblem} /></div>{/if}
+        {#if reportedAt === t.at && reportProblem.text}<div class="failed"><ProblemNote of={reportProblem} /></div>{/if}
       </div>
     {/each}
   </div>

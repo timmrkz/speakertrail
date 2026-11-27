@@ -150,8 +150,11 @@ unless the window's clock is more than a minute off.
 - Everything the window says went wrong, at the control that failed or
   in a toast where there is none, see `lib/problem.svelte.ts`. It is a
   `warn` line marked `"toast":true`, a name kept from when every one was
-  a toast. A field typed wrong, like a search with no words, is an
-  `info` line, since nothing went wrong. A toast that says what was done
+  a toast. What the person has to do first, a field typed wrong, a
+  search there already or a choice to make in Settings, is an `info`
+  line, since nothing went wrong. The Exa key, a setting, where LinkedIn
+  opens, the template and Updates still say theirs without a line in the
+  log, issue #126. A toast that says what was done
   is an `info` line, and one that ran out, was replaced or acted on says
   so at `info`.
 

@@ -315,6 +315,30 @@ const walks = [
     },
   },
   {
+    // Pictures that could not be attached say so over the top of the
+    // field, where the report is, never in a toast over the window, and
+    // with no Report of their own, since this is the report (#72). The
+    // next press takes it away.
+    name: 'Attach the app refuses says why over the field, with no toast',
+    async run(page) {
+      await openReport(page)
+      await page.route('**/api/report/pick', (route) => route.fulfill({ status: 409, json: { error: 'the picture is larger than 10 MB' } }))
+      await page.locator('button.attach').click()
+      const line = page.locator('.card .box .problem')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'The picture is larger than 10 MB') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      const [f, l] = await Promise.all([page.locator('textarea.telling').boundingBox(), line.boundingBox()])
+      if (l.y < f.y || l.y + l.height > f.y + f.height || l.x < f.x || l.x + l.width > f.x + f.width) return 'the line is not over the field'
+      await page.unroute('**/api/report/pick')
+      await page.locator('button.people').click()
+      await line.waitFor({ state: 'detached' })
+      await page.locator('button.people').click()
+      return ''
+    },
+  },
+  {
     // A toast that ran out unread is in Settings, Logs, and Report beside
     // it opens Report a Problem with its words, as the toast's own does.
     name: 'A toast in Settings, Logs offers Report',

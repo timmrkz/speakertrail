@@ -8,7 +8,8 @@
   import Icon from '../lib/components/Icon.svelte'
   import Info from '../lib/components/Info.svelte'
   import Confirm from '../lib/components/Confirm.svelte'
-  import { toast } from '../lib/toast.svelte'
+  import Problem from '../lib/components/Problem.svelte'
+  import { Problem as Trouble } from '../lib/problem.svelte'
   // A line in the app's log. said is the words being dictated here.
   import { said as log } from '../lib/said'
   import { changed, Dictating, edit, type Ask, type Span } from '../lib/dictating'
@@ -29,10 +30,13 @@
 
   let what = $state('')
   let making = $state(false)
-  // Why a report could not be made, or pictures attached, is a toast over
-  // the window. Beside the buttons it wrapped over three lines and stood
-  // where nothing else was about it.
-  const oops = (text: string) => toast.show(text, 'bad')
+  // Why a report could not be made, or pictures attached, lies over the
+  // top of the field, where the report is (Tim, testing #60 on 22
+  // November 2026, #72). Beside the buttons it wrapped over three lines
+  // and stood where nothing else was about it, and a toast over the
+  // window said it far from the report. It goes with the next press.
+  const problem = new Trouble()
+  const oops = (text: string) => problem.say(text)
 
   // Dictate: the words appear in the field while they are said, where the
   // cursor was, and the last of them change as more is heard until a
@@ -151,7 +155,10 @@
   // undo, and the pictures follow that step. Anything done after it ends
   // it, as in any editor.
   let cleared: { text: boolean; pics: ReportPicture[]; undone: boolean } | null = null
-  const unclear = () => (cleared = null)
+  const unclear = () => {
+    cleared = null
+    problem.clear()
+  }
   // The field's undo, which the page keeps, see lib/undo.ts, and the text
   // as it was when the dictation in hand began.
   let steps = new Undo()
@@ -159,6 +166,7 @@
 
   async function clearAll() {
     clearing = false
+    problem.clear()
     log('report: cleared', { level: 'info' })
     // The box lets go of the focus as it closes, and the field can only
     // take it, and its undo the words, once it has.
@@ -744,6 +752,7 @@
     if (reportOff) return
     making = true
     note = ''
+    problem.clear()
     // Pressed while the last words of a dictation are written down, it
     // shows it is making the report at once and waits for them, so they
     // are in it.
@@ -791,6 +800,7 @@
     <!-- A plain textarea: the browser draws the cursor, moves it and
          scrolls, and lib/dictating.ts says what a dictation does to the
          text. -->
+    <div class="box">
     <textarea
       class="telling"
       bind:this={field}
@@ -804,6 +814,8 @@
       oncompositionstart={() => (composing = true)}
       oncompositionend={composed}
       onpaste={pasted}></textarea>
+      <Problem of={problem} over />
+    </div>
     <!-- The row is written in the order Tab takes, Report first, so Enter,
          Tab, Enter ends a dictation and makes the report, and drawn from
          right to left, Dictate and Attach on the left as a toolbar has
@@ -842,7 +854,8 @@
       </Info>
       <!-- Only what the microphone hears, and why a recording stopped by
            itself. What the buttons are doing shows on the buttons, how the
-           page works is in the info mark, and what went wrong is a toast. -->
+           page works is in the info mark, and what went wrong lies over
+           the field. -->
       <div class="words">
         {#if listening && unheard}
           <span class="error">{unheard}</span>
@@ -959,6 +972,7 @@
     background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   }
 
+  .box { position: relative; min-width: 0; }
   /* A field of ten whole lines of 19 px, with the padding of a control
      round them. */
   .telling {

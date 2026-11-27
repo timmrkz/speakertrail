@@ -89,7 +89,7 @@ class Pasting {
       const drafting = r.drafting ? ', and drafting the first message' : ''
       if (r.added) {
         // Someone new, whom Undo takes out again, as for a link.
-        toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id, r.drafting) })
+        toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id) })
         return
       }
       if (r.named) toast.show(`Kept the page as their profile${drafting}`)
@@ -99,10 +99,10 @@ class Pasting {
     }
   }
 
-  // Undo of someone the page added takes them out, the draft first.
-  private async unadd(id: number, drafting: boolean) {
+  // Undo of someone the page added takes them out, and the app stops
+  // their draft.
+  private async unadd(id: number) {
     try {
-      if (drafting) await api.cancelDraft(id).catch(() => {})
       await api.removePerson(id)
       if (openPerson() === id) navigate('/app/people')
     } catch (e) {

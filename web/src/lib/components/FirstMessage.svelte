@@ -15,6 +15,7 @@
   import { fmtAgo, fmtElapsed, fmtLeft } from '../format'
   import { languageWatch } from '../language.svelte'
   import { pasteAsShown } from '../pastedlines'
+  import { PASTE_HINT } from '../paste.svelte'
   import { navigate } from '../router.svelte'
   import { said } from '../said'
   import { errorText, fault, toast } from '../toast.svelte'
@@ -227,7 +228,11 @@
   // copy for, says nothing once Tim pasted the page: it is no longer how
   // they stand (Tim's report of 24 November 2026, #88).
   const stale = $derived(!!job && !!person.profile_read_at && new Date(person.profile_read_at) > new Date(job.started_at))
-  const failed = $derived(job?.state === 'failed' && !stale ? (job.error ?? 'The draft stopped.') : '')
+  // Nor does one that says what the person says above it already, that
+  // Exa has no copy of their profile, which a draft started by adding
+  // their link often ends with (#115).
+  const told = $derived(person.read === 'not_indexed' && job?.error === PASTE_HINT)
+  const failed = $derived(job?.state === 'failed' && !stale && !told ? (job.error ?? 'The draft stopped.') : '')
   // A draft the model's answer did not fit has … where its part goes, and
   // says why until the next draft.
   const problem = $derived(job?.state === 'done' ? (job.problem ?? '') : '')

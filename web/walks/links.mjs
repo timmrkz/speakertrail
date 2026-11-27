@@ -5,8 +5,10 @@
 // anywhere on People, turn Run into Add, Add 2 or Open, Enter does the
 // same, links dropped on the window light all of it and are added too,
 // and the people added show under New at once, each row filled while
-// Exa reads its profile, with New counting how far the run is. Every
-// person and link here is invented. `make walks` runs it.
+// Exa reads its profile, with New counting how far the run is. One link
+// that adds one person opens them, with their first message drafted
+// (27 November 2026, #115). Every person and link here is invented.
+// `make walks` runs it.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
 
@@ -138,13 +140,51 @@ await walk('Enter on a greyed Add adds nobody and marks nobody connected', async
   expect(`the filter moved to ${await pressed(page).textContent()}`, (await pressed(page).textContent()).startsWith('All'))
 })
 
-await walk('Undo takes whom adding brought in out again', async (browser) => {
+await walk('One link opens the person it adds, under New, with their first message drafted while Exa reads their profile', async (browser) => {
+  const page = await people(browser)
+  await search(page).fill('https://www.linkedin.com/in/pia-probe-82')
+  await add(page)
+  // Open at once, named by the handle until the profile is read, with the
+  // list beside them under New and the search emptied (Tim, 27 November
+  // 2026, #115).
+  await page.waitForURL(/\/app\/people\/\d+$/)
+  await page.locator('main article.person[aria-label="pia-probe-82"]').waitFor()
+  await page.waitForFunction(() => document.querySelector('main .filters button[aria-pressed="true"]')?.textContent.startsWith('New'))
+  expect('the search was not emptied', (await search(page).inputValue()) === '')
+  await page.locator('.toast-region', { hasText: 'Added 1 person' }).waitFor()
+  const toast = await page.locator('.toast-region').textContent()
+  expect(`the toast said "${toast}"`, toast.includes('Added 1 person, and drafting the first message') && !toast.includes('pia'))
+  // The draft waits for the run's read of the profile, and says so.
+  const progress = page.locator('main .first-message .draft-progress')
+  await progress.locator('.step', { hasText: 'Reading their profile from Exa' }).waitFor()
+  // The read ends, then the model loads and writes, and the message
+  // greets the name the profile gave.
+  await done(page)
+  await page.locator('main article.person[aria-label="Pia Probe"]').waitFor()
+  await moveOn(page, 10000)
+  // The app tells the window how a draft stands through the event draft,
+  // and the walk tells it what the mock's draft did, as walks/draft.mjs
+  // does.
+  await page.evaluate(() => fetch('/api/drafts').then((r) => r.json())
+    .then((jobs) => jobs.forEach((data) => window._wails.dispatchWailsEvent({ name: 'draft', data }))))
+  await progress.waitFor({ state: 'detached' })
+  const message = await page.locator('main .first-message textarea').inputValue()
+  expect(`the message began "${message.slice(0, 20)}"`, message.startsWith('Hallo Pia,'))
+})
+
+await walk('Undo takes whom one link brought in out again, and stops their draft', async (browser) => {
   const page = await people(browser)
   await search(page).fill('https://www.linkedin.com/in/olaf-probe-78')
   await search(page).press('Enter')
+  await page.locator('main article.person[aria-label="olaf-probe-78"]').waitFor()
   await page.locator('main .prow b', { hasText: 'olaf-probe-78' }).waitFor()
+  const id = Number(page.url().split('/').pop())
   await page.locator('.toast-region button', { hasText: 'Undo' }).click()
+  await page.waitForURL(/\/app\/people$/)
   await page.locator('main .prow b', { hasText: 'olaf-probe-78' }).waitFor({ state: 'detached' })
+  const jobs = await page.evaluate(() => fetch('/api/drafts').then((r) => r.json()))
+  const state = jobs.find((j) => j.person_id === id)?.state
+  expect(`their draft is ${state}`, state === 'cancelled')
   await done(page)
 })
 
@@ -292,7 +332,8 @@ await walk('Links dropped on the window light all of it and are added, from any 
     data.setData('text/uri-list', 'https://www.linkedin.com/in/jule-probe-75')
     document.querySelector('main').dispatchEvent(new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }))
   })
-  await page.waitForURL(/\/app\/people$/)
+  // The one person it adds opens, with the list under New beside them.
+  await page.waitForURL(/\/app\/people\/\d+$/)
   await page.locator('main .prow b', { hasText: 'jule-probe-75' }).waitFor()
   expect('New is not chosen', (await pressed(page).textContent()).startsWith('New'))
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.landing')).opacity === '0')

@@ -85,9 +85,18 @@ in the link, and has a run read their profiles: the run going, or a run
 of its own that reads only those and asks no search. Words and other
 links in the text are passed over. Someone here already is only marked
 connected. It answers `{"run": 12, "new": [31, 32], "here": [7],
-"connected": [7], "other": 1}`: `connected` are those here whom it marked
-connected, and `open` is the one person here when the links lead to that
-person alone. `run` is 0 when there is no profile to read: without the
+"connected": [7], "other": 1, "drafting": false}`: `connected` are those here whom it marked
+connected, and `open` is the person to open: the one here when the
+links lead to that person alone, or the one they add when they add one
+person and lead to nobody else, no one here and no other link (Tim, 27
+November 2026, #115). For that one person the app also starts the first
+message, as `POST /api/people/{id}/draft` does, and `drafting` says it
+did. The draft waits for the run's read of their profile rather than
+ask Exa for it again, so one profile is one read, and is written from
+the name the read found. Without the Exa key or budget, or without a
+language model, the person still opens and no draft starts. Several
+links, or one new person with any other link, open nobody and start no
+draft. `run` is 0 when there is no profile to read: without the
 Exa key or budget the people are added all the same, and `wait` says why
 their profiles wait for the next run. A profile the going run read
 already, or failed to, waits for the next run too, so no run reads one
@@ -157,7 +166,8 @@ left this month, 400 for a paste with no text.
 
 `DELETE /api/people/{id}` takes out again someone added from a link, for
 Undo, and answers 204. A run that had not read their profile leaves it,
-one that read it keeps the read. 409 for someone a search found, 404 for
+one that read it keeps the read. A draft of theirs under way stops and
+ends `cancelled`. 409 for someone a search found, 404 for
 an id nobody has.
 
 `GET /api/people/{id}` gives one person, with `notes`, `fit_evidence` and
@@ -489,7 +499,9 @@ A draft is
 `state` is `queued`, `reading` (their profile from Exa, when the app has
 no text of it yet, by the link and then by the name in it, like a run's
 read: a draft whose profile Exa lacks fails and says to paste it, see
-`PUT /api/people/{id}/profile`), `loading` (the model, when it is not loaded), `writing`,
+`PUT /api/people/{id}/profile`. While the going run reads their profile,
+or has it still to read, the draft waits for that read instead, and
+when the run found no copy it fails without asking Exa again), `loading` (the model, when it is not loaded), `writing`,
 `done`, `failed` or `cancelled`. `text` is the message, from `writing` on
 with `…` where the model's parts go, and whole once it is done. What the
 model wrote in it is untrusted and shown as text. `problem` is set on a

@@ -224,10 +224,12 @@ export interface Added {
   // Those here already whom adding marked connected, for Undo.
   connected: number[]
   other: number
-  // The one person here the links lead to, to open, when they add
-  // nobody new.
+  // The person to open: the one here the links lead to, when they add
+  // nobody new, or the one they add, when they lead to nobody else.
   open?: number
   wait?: string
+  // Whether the first message to the one person added is being drafted.
+  drafting: boolean
 }
 
 export interface LinkedInFacts {

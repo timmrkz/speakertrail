@@ -451,16 +451,28 @@ func (d *Drafter) update(id int64, change func(*Job)) {
 // draft is the work of one draft: the profile, the prompt, the model and
 // the message.
 func (d *Drafter) draft(ctx context.Context, id int64) error {
-	var name, notes, link, text, readError string
+	// When it was asked for, so a read a run made since is not made again.
+	var asked time.Time
+	d.mu.Lock()
+	if j, ok := d.jobs[id]; ok {
+		asked = j.StartedAt
+	}
+	d.mu.Unlock()
+	var name, notes, link, text string
 	var earlier []store.DraftTime
 	var prompt string
 	var template store.Template
-	found := false
+	found, missed := false, false
 	person := func() {
 		d.Store.Read(func(data *store.Data) {
 			p := data.Person(id)
 			if found = p != nil; found {
-				name, notes, link, text, readError = p.Name, p.Notes, p.LinkedIn.URL, p.LinkedIn.Text, p.ReadError
+				name, notes, link, text = p.Name, p.Notes, p.LinkedIn.URL, p.LinkedIn.Text
+				missed = text == "" && slices.ContainsFunc(data.Runs, func(r *store.Run) bool {
+					return slices.ContainsFunc(r.Reads, func(x store.Read) bool {
+						return x.PersonID == id && x.Error == engine.NotIndexed && !x.At.Before(asked)
+					})
+				})
 			}
 			earlier = slices.Clone(data.DraftTimes)
 			prompt = data.Text(store.FirstMessagePrompt)
@@ -505,23 +517,23 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 		d.update(id, func(j *Job) { j.State, j.Model = "reading", m.Title; progress(j) })
 		// The run that reads their profile now, or has it still to read,
 		// is waited for rather than asked again of Exa. What it read
-		// names them too, so the message greets the name it found.
-		waited := false
+		// names them too, so the message greets the name it found. It
+		// may have read it a moment ago, so the person is read again
+		// whether it waited or not.
 		if d.Await != nil {
-			if waited, err = d.Await(ctx, id); err != nil {
+			if _, err = d.Await(ctx, id); err != nil {
 				return err
 			}
 		}
-		if waited {
-			person()
-			if !found {
-				return errGone
-			}
+		person()
+		if !found {
+			return errGone
 		}
 		switch {
 		case text != "":
-		// What the run just found missing is not asked for again.
-		case waited && readError == engine.NotIndexed:
+		// What a run found missing since the draft was asked for is not
+		// asked for again.
+		case missed:
 			return ErrNoCopy
 		default:
 			if text, err = d.read(ctx, id, link); err != nil {

@@ -91,11 +91,14 @@ jobs:
           else
             echo "::notice::No update key yet, so there is no list to write."
           fi
+      # No cache, as in publish: main's Go cache is written by jobs that
+      # run third-party build code, and this job holds a token that
+      # writes the release, #55.
       - if: steps.key.outputs.ready == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - if: steps.key.outputs.ready == 'true'
         name: Write the channel list from every entry
         run: sh scripts/channel-list.sh
@@ -536,11 +539,14 @@ jobs:
           else
             echo "::notice::No update key yet, so there is no list to write."
           fi
+      # No cache, as in publish: main's Go cache is written by jobs that
+      # run third-party build code, and this job holds a token that
+      # writes the release, #55.
       - if: steps.key.outputs.ready == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
 
       - if: steps.key.outputs.ready == 'true'
         name: Write the channel list from every entry

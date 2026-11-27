@@ -105,8 +105,9 @@ What the person did is the thread a fault is followed by. Each act is a
 line at `info` from `window` with a short id of its own, `a1`, `a2` and
 on: every click, and every key that is not typing. It is named by the
 control it was on, by its `aria-label`, its tooltip or its words, as in
-FrameFairy: `pressed button.btn "Run the due searches now, and new ones
-in more cities when few are due. Takes about a minute"`, `⌘F on input.input "Search settings"`. Everything that act sets off carries its id, in the window and
+FrameFairy: `pressed button.btn "Run"`, `⌘F on input.input "Search settings"`.
+Run in People is named by its own words, Run, Stop or Add, and not by
+its tooltip, which names the person a run reads (#104). Everything that act sets off carries its id, in the window and
 on the Go side: the requests it makes, Wails's, the engine's and the
 API's lines. The window tells the Go side of each act the moment it
 happens, before the requests it makes for it, and the Go side's lines
@@ -129,11 +130,16 @@ caption box the same way.
 
 The Go side holds the rule as well, since a tooltip outside that mark
 once named the person a run read, issue #104. Before an act or a line of
-the window is written, every word of a person's name of three letters or
-more that starts with a capital, in any case, also with an s after it
-and with its umlauts written out, and every profile's handle, are
-written `[name]`, as in a report. That is `Store.Unnamed`, which reads
-the names afresh for each act and each batch of lines.
+the window is written, every word of a person's name of two letters or
+more, in any case, with its umlauts written out, and every profile's
+handle, are written `[name]`. Exa may give a name as "lea probe" or "Bo
+Li", so this takes more than a report does. "von", "der" and the like
+stay. A word that is also someone's name, like "will" for a Will, is
+lost from the log too, since a name left in is worse than a word lost.
+That is `Store.Unnamed`, which reads the names afresh for each act and
+each batch of lines, about half a millisecond for a thousand people,
+outside the store's lock. Names written into the log before 27 November
+2026 stay there until the log is removed in Settings, or rotates out.
 
 ### What the window says
 

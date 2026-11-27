@@ -142,16 +142,24 @@ func TestUnnamedTakesEveryPersonOutOfTheLog(t *testing.T) {
 	}
 	add("Lea Probe", "lea-probe-7a1")
 	add("Jörg Müller-Lüdenscheidt", "joerg-ml")
+	// Exa gives a name as it finds it, in lower case too, and some are
+	// short. The review of #129 found both left in the log.
+	add("ida von der beispiel", "idvdb")
+	add("Bo Li", "bl")
+	add("Al Probst", "ap")
 	clean := st.Unnamed()
 	for in, want := range map[string]string{
 		`pressed button.btn "Reading the profile of Lea Probe. 1 of 3 profiles"`: `pressed button.btn "Reading the profile of [name] [name]. 1 of 3 profiles"`,
-		"Leas Studio, LEA PROBE":                    "[name]s Studio, [name] [name]",
-		"Leadership and probing":                    "Leadership and probing",
-		"GET /api/people/12 for lea-probe-7a1 done": "GET /api/people/12 for [name] done",
-		"https://www.linkedin.com/in/joerg-ml/":     "https://www.linkedin.com/in/[name]/",
-		"Joerg Mueller-Luedenscheidt und Jörg":      "[name] [name]-[name] und [name]",
-		"Run done. 2 new people":                    "Run done. 2 new people",
-		"":                                          "",
+		"Leas Studio, LEA PROBE":                      "[name]s Studio, [name] [name]",
+		"Leadership and probing":                      "Leadership and probing",
+		"GET /api/people/12 for lea-probe-7a1 done":   "GET /api/people/12 for [name] done",
+		"https://www.linkedin.com/in/joerg-ml/":       "https://www.linkedin.com/in/[name]/",
+		"Joerg Mueller-Luedenscheidt und Jörg":        "[name] [name]-[name] und [name]",
+		"Run done. 2 new people":                      "Run done. 2 new people",
+		"Reading the profile of ida von der beispiel": "Reading the profile of [name] von der [name]",
+		"Reading the profile of Bo Li and 1 more":     "Reading the profile of [name] [name] and 1 more",
+		"Al and als, Bos":                             "[name] and als, Bos",
+		"":                                            "",
 	} {
 		if got := clean(in); got != want {
 			t.Errorf("%q gave %q, want %q", in, got, want)

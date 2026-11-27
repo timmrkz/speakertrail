@@ -454,7 +454,7 @@
         </span>
         <button class="btn start" class:primary={!going || mode !== 'run'} type="button" onclick={act}
           disabled={runWatch.busy !== '' || mode === 'none' || (mode === 'run' && going !== null && going.id <= 0)}
-          title={runTitle}>
+          title={runTitle} aria-label={runLabel}>
           {#if going}<Busy fraction={runShare(going)} />{/if}
           <Icon name={mode === 'add' || mode === 'none' ? 'plus' : mode === 'open' ? 'chevron' : going ? 'stop' : 'run'} />{runLabel}
         </button>

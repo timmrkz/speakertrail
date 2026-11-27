@@ -50,6 +50,30 @@ const walks = [
     },
   },
   {
+    // #104: Stop said under the pointer whose profile the run read, and
+    // the log named the button by that, so pressing it wrote the person's
+    // name into the log. Stop is named by its own words now.
+    name: 'Pressing Stop while a profile is read names no one in the log',
+    async run(page) {
+      await page.goto(`${url}/app/people`)
+      await page.locator('.prow').first().waitFor()
+      // A link added is read in a run straight away, named by its handle
+      // until its profile is read.
+      await page.locator('main .search input').fill('https://www.linkedin.com/in/rike-probe-91')
+      await page.locator('main .search input').press('Enter')
+      const reading = page.locator('button.start[title^="Reading the profile of"]')
+      await reading.waitFor()
+      const title = await reading.getAttribute('title')
+      if (!title.startsWith('Reading the profile of rike-probe-91')) return `Stop said "${title}", want the person read`
+      await reading.click()
+      const h = await until(page, (h) => h.acts.some((a) => /Stop/.test(a.what)))
+      const stop = h.acts.find((a) => /Stop/.test(a.what)).what
+      if (stop !== 'pressed button.btn "Stop"') return `pressing Stop was logged as ${stop}`
+      if (JSON.stringify(h).includes('rike-probe-91')) return 'the log names the person read'
+      return ''
+    },
+  },
+  {
     // In a narrow window the person opens in a sheet, labelled with their
     // name. A click and a key there are acts, and neither names them.
     name: 'Acts in the narrow window\'s person sheet never name a person',

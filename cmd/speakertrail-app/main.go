@@ -88,7 +88,7 @@ func main() {
 	api.Handle("/api/chrome", chromeAPI{get: chrome.Load, report: reportChrome.Load})
 	// The window's lines and acts, and the log as Settings shows it, see
 	// applog_api.go.
-	logs := logAPI{log: theLog, show: showInFolder, unnamed: e.Store.Unnamed}
+	logs := newLogAPI(theLog, e.Store, showInFolder)
 	api.Handle("/api/log", logs)
 	api.Handle("/api/log/", logs)
 	// The speech models in Settings, fetched and removed there, see

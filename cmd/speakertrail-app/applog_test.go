@@ -334,7 +334,7 @@ func TestAPanicInARequestIsInTheAppsLog(t *testing.T) {
 // line is kept in memory, not in the file.
 func TestSaidWritesTheAppLog(t *testing.T) {
 	_, read := testLog(t)
-	h := handler(nil, logAPI{log: theLog})
+	h := handler(nil, newLogAPI(theLog, nobody(t), nil))
 	say := func(lines []SaidLine) int {
 		body, _ := json.Marshal(lines)
 		rec := httptest.NewRecorder()
@@ -407,7 +407,7 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 // goes.
 func TestActsTieTheLinesTheySetOff(t *testing.T) {
 	_, read := testLog(t)
-	h := handler(nil, logAPI{log: theLog})
+	h := handler(nil, newLogAPI(theLog, nobody(t), nil))
 	act := func(a Act) {
 		body, _ := json.Marshal(a)
 		rec := httptest.NewRecorder()
@@ -440,6 +440,16 @@ func TestActsTieTheLinesTheySetOff(t *testing.T) {
 	}
 }
 
+// nobody is a store that knows no people.
+func nobody(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
 // Pressing Stop while a run reads a profile wrote the tooltip of the
 // button into the log, and with it the name of the person read, issue
 // #104. The Go side takes every person's name and handle out of what the
@@ -461,7 +471,7 @@ func TestTheLogNamesNoPerson(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	h := handler(nil, logAPI{log: theLog, unnamed: st.Unnamed})
+	h := handler(nil, newLogAPI(theLog, st, nil))
 	post := func(path string, v any) {
 		body, _ := json.Marshal(v)
 		rec := httptest.NewRecorder()
@@ -515,7 +525,7 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	var shown []string
-	h := handler(nil, logAPI{log: theLog, show: func(p string) error { shown = append(shown, p); return nil }})
+	h := handler(nil, newLogAPI(theLog, nobody(t), func(p string) error { shown = append(shown, p); return nil }))
 	ask := func(method, path string) (int, LogStatus) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))

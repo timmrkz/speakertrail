@@ -889,6 +889,11 @@ func (e *Engine) read(ctx context.Context, g *going, id int64) {
 			return nil
 		}
 		switch {
+		case errors.Is(err, search.ErrNotIndexed) && p.LinkedIn.Text != "":
+			// Asked again for a text Exa once gave, see
+			// store.Data.readCutAgain, the profile keeps the one it has.
+			r.Error = NotIndexed
+			p.ToRead = false
 		case errors.Is(err, search.ErrNotIndexed):
 			// Said without the link, which is personal data.
 			r.Error = NotIndexed

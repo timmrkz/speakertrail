@@ -30,9 +30,16 @@ kind of person in a place, like "Yogalehrerin Köln" or "Gen Z Unternehmer
 NRW". It is one call to Exa, which reads its own index and never
 LinkedIn itself, so a run of ten takes well under a minute. Exa answers
 with the profile's headline, place, roles, education and the dates of its
-latest posts, comments and reactions. The whole text of the profile, up
-to 8,000 letters, is kept on the person: it is what Draft writes a first
-message from. A person found before it was kept has it read once from
+latest posts, comments and reactions. Exa is asked for up to 30,000
+letters of the profile's text, since it writes the activity last, after
+every job, and is billed by the page, not the length. The dates come
+from all of it. Up to 8,000 letters are kept on the person, which is
+what Draft writes a first message from: when the text is longer, the
+end of the career and the education give way before the activity,
+which keeps up to half. Builds before 27 November 2026 asked for 8,000
+letters, so a long career took the activity along, and the person
+showed No activity on LinkedIn known. Everyone whose text was cut that
+way is read again once, in the next run. A person found before it was kept has it read once from
 Exa's index when a draft asks for it, one call against the month's
 budget.
 

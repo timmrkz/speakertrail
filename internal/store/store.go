@@ -85,6 +85,9 @@ type Data struct {
 	// Settings to draft with, downloaded or not. Empty until Tim picks one,
 	// and then the largest on the Mac drafts.
 	LanguageModel string `json:"language_model,omitempty"`
+	// CutRead says the people whose profile text Exa cut before its
+	// activity were marked once to be read again, see readCutAgain.
+	CutRead bool `json:"cut_read,omitempty"`
 	// Template is the template a first message is put together from, as
 	// Tim changed it in Settings, nil while it is his first one. See
 	// template.go.
@@ -321,6 +324,7 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	if err := s.readTexts(raw); err != nil {
 		return nil, err
 	}
+	s.data.readCutAgain()
 	return s, nil
 }
 

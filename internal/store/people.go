@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/timmrkz/speakertrail/internal/place"
 	"github.com/timmrkz/speakertrail/internal/rubric"
@@ -74,6 +75,41 @@ func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (p *Person
 	p.Connect(true, at)
 	p.UpdatedAt = at
 	return p, isNew, connected && !isNew
+}
+
+// readCutAgain marks once, for the next run, everyone whose profile text
+// from Exa was cut before its activity. Builds before 27 November 2026
+// asked Exa for 8000 characters, and Exa writes the activity last, so a
+// long career took it along and the person showed No activity on
+// LinkedIn known (Tim's report of that day). A read now keeps it, see
+// search.AskedChars. It is marked once, so a profile that has no activity
+// in Exa's index at all is not asked for at every start.
+func (d *Data) readCutAgain() {
+	if d.CutRead {
+		return
+	}
+	d.CutRead = true
+	for _, p := range d.People {
+		if p.LinkedIn.URL != "" && cutBeforeActivity(p.LinkedIn.Text) {
+			p.ToRead = true
+		}
+	}
+}
+
+// cutLength is how long a profile text from Exa is that was cut at the
+// 8000 characters Exa was asked for: a little less, since the email
+// addresses and phone numbers in it are taken out.
+const cutLength = 7000
+
+// cutBeforeActivity says a profile text is one Exa wrote, which starts
+// with the name as a heading, "# Erika Beispiel", as a pasted page never
+// does, at least cutLength long and with no activity in it.
+func cutBeforeActivity(text string) bool {
+	if !strings.HasPrefix(text, "# ") || utf8.RuneCountInString(text) < cutLength {
+		return false
+	}
+	_, known := rubric.Writing(text)
+	return !known
 }
 
 // AddPage adds someone from a LinkedIn page Tim pasted, under the link

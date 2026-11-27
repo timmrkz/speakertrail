@@ -164,3 +164,51 @@ func TestTheTextsAgreeAgainAfterAFailedSave(t *testing.T) {
 		}
 	})
 }
+
+// Someone whose text Exa cut before the activity, by a build that asked
+// Exa for 8000 characters, is read again in the next run, once. A text
+// with its activity, a page Tim pasted and a short text are left as they
+// are (Tim's report of 27 November 2026).
+func TestATextCutBeforeTheActivityIsReadAgainOnce(t *testing.T) {
+	dir := t.TempDir()
+	s := open(t, dir)
+	career := strings.Repeat("### Inhaberin - Beispiel GmbH\n\nBeispiel GmbH is a company in Köln.\n\n", 120)
+	texts := map[string]string{
+		"cut":      "# Eva Beispiel\n\n## Experience\n\n" + career,
+		"active":   "# Ida Probe\n\n## Experience\n\n" + career + "## Social\n\n- [2026-11-02 · Ida Probe posted this] [Ein Beitrag](https://www.linkedin.com/posts/x)",
+		"pasted":   "Ola Muster\n· 1st\n\nExperience\n" + career,
+		"short":    evaText,
+		"no-texts": "",
+	}
+	ids := map[string]int64{}
+	if err := s.Update(func(d *Data) error {
+		search, _ := d.AddSearch("Keramik Köln", 0, t0)
+		for name, text := range texts {
+			p, _ := d.AddFound(Found{URL: "https://www.linkedin.com/in/" + name, Name: "Eva Beispiel", Text: text}, search, 1, t0)
+			ids[name] = p.ID
+		}
+		// As a file from before.
+		d.CutRead = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s = open(t, dir)
+	if err := s.Update(func(d *Data) error {
+		for name, id := range ids {
+			if p := d.Person(id); p.ToRead != (name == "cut") {
+				t.Errorf("%s: to read %v", name, p.ToRead)
+			}
+		}
+		// The read finds the profile as before, with no activity.
+		d.Person(ids["cut"]).ToRead = false
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	open(t, dir).Read(func(d *Data) {
+		if d.Person(ids["cut"]).ToRead {
+			t.Error("read again at the next start too")
+		}
+	})
+}

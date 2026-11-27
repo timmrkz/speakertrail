@@ -112,6 +112,8 @@ func TestExaPeople(t *testing.T) {
 		// The whole text is kept, since a first message is written from it.
 		Text: "# Lea Probe\n\nPersonal Trainerin | Selbstständig\n\nCologne, North Rhine-Westphalia, Germany (DE)\n\n300 connections\n\n## Activity\n\n- [2026-06-02 · Gefällt mir: Ein Beitrag](https://www.linkedin.com/posts/x)\n- [2026-10-30 · Kommentar: Starker Kurs!](https://www.linkedin.com/posts/y)",
 	}}
+	// Exa gave the text whole, so as long as what is kept.
+	want[0].Length = len([]rune(want[0].Text))
 	if !reflect.DeepEqual(people, want) {
 		t.Errorf("people\n%+v\nwant\n%+v", people, want)
 	}
@@ -295,8 +297,8 @@ func TestExaLongProfileKeepsActivity(t *testing.T) {
 		if want := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC); !p.LastActive.Equal(want) {
 			t.Errorf("%s: last active %v, want %v", how, p.LastActive, want)
 		}
-		if n := len([]rune(p.Text)); n > search.TextChars {
-			t.Errorf("%s: %d characters kept", how, n)
+		if n := len([]rune(p.Text)); n > search.TextChars || p.Length != len([]rune(text)) {
+			t.Errorf("%s: %d characters kept of %d, Exa gave %d", how, n, p.Length, len([]rune(text)))
 		}
 		head := strings.Index(p.Text, "## About")
 		job := strings.Index(p.Text, "### Geschäftsführerin - Beispiel 0 GmbH")

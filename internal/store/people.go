@@ -78,19 +78,22 @@ func (d *Data) AddLink(url, handle string, runID int64, at time.Time) (p *Person
 }
 
 // readCutAgain marks once, for the next run, everyone whose profile text
-// from Exa was cut before its activity. Builds before 27 November 2026
-// asked Exa for 8000 characters, and Exa writes the activity last, so a
-// long career took it along and the person showed No activity on
-// LinkedIn known (Tim's report of that day). A read now keeps it, see
-// search.AskedChars. It is marked once, so a profile that has no activity
-// in Exa's index at all is not asked for at every start.
+// Exa cut. Builds before 27 November 2026 asked Exa for 8000 characters,
+// and Exa writes the activity last, so a long career took all of it along
+// and the person showed No activity on LinkedIn known (Tim's report of
+// that day), or took its end, where Exa lists the likes, and the person
+// showed an older Active lately. A read now keeps it, see
+// search.AskedChars. It is marked once, so a profile that is long at
+// Exa is not asked for at every start. A build before this one drops
+// CutRead from the file, so after a switch to one and back they are
+// read once more.
 func (d *Data) readCutAgain() {
 	if d.CutRead {
 		return
 	}
 	d.CutRead = true
 	for _, p := range d.People {
-		if p.LinkedIn.URL != "" && cutBeforeActivity(p.LinkedIn.Text) {
+		if p.LinkedIn.URL != "" && cutByExa(p.LinkedIn.Text) {
 			p.ToRead = true
 		}
 	}
@@ -101,15 +104,11 @@ func (d *Data) readCutAgain() {
 // addresses and phone numbers in it are taken out.
 const cutLength = 7000
 
-// cutBeforeActivity says a profile text is one Exa wrote, which starts
-// with the name as a heading, "# Erika Beispiel", as a pasted page never
-// does, at least cutLength long and with no activity in it.
-func cutBeforeActivity(text string) bool {
-	if !strings.HasPrefix(text, "# ") || utf8.RuneCountInString(text) < cutLength {
-		return false
-	}
-	_, known := rubric.Writing(text)
-	return !known
+// cutByExa says a profile text is one Exa wrote, which starts with the
+// name as a heading, "# Erika Beispiel", as a pasted page never does, and
+// at least cutLength long.
+func cutByExa(text string) bool {
+	return strings.HasPrefix(text, "# ") && utf8.RuneCountInString(text) >= cutLength
 }
 
 // AddPage adds someone from a LinkedIn page Tim pasted, under the link

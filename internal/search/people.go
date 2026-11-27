@@ -29,10 +29,14 @@ type Profile struct {
 	// LastActive is the date of the newest post, comment or reaction the
 	// profile shows, zero when it shows none.
 	LastActive time.Time
-	// Text is the whole profile as the index wrote it down: the headline,
-	// the About, the jobs, the education and the latest activity. It is
-	// what a first message is written from.
+	// Text is the profile as the index wrote it down, the headline, the
+	// About, the jobs, the education and the latest activity, at most
+	// TextChars long, see shortened. It is what a first message is
+	// written from.
 	Text string
+	// Length is how many characters of text Exa gave, before shortened,
+	// for the log, to see whether Exa gives up to AskedChars.
+	Length int
 }
 
 // Step is one job or one education in a profile.
@@ -305,7 +309,7 @@ var activityDate = regexp.MustCompile(`\[(20\d\d-\d\d-\d\d) ·`)
 func profilesOf(results []exaProfile) []Profile {
 	res := make([]Profile, 0, len(results))
 	for _, r := range results {
-		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: shortened(WithoutContact(strings.TrimSpace(r.Text)))}
+		p := Profile{URL: r.URL, Name: strings.TrimSpace(r.Title), Text: shortened(WithoutContact(strings.TrimSpace(r.Text))), Length: utf8.RuneCountInString(r.Text)}
 		for _, en := range r.Entities {
 			if en.Type == "person" {
 				if en.Properties.Name != "" {

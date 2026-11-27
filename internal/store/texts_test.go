@@ -165,11 +165,11 @@ func TestTheTextsAgreeAgainAfterAFailedSave(t *testing.T) {
 	})
 }
 
-// Someone whose text Exa cut before the activity, by a build that asked
-// Exa for 8000 characters, is read again in the next run, once. A text
-// with its activity, a page Tim pasted and a short text are left as they
-// are (Tim's report of 27 November 2026).
-func TestATextCutBeforeTheActivityIsReadAgainOnce(t *testing.T) {
+// Someone whose text Exa cut, by a build that asked Exa for 8000
+// characters, is read again in the next run, once, before the activity
+// or inside it, where Exa lists the likes last. A page Tim pasted and a
+// short text are left as they are (Tim's report of 27 November 2026).
+func TestATextCutByExaIsReadAgainOnce(t *testing.T) {
 	dir := t.TempDir()
 	s := open(t, dir)
 	career := strings.Repeat("### Inhaberin - Beispiel GmbH\n\nBeispiel GmbH is a company in Köln.\n\n", 120)
@@ -196,7 +196,7 @@ func TestATextCutBeforeTheActivityIsReadAgainOnce(t *testing.T) {
 	s = open(t, dir)
 	if err := s.Update(func(d *Data) error {
 		for name, id := range ids {
-			if p := d.Person(id); p.ToRead != (name == "cut") {
+			if p := d.Person(id); p.ToRead != (name == "cut" || name == "active") {
 				t.Errorf("%s: to read %v", name, p.ToRead)
 			}
 		}

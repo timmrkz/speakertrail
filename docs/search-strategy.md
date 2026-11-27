@@ -38,8 +38,9 @@ what Draft writes a first message from: when the text is longer, the
 end of the career and the education give way before the activity,
 which keeps up to half. Builds before 27 November 2026 asked for 8,000
 letters, so a long career took the activity along, and the person
-showed No activity on LinkedIn known. Everyone whose text was cut that
-way is read again once, in the next run. A person found before it was kept has it read once from
+showed No activity on LinkedIn known, or an older date. Everyone whose
+text from Exa is 7,000 letters or more is read again once, in the next
+run. A person found before it was kept has it read once from
 Exa's index when a draft asks for it, one call against the month's
 budget.
 

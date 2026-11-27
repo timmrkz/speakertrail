@@ -197,7 +197,8 @@ a profile search.
 
 `GET /api/sources?kind=profile_search&q=köln` lists them, with how many
 people each found, `people`, and how many of those Tim connected with,
-`people_connected`.
+`people_connected`. `made_from` is the search a run made this one from, in
+another city, and missing for a search Tim added.
 
 `POST /api/sources` with `{"query": "Yogalehrerin Bonn"}` adds a search and
 answers 201 with it. The same search again, in any case, gets 409.
@@ -217,7 +218,16 @@ of people added from links that a run before did not read, and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
 false and `run_id` is that run. Without an Exa key, with the key kept
 back by macOS because its password box was closed, with the month's
-budget spent, or with no search due it gets 409 and says which.
+budget spent, or with nothing to search it gets 409 and says which.
+
+A run takes `profile_searches_per_run` searches. When fewer are due, it
+makes new ones to fill the room, so Run always searches: a kind of person
+from a search that led to a connection, like "Gründer unter 30" of
+"Gründer unter 30 Köln", in one of the 30 biggest cities of NRW it was
+never asked in, the nearest to Where you are first. The kinds go by their
+connections, the most first, and take turns. A kind whose searches are
+mostly paused, or with a word of an exclusion, is left alone. Only when
+no kind is left to spread is there nothing to search.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
 `progress`: how many searches it asks, `checks` and `checks_done`, how

@@ -1186,3 +1186,66 @@ func TestAPageAddsSomeoneNew(t *testing.T) {
 		t.Errorf("someone new with someone open: %v", err)
 	}
 }
+
+// Tim, 27 November 2026: Run said no search was due and searched nothing.
+// Now a run with room makes new searches of a kind that led to a
+// connection, in other cities, and asks them at once. Started from
+// several goroutines at once, only one run starts and nothing is made
+// twice.
+func TestARunWithNothingDueMakesNewSearches(t *testing.T) {
+	f := &finder{profiles: invented}
+	e, st := newEngine(t, f)
+	if _, _, err := e.Start("manual", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	if err := st.Update(func(d *store.Data) error {
+		d.People[0].Connect(true, t0)
+		return d.SetSetting("profile_searches_per_run", json.RawMessage(`3`), t0)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	ids := make(chan int64, 4)
+	for range 4 {
+		wg.Go(func() {
+			id, _, err := e.Start("manual", 0)
+			if err != nil {
+				t.Error(err)
+			}
+			ids <- id
+		})
+	}
+	wg.Wait()
+	close(ids)
+	var id int64
+	for got := range ids {
+		if id != 0 && got != id {
+			t.Errorf("two runs started, %d and %d", id, got)
+		}
+		id = got
+	}
+	e.Wait()
+	want := []string{"Gründerin Köln", "Gründerin Bonn", "Gründerin Düsseldorf", "Gründerin Essen"}
+	f.mu.Lock()
+	asked := slices.Clone(f.queries)
+	f.mu.Unlock()
+	slices.Sort(asked)
+	sorted := slices.Sorted(slices.Values(want))
+	if !slices.Equal(asked, sorted) {
+		t.Errorf("Exa was asked %q, want %q", asked, sorted)
+	}
+	st.Read(func(d *store.Data) {
+		if len(d.Searches) != 4 {
+			t.Errorf("%d searches, want 4", len(d.Searches))
+		}
+		for _, s := range d.Searches[1:] {
+			if s.From != "Gründerin Köln" || s.Runs != 1 {
+				t.Errorf("%s: from %q, %d runs", s.Query, s.From, s.Runs)
+			}
+		}
+		if r := d.Run(id); len(r.Searches) != 3 {
+			t.Errorf("the run took %d searches, want 3", len(r.Searches))
+		}
+	})
+}

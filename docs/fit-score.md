@@ -279,6 +279,19 @@ come first, the mean of their 10 best. A search with 5 people Tim
 rejected, and none he connected with, pauses itself, with a line
 that says why. Tim resumes it with one click.
 
+**Searches spread to more cities.** Built on 27 November 2026, before
+the rest of this section, after Tim pressed Run and got "No search is
+due": he wants more people whenever he asks. A run takes
+`profile_searches_per_run` searches, and when fewer are due it fills the
+room with new ones, `store.Spread`. Each is a kind of person from a
+search that led to a connection, like "Gründer unter 30" of "Gründer
+unter 30 Köln", in one of the 30 biggest cities of NRW it was never asked
+in, the nearest to Where you are first. The kinds go by their
+connections, the most first, and take turns. A kind whose searches are
+mostly paused, or with a word of an exclusion, is left alone. Searches
+says which search each was made from. Each costs one call to Exa against
+the month's budget, like any search.
+
 **New searches from Tim's picks.** After a run, the app makes up to 2
 new searches from the headline words that count most for Like your
 picks, said by at least 3 people Tim connected with. Each word goes

@@ -330,6 +330,9 @@ export interface Source {
   health: Health
   health_note: string
   discovered_from: string
+  // The search a run made this one from, in another city, when a run
+  // made it.
+  made_from?: string
   // Everyone the source ever found, and how many of them Tim connected
   // with.
   people: number

@@ -180,7 +180,7 @@
     if (mode === 'open') return 'Open this person, marked connected'
     if (mode === 'none') return linked!.here.length ? 'Everyone these links lead to is here already' : "Not a link to a person's LinkedIn profile, like linkedin.com/in/name"
     if (going) return `${runSays(going, now, answeredAt)}. Stop this run: what is running finishes, the rest waits for the next run`
-    return 'Run the due searches now. Takes about a minute'
+    return 'Run the due searches now, and new ones in more cities when few are due. Takes about a minute'
   })
   function act() {
     if (mode === 'add' || mode === 'open') void runWatch.add(q)

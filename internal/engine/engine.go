@@ -76,7 +76,7 @@ func ReadProfile(ctx context.Context, r Reader, link string, reserve func() (boo
 var (
 	ErrNoKey    = errors.New("add the Exa key in Settings first, runs ask Exa for the profiles")
 	ErrNoBudget = errors.New("this month's Exa searches are used up. Raise exa_monthly_searches in Settings, or wait for next month")
-	ErrNothing  = errors.New("no search is due. Add one in Searches, or resume a paused one")
+	ErrNothing  = errors.New("every search ran lately, and none led to a connection to ask in another city yet. Add one in Searches, or resume a paused one")
 	ErrNoLinks  = errors.New("there is no link to a LinkedIn profile in it, like linkedin.com/in/name")
 	ErrClosed   = errors.New("the app is relaunching into a new build. Start the run again once it is back")
 	// ErrUnread is a key that is saved and could not be read, like one
@@ -222,7 +222,12 @@ func (e *Engine) Start(kind string, only int64) (int64, bool, error) {
 			}
 			ids = []int64{only}
 		} else {
-			for _, s := range d.Due(now, d.Int("profile_searches_per_run")) {
+			per := d.Int("profile_searches_per_run")
+			for _, s := range d.Due(now, per) {
+				ids = append(ids, s.ID)
+			}
+			// Room left is filled with new searches, so Run always searches.
+			for _, s := range d.Spread(per-len(ids), now) {
 				ids = append(ids, s.ID)
 			}
 			// Profiles a run before did not get to read.

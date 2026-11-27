@@ -236,6 +236,9 @@ type Search struct {
 	Points    float64   `json:"points"`
 	CreatedAt time.Time `json:"created_at"`
 	Notes     string    `json:"notes,omitempty"`
+	// From is the search a run made this one from, in another city, see
+	// Spread. Empty for a search Tim added or one the app began with.
+	From string `json:"from,omitempty"`
 	// LastRun and NextRun are when the search ran last and is due next.
 	LastRun    time.Time `json:"last_run,omitzero"`
 	NextRun    time.Time `json:"next_run,omitzero"`

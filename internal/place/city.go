@@ -79,3 +79,40 @@ func CityOf(texts ...string) string {
 	}
 	return ""
 }
+
+// BigCities is how many of NRWCities, from the first, have more than
+// 100,000 people, from Köln to Gütersloh. Searches are spread only to
+// them, since a smaller town's people mostly give the city beside it.
+const BigCities = 30
+
+// Split splits a profile search like "Yogalehrerin Köln" into the kind
+// of person, "Yogalehrerin", and the place it ends with, "Köln", as
+// NRWCities spells it, or "NRW". A search that ends with no place it
+// knows gives the whole search as the kind and no place.
+func Split(query string) (kind, city string) {
+	query = strings.Join(strings.Fields(query), " ")
+	lower := strings.ToLower(query)
+	for _, p := range splitEnds {
+		if strings.HasSuffix(lower, " "+p.end) {
+			return strings.TrimSpace(query[:len(query)-len(p.end)]), p.city
+		}
+	}
+	return query, ""
+}
+
+// splitEnds are the places a search can end with, in lower case, the
+// longest first, so "Mülheim an der Ruhr" wins over "Ruhr".
+var splitEnds = func() []struct{ end, city string } {
+	var out []struct{ end, city string }
+	for _, c := range NRWCities {
+		out = append(out, struct{ end, city string }{strings.ToLower(c), c})
+	}
+	for alias, c := range cityAliases {
+		out = append(out, struct{ end, city string }{alias, c})
+	}
+	for _, r := range []string{"nrw", "nordrhein-westfalen", "north rhine-westphalia"} {
+		out = append(out, struct{ end, city string }{r, "NRW"})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return len(out[i].end) > len(out[j].end) })
+	return out
+}()

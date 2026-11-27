@@ -104,8 +104,8 @@ What the person did is the thread a fault is followed by. Each act is a
 line at `info` from `window` with a short id of its own, `a1`, `a2` and
 on: every click, and every key that is not typing. It is named by the
 control it was on, by its `aria-label`, its tooltip or its words, as in
-FrameFairy: `pressed button.btn "Run the due searches now. Takes about a
-minute"`, `⌘F on input.input "Search settings"`. Everything that act sets off carries its id, in the window and
+FrameFairy: `pressed button.btn "Run the due searches now, and new ones
+in more cities when few are due. Takes about a minute"`, `⌘F on input.input "Search settings"`. Everything that act sets off carries its id, in the window and
 on the Go side: the requests it makes, Wails's, the engine's and the
 API's lines. The window tells the Go side of each act the moment it
 happens, before the requests it makes for it, and the Go side's lines

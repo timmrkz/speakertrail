@@ -30,9 +30,9 @@ Read from GitHub's record of the 25 newest builds of pull requests that
 turned Ready to update to, in each repository, 25 to 27 November 2026.
 From the moment the build job started to the status Ready to update to,
 which the publish sets once the build's entry is up. Updates does not
-wait for CI, so this is the time from a push to the build on Updates,
-less the few seconds before a runner takes the build. Median of 25 runs,
-and the 90th percentile, which is the spread.
+wait for CI, so this is most of the time from a push to the build on
+Updates. It leaves out the job `which` before the build, about 20 s in
+both. Median of 25 runs, and the 90th percentile, which is the spread.
 
 | From the build's start (s) | Speaker Trail | FrameFairy | FrameFairy against Speaker Trail |
 | --- | ---: | ---: | --- |
@@ -56,18 +56,25 @@ publishes that uploaded a build:
 | upload | 130 | 10 | a `gh` call a file in shell, against Go |
 | the whole job | 273 | 41 | |
 
-The upload of Speaker Trail is 36 s in the one publish since #127 split
-it in three steps, one run. Both jobs waited about 5 s for a runner, and
+Since #127 split Speaker Trail's upload in three steps, two publishes
+have run. The build went up in 19 and 17 s, the patches in 101 and 76 s,
+and the entry in 2 s. The entry waits for every patch, though an app
+that finds a patch missing takes the file's piece instead,
+`internal/updates/assemble.go`. Both jobs waited about 5 s for a runner, and
 Speaker Trail's at most 145 s, since its publish runs on a Mac.
 
 What the pack step spends its 98 s on shows in its log. The publish of
 27 November at 19:15 made 60 patches: 12 of the app program, from 120 to
 510 KB, and 48 of `llama-server`, `libonnxruntime` and the two
 sherpa-onnx libraries, from 1.7 to 3.2 KB each. A patch of 2 KB between
-two copies of a 29 MB library is a library whose code did not change and
+two copies of an 18 MB library is a library whose code did not change and
 whose signature did, as #128 suspects. To make each of those 48, the job
 downloaded the library from twelve builds and ran bsdiff over it. So most
-of the 98 s, and four of the five pieces each build uploads, are #128.
+of the 98 s, most of the patches' upload, and four of the five pieces
+each build uploads, are #128. The review of this record took the
+`llama-server` of three builds apart: the bytes before the signature and
+the code directory are the same, and only the signature's CMS blob
+differs.
 
 ### Download size
 
@@ -76,16 +83,16 @@ A usual update, for a pull request of a few hundred lines:
 | What the app downloads (MB) | Speaker Trail | FrameFairy |
 | --- | ---: | ---: |
 | a usual update, with a patch | 0.12 to 0.51 | none, the piece instead |
-| a usual update, the program's piece | 4.7 | about 7 |
+| a usual update, the program's piece | 5.1 | about 7 |
 | an app with none of its files | 16.9 | about 33 |
 
-Speaker Trail's from the log above and UPDATES.md, FrameFairy's from its
+Speaker Trail's from the log above and the parts of #129's build, FrameFairy's from its
 UPDATES.md. Here Speaker Trail is ten to forty times smaller, by its
 patches and its lean programs.
 
 ### Storage
 
-What each release `dev` holds, read on 27 November 2026 at 19:30 UTC:
+What each release `dev` holds, read on 27 November 2026 at about 19:25 UTC:
 
 | | Speaker Trail | FrameFairy |
 | --- | ---: | ---: |
@@ -142,33 +149,38 @@ sizes that is seconds, so this design leaves it.
    signs it with the update key and uploads it. Both run the release
    tool main built once and GitHub attested, FrameFairy's
    `release-tool.yml` and its action. The app trusts the order of builds
-   only from a signature beside the claim, over the time the build was
-   published.
+   only from a signature bound to the claim, over the time the build
+   was made.
    Cost: two jobs where there is one, about 10 s to hand the zip on, two
    workflows ported. The Mac is held for about 30 s instead of 270.
 2. **What changes together.** A file changes when its code changes, and
    not when it is signed again. `harden` signs as today, then compares
-   each library's code directory hash with the same library of the
-   channel's build before. Where they match, it keeps that build's signed
-   bytes. The hash covers the code, the identifier, the entitlements and
-   the requirements, so the same hash is the same signed code, and the
-   kept file is checked by codesign against Tim's team like any other.
+   each library with the same library of the builds on the list, main's
+   and the channel's first. Where the bytes up to the signature's CMS
+   blob are the same, so the code directory with its code, identifier,
+   entitlements and requirements, and the CMS blob's certificate is the
+   one `harden` signs with now, it keeps that build's signed bytes. The
+   code directory does not cover the certificate, hence the second
+   condition, so a renewed or revoked certificate is never carried on.
+   The kept file is checked with `codesign --verify --strict` against
+   Tim's team like any other, before the app's own seal is made.
    Then a build has one changed program, the app's, one piece and one
    patch a base. Cost: one download of the libraries a publish, about 11
    MB. Fixes #128.
 3. **Where state lives.** The release holds one file of patches a build,
    and the app reads the one patch it needs with an HTTP range. Files
    per build fall from up to 60 to 4. And the app keeps the build it
-   replaced for a day, in `~/Library/Caches/Speaker Trail/builds`, so a
+   replaced, about 56 MB, until the new one has said it started, so a
    build that does not start can be undone. Cost: range requests through
    GitHub's redirect to its storage, to prove first, and a format the
    parts must say.
 4. **What runs together.** A build goes on Updates as soon as it is
-   signed, with its pieces, and its patches follow in a second step that
-   writes its parts again. An app that updates in that minute downloads
-   the program's piece, 4.7 MB. Cost: parts written twice, and GitHub
-   answers 404 for a file while it is replaced, which the channel list
-   needed two copies for.
+   signed: its pieces, its zips and its parts, then its entry and the
+   status, and its patches after. The parts already name the patches. An
+   app that updates in that minute finds a patch missing and takes the
+   file's piece, 5.1 MB, as `assemble.go` already does. Cost: a reorder
+   of two steps in `publish.yml`, and a larger download for an update in
+   that minute.
 5. **What a test has to build.** Every step of the publish is one
    command of the release tool, as in FrameFairy: `publish` uploads in
    Go, side by side, a piece that is there already stays, `not-published`
@@ -182,21 +194,27 @@ sizes that is seconds, so this design leaves it.
 ## What converges
 
 - **Signed bytes that change only with the code**, in 2, and 1, 3 and 4
-  need less once it holds: with one changed file a build, the pack takes
-  seconds, the release holds a fifth of the files, and a Mac is held
-  briefly enough that splitting the job buys little.
+  need less once it holds: with one changed program a build, the pack
+  bsdiffs about a quarter of what it does today, about 25 s, the release
+  holds a fifth of the files, and a Mac is held briefly enough that
+  splitting the job buys little.
+- **The entry before the patches**, in 4, kept though only one needs it,
+  because it is a reorder with no new format and saves about 100 s today.
+  It comes first.
 - **The publish in Go, FrameFairy's commands**, in 1 and 5. It is
   FrameFairy's upload, ten times quicker than a `gh` call a file, and
   the no-shell rule.
 - **The release tool built once and attested**, in 1 and 5. Built in
   the job without a cache, FrameFairy's publish took 52 s, and with the
-  tool downloaded it takes 41. It also takes main's Go cache out of
-  every job that holds a write token, #55.
+  tool downloaded it takes 41. It saves about 10 s here. FrameFairy
+  reworked it in three records in two days, so it is not small. #55 is
+  closed sooner by two lines: the list job builds the tool with
+  `cache: false` and `go build`, as the publish job already does.
 - **The build before kept, and a build that does not start undone**, in
   3 and 5. Neither app has it.
-- **The time of the build, signed beside the claim**, in 1. The app never steps back
-  within the channel it follows by itself. A pick of another channel
-  still goes sideways, as now.
+- **The time of the build, signed with the claim**, in 1. The app never
+  steps back within the channel it follows by itself. A pick of another
+  channel still goes sideways, as now.
 
 Dropped, each needed by one simulation only:
 
@@ -206,8 +224,6 @@ Dropped, each needed by one simulation only:
 - The file of patches read by range, of 3. With one patch a base the
   release holds about 120 files, and the range adds a request the app
   has never made, through a redirect GitHub may change.
-- The patches after the entry, of 4. They save about 15 s once #128 is
-  fixed, for parts written twice and a window of 404.
 - `rcodesign`, a signer that runs on Linux, which would take the Mac out
   of the publish. It is a second program in the path of the Developer ID,
   where Apple's `codesign` is the reference, and the check that every
@@ -220,23 +236,27 @@ the merged and closed marks.
 
 ## The decision
 
-The patches stay. Signed bytes change only when the code does, the
-publish is FrameFairy's commands in Go with its attested release tool,
-the build before guards the new one, and each entry signs when its build
-was published.
+The patches stay, and go up after the entry. Signed bytes change only
+when the code does, the publish is FrameFairy's commands in Go with its
+attested release tool, the build before guards the new one, and each
+entry signs when its build was made.
 
 ```
-publish.yml             one job on a Mac, every step one command of the tool
+publish.yml             one job on a Mac, every step one command of the tool, the entry
+                        and the status before the patches
 .github/actions/        release-tool: main's build of the tool, attested, from FrameFairy
 cmd/speakertrail-release
-                        harden: keeps a library's signed bytes when its code directory hash
-                        is the build before's
+                        harden: keeps a library's signed bytes when its bytes up to the CMS
+                        blob are a listed build's and its certificate is today's
                         bases: the channel's build before, main's, the other listed builds,
                         the newest three that left the list
                         publish, not-published, channels: from FrameFairy
-                        sign: a second signature, over the time the build was published
-cmd/speakertrail-app    install.go: keeps the build it replaces, opens the new one, and puts
-                        the old one back when the new one does not say it started within a
+                        sign: a second signature, over the claim and the time the build
+                        run was created
+                        publish: refuses to replace an entry of a newer build
+cmd/speakertrail-app    install.go: starts the new program once to check it loads, keeps the
+                        build it replaces and the app's file, opens the new one, and puts
+                        both back when the new one does not say it started within a
                         minute. Relaunch goes through it too, not Wails' helper
 internal/updates        refuses, unasked, a build of the channel followed older than the one
                         running
@@ -245,17 +265,39 @@ Wails' pkg/updater      downloads, checks the signature, unpacks, as before
 
 Each layer uses only the ones under it, as in the record before.
 
-What a build that does not start looks like: the new build writes a mark
-into the app's folder once the window has loaded the interface and the
-workspace answered. The old build's step waits up to a minute for it.
-Without it, the step ends the new build, puts the old one back, opens
-it, and writes down the SHA-256 of the build that failed. The app then
-does not install that build by itself again, and Updates says it did not
-start, with the build before running. A build put in on quit is opened
-later, with nobody waiting. So each start first looks whether the start
-before it, of the same build, said it started. When it did not, and the
-build before is kept, it puts that one back the same way. Such a build
-is undone after its second failed start.
+What a build that does not start looks like. Before it swaps, the old
+build's step, on Relaunch and on quit alike, starts the new program once
+in a mode that loads its libraries and ends. A library macOS refuses
+under the hardened runtime ends a program before any Go code runs, so
+only a program of the old build can see that. When it fails, the old
+app stays. When it passes, the step copies `speakertrail.json` and
+`profile-texts.json` aside, moves the old app aside and the new one in.
+The new build writes a mark into the app's folder once the window has
+loaded the interface and the workspace answered. On Relaunch the old
+build's step waits up to a minute for it. Without it, the step ends the
+new build, puts the old app and the app's files back, opens it, and
+writes down the SHA-256 of the build that failed. The app then does not
+install that build by itself again, and Updates says it did not start,
+with the build before running. A build put in on quit is opened later,
+with nobody waiting. So each start first looks whether the start before
+it, of the same build, said it started. When it did not, it puts the
+old app and the files back the same way, after the second failed start.
+Once the new build said it started, the old app and the copies go.
+
+The app's files go back with the app because an older build drops the
+fields it does not know when it writes, and refuses a file of a newer
+`store.Version` outright. A build that failed may have written the file
+before it failed.
+
+What the time is. A run of an older commit run again, as a cancelled
+`macos` job is, is published today as its channel's build, since its
+commit is in the channel's history, and replaces the newer entry. So the
+time is when the build's run was created, which a run again keeps, not
+when it was published. The second signature is over the line
+`speakertrail build order 1`, the claim's own lines and that time, so it
+cannot be moved to another entry. The publish refuses to replace an
+entry whose time is newer, and the app refuses, unasked, an entry of the
+channel it follows older than the build it runs.
 
 ## What follows
 
@@ -263,50 +305,60 @@ Estimates, read from the steps above, not measured:
 
 | | today | after | change |
 | --- | ---: | ---: | --- |
-| publish job (s) | 273 | about 60 | about 78 % faster |
-| push to Ready to update to, median (s) | 366 | about 150 | about 59 % faster |
+| publish job up to the entry (s) | 273 | about 80 | about 71 % faster |
+| build start to Ready to update to, median (s) | 366 | about 165 | about 55 % faster |
 | files a build adds to `dev` | about 69 | about 14 | about 80 % fewer |
 | files on `dev` | 532 | about 120 | about 77 % fewer |
 | a usual update (MB) | 0.12 to 0.51 | the same | 0 % |
-| an app with only the libraries of an earlier build (MB) | 16.9 | 4.7 | 72 % smaller |
+| an app with only the libraries of an earlier build (MB) | 16.9 | 5.1 | 70 % smaller |
 
 The pull requests that build it measure each line as these were
 measured, from GitHub's record of 25 builds.
 
-- It costs: about 11 MB downloaded by every publish to compare the
-  libraries, a mark the app writes on each start, a step on quit that
-  waits a minute where it waited seconds, and a second signature in
-  each entry. The time goes beside the claim, not into it, so the apps
+- It costs: about 12 MB downloaded by every publish to compare the
+  libraries, a 5.1 MB piece for an update in the minute before the
+  patches are up, a mark the app writes on each start, a start of the
+  new program before each swap, a Relaunch that waits up to a minute,
+  about 56 MB of disk for the old app until the new one started, and a
+  second signature in each entry. The time goes beside the claim, not into it, so the apps
   from before still check the claim they know. An entry without the
   time is not installed by itself any more, only picked.
-- It buys: a build on Updates about three and a half minutes sooner,
-  every 25 builds about 90 minutes, a release that stays far from its
+- It buys: a build on Updates about three minutes sooner, every 25
+  builds about 80 minutes, a release that stays far from its
   limit without a cap doing the work, a broken build undone without a
   terminal, and no way to hand the app an older build of its channel.
 - It was wrong if a build that changed no library still uploads a
-  library's piece, if the publish job still takes over two minutes, or
-  if a build that started fine is put back.
+  library's piece, if a build still takes over two minutes from the end
+  of its build to Ready to update to, or if a build that started fine is
+  put back.
 
 ### For FrameFairy
 
-FrameFairy could take the patches, the lean programs and the build on a
-pull request's opening from here, and the undoing and the claim's time
-from this design. That is FrameFairy's to decide, and a briefing for its
-sessions once Tim says so.
+The undoing and the signed time make Speaker Trail's updater differ
+from FrameFairy's, where CLAUDE.md asks a port to copy it. They are
+built here first, because only here does a build go out with a
+Developer ID that can fail to load, and that is Tim's to agree.
+FrameFairy could take them from here later, with the patches, the lean
+programs and the build on a pull request's opening, by a briefing for
+its sessions once Tim says so.
 
 ### Issues, once Tim says go
 
-In this order, the first the largest gain:
+In this order, the cheapest large gain first:
 
-1. #128, signed bytes that change only with the code, as in simulation 2.
+1. The entry and the status go up before the patches, as in
+   simulation 4. Size small.
+2. #128, signed bytes that change only with the code, as in simulation 2.
    Size medium.
-2. The publish in Go, `publish`, `not-published` and `channels` from
+3. #55 closed in the list job, `cache: false` and `go build`. Size small.
+4. The bases: main's and the channel's build before first, the other
+   listed ones, and the newest three that left. Size small.
+5. A build that does not start is undone, with the app's files, on
+   quit and on Relaunch. Size medium.
+6. Each entry signs when its build run was made, bound to the claim, the
+   publish never replaces a newer entry, and the app does not step back
+   within its channel by itself. Size small.
+7. The publish in Go, `publish`, `not-published` and `channels` from
    FrameFairy, part of #57. Size medium.
-3. The release tool built once on main and attested, from FrameFairy,
-   for #55. Size small.
-4. The bases: the channel's build before, main's, the listed ones and
-   the newest three that left. Size small.
-5. A build that does not start is undone, the step on quit and Relaunch.
+8. The release tool built once on main and attested, from FrameFairy.
    Size medium.
-6. Each entry signs when its build was published, and the app does not
-   step back within its channel by itself. Size small.

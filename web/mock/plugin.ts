@@ -677,8 +677,9 @@ const ROUTES: [string, RegExp, Handler][] = [
     // with, less whom the exclusions hide.
     const hidden = hiddenBy(s)
     let list = s.people.filter((p) => !hidden.has(p.id) && (p.linkedin || p.connected)).map((p) => personList(s, p))
-    // Like the app: in the last 7 days, newest first.
-    const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < 7 * 86400e3
+    // Like the app: in the last new_days days, newest first.
+    const newDays = Number(setting(s, 'new_days') ?? 7)
+    const fresh = (p: Person) => clockNow() - new Date(p.first_seen).getTime() < newDays * 86400e3
     // A search that holds links to profiles shows whom they lead to, under
     // any filter, and says how many are new.
     const found = profileLinks(q.get('q') ?? '')
@@ -722,9 +723,10 @@ const ROUTES: [string, RegExp, Handler][] = [
       return ok({
         people: here.map((p) => personList(s, p)), counts,
         links: { new: found.profiles.length - here.length, here: here.map((p) => p.id), other: found.other, act: actOf(found.profiles.length - here.length, here.length, found.other) },
+        new_days: newDays,
       })
     }
-    return ok({ people: list, counts, links: null })
+    return ok({ people: list, counts, links: null, new_days: newDays })
   }],
   ['POST', /^\/api\/people$/, (s, _m, _q, b) => {
     const found = profileLinks(String(b.text ?? ''))
@@ -1191,6 +1193,11 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (!row) return err(404, 'No such setting')
     if (!('value' in b)) return err(400, 'value is missing')
     if (typeof row.value !== typeof b.value) return err(400, `value must be a ${Array.isArray(row.value) ? 'list' : typeof row.value}`)
+    // Like the app: a number is 0 or more, and whole where the setting
+    // counts whole ones, which every number setting does.
+    if (typeof b.value === 'number' && b.value < 0) return err(400, `${row.key} takes a number of 0 or more`)
+    if (typeof b.value === 'number' && !Number.isInteger(b.value)) return err(400, `${row.key} takes a whole number`)
+    if (row.key === 'new_days' && Number(b.value) < 1) return err(400, 'new_days takes 1 day or more')
     if (row.key === 'hook_prompt' && !String(b.value).includes('{{profile}}')) return err(400, 'The prompt needs {{profile}}, where the profile goes.')
     if (row.key === 'home_city' && String(b.value).trim() !== '') {
       const c = cityOf(String(b.value))

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -27,12 +28,18 @@ var Defaults = []Default{
 	{"probation_weeks", "3", "Weeks a new search may find nobody before runs leave it out"},
 	{"retire_after_empty_checks", "4", "Runs in a row without anyone new before a search is left out"},
 	{HomeCity, `""`, "Where you are, a city in NRW like Köln. People nearer to it come first"},
+	{NewDays, "7", "Days someone stays under New after a search found them or you added them"},
 	{FirstMessagePrompt, mustJSON(DefaultFirstMessagePrompt), "What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them"},
 }
 
 // HomeCity is the setting that says where Tim is, the city distances
 // for the fit are measured from, see docs/fit-score.md.
 const HomeCity = "home_city"
+
+// NewDays is the setting that says how many days someone counts as new
+// under New after they came in, found by a search or added by hand. It was
+// a week, always, until Tim asked for a setting on 27 November 2026.
+const NewDays = "new_days"
 
 // FirstMessagePrompt is the setting that holds the prompt the language
 // model writes the hook of a first message from, see internal/draft. Its
@@ -186,8 +193,8 @@ func (d *Data) Setting(key string) (Setting, bool) {
 }
 
 // SetSetting changes a setting. The value must be of the same kind as its
-// default, a whole number where the default is one, and a value equal to
-// the default takes the change back.
+// default, a whole number of 0 or more where the default is a number, and
+// a value equal to the default takes the change back.
 func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error {
 	def, ok := defaultOf(key)
 	if !ok {
@@ -224,6 +231,14 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 {
 			return fmt.Errorf("%s takes a number of 0 or more", key)
 		}
+		if n != math.Trunc(n) {
+			return fmt.Errorf("%s takes a whole number", key)
+		}
+		// New for no day would hide whom Tim just added from links, as
+		// People turns to New for them.
+		if key == NewDays && n < 1 {
+			return fmt.Errorf("%s takes 1 day or more", key)
+		}
 	}
 	var compact bytes.Buffer
 	if err := json.Compact(&compact, value); err != nil {
@@ -257,19 +272,24 @@ func kindOf(raw json.RawMessage) string {
 	return "nothing"
 }
 
-// Int gives a setting as a whole number.
+// Int gives a setting as a whole number, at most math.MaxInt32, since a
+// larger number would not turn into an int the same way everywhere.
 func (d *Data) Int(key string) int {
 	s, _ := d.Setting(key)
 	var f float64
 	if json.Unmarshal(s.Value, &f) != nil {
 		return 0
 	}
-	return int(f)
+	return int(min(f, math.MaxInt32))
 }
 
-// Days gives a setting in days as a duration.
+// maxDays is the most days a duration holds, a little under 300 years.
+const maxDays = math.MaxInt64 / int64(24*time.Hour)
+
+// Days gives a setting in days as a duration. A number of days too large
+// for one is as many as fit, so it never turns negative.
 func (d *Data) Days(key string) time.Duration {
-	return time.Duration(d.Int(key)) * 24 * time.Hour
+	return time.Duration(min(int64(d.Int(key)), maxDays)) * 24 * time.Hour
 }
 
 // Text gives a setting that is text.

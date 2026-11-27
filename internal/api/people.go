@@ -253,6 +253,9 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 		// Links is set when the search holds links, see linksJSON. The
 		// people are then whom the links lead to, under any filter.
 		Links *linksJSON `json:"links"`
+		// NewDays is how many days someone stays under New, the setting
+		// new_days, for the words that say so.
+		NewDays int `json:"new_days"`
 	}
 	var err error
 	profiles, other := engine.Links(q.Get("q"))
@@ -264,6 +267,7 @@ func (a *API) people(w http.ResponseWriter, r *http.Request) {
 		if len(profiles) > 0 || other > 0 {
 			words = ""
 		}
+		out.NewDays = d.Int(store.NewDays)
 		people, out.Counts, err = d.ListPeople(store.PeopleQuery{Q: words, Sort: q.Get("sort"), Filter: q.Get("filter"), Now: now})
 		if len(profiles) > 0 || other > 0 {
 			out.Links = &linksJSON{Here: []int64{}, Other: other}

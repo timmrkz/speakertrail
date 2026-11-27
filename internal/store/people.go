@@ -233,10 +233,6 @@ func (p *Person) Connect(connected bool, at time.Time) {
 	}
 }
 
-// NewFor is how long someone counts as new under New after they came
-// in, found by a search or added by hand.
-const NewFor = 7 * 24 * time.Hour
-
 // Rejected says whether Tim said the LinkedIn profile a search found is
 // not this person's.
 func (p *Person) Rejected() bool {
@@ -314,10 +310,11 @@ type PeopleQuery struct {
 // Connected, and someone whose profile he rejected only under Rejected,
 // so All shrinks to whom he can still reach out to.
 // Connected comes first, since a person he connected with is real
-// whatever the profile. New is whoever came in during the last week,
-// connected or not, the newest first whatever the order, so those just
-// added stand on top. Whom an exclusion leaves out is in no list,
-// unless Tim connected with them. They stay in the file, so removing the exclusion brings them
+// whatever the profile. New is whoever came in during the days the
+// setting new_days gives, a week until Tim changes it, connected or not,
+// the newest first whatever the order, so those just added stand on top.
+// Whom an exclusion leaves out is in no list, unless Tim connected with
+// them. They stay in the file, so removing the exclusion brings them
 // back.
 func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	if q.Sort == "" {
@@ -335,6 +332,7 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 	words := strings.ToLower(strings.TrimSpace(q.Q))
 	counts := map[string]int{}
 	hidden := d.Hidden()
+	newFor := d.Days(NewDays)
 	var out []*Person
 	for _, p := range d.People {
 		if _, out := hidden[p.ID]; out {
@@ -346,7 +344,7 @@ func (d *Data) ListPeople(q PeopleQuery) ([]*Person, map[string]int, error) {
 		open := !p.Connected && !p.Rejected()
 		in := map[string]bool{
 			"all":       open,
-			"new":       !(p.Rejected() && !p.Connected) && q.Now.Sub(p.FirstSeen) < NewFor,
+			"new":       !(p.Rejected() && !p.Connected) && q.Now.Sub(p.FirstSeen) < newFor,
 			"connected": p.Connected,
 			"rejected":  !p.Connected && p.Rejected(),
 		}

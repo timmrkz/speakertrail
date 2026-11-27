@@ -365,7 +365,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const age = born ? now.getFullYear() - born : 0
   const younger = born
     ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(-20, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
-    : { key: 'younger', label: 'Younger', points: pts(10, 0.5), why: 'Age not known' }
+    : { key: 'younger', label: 'Younger', points: 0, why: 'Age not known' }
   const last = p.linkedin?.last_active
   const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const active = last
@@ -374,9 +374,9 @@ function fitParts(s: State, p: Person): FitPart[] {
   const home = String(setting(s, 'home_city') ?? '')
   const d = home ? km(home, p.city) : null
   const near = !home
-    ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: 'Where you are is not set in Settings' }
+    ? { key: 'near', label: 'Near you', points: 0, why: 'Where you are is not set in Settings' }
     : d === null
-      ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
+      ? { key: 'near', label: 'Near you', points: 0, why: p.city ? `${p.city}, distance not known` : 'City not known' }
       : d < 1
         ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
         : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }

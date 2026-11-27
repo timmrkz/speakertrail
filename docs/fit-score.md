@@ -143,8 +143,10 @@ halves every 40 km. From Köln, for example:
 | Bielefeld | 160 km | 6 % |
 
 A person whose profile names only a region, like "Ruhr Region", or no
-city at all, gets half. Until Tim sets Where you are, everyone gets
-half and the part changes no order.
+city at all, gets none. Until Tim sets Where you are, everyone gets
+none and the part changes no order. What is not known gives no points,
+so every point has a reason Tim can read. Until 27 November 2026 it gave
+half, which showed +10 beside "City not known" (#91).
 
 ### 4. Younger
 
@@ -155,9 +157,11 @@ half and the part changes no order.
 | 40 | none |
 | 41 to 59 | below none, a tenth more for every year past 40, so 50 takes the part away |
 | 60 or older | minus twice the part |
-| not known | half |
+| not known | none |
 
-An age the headline gives beats the guess, as today. Nobody is left
+An age not known gives no points, as a city not known does. Until 27
+November 2026 it gave half, and Tim saw +5 under Younger beside "Age not
+known" (#91). An age the headline gives beats the guess, as today. Nobody is left
 out for age. Like Who they are, Younger takes away no more than the
 other parts give, so the fit stays 0 or more.
 

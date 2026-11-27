@@ -11,11 +11,12 @@
   import { PASTE_HINT, pasting } from '../lib/paste.svelte'
   import { undoHistory } from '../lib/history.svelte'
   import { pasteAsShown } from '../lib/pastedlines'
-  import { errorText, fault } from '../lib/toast.svelte'
+  import { Problem as Trouble } from '../lib/problem.svelte'
   import Busy from '../lib/components/Busy.svelte'
   import EmptyState from '../lib/components/EmptyState.svelte'
   import FirstMessage from '../lib/components/FirstMessage.svelte'
   import Icon from '../lib/components/Icon.svelte'
+  import Problem from '../lib/components/Problem.svelte'
 
   // onmoved follows once the app took a change that moves the person to
   // another list, connected or the profile rejected, or turned it down,
@@ -31,6 +32,10 @@
   let notes = $state('')
   let savedNotes = $state('')
   let noteState = $state<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  // What went wrong with the row of buttons says so under it, and with
+  // the notes over them, see lib/problem.svelte.ts.
+  const rowProblem = new Trouble()
+  const noteProblem = new Trouble()
 
   // The parent keys this by id, so the id never changes here.
   function load() {
@@ -113,12 +118,13 @@
     const of = profile
     const next: Review = of.review === 'rejected' ? 'confirmed' : 'rejected'
     reviewing = true
+    rowProblem.clear()
     showReview(of, next)
     try {
       await review(of, next)
     } catch (e) {
       showReview(of, of.review)
-      fault(e)
+      rowProblem.failed(e)
     } finally {
       reviewing = false
     }
@@ -127,6 +133,7 @@
   async function saveNotes() {
     if (!person.data || notes === savedNotes) return
     noteState = 'saving'
+    noteProblem.clear()
     try {
       const updated = await api.patchPerson(id, { notes })
       savedNotes = updated.notes
@@ -134,7 +141,7 @@
       noteState = 'saved'
     } catch (e) {
       noteState = 'error'
-      fault(e)
+      noteProblem.failed(e)
     }
   }
 
@@ -143,19 +150,18 @@
   // Without a choice the app does not guess, and the line beside the
   // button leads to Settings.
   let opening = $state(false)
-  let openProblem = $state('')
   let needsChoice = $state(false)
   async function openLinkedin(e: MouseEvent) {
     e.preventDefault()
     if (opening) return
     opening = true
-    openProblem = ''
+    rowProblem.clear()
     needsChoice = false
     try {
       await api.openLinkedin(id)
     } catch (err) {
       needsChoice = err instanceof ApiError && err.choose
-      openProblem = errorText(err)
+      rowProblem.say(err)
     } finally {
       opening = false
     }
@@ -168,6 +174,7 @@
     if (!person.data || deciding) return
     const before = person.data.connected
     deciding = true
+    rowProblem.clear()
     person.data = { ...person.data, connected: !before }
     onupdate?.(person.data)
     try {
@@ -175,7 +182,7 @@
     } catch (e) {
       person.data = { ...person.data, connected: before }
       onupdate?.(person.data)
-      fault(e)
+      rowProblem.failed(e)
     } finally {
       deciding = false
       onmoved?.()
@@ -225,10 +232,10 @@
                gets one, until it has (Tim, 23 November 2026). -->
           <p class="paste-hint small">{PASTE_HINT}</p>
         {/if}
-        {#if openProblem}
-          <p class="open-problem small" role="alert">
-            {#if needsChoice}Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.{:else}{openProblem}{/if}
-          </p>
+        {#if needsChoice}
+          <Problem of={rowProblem}>Choose where LinkedIn opens in <a href="/app/settings#linkedin">Settings</a>.</Problem>
+        {:else}
+          <Problem of={rowProblem} />
         {/if}
       </div>
     {/snippet}
@@ -278,8 +285,11 @@
           {noteState === 'saving' ? 'Saving' : noteState === 'saved' ? 'Saved' : noteState === 'error' ? 'Not saved' : ''}
         </span>
       </div>
-      <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
-        placeholder="Where you met, what to ask"></textarea>
+      <div class="box">
+        <textarea id="notes-{p.id}" class="textarea" rows="4" bind:value={notes} use:pasteAsShown oninput={() => (noteState = 'idle')} onblur={saveNotes}
+          placeholder="Where you met, what to ask"></textarea>
+        <Problem of={noteProblem} over />
+      </div>
     </section>
   </article>
 {:else}
@@ -309,7 +319,8 @@
   .why .what { display: grid; gap: 2px; min-width: 0; line-height: 20px; }
   .why q { color: var(--ink-2); overflow-wrap: anywhere; line-height: 1.4; }
   .found { font-size: 13px; color: var(--ink-3); }
-  .open-problem { color: var(--bad); }
+  .box { position: relative; min-width: 0; }
+  .box .textarea { display: block; width: 100%; }
   .rejected { color: var(--ink-3); }
   .paste-hint { color: var(--bad); }
   .note-state { color: var(--ink-3); }

@@ -394,11 +394,42 @@ const walks = [
       await page.goto(`${url}/app/people/1002`)
       const linkedin = page.locator('.actions a.btn')
       await linkedin.click()
-      const line = page.locator('.open-problem')
+      const line = page.locator('.top .problem')
       await line.waitFor()
       if ((await line.getByRole('link', { name: 'Settings' }).count()) !== 1) return `the line says ${await line.innerText()}`
       const text = (await linkedin.innerText()).trim()
       if (text !== 'LinkedIn') return `the button says ${text} once the answer is in`
+      return ''
+    },
+  },
+  {
+    // What went wrong says so where the click was, under the row of
+    // buttons, never in a toast over the window (Tim, testing #60 on 22
+    // November 2026, #72). The app could not save it, which Tim cannot
+    // put right, so it offers Report. The next click takes it away.
+    name: 'Connect the app refuses says so under the row of buttons, with Report and no toast',
+    async run(page) {
+      await page.route('**/api/people/1003', (route) => route.request().method() === 'PATCH'
+        ? route.fulfill({ status: 500, json: { error: 'The file could not be written.' } })
+        : route.fallback())
+      await page.goto(`${url}/app/people/1003`)
+      const connect = page.locator('.actions button.connect')
+      await connect.click()
+      const line = page.locator('.top .problem')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'The file could not be written. Report') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      if ((await connect.innerText()).trim() !== 'Connect') return 'Connect did not go back'
+      const about = page.waitForRequest((r) => r.url().endsWith('/api/report/about'))
+      await line.getByRole('button', { name: 'Report' }).click()
+      const body = JSON.parse((await about).postData() ?? '{}')
+      if (body.text !== 'The file could not be written.') return `Report sent ${JSON.stringify(body)}`
+      await page.unroute('**/api/people/1003')
+      await connect.click()
+      await page.locator('.actions button.connect[aria-pressed="true"]').waitFor()
+      if (await line.count()) return 'the line stays after Connect worked'
+      await connect.click()
       return ''
     },
   },

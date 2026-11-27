@@ -133,7 +133,7 @@ const walks = [
       await page.waitForFunction(() => document.querySelector('.first-message button.copy')?.getAttribute('aria-label') === 'Copied')
       const copied = (await asked).postDataJSON().text
       if (copied !== `${first} PS`) return `Copy copied ${JSON.stringify(copied)}`
-      if (await page.locator('.first-message .refused, .toast').count()) return 'a copy that worked says something went wrong'
+      if (await page.locator('.first-message .problem, .toast').count()) return 'a copy that worked says something went wrong'
       // The tick stays while it shows, with the pointer gone.
       await page.mouse.move(0, 0)
       if ((await mark.evaluate((b) => getComputedStyle(b).opacity)) !== '1') return 'the tick hides with the pointer away'
@@ -228,7 +228,7 @@ const walks = [
       await drafted(page, 1001, 1, first)
       await box(page).hover()
       await page.locator('.first-message button.copy').click()
-      const line = page.locator('.first-message .box .refused')
+      const line = page.locator('.first-message .box .problem')
       await line.waitFor()
       const said = (await line.innerText()).trim()
       if (said !== 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.') return `the line says ${JSON.stringify(said)}`

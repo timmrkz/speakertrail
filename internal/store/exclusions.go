@@ -1,13 +1,14 @@
 package store
 
 import (
-	"cmp"
 	"errors"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/timmrkz/speakertrail/internal/rubric"
+	"golang.org/x/text/collate"
+	"golang.org/x/text/language"
 )
 
 // Exclusion is a word or phrase, like "Online Marketing", that leaves a
@@ -77,11 +78,14 @@ func (d *Data) Phrases() []string {
 }
 
 // SortedExclusions are the exclusions in the order of their phrases, as
-// Tim sees them.
+// Tim sees them, in German order, so "Ärztin" stands with the A and not
+// after Z, and case counts for nothing, issue #105. A collator is not
+// safe for several goroutines at once, so each call makes its own.
 func (d *Data) SortedExclusions() []*Exclusion {
 	out := slices.Clone(d.Exclusions)
+	german := collate.New(language.German, collate.IgnoreCase)
 	slices.SortStableFunc(out, func(a, b *Exclusion) int {
-		return cmp.Compare(strings.ToLower(a.Phrase), strings.ToLower(b.Phrase))
+		return german.CompareString(a.Phrase, b.Phrase)
 	})
 	return out
 }

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -283,24 +284,85 @@ func itoa(n int64) string {
 
 func TestExclusions(t *testing.T) {
 	a, _, _ := newAPI(t)
-	var list []exclusionJSON
-	if code := call(t, a, "GET", "/api/exclusions", "", &list); code != http.StatusOK || len(list) != 6 || list[0].Phrase != "LinkedIn" {
+	var list exclusionsJSON
+	if code := call(t, a, "GET", "/api/exclusions", "", &list); code != http.StatusOK || len(list.Exclusions) != 6 || list.Exclusions[0].Phrase != "LinkedIn" {
 		t.Fatalf("the starting exclusions: %d %+v", code, list)
 	}
-	var x exclusionJSON
-	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"  Business   Coach "}`, &x); code != http.StatusCreated || x.Phrase != "Business Coach" || x.People != 0 {
-		t.Fatalf("added: %d %+v", code, x)
+	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"  Business   Coach "}`, &list); code != http.StatusCreated || len(list.Exclusions) != 7 || list.Exclusions[0].Phrase != "Business Coach" || list.Exclusions[0].People != 0 {
+		t.Fatalf("added: %d %+v", code, list)
 	}
+	x := list.Exclusions[0]
 	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"business coach"}`, nil); code != http.StatusConflict {
 		t.Errorf("the same phrase again: %d", code)
 	}
 	if code := call(t, a, "POST", "/api/exclusions", `{"phrase":"--"}`, nil); code != http.StatusBadRequest {
 		t.Errorf("a phrase without a word: %d", code)
 	}
-	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusNoContent {
-		t.Errorf("delete: %d", code)
+	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", &list); code != http.StatusOK || len(list.Exclusions) != 6 || list.Exclusions[0].Phrase != "LinkedIn" {
+		t.Errorf("delete: %d %+v", code, list)
 	}
 	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusNotFound {
 		t.Errorf("delete again: %d", code)
+	}
+}
+
+// The window showed exclusions in its own order after adding one, so one
+// that starts with an umlaut jumped on the next load, and kept the old
+// counts after adding or removing one, though a person counts for the
+// first exclusion that matches, issue #105. Adding and removing now
+// answer the list in German order, Ä with the A, with the counts and how
+// many people all of them hide.
+func TestExclusionsAnswerTheirOrderAndCounts(t *testing.T) {
+	a, st, _ := newAPI(t)
+	st.Update(func(d *store.Data) error {
+		s, _ := d.AddSearch("Coach Köln", 0, t0)
+		d.AddFound(store.Found{URL: "https://www.linkedin.com/in/ida-beispiel", Name: "Ida Beispiel", Headline: "Online Marketing Coach"}, s, 1, t0)
+		d.AddFound(store.Found{URL: "https://www.linkedin.com/in/ole-beispiel", Name: "Ole Beispiel", Headline: "Ärztin und Coach"}, s, 1, t0)
+		return nil
+	})
+	var list exclusionsJSON
+	phrases := func() string {
+		var out []string
+		for _, x := range list.Exclusions {
+			out = append(out, fmt.Sprintf("%s %d", x.Phrase, x.People))
+		}
+		return fmt.Sprintf("%s, hiding %d", strings.Join(out, ", "), list.Hiding)
+	}
+	want := func(step, says string) {
+		t.Helper()
+		if got := phrases(); got != says {
+			t.Errorf("%s: %s, want %s", step, got, says)
+		}
+	}
+	call(t, a, "GET", "/api/exclusions", "", &list)
+	want("at the start", "LinkedIn 0, Online Marketing 1, Performance Marketing 0, Personal Branding 0, Sichtbarkeit 0, Social Media Marketing 0, hiding 1")
+	call(t, a, "POST", "/api/exclusions", `{"phrase":"Coach"}`, &list)
+	want("Coach added", "Coach 2, LinkedIn 0, Online Marketing 0, Performance Marketing 0, Personal Branding 0, Sichtbarkeit 0, Social Media Marketing 0, hiding 2")
+	coach := list.Exclusions[0].ID
+	call(t, a, "POST", "/api/exclusions", `{"phrase":"Ärztin"}`, &list)
+	want("Ärztin added", "Ärztin 1, Coach 1, LinkedIn 0, Online Marketing 0, Performance Marketing 0, Personal Branding 0, Sichtbarkeit 0, Social Media Marketing 0, hiding 2")
+	var again exclusionsJSON
+	call(t, a, "GET", "/api/exclusions", "", &again)
+	if fmt.Sprint(again) != fmt.Sprint(list) {
+		t.Errorf("a reload gave %+v, want what adding answered, %+v", again, list)
+	}
+	call(t, a, "DELETE", "/api/exclusions/"+itoa(coach), "", &list)
+	want("Coach removed", "Ärztin 1, LinkedIn 0, Online Marketing 1, Performance Marketing 0, Personal Branding 0, Sichtbarkeit 0, Social Media Marketing 0, hiding 2")
+
+	// Several at once, as Tim's clicks and a run may come together.
+	var wg sync.WaitGroup
+	for i := range 6 {
+		wg.Go(func() {
+			var got exclusionsJSON
+			if code := call(t, a, "POST", "/api/exclusions", fmt.Sprintf(`{"phrase":"Ölmalerei %d"}`, i), &got); code != http.StatusCreated {
+				t.Errorf("adding %d: %d", i, code)
+			}
+			call(t, a, "GET", "/api/exclusions", "", &got)
+		})
+	}
+	wg.Wait()
+	call(t, a, "GET", "/api/exclusions", "", &list)
+	if len(list.Exclusions) != 13 || list.Exclusions[2].Phrase != "Ölmalerei 0" || list.Exclusions[7].Phrase != "Ölmalerei 5" {
+		t.Errorf("after six at once: %s", phrases())
 	}
 }

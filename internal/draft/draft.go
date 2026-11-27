@@ -530,26 +530,37 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 			return language.AskFor(ctx, d.Host.Client, s, messages, schema, heard)
 		}
 	}
-	// What the model writes so far is JSON, which is nothing to read, so
-	// the window sees only that it grows.
-	answer, err := ask(ctx, s, Messages(prompt, name, link, notes, text), json.RawMessage(HookSchema), func(string) {
-		d.update(id, progress)
-	})
-	if err != nil {
-		stalled = errors.Is(err, language.ErrStalled)
-		return err
-	}
-	took.WriteMS = d.now().Sub(writeStart).Milliseconds()
-	// An answer that does not fit the schema still makes a draft, with …
-	// in its place, and the window says why. Never the answer itself: it
-	// is untrusted and may name the person.
+	// An answer that does not fit is asked for once more. The model
+	// samples, so the next answer is another one, and one cut off at a
+	// limit of the schema, or with a letter of another script, rarely
+	// comes twice. One that still does
+	// not fit makes a draft with … in its place, and the window says
+	// why. Never the answer itself: it is untrusted and may name the
+	// person.
+	var answer language.Answer
+	var read, wrote int
+	var hook Hook
 	var problem string
-	hook, err := ParseHook(answer.Text)
-	if err != nil {
+	for try := 1; try <= hookTries; try++ {
+		// What the model writes so far is JSON, which is nothing to read,
+		// so the window sees only that it grows.
+		answer, err = ask(ctx, s, Messages(prompt, name, link, notes, text), json.RawMessage(HookSchema), func(string) {
+			d.update(id, progress)
+		})
+		if err != nil {
+			stalled = errors.Is(err, language.ErrStalled)
+			return err
+		}
+		read, wrote = read+answer.PromptTokens, wrote+answer.Written
+		if hook, err = ParseHook(answer.Text); err == nil {
+			problem = ""
+			break
+		}
 		problem = Sentence("the language model's answer did not fit, so … marks what it should have written: " + err.Error())
-		d.log().Warn("the language model's answer did not fit the schema", "person", id, "model", m.Name, "error", err)
+		d.log().Warn("the language model's answer did not fit the schema", "person", id, "model", m.Name, "try", try, "error", err)
 		hook = Hook{}
 	}
+	took.WriteMS = d.now().Sub(writeStart).Milliseconds()
 	written := message.with(hook)
 	// Tim pressed Draft, so the message is his change, and Undo in the
 	// Edit menu puts back the one before. How long it took is not.
@@ -568,7 +579,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	d.update(id, func(j *Job) { j.Text, j.Problem = written, problem })
 	// By ids and counts, never by whom or what, which is personal data.
 	d.log().Info("a first message was drafted", "person", id, "model", m.Name,
-		"load_ms", took.LoadMS, "write_ms", took.WriteMS, "read", answer.PromptTokens, "wrote", answer.Written)
+		"load_ms", took.LoadMS, "write_ms", took.WriteMS, "read", read, "wrote", wrote)
 	return nil
 }
 
@@ -745,6 +756,9 @@ func Fill(prompt, name, link, notes, profile string) string {
 	out := strings.NewReplacer("{{name}}", name, "{{first_name}}", first, "{{notes}}", notes).Replace(prompt)
 	return strings.ReplaceAll(out, store.ProfileField, profile)
 }
+
+// hookTries is how often the model is asked for a hook that fits.
+const hookTries = 2
 
 // Sentence starts an error with a capital and ends it with a full stop.
 func Sentence(s string) string {

@@ -127,6 +127,14 @@ for a button, by its own words, which are ours, `pressed button.btn
 "Connect"`. FrameFairy names a word clicked in its caption box as the
 caption box the same way.
 
+The Go side holds the rule as well, since a tooltip outside that mark
+once named the person a run read, issue #104. Before an act or a line of
+the window is written, every word of a person's name of three letters or
+more that starts with a capital, in any case, also with an s after it
+and with its umlauts written out, and every profile's handle, are
+written `[name]`, as in a report. That is `Store.Unnamed`, which reads
+the names afresh for each act and each batch of lines.
+
 ### What the window says
 
 `web/src/lib/said.ts`, as in FrameFairy, gathers the window's lines and

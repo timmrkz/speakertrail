@@ -24,6 +24,11 @@ type logAPI struct {
 	log *appLog
 	// show shows a file in its folder, in Finder on a Mac.
 	show func(path string) error
+	// unnamed gives what takes every person's name and handle out of the
+	// window's lines and acts, store.Store.Unnamed, so no tooltip or
+	// message the window forgot to mark can name a person in the log,
+	// issue #104. Nil only in tests that know no people.
+	unnamed func() func(string) string
 }
 
 // saidMost is how much the window may send at once: saidLines lines of
@@ -39,6 +44,12 @@ func (l logAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
 			return
 		}
+		if l.unnamed != nil {
+			clean := l.unnamed()
+			for i := range lines[:min(len(lines), saidLines)] {
+				lines[i].Text = clean(lines[i].Text)
+			}
+		}
 		l.log.said(lines)
 		w.WriteHeader(http.StatusNoContent)
 	case "POST /api/log/acted":
@@ -46,6 +57,9 @@ func (l logAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&a); err != nil {
 			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
 			return
+		}
+		if l.unnamed != nil {
+			a.What = l.unnamed()(a.What)
 		}
 		l.log.acted(a)
 		w.WriteHeader(http.StatusNoContent)

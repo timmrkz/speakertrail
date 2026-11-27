@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Shared is one person as Report a Problem takes them along when Tim
@@ -193,3 +194,89 @@ func unnamed(name, handle string) func(string) string {
 
 // plain writes a name in the letters of a keyboard without umlauts.
 var plain = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "Ä", "Ae", "Ö", "Oe", "Ü", "Ue", "ß", "ss", "é", "e", "è", "e")
+
+// Unnamed gives what takes every person's own name out of a line of the
+// app's log, the way unnamed takes one person's out of what a report
+// takes along: each word of a name of three letters or more that starts
+// with a capital, in any case, also with an s after it and with its
+// umlauts written out, and every profile's handle whole, are written
+// [name]. The window marks what shows a person's words, but a tooltip
+// outside that mark once carried the name of the person a run read, so
+// the Go side holds the rule, issue #104. Links stay, since the log names
+// the app's own addresses, and a profile link loses its handle.
+//
+// It reads the names as they are when it is called, so a person found
+// later is taken out by the next call. A call for a click or a batch of
+// the window's lines costs one walk over the people and no regular
+// expression, since there may be thousands of them.
+func (s *Store) Unnamed() func(string) string {
+	words := map[string]bool{}
+	handles := map[string]bool{}
+	s.Read(func(d *Data) {
+		for _, p := range d.People {
+			if h := strings.ToLower(p.LinkedIn.Handle); len([]rune(h)) >= 3 {
+				handles[h] = true
+			}
+			for _, w := range strings.FieldsFunc(p.Name, func(r rune) bool { return !unicode.IsLetter(r) }) {
+				if len([]rune(w)) >= 3 && unicode.IsUpper([]rune(w)[0]) {
+					words[strings.ToLower(w)] = true
+					words[strings.ToLower(plain.Replace(w))] = true
+				}
+			}
+		}
+	})
+	if len(words) == 0 && len(handles) == 0 {
+		return func(s string) string { return s }
+	}
+	// A handle is letters, digits and dashes, so such a run is taken
+	// whole when it is one, and else word by word.
+	handle := func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '%'
+	}
+	word := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+	return func(s string) string {
+		var b strings.Builder
+		runs(s, handle, func(run string, in bool) {
+			if !in {
+				b.WriteString(run)
+				return
+			}
+			if handles[strings.ToLower(run)] {
+				b.WriteString("[name]")
+				return
+			}
+			runs(run, word, func(w string, in bool) {
+				lower := strings.ToLower(w)
+				switch {
+				case !in:
+					b.WriteString(w)
+				case words[lower]:
+					b.WriteString("[name]")
+				case strings.HasSuffix(lower, "s") && words[lower[:len(lower)-1]]:
+					b.WriteString("[name]s")
+				default:
+					b.WriteString(w)
+				}
+			})
+		})
+		return b.String()
+	}
+}
+
+// runs hands each longest run of a text whose letters are all in, or
+// all not in, to each, in order, so the runs put together are the text.
+func runs(s string, in func(rune) bool, each func(run string, in bool)) {
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		was, j := in(r), i+n
+		for j < len(s) {
+			r, n := utf8.DecodeRuneInString(s[j:])
+			if in(r) != was {
+				break
+			}
+			j += n
+		}
+		each(s[i:j], was)
+		i = j
+	}
+}

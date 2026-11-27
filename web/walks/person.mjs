@@ -406,9 +406,20 @@ const walks = [
       await page.locator('#notes-1003').click()
       await page.keyboard.press('Escape')
       await page.keyboard.press('ArrowDown')
-      await page.waitForFunction(() => location.pathname !== '/app/people/1003')
+      await drawn(page)
       const next = await page.evaluate(() => ({ path: location.pathname, on: document.activeElement?.id }))
-      if (next.on !== `person-row-${next.path.split('/').pop()}`) wrong.push(`ArrowDown after Escape opened ${next.path} with the keyboard on ${next.on || 'nothing'}`)
+      if (next.path === '/app/people/1003') wrong.push('ArrowDown after Escape did not open the next person')
+      else if (next.on !== `person-row-${next.path.split('/').pop()}`) wrong.push(`ArrowDown after Escape opened ${next.path} with the keyboard on ${next.on || 'nothing'}`)
+      // An Escape while text is being composed, as when Dictation ends on
+      // a Mac, is the input method's. It never closes the sheet, which
+      // would lose what was said. Review of #123.
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.goto(`${url}/app/people/1003`)
+      const notes = page.locator('#notes-1003')
+      await notes.click()
+      await notes.dispatchEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true })
+      await drawn(page)
+      if (await page.evaluate(() => location.pathname) !== '/app/people/1003') wrong.push('at 390 px an Escape while composing closed the sheet')
       return wrong.join('\n\t')
     },
   },

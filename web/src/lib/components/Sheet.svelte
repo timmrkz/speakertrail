@@ -35,9 +35,11 @@
     }
   })
 
-  // Escape closes from anywhere, even when focus left the sheet.
+  // Escape closes from anywhere, even when focus left the sheet, but not
+  // while text is being composed: on a Mac Escape also ends Dictation,
+  // and closing then would lose what was said, as Report.svelte knows.
   function windowKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape' && !e.defaultPrevented) {
+    if (e.key === 'Escape' && !e.defaultPrevented && !e.isComposing) {
       e.preventDefault()
       onclose()
     }

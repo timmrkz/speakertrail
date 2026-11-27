@@ -231,7 +231,7 @@ const walks = [
       const line = page.locator('.first-message .box .refused')
       await line.waitFor()
       const said = (await line.innerText()).trim()
-      if (said !== 'Could not copy the message. Select it and press Cmd+C.') return `the line says ${JSON.stringify(said)}`
+      if (said !== 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.') return `the line says ${JSON.stringify(said)}`
       if (await page.locator('.toast').count()) return 'a toast shows too'
       const [b, l] = await Promise.all([box(page).boundingBox(), line.boundingBox()])
       if (l.y < b.y || l.y + l.height > b.y + b.height || l.x < b.x || l.x + l.width > b.x + b.width) return 'the line is not over the box'

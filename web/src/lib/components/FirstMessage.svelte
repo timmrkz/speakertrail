@@ -152,7 +152,7 @@
     } catch (e) {
       clearTimeout(copiedTimer)
       copied = false
-      copyRefused = 'Could not copy the message. Select it and press Cmd+C.'
+      copyRefused = 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.'
       refusedTimer = setTimeout(() => (copyRefused = ''), 8000)
       said(`copy: ${errorText(e)}`, { level: 'warn' })
     }

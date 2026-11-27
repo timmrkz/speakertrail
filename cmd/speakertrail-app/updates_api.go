@@ -34,6 +34,7 @@ func (u updatesAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method + " " + r.URL.Path {
 	case "GET /api/updates":
+		c.saidStarted()
 		go c.refreshList()
 		answer(w, http.StatusOK, c.State())
 	case "POST /api/updates/check":

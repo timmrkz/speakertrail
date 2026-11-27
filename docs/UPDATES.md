@@ -173,16 +173,48 @@ build on `dev` had parts to patch against. See
   ready. The app's log says what each update kept, patched and fetched.
 - **Relaunch** waits while a run goes, so a run is never stopped half
   way. The engine refuses a new run while the app relaunches.
-- **Relaunch** starts the app's own program once more, as Wails'
-  updater: it waits for the app to quit, puts the new build in place and
-  opens it. Started so, `main` does that step before anything of the
-  app: it opens no log and no app's file and loads no language model.
+- **Relaunch** and quitting with a build ready start the app's own
+  program once more, as a step of its own: it waits for the app to quit,
+  checks the new build loads, keeps the build before, puts the new one
+  in place, and on Relaunch opens it. Started so, `main` does that step
+  before anything of the app: it opens no log and no app's file and
+  loads no language model. Wails' own helper is not used, see
+  [A build that does not start](#a-build-that-does-not-start).
 - A pull request that was merged shows as merged, in amber, and one
   closed without a merge as closed, in red. One the list says neither of
   shows as not open, in amber. Nothing downloads until another channel is
   picked.
 - What it picked is in `updates.json`, in the app's folder beside
   `speakertrail.json`.
+
+### A build that does not start
+
+`cmd/speakertrail-app/trial.go`. Before the step moves anything, it
+starts the new build's program once, told only to be loaded and to end.
+A library macOS refuses ends a program before any of our code runs, so
+only the build before can see it. When it does not load, the app stays
+as it was.
+
+Then the step keeps the build before and a copy of `speakertrail.json`
+and `profile-texts.json` in `update-before` in the app's folder, and
+the new build is on trial, in `update-before/trial.json`. It says it
+started the first time the interface asks where updates stand, and the
+build before and the copies go.
+
+- On **Relaunch** the step opens the new build and waits a minute for
+  it. When it does not say it started, the step ends it, puts the build
+  before and the app's files back as they were, and opens it.
+- A build put in **on quit** is opened later, with nobody waiting, so
+  each of its starts counts itself. Its third start, after two that did
+  not say they started, puts the build before and the files back the
+  same way, and opens it.
+
+The files go back with the build, because an older build drops the
+fields it does not know when it writes, and refuses a file of a newer
+`store.Version`. A build that did not start is written down in
+`update-failed.json`, and the app does not take it by itself again.
+Updates says **The newest build did not start**, with the build before
+running, and the next build of the channel goes in as usual.
 
 ### No step back
 
@@ -322,9 +354,11 @@ nothing in it:
   Apple's certificate of Tim's team, not only the team the signature
   names, which is a string.
 
-If a build signed this way does not open, the app cannot update away
-from it. `make install` in a checkout puts a build made on the Mac back
-in `/Applications`, and Updates works again from there. Removing
+If a build signed this way does not load, it never goes in, and one
+that loads and then does not start is undone, see
+[A build that does not start](#a-build-that-does-not-start). If both
+fail, `make install` in a checkout puts a build made on the Mac back in
+`/Applications`, and Updates works again from there. Removing
 `build/team-id.txt` on main sends builds out signed ad hoc again.
 
 The certificate runs out on the date Keychain Access shows, Tim's first

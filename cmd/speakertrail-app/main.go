@@ -29,7 +29,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
-	"github.com/wailsapp/wails/v3/pkg/updater"
 
 	apipkg "github.com/timmrkz/speakertrail/internal/api"
 	"github.com/timmrkz/speakertrail/internal/browser"
@@ -45,18 +44,18 @@ import (
 )
 
 func main() {
-	// Started again to put a new build in place once the app has quit,
-	// see install.go.
+	// Started by the build before, to see that the system loads this
+	// program and every library it links, before it goes in, see
+	// trial.go. Getting here is all it asks.
+	if os.Getenv(envLoadCheck) == "1" {
+		os.Exit(0)
+	}
+	// Started again to put a new build in place once the app has quit, on
+	// quit and on Relaunch, see install.go. It is done first, before the
+	// app starts anything: a step that got further once began to load the
+	// language model, and left llama-server running with 16 GB once for
+	// every Relaunch.
 	installIfAsked()
-	// Started again by Relaunch, as Wails' updater: this program waits for
-	// the app to quit, puts the new build in place, opens it and ends.
-	// application.New does it too, but only after everything above it
-	// here, and a helper that got that far had begun to load the language
-	// model, ended inside application.New and left llama-server running
-	// with 16 GB, once for every Relaunch. So it is done first, before the
-	// app starts anything. FrameFairy loads its model only after
-	// application.New and has no need of it.
-	updater.HandleHelperMode()
 	go tidyTemp(os.TempDir(), time.Now())
 	// make carry-over hands over the people connected in the Docker version,
 	// see scripts/carry-over.sh. It writes the app's file, opens no window
@@ -69,6 +68,12 @@ func main() {
 		return
 	}
 	theLog.started()
+	// A build on trial counts its start, and one that did not start
+	// twice puts the build before back and ends here, before it reads the
+	// app's file, see trial.go.
+	if undoIfUnstarted() {
+		os.Exit(0)
+	}
 
 	answers, e, dir, err := open()
 	if err != nil {

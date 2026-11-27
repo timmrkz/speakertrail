@@ -76,7 +76,7 @@ then on every build comes from GitHub.
    is not said to be on its way. `speakertrail-release unreachable` then
    names, and gh removes, half an hour after they went up, the zips and
    packed zips no entry points at, the parts of every build that is
-   neither listed nor one of the newest eight that left the list, the
+   neither listed nor one of the newest three that left the list, the
    pieces no remaining parts name, and the patches no listed build's
    parts name. A build that left the list is patched from, never updated
    to, so its pieces stay and its patches go. The list job runs after
@@ -113,7 +113,7 @@ Only what changed, and of a file that changed, only the difference.
   makes a patch, with bsdiff, against the same file of the builds an app
   may run, picked in `cmd/speakertrail-release/release.go`: every build
   the channel list holds, and the
-  newest eight that left it, such as the last build of a pull request
+  newest three that left it, such as the last build of a pull request
   just merged. The parts name each patch by the SHA-256 of the file it
   starts from. A patch is kept only where it weighs less than the piece.
   A build has at most sixty: first from the channel's build before it,

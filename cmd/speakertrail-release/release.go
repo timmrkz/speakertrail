@@ -29,9 +29,12 @@ import (
 // patched against. A build leaves the list when its pull request is
 // merged or a newer commit replaces it, and the app that runs it is then
 // the one most likely to update next, to main after a merge above all.
-// Each costs the publish a bsdiff of a few seconds for each file that
-// changed, four at a time.
-const leftBases = 8
+// Each costs the publish a download and a bsdiff of a few seconds for
+// each file that changed. Tim runs one app, which runs one build, so the
+// last few merges cover it. Eight cost a third of every publish's
+// patches on 27 November 2026, see
+// docs/decisions/2026-11-27-updates-reach-the-app-sooner-and-safer.md.
+const leftBases = 3
 
 // keptFor is how long a file no build reaches stays on the release: a
 // publish that runs beside the clean-up may have uploaded files whose

@@ -272,6 +272,27 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   when a download would do, pulsing while the model comes. The app judges
   it, the window only draws it. Tim asked for the one on Settings on 21
   November 2026. `walks/draft.mjs` and `walks/pick.mjs` walk its states.
+- **What went wrong says so at the control that failed.** Each place
+  that can fail keeps a `Problem`, `lib/problem.svelte.ts`, and
+  `ProblemNote.svelte` draws it there: a line of red words under a row of
+  buttons, a row or a field, the way a field typed wrong says so, or over
+  the top of a text box on the box's own ground with an edge in red, as
+  the first message and Report a Problem have it. Tim asked for it
+  testing #60 on 22 November 2026, issue #72: an error over the whole
+  window is far from what failed. It stays until the place is used
+  again, and a failure Tim cannot put right offers Report. Only what has
+  no control of its own, Undo or Redo in the Edit menu and a page pasted
+  anywhere in the window, is a red toast (Tim, 27 November 2026), and so
+  is a run that ended with failures, which says how the whole run went.
+  Links added whose profiles wait for something, like the Exa key, say
+  so under Run. A field typed wrong, a search or exclusion there already
+  and a choice still to make in Settings say so the same way, with
+  `needs`, and stay out of Settings, Logs, since nothing went wrong. The
+  Exa key, a
+  setting, where LinkedIn opens, the template and Updates still keep a
+  line of their own at the control, issue #126. `walks/problems.mjs`
+  refuses requests on each kind of place and finds the words there and
+  no toast.
 - **Opening something never relays out what is beside it.** A row has the
   same lines at any width, so a person opening only narrows the list. A
   container query on a pane that another pane squeezes brings the shuffle

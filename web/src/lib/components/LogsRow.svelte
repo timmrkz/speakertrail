@@ -2,9 +2,10 @@
   import { Events } from '@wailsio/runtime'
   import { api, type LogStatus } from '../api'
   import { plural, size } from '../format'
-  import { errorText, fault, toast } from '../toast.svelte'
+  import { Problem } from '../problem.svelte'
   import Confirm from './Confirm.svelte'
   import Icon from './Icon.svelte'
+  import ProblemNote from './ProblemNote.svelte'
   import { reporting, reportTitle } from '../reporting.svelte'
 
   // The app's own log, the file a report takes along, in an area of its
@@ -17,30 +18,39 @@
   let log = $state<LogStatus>({ path: '', files: 0, bytes: 0, lines: 0, toasts: [] })
   let removing = $state(false)
   const folder = $derived(log.path.replace(/[\\/][^\\/]*$/, ''))
+  // What went wrong with the log says so under its row, see
+  // lib/problem.svelte.ts.
+  const problem = new Problem()
+  // and Report on a logged one that could not open Report a Problem
+  // under that one.
+  const reportProblem = new Problem()
+  let reportedAt = $state(-1)
 
   async function read() {
     try {
       log = await api.appLog()
     } catch (err) {
-      fault(err)
+      problem.failed(err)
     }
   }
 
   async function remove() {
     removing = false
+    problem.clear()
     try {
       log = await api.removeAppLog()
     } catch (err) {
-      fault(err)
+      problem.failed(err)
       await read()
     }
   }
 
   async function show() {
+    problem.clear()
     try {
       await api.showAppLog()
     } catch (err) {
-      fault(err)
+      problem.failed(err)
     }
   }
 
@@ -82,6 +92,7 @@
           <Icon name="trash" />
         </button>
       </div>
+      {#if problem.text}<div class="failed"><ProblemNote of={problem} /></div>{/if}
     </div>
     {#each log.toasts as t, i (i)}
       <!-- A toast the app showed about something that went wrong, in its
@@ -95,7 +106,8 @@
           <span class="when small count">{when(t.at)}</span>
         </div>
         <button class="btn quiet report" type="button" disabled={reporting.open} title={reportTitle()}
-          onclick={() => api.reportAbout(t.text).catch((err) => toast.show(errorText(err), 'bad'))}>Report</button>
+          onclick={() => { reportProblem.clear(); reportedAt = t.at; api.reportAbout(t.text).catch((err) => reportProblem.say(err)) }}>Report</button>
+        {#if reportedAt === t.at && reportProblem.text}<div class="failed"><ProblemNote of={reportProblem} /></div>{/if}
       </div>
     {/each}
   </div>
@@ -126,6 +138,8 @@
   .path, .when { color: var(--ink-3); overflow-wrap: anywhere; user-select: text; }
   .actions { display: flex; gap: var(--gap-control); }
   .count { font-variant-numeric: tabular-nums; }
+  /* What went wrong takes the whole width of its row, under the rest. */
+  .failed { grid-column: 1 / -1; min-width: 0; }
   .logged { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; align-items: start; }
   /* Report shows on the toast in hand, as in FrameFairy, and greyed out
      the way every button is while a report is being written. */

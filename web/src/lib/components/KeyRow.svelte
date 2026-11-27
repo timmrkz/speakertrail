@@ -1,7 +1,8 @@
 <script lang="ts">
   import { api } from '../api'
   import { exaWatch } from '../exa.svelte'
-  import { errorText, toast } from '../toast.svelte'
+  import { errorText } from '../problem.svelte'
+  import { toast } from '../toast.svelte'
 
   // The Exa key, which every run needs. It goes into a file only Tim's
   // account can read and never comes back to the window: the row only

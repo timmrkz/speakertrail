@@ -18,9 +18,10 @@
   import { navigate } from '../router.svelte'
   import { said } from '../said'
   import { stepOut } from '../keys'
-  import { errorText, fault, toast } from '../toast.svelte'
+  import { errorText, Problem } from '../problem.svelte'
   import Busy from './Busy.svelte'
   import Icon from './Icon.svelte'
+  import ProblemNote from './ProblemNote.svelte'
 
   let { person, row, onsaved }: {
     person: PersonDetail
@@ -53,6 +54,11 @@
   let starting = $state(false)
   let cancelling = $state(false)
 
+  // What went wrong with the message, a draft that could not start or
+  // stop, a save or a copy, says so over the top of the box, where the
+  // click was (Tim, testing #60 on 22 November 2026, #72).
+  const boxProblem = new Problem()
+
   // A draft that ends done is kept by the app: take it from there, the
   // way it was saved.
   let seen = ''
@@ -72,7 +78,7 @@
       saveState = 'idle'
       onsaved?.(p)
     } catch (e) {
-      fault(e)
+      boxProblem.failed(e)
     }
   }
 
@@ -83,13 +89,16 @@
       return
     }
     // What is typed and not yet saved is saved first, so Undo in the Edit
-    // menu can bring it back.
+    // menu can bring it back. A save that failed says so over the box and
+    // keeps the draft from writing over what it could not save.
+    boxProblem.clear()
     await save()
+    if (saveState === 'error') return
     starting = true
     try {
       draftWatch.put(await api.startDraft(person.id))
     } catch (e) {
-      fault(e)
+      boxProblem.failed(e)
     } finally {
       starting = false
     }
@@ -98,11 +107,12 @@
   async function cancel() {
     if (!busy) return
     cancelling = true
+    boxProblem.clear()
     try {
       await api.cancelDraft(person.id)
     } catch (e) {
       cancelling = false
-      toast.show(errorText(e), 'bad')
+      boxProblem.say(e)
       // The app knows better how the draft stands.
       draftWatch.read()
     }
@@ -119,12 +129,13 @@
   async function save() {
     if (text === saved) return
     saveState = 'saving'
+    boxProblem.clear()
     try {
       await keep(text)
       saveState = 'saved'
     } catch (e) {
       saveState = 'error'
-      fault(e)
+      boxProblem.failed(e)
     }
   }
 
@@ -135,7 +146,6 @@
   // the click was, in words that say what to do, and the web view's own
   // words go to the app's log.
   let copied = $state(false)
-  let copyRefused = $state('')
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   let refusedTimer: ReturnType<typeof setTimeout> | undefined
   $effect(() => () => {
@@ -144,7 +154,7 @@
   })
   async function copy() {
     copied = true
-    copyRefused = ''
+    boxProblem.clear()
     clearTimeout(copiedTimer)
     clearTimeout(refusedTimer)
     copiedTimer = setTimeout(() => (copied = false), 1500)
@@ -153,9 +163,12 @@
     } catch (e) {
       clearTimeout(copiedTimer)
       copied = false
-      copyRefused = 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.'
-      refusedTimer = setTimeout(() => (copyRefused = ''), 8000)
       said(`copy: ${errorText(e)}`, { level: 'warn' })
+      const refused = 'Could not copy the message. Click in it, press Cmd+A, then Cmd+C.'
+      boxProblem.say(refused)
+      refusedTimer = setTimeout(() => {
+        if (boxProblem.text === refused) boxProblem.clear()
+      }, 8000)
     }
   }
 
@@ -247,7 +260,7 @@
   </div>
   <div class="box">
     <textarea id="message-text-{person.id}" class="textarea" rows="3" value={shown} readonly={busy}
-      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle' }} onblur={save}
+      bind:this={field} use:fit use:pasteAsShown aria-busy={busy} oninput={(e) => { text = e.currentTarget.value; saveState = 'idle'; boxProblem.clear() }} onblur={save}
       onkeydown={(e) => stepOut(e, `person-row-${person.id}`)}></textarea>
     {#if text && !busy}
       <button class="btn icon copy" class:copied type="button" onclick={copy} aria-label={copied ? 'Copied' : 'Copy'}
@@ -255,9 +268,7 @@
         <Icon name={copied ? 'check' : 'copy'} />
       </button>
     {/if}
-    {#if copyRefused}
-      <p class="refused small" role="alert">{copyRefused}</p>
-    {/if}
+    <ProblemNote of={boxProblem} over />
   </div>
   {#if running}
     <div class="draft-progress" aria-live="polite">
@@ -296,13 +307,8 @@
   }
   .box:hover .copy, .copy:focus-visible, .box .copy.copied { opacity: 1; pointer-events: auto; }
   .box .copy.copied { color: var(--good); }
-  /* A copy that failed lies over the top of the box, beside the mark,
-     on the box's own ground with an edge in red, so it reads where the
-     click was and covers no more than its line. */
-  .refused {
-    position: absolute; top: 4px; left: 4px; right: 38px; margin: 0; padding: 5px 9px;
-    background: var(--surface); color: var(--bad); border: var(--line-w) solid var(--bad); border-radius: 6px;
-  }
+  /* What went wrong lies over the top of the box, beside the mark. */
+  .box { --problem-end: 38px; }
   .draft-progress { display: grid; gap: 6px; min-width: 0; }
   .step { font-size: 14px; font-weight: 600; color: var(--ink); min-height: 1.4em; }
   .meta { font-size: 12px; color: var(--ink-2); }

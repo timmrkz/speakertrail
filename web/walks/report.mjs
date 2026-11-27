@@ -1,6 +1,6 @@
 // Walks through Report a Problem against the mock, in Chromium, the way
 // walks/logs.mjs does: the report window at /report, Dictate, the
-// pictures, Clear and its undo, and Report on a toast in the app's
+// pictures, Clear and its undo, and Report on what went wrong in the app's
 // window. The mock hears nothing, so Stop gives one invented sentence, as
 // the app gives what the speech model wrote down. `make walks` runs
 // them, and so does CI.
@@ -296,20 +296,45 @@ const walks = [
     },
   },
   {
-    // What went wrong in the app's window says so in a toast with Report,
-    // which opens Report a Problem with the toast's words in it.
-    name: 'A toast that says what went wrong offers Report',
+    // What went wrong in the app's window says so at the control that
+    // failed, with Report, which opens Report a Problem with its words in
+    // it (#72).
+    name: 'What went wrong at a control offers Report',
     async run(page) {
       await page.setViewportSize({ width: 390, height: 844 })
       await page.route('**/api/log/show', (route) => route.fulfill({ status: 409, contentType: 'application/json', body: '{"error":"The log could not be shown"}' }))
       await page.goto(`${url}/app/settings`)
       await page.getByRole('button', { name: "Show the app's log in folder" }).click()
-      const report = page.locator('.toast.bad button', { hasText: 'Report' })
+      const report = page.locator('section.group:has(h2:text-is("Logs")) .problem button', { hasText: 'Report' })
       await report.waitFor()
       const about = page.waitForRequest((r) => r.url().endsWith('/api/report/about'))
       await report.click()
       const body = JSON.parse((await about).postData() ?? '{}')
       if (!String(body.text).includes('The log could not be shown')) return `Report sent ${JSON.stringify(body)}`
+      return ''
+    },
+  },
+  {
+    // Pictures that could not be attached say so over the top of the
+    // field, where the report is, never in a toast over the window, and
+    // with no Report of their own, since this is the report (#72). The
+    // next press takes it away.
+    name: 'Attach the app refuses says why over the field, with no toast',
+    async run(page) {
+      await openReport(page)
+      await page.route('**/api/report/pick', (route) => route.fulfill({ status: 409, json: { error: 'the picture is larger than 10 MB' } }))
+      await page.locator('button.attach').click()
+      const line = page.locator('.card .box .problem')
+      await line.waitFor()
+      const said = (await line.innerText()).trim()
+      if (said !== 'The picture is larger than 10 MB') return `the line says ${JSON.stringify(said)}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      const [f, l] = await Promise.all([page.locator('textarea.telling').boundingBox(), line.boundingBox()])
+      if (l.y < f.y || l.y + l.height > f.y + f.height || l.x < f.x || l.x + l.width > f.x + f.width) return 'the line is not over the field'
+      await page.unroute('**/api/report/pick')
+      await page.locator('button.people').click()
+      await line.waitFor({ state: 'detached' })
+      await page.locator('button.people').click()
       return ''
     },
   },

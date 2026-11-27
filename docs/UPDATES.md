@@ -65,7 +65,9 @@ then on every build comes from GitHub.
    [Signed once](#signed-once). `speakertrail-release pack`
    writes the build again in parts, see What an update downloads below.
    `sign` signs the zip and the stored zip with the key from the
-   environment `updates`. The pieces the release does not hold yet go
+   environment `updates`, and signs when the build was made, see
+   [No step back](#no-step-back). An entry already there that was made
+   later stays, and this build is not published. The pieces the release does not hold yet go
    up to the pre-release `dev`, then the zip, the stored zip packed and
    its parts, then its entry. The commit that was built gets the status
    **Ready to update to** on the pull request, and only then do the
@@ -181,6 +183,19 @@ build on `dev` had parts to patch against. See
   picked.
 - What it picked is in `updates.json`, in the app's folder beside
   `speakertrail.json`.
+
+### No step back
+
+Each entry carries `made`, when the run that built it was started, and
+`order`, an Ed25519 signature over that time with what the claim says.
+A run started again keeps the time of its first start, so a rerun of an
+old commit is never newer than what came after it. The app keeps the
+newest time it took of each channel in `update-order.json` beside
+`updates.json`, and refuses a build of that channel made before it, or
+one without a signed time once it took one with. So whoever can write
+the release cannot put back an older entry, signed as it was then, with
+a bug fixed since. Going back is picking main or another pull request,
+never an older build of the same channel.
 
 Where things stand reaches the interface the way it does in FrameFairy:
 the app sends it as the Wails event `updates` every time it changes, and

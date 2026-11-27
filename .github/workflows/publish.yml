@@ -396,6 +396,18 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # The channel's entry there is now, read in a step without the key,
+      # so sign does not put a build in the place of one made after it, a
+      # run of an older commit made again. See orderEntry in
+      # cmd/speakertrail-release.
+      - if: steps.key.outputs.ready == 'true'
+        name: The entry there is now
+        env:
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/current"
+          gh release download dev --pattern "channel-$CHANNEL.json" --dir "$RUNNER_TEMP/current" --clobber || true
+
       - id: sign
         if: steps.key.outputs.ready == 'true'
         name: Sign it
@@ -406,11 +418,16 @@ jobs:
           VERSION: ${{ steps.which.outputs.version }}
           COMMIT: ${{ steps.which.outputs.commit }}
           TEAM: ${{ steps.harden.outputs.team }}
+          # When the run that built it was created, which a run made again
+          # keeps, signed into the entry so the app never takes an older
+          # build of a channel in a newer one's place.
+          MADE: ${{ github.event.workflow_run.created_at }}
         # With the Developer ID, sign refuses a build that is not signed
         # with it and the hardened runtime throughout, so it is never lost
         # on the way without anyone seeing.
         run: |
           if ! "$RUNNER_TEMP/speakertrail-release" sign -team "$TEAM" \
+            -made "$MADE" -current "$RUNNER_TEMP/current/channel-$CHANNEL.json" \
             -zip "dist/$ZIP" -parts "$RUNNER_TEMP/packed/parts.json" \
             -channel "$CHANNEL" -name "$(cat dist/name.txt)" \
             -version "$VERSION" -commit "$COMMIT" \
@@ -458,7 +475,7 @@ jobs:
       # stored zip itself is never uploaded: the app puts it together or
       # unpacks it.
       - id: upload
-        if: steps.sign.outcome == 'success'
+        if: steps.sign.outcome == 'success' && steps.sign.outputs.newer != 'true'
         name: Upload the build
         env:
           ZIP: ${{ steps.which.outputs.zip }}

@@ -241,6 +241,9 @@ func newUpdating(u *updater.Updater, quit func(), folder string, idle func() (fu
 	}
 	exe, _ := os.Executable()
 	src := &updates.Source{URL: updates.ListURL, Copies: updates.ListCopies, Entries: updates.EntriesURL, Client: &http.Client{}}
+	// When the newest build taken of each channel was made, so an older
+	// one is never taken in its place, see updates.Order.
+	src.Order = &updates.Order{Path: filepath.Join(folder, "update-order.json")}
 	// The builds already downloaded, so going back to a channel has its
 	// build at once. In the user's caches, which is where macOS expects a
 	// file that can always be fetched again.

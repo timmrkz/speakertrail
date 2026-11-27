@@ -202,13 +202,78 @@ func sign(args []string) error {
 	out := fs.String("out", "", "where the entry goes")
 	team := fs.String("team", "", "refuse a build not signed by this team's Developer ID with the hardened runtime")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
+	made := fs.String("made", "", "when the run that built it was created, RFC 3339, signed as the build's order")
+	current := fs.String("current", "", "the channel's entry on the release now, which a build made before it does not replace")
 	_ = fs.Parse(args)
 	if *team != "" {
 		if err := checkHardened(*zipPath, *team); err != nil {
 			return err
 		}
 	}
-	return signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out)
+	if err := signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out); err != nil {
+		return err
+	}
+	if *made == "" {
+		return nil
+	}
+	newer, err := orderEntry(*out, *made, *current)
+	if err != nil {
+		return err
+	}
+	if newer != "" {
+		fmt.Printf("::notice::%s\n", newer)
+		return output("newer", "true")
+	}
+	return nil
+}
+
+// orderEntry signs when the build of the entry in out was made, see
+// updates.Order. When current is an entry of the same channel, signed as
+// made after it, it says so, and the build is not to replace it: a run of
+// an older commit made again would otherwise put an older build in a
+// newer one's place. A current entry that cannot be read, or is not
+// signed so, is replaced, since only a signed time says which is newer.
+func orderEntry(out, made, current string) (string, error) {
+	t, err := time.Parse(time.RFC3339, made)
+	if err != nil {
+		return "", fmt.Errorf("-made: %w", err)
+	}
+	private, public, err := keys()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		return "", err
+	}
+	var b updates.Build
+	if err := json.Unmarshal(data, &b); err != nil {
+		return "", err
+	}
+	b.Made = t.UTC()
+	b.Order = updates.SignOrder(private, b)
+	if err := updates.VerifyOrder(public, b); err != nil {
+		return "", err
+	}
+	if err := writeJSON(out, b); err != nil {
+		return "", err
+	}
+	if current == "" {
+		return "", nil
+	}
+	data, err = os.ReadFile(current)
+	if err != nil {
+		return "", nil
+	}
+	var now updates.Build
+	if json.Unmarshal(data, &now) != nil || now.Channel != b.Channel || updates.VerifyOrder(public, now) != nil {
+		return "", nil
+	}
+	if now.Made.After(b.Made) {
+		return fmt.Sprintf("The build of %s on the release, %s, was made %s, after this one, made %s, so this one does not replace it.",
+			b.Channel, now.Version, now.Made.Format(time.RFC3339), b.Made.Format(time.RFC3339)), nil
+	}
+	return "", nil
 }
 
 // signBuild signs the zip and writes its entry. With parts, it signs the

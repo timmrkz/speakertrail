@@ -1,6 +1,6 @@
 <script lang="ts">
   import { tick, untrack } from 'svelte'
-  import { api, ApiError, type Exclusion } from '../api'
+  import { api, ApiError, type Exclusion, type Exclusions } from '../api'
   import { plural } from '../format'
   import { bringIntoView, undoHistory } from '../history.svelte'
   import { Load } from '../load.svelte'
@@ -12,7 +12,7 @@
   // Tim's exclusions: words and phrases, like "Online Marketing", that
   // leave a person out of profile searches and People. Removing one brings
   // the people it hid back, and Undo in the Edit menu puts it back.
-  const list = new Load<Exclusion[]>()
+  const list = new Load<Exclusions>()
   $effect(() => {
     list.run(api.exclusions)
   })
@@ -31,8 +31,9 @@
     open = true
     void tick().then(() => box && bringIntoView(box, 'nearest'))
   })
-  let all = $derived(list.data ?? [])
-  let hiding = $derived(all.reduce((n, x) => n + x.people, 0))
+  // In Go's order, with Go's counts, as adding and removing answer them.
+  let all = $derived(list.data?.exclusions ?? [])
+  let hiding = $derived(list.data?.hiding ?? 0)
 
   let phrase = $state('')
   // What went wrong adding or removing one says so under the field,
@@ -45,8 +46,7 @@
     busy = true
     problem.clear()
     try {
-      const x = await api.addExclusion(input)
-      list.data = [...all, x].sort((a, b) => a.phrase.localeCompare(b.phrase, 'de'))
+      list.data = await api.addExclusion(input)
       return true
     } catch (err) {
       // One that is there already is not something that went wrong.
@@ -77,8 +77,7 @@
     removing = x.id
     problem.clear()
     try {
-      await api.deleteExclusion(x.id)
-      list.data = all.filter((y) => y.id !== x.id)
+      list.data = await api.deleteExclusion(x.id)
     } catch (err) {
       problem.failed(err)
     } finally {

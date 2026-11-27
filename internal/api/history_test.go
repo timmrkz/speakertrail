@@ -90,11 +90,17 @@ func TestUndoSearchesExclusionsTheTemplateAndSettings(t *testing.T) {
 	if code := call(t, a, "PATCH", "/api/sources/"+itoa(s.ID), `{"status": "retired"}`, nil); code != http.StatusOK {
 		t.Fatalf("pause: %d", code)
 	}
-	var x exclusionJSON
-	if code := call(t, a, "POST", "/api/exclusions", `{"phrase": "Hochzeitsplanung"}`, &x); code != http.StatusCreated {
+	var added exclusionsJSON
+	if code := call(t, a, "POST", "/api/exclusions", `{"phrase": "Hochzeitsplanung"}`, &added); code != http.StatusCreated {
 		t.Fatalf("add an exclusion: %d", code)
 	}
-	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusNoContent {
+	var x exclusionJSON
+	for _, e := range added.Exclusions {
+		if e.Phrase == "Hochzeitsplanung" {
+			x = e
+		}
+	}
+	if code := call(t, a, "DELETE", "/api/exclusions/"+itoa(x.ID), "", nil); code != http.StatusOK {
 		t.Fatalf("remove the exclusion: %d", code)
 	}
 	if code := call(t, a, "PATCH", "/api/settings/profile_searches_per_run", `{"value": 12}`, nil); code != http.StatusOK {
@@ -132,9 +138,9 @@ func TestUndoSearchesExclusionsTheTemplateAndSettings(t *testing.T) {
 		t.Errorf("after undo the setting is %s, want 10", set.Value)
 	}
 	undo(store.ExclusionThing(x.ID))
-	var xs []exclusionJSON
+	var xs exclusionsJSON
 	call(t, a, "GET", "/api/exclusions", "", &xs)
-	if !slices.ContainsFunc(xs, func(e exclusionJSON) bool { return e.ID == x.ID && e.Phrase == "Hochzeitsplanung" }) {
+	if !slices.ContainsFunc(xs.Exclusions, func(e exclusionJSON) bool { return e.ID == x.ID && e.Phrase == "Hochzeitsplanung" }) {
 		t.Errorf("after undo the exclusions are %+v, want Hochzeitsplanung back with its id", xs)
 	}
 	undo(store.ExclusionThing(x.ID))

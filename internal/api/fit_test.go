@@ -15,7 +15,7 @@ func TestFitPartsAreOneList(t *testing.T) {
 		{Key: "who", Label: "Who they are", Points: -13, Why: "Studies or in training"},
 		{Key: "active", Label: "Active lately", Points: 0, Why: "Last active on 22 June 2026, not known whether they wrote", Mark: -1},
 		{Key: "near", Label: "Near you", Points: 11, Why: "Düsseldorf, about 36 km", Mark: 1},
-		{Key: "younger", Label: "Younger", Points: 5, Why: "Age not known"},
+		{Key: "younger", Label: "Younger", Points: 0, Why: "Age not known"},
 	}
 	signals := []store.Signal{
 		{Key: "owner_operator", Label: "Runs their own business", For: true, Passage: "Inhaber, Probe Shop", FoundIn: "LinkedIn profile"},

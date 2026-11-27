@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+
+	"github.com/timmrkz/speakertrail/internal/store"
 )
 
 // logAPI answers the window about the app's log, the way the rest of the
@@ -24,6 +26,17 @@ type logAPI struct {
 	log *appLog
 	// show shows a file in its folder, in Finder on a Mac.
 	show func(path string) error
+	// unnamed gives what takes every person's name and handle out of the
+	// window's lines and acts, store.Store.Unnamed, so no tooltip or
+	// message the window forgot to mark can name a person in the log,
+	// issue #104.
+	unnamed func() func(string) string
+}
+
+// newLogAPI is the log's handler as the app has it, with the guard that
+// takes the names of the people in st out of what the window says.
+func newLogAPI(log *appLog, st *store.Store, show func(path string) error) logAPI {
+	return logAPI{log: log, show: show, unnamed: st.Unnamed}
 }
 
 // saidMost is how much the window may send at once: saidLines lines of
@@ -39,6 +52,10 @@ func (l logAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
 			return
 		}
+		clean := l.unnamed()
+		for i := range lines[:min(len(lines), saidLines)] {
+			lines[i].Text = clean(lines[i].Text)
+		}
 		l.log.said(lines)
 		w.WriteHeader(http.StatusNoContent)
 	case "POST /api/log/acted":
@@ -47,6 +64,7 @@ func (l logAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			answer(w, http.StatusBadRequest, map[string]string{"error": "The request is not valid JSON"})
 			return
 		}
+		a.What = l.unnamed()(a.What)
 		l.log.acted(a)
 		w.WriteHeader(http.StatusNoContent)
 	case "GET /api/log":

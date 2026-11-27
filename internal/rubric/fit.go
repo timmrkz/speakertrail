@@ -198,7 +198,9 @@ func whoPart(p FitPerson, say bool) Part {
 func youngerPart(p FitPerson, say bool) Part {
 	part := Part{Key: "younger", Label: "Younger"}
 	if p.BornAbout == 0 {
-		part.Points, part.Why = points(YoungerPoints, 0.5), "Age not known"
+		// An unknown gives nothing, so every point has a reason Tim can
+		// read, issue #91. It gave half until 27 November 2026.
+		part.Why = "Age not known"
 		return part
 	}
 	age := p.Now.Year() - p.BornAbout
@@ -267,7 +269,9 @@ func activePart(p FitPerson, say bool) Part {
 }
 
 func nearPart(p FitPerson, say bool) Part {
-	part := Part{Key: "near", Label: "Near you", Points: points(NearPoints, 0.5)}
+	// Where you are, the city or its distance not known gives nothing,
+	// as an age not known does, issue #91.
+	part := Part{Key: "near", Label: "Near you"}
 	switch {
 	case p.Home == "":
 		part.Why = "Where you are is not set in Settings"

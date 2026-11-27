@@ -355,6 +355,14 @@ export interface Exclusion {
   people: number
 }
 
+// Every exclusion in the order Go sorts them, and how many people they
+// hide together. Adding and removing one answer it too, so the window
+// neither sorts nor counts, see docs/api.md.
+export interface Exclusions {
+  exclusions: Exclusion[]
+  hiding: number
+}
+
 // lists switches what a source's page is read as.
 export type SourcePatch = Partial<Pick<Source, 'status' | 'fetch_mode' | 'notes' | 'name'>> & { lists?: SourceLists }
 
@@ -822,9 +830,9 @@ export const api = {
   addProfileSearch: (query: string) => request<Source>('POST', '/api/sources', { query, kind: 'profile_search' }),
   patchSource: (id: number, patch: SourcePatch) => request<Source>('PATCH', `/api/sources/${id}`, patch),
   checkSource: (id: number) => request<void>('POST', `/api/sources/${id}/check`),
-  exclusions: () => request<Exclusion[]>('GET', '/api/exclusions'),
-  addExclusion: (phrase: string) => request<Exclusion>('POST', '/api/exclusions', { phrase }),
-  deleteExclusion: (id: number) => request<void>('DELETE', `/api/exclusions/${id}`, {}),
+  exclusions: () => request<Exclusions>('GET', '/api/exclusions'),
+  addExclusion: (phrase: string) => request<Exclusions>('POST', '/api/exclusions', { phrase }),
+  deleteExclusion: (id: number) => request<Exclusions>('DELETE', `/api/exclusions/${id}`, {}),
   startRun: () => request<{ run_id: number; started: boolean }>('POST', '/api/runs', {}),
   currentRun: () => request<{ run: Run | null }>('GET', '/api/runs/current').then((r) => r.run),
   stopRun: (id: number) => request<void>('POST', `/api/runs/${id}/stop`, {}),

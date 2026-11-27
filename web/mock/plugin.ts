@@ -365,7 +365,7 @@ function fitParts(s: State, p: Person): FitPart[] {
   const age = born ? now.getFullYear() - born : 0
   const younger = born
     ? { key: 'younger', label: 'Younger', points: Math.round(Math.max(-20, Math.min(10, (10 * (40 - age)) / 10))), why: p.linkedin?.age_reason ? `${p.linkedin.age_reason}, so about ${age}` : `About ${age}` }
-    : { key: 'younger', label: 'Younger', points: pts(10, 0.5), why: 'Age not known' }
+    : { key: 'younger', label: 'Younger', points: 0, why: 'Age not known' }
   const last = p.linkedin?.last_active
   const day = (t: string) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
   const active = last
@@ -374,9 +374,9 @@ function fitParts(s: State, p: Person): FitPart[] {
   const home = String(setting(s, 'home_city') ?? '')
   const d = home ? km(home, p.city) : null
   const near = !home
-    ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: 'Where you are is not set in Settings' }
+    ? { key: 'near', label: 'Near you', points: 0, why: 'Where you are is not set in Settings' }
     : d === null
-      ? { key: 'near', label: 'Near you', points: pts(20, 0.5), why: p.city ? `${p.city}, distance not known` : 'City not known' }
+      ? { key: 'near', label: 'Near you', points: 0, why: p.city ? `${p.city}, distance not known` : 'City not known' }
       : d < 1
         ? { key: 'near', label: 'Near you', points: 20, why: `${p.city}, where you are` }
         : { key: 'near', label: 'Near you', points: pts(20, 0.5 ** (d / 40)), why: `${p.city}, about ${Math.round(d)} km` }
@@ -549,8 +549,10 @@ function excludedBy(text: string, phrases: string[]): string | null {
   return null
 }
 // Whom the exclusions hide, and how many each, never someone connected.
+// A person counts for the first that matches, in the order of the
+// phrases, as store.Hidden.
 function hiddenBy(s: State): Map<number, string> {
-  const phrases = s.exclusions.map((x) => x.phrase)
+  const phrases = sortedExclusions(s).map((x) => x.phrase)
   const out = new Map<number, string>()
   for (const p of s.people) {
     const by = p.connected ? null : excludedBy(`${p.headline} ${p.linkedin?.roles ?? ''}`, phrases)
@@ -558,11 +560,16 @@ function hiddenBy(s: State): Map<number, string> {
   }
   return out
 }
+// The exclusions in German order, Ä with the A, as store.SortedExclusions.
+function sortedExclusions(s: State) {
+  return [...s.exclusions].sort((a, b) => a.phrase.localeCompare(b.phrase, 'de', { sensitivity: 'base' }))
+}
 function exclusionsOf(s: State) {
   const hidden = [...hiddenBy(s).values()]
-  return [...s.exclusions]
-    .sort((a, b) => a.phrase.toLowerCase().localeCompare(b.phrase.toLowerCase()))
-    .map((x) => ({ ...x, people: hidden.filter((p) => p === x.phrase).length }))
+  return {
+    exclusions: sortedExclusions(s).map((x) => ({ ...x, people: hidden.filter((p) => p === x.phrase).length })),
+    hiding: hidden.length,
+  }
 }
 
 const ok = (body: unknown) => ({ status: 200, body })
@@ -1118,14 +1125,14 @@ const ROUTES: [string, RegExp, Handler][] = [
     if (s.exclusions.some((x) => x.phrase.toLowerCase() === phrase.toLowerCase())) return err(409, 'This exclusion is already there')
     const id = s.nextId.exclusion++
     edit(s, { kind: 'exclusion', id }, () => s.exclusions.push({ id, phrase }))
-    return { status: 201, body: exclusionsOf(s).find((x) => x.id === id) }
+    return { status: 201, body: exclusionsOf(s) }
   }],
   ['DELETE', /^\/api\/exclusions\/(\d+)$/, (s, m) => {
     const id = Number(m[1])
     const i = s.exclusions.findIndex((x) => x.id === id)
     if (i < 0) return err(404, 'Not found')
     edit(s, { kind: 'exclusion', id }, () => s.exclusions.splice(i, 1))
-    return { status: 204 }
+    return ok(exclusionsOf(s))
   }],
   ['POST', /^\/api\/sources$/, (s, _m, _q, b) => {
     const query = typeof b.query === 'string' ? b.query.trim().split(/\s+/).join(' ') : ''

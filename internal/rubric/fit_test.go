@@ -68,9 +68,9 @@ func TestFitNearYou(t *testing.T) {
 		{"same city", FitPerson{Home: "Köln", City: "Köln", Near: true}, 20, "Köln, where you are"},
 		{"25 km", FitPerson{Home: "Köln", City: "Bonn", Km: 25, Near: true}, 13, "Bonn, about 25 km"},
 		{"125 km", FitPerson{Home: "Köln", City: "Münster", Km: 125, Near: true}, 2, "Münster, about 125 km"},
-		{"no city", FitPerson{Home: "Köln"}, 10, "City not known"},
-		{"a city without a centre", FitPerson{Home: "Köln", City: "Hückeswagen"}, 10, "Hückeswagen, distance not known"},
-		{"not set", FitPerson{City: "Bonn"}, 10, "Where you are is not set in Settings"},
+		{"no city", FitPerson{Home: "Köln"}, 0, "City not known"},
+		{"a city without a centre", FitPerson{Home: "Köln", City: "Hückeswagen"}, 0, "Hückeswagen, distance not known"},
+		{"not set", FitPerson{City: "Bonn"}, 0, "Where you are is not set in Settings"},
 	} {
 		_, parts := Fit(tc.p)
 		got := part(t, parts, "near")
@@ -89,7 +89,7 @@ func TestFitYounger(t *testing.T) {
 		// Past 40 it goes below none, a point a year, down to -20 at 60
 		// (Tim, 27 November 2026: people around 50 should not make it to
 		// the top).
-		{2002, 10}, {1996, 10}, {1991, 5}, {1987, 1}, {1986, 0}, {1976, -10}, {1970, -16}, {1966, -20}, {1950, -20}, {0, 5},
+		{2002, 10}, {1996, 10}, {1991, 5}, {1987, 1}, {1986, 0}, {1976, -10}, {1970, -16}, {1966, -20}, {1950, -20}, {0, 0},
 	} {
 		// Someone who wrote today, so the other parts have enough to give.
 		p := FitPerson{BornAbout: tc.born, LastActive: now, LastWrote: now, Wrote: true, Now: now}
@@ -97,22 +97,23 @@ func TestFitYounger(t *testing.T) {
 		if got := part(t, parts, "younger"); got.Points != tc.points {
 			t.Errorf("born %d: %d points, want %d", tc.born, got.Points, tc.points)
 		}
-		if want := 30 + 10 + tc.points; fit != want || FitPoints(p) != want {
+		if want := 30 + tc.points; fit != want || FitPoints(p) != want {
 			t.Errorf("born %d: fit %d and %d, want %d", tc.born, fit, FitPoints(p), want)
 		}
 	}
 	// Younger takes away no more than the other parts give, so the fit
 	// stays 0 or more, and the points under Why add up to it.
-	fit, parts := Fit(FitPerson{BornAbout: 1950, Now: now})
-	if got := part(t, parts, "younger").Points; fit != 0 || got != -10 || FitPoints(FitPerson{BornAbout: 1950, Now: now}) != 0 {
-		t.Errorf("with only Near you's 10: fit %d, Younger %d, want 0 and -10", fit, got)
+	bonn := FitPerson{BornAbout: 1950, Home: "Köln", City: "Bonn", Km: 25, Near: true, Now: now}
+	fit, parts := Fit(bonn)
+	if got := part(t, parts, "younger").Points; fit != 0 || got != -13 || FitPoints(bonn) != 0 {
+		t.Errorf("with only Near you's 13: fit %d, Younger %d, want 0 and -13", fit, got)
 	}
 	// With Who they are below none too, both take from what is left, in
 	// the order of the parts.
 	older := FitPerson{BornAbout: 1966, Signals: []Signal{{Key: "funded"}}, LastActive: now, LastWrote: now, Wrote: true, Now: now}
 	fit, parts = Fit(older)
-	if who, younger := part(t, parts, "who").Points, part(t, parts, "younger").Points; fit != 7 || who != -13 || younger != -20 || FitPoints(older) != 7 {
-		t.Errorf("fit %d, who %d, younger %d, want 7, -13, -20", fit, who, younger)
+	if who, younger := part(t, parts, "who").Points, part(t, parts, "younger").Points; fit != 0 || who != -13 || younger != -17 || FitPoints(older) != 0 {
+		t.Errorf("fit %d, who %d, younger %d, want 0, -13, -17", fit, who, younger)
 	}
 	// A 53 year old who shows a third more of Who they are than a 30 year
 	// old, alike in all else, comes after.
@@ -143,7 +144,7 @@ func TestFitWhoTheyAre(t *testing.T) {
 		// What counts against takes points away below none, but never more than the
 		// other parts give.
 		{[]string{"funded"}, -13, "Raised money"},
-		{[]string{"funded", "enterprise", "backed", "studies", "employed"}, -15, "Raised money, Sells to companies, Backed by a startup programme, Studies or in training, Employed elsewhere"},
+		{[]string{"funded", "enterprise", "backed", "studies", "employed"}, -20, "Raised money, Sells to companies, Backed by a startup programme, Studies or in training, Employed elsewhere"},
 	} {
 		var sigs []Signal
 		for _, d := range Defs {
@@ -153,7 +154,9 @@ func TestFitWhoTheyAre(t *testing.T) {
 				}
 			}
 		}
-		_, parts := Fit(FitPerson{Signals: sigs})
+		// Where Tim is, so Near you has 20 points for what counts against
+		// to take away.
+		_, parts := Fit(FitPerson{Signals: sigs, Home: "Köln", City: "Köln", Near: true})
 		got := part(t, parts, "who")
 		if got.Points != tc.points || got.Why != tc.why {
 			t.Errorf("%v: %d %q, want %d %q", tc.keys, got.Points, got.Why, tc.points, tc.why)

@@ -6,8 +6,10 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/timmrkz/speakertrail/internal/rubric"
+	"golang.org/x/text/unicode/norm"
 )
 
 // Exclusion is a word or phrase, like "Online Marketing", that leaves a
@@ -77,13 +79,32 @@ func (d *Data) Phrases() []string {
 }
 
 // SortedExclusions are the exclusions in the order of their phrases, as
-// Tim sees them.
+// Tim sees them, in German order, so "Ärztin" stands with the A and not
+// after Z, and case counts for nothing, issue #105. Two phrases alike but
+// for their marks and case go by those, so the order is always the same.
 func (d *Data) SortedExclusions() []*Exclusion {
 	out := slices.Clone(d.Exclusions)
 	slices.SortStableFunc(out, func(a, b *Exclusion) int {
-		return cmp.Compare(strings.ToLower(a.Phrase), strings.ToLower(b.Phrase))
+		return cmp.Or(cmp.Compare(sortKey(a.Phrase), sortKey(b.Phrase)), cmp.Compare(strings.ToLower(a.Phrase), strings.ToLower(b.Phrase)))
 	})
 	return out
+}
+
+// sortKey writes a phrase in small letters without its accents, "ß" as
+// "ss", the way a German dictionary sorts, DIN 5007. The package collate
+// does it in full, but it would make the app about 1.7 MB bigger, and
+// norm is in the app already.
+func sortKey(s string) string {
+	var b strings.Builder
+	for _, r := range norm.NFD.String(strings.ToLower(s)) {
+		switch {
+		case r == 'ß':
+			b.WriteString("ss")
+		case !unicode.Is(unicode.Mn, r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // Hidden finds the people an exclusion leaves out, by their headline and

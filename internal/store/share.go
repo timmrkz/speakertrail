@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 // Shared is one person as Report a Problem takes them along when Tim
@@ -163,11 +164,8 @@ func unnamed(name, handle string) func(string) string {
 	if len([]rune(handle)) >= 3 {
 		add(handle)
 	}
-	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) }) {
-		if len([]rune(w)) >= 3 && unicode.IsUpper([]rune(w)[0]) {
-			add(w)
-			add(plain.Replace(w))
-		}
+	for _, w := range nameWords(name, false) {
+		add(w)
 	}
 	if len(words) == 0 {
 		return func(s string) string { return links.ReplaceAllString(s, "[link]") }
@@ -193,3 +191,121 @@ func unnamed(name, handle string) func(string) string {
 
 // plain writes a name in the letters of a keyboard without umlauts.
 var plain = strings.NewReplacer("ä", "ae", "ö", "oe", "ü", "ue", "Ä", "Ae", "Ö", "Oe", "Ü", "Ue", "ß", "ss", "é", "e", "è", "e")
+
+// nameWords are the words of a person's name that are taken out of a
+// text, in lower case, each also in the letters of a keyboard without
+// umlauts. What a report takes along loses each word of three letters or
+// more that starts with a capital, so "von" and "der" in "Anna von der
+// Heide" stay. The app's log loses every word of two letters or more,
+// whatever its case, but those particles, since Exa may give a name as
+// "lea probe" or "Bo Li", and a word lost from the log costs little.
+func nameWords(name string, log bool) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) }) {
+		n, upper := len([]rune(w)), unicode.IsUpper([]rune(w)[0])
+		lower := strings.ToLower(w)
+		if log && (n < 2 || particles[lower]) || !log && (n < 3 || !upper) {
+			continue
+		}
+		out = append(out, lower, strings.ToLower(plain.Replace(w)))
+	}
+	return out
+}
+
+// particles are the small words of names that are words of every text,
+// which no name takes out of the log.
+var particles = map[string]bool{
+	"von": true, "vom": true, "van": true, "der": true, "den": true, "de": true, "del": true, "da": true, "di": true,
+	"du": true, "la": true, "le": true, "zu": true, "zum": true, "zur": true, "ten": true, "ter": true, "y": true,
+}
+
+// Unnamed gives what takes every person's own name out of a line of the
+// app's log: each word of a name, see nameWords, in any case, also with
+// an s after it, and every profile's handle whole, are written [name]. The
+// window marks what shows a person's words, but a tooltip outside that
+// mark once carried the name of the person a run read, so the Go side
+// holds the rule too, issue #104. Links stay, since the log names the
+// app's own addresses, and a profile link loses its handle.
+//
+// It reads the names as they are when it is called, so a person found
+// later is taken out by the next call. Only the names are copied under
+// the store's lock, and what takes them out is made after it is let go,
+// as Share does. That costs about half a millisecond for a thousand
+// people, once for a click or a batch of the window's lines.
+func (s *Store) Unnamed() func(string) string {
+	var names, handleList []string
+	s.Read(func(d *Data) {
+		names = make([]string, 0, len(d.People))
+		handleList = make([]string, 0, len(d.People))
+		for _, p := range d.People {
+			names = append(names, p.Name)
+			handleList = append(handleList, p.LinkedIn.Handle)
+		}
+	})
+	words := map[string]bool{}
+	handles := map[string]bool{}
+	for i, name := range names {
+		if h := strings.ToLower(handleList[i]); len([]rune(h)) >= 3 {
+			handles[h] = true
+		}
+		for _, w := range nameWords(name, true) {
+			words[w] = true
+		}
+	}
+	if len(words) == 0 && len(handles) == 0 {
+		return func(s string) string { return s }
+	}
+	// A handle is letters, digits and dashes, so such a run is taken
+	// whole when it is one, and else word by word.
+	handle := func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '%'
+	}
+	word := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+	return func(s string) string {
+		var b strings.Builder
+		runs(s, handle, func(run string, in bool) {
+			if !in {
+				b.WriteString(run)
+				return
+			}
+			if handles[strings.ToLower(run)] {
+				b.WriteString("[name]")
+				return
+			}
+			runs(run, word, func(w string, in bool) {
+				lower := strings.ToLower(w)
+				switch {
+				case !in:
+					b.WriteString(w)
+				case words[lower]:
+					b.WriteString("[name]")
+				// An s after a word of two letters makes words like "als"
+				// of "Al", so only longer ones take it.
+				case strings.HasSuffix(lower, "s") && len([]rune(lower)) > 3 && words[lower[:len(lower)-1]]:
+					b.WriteString("[name]s")
+				default:
+					b.WriteString(w)
+				}
+			})
+		})
+		return b.String()
+	}
+}
+
+// runs hands each longest run of a text whose letters are all in, or
+// all not in, to each, in order, so the runs put together are the text.
+func runs(s string, in func(rune) bool, each func(run string, in bool)) {
+	for i := 0; i < len(s); {
+		r, n := utf8.DecodeRuneInString(s[i:])
+		was, j := in(r), i+n
+		for j < len(s) {
+			r, n := utf8.DecodeRuneInString(s[j:])
+			if in(r) != was {
+				break
+			}
+			j += n
+		}
+		each(s[i:j], was)
+		i = j
+	}
+}

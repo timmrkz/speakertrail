@@ -88,8 +88,9 @@ func main() {
 	api.Handle("/api/chrome", chromeAPI{get: chrome.Load, report: reportChrome.Load})
 	// The window's lines and acts, and the log as Settings shows it, see
 	// applog_api.go.
-	api.Handle("/api/log", logAPI{log: theLog, show: showInFolder})
-	api.Handle("/api/log/", logAPI{log: theLog, show: showInFolder})
+	logs := newLogAPI(theLog, e.Store, showInFolder)
+	api.Handle("/api/log", logs)
+	api.Handle("/api/log/", logs)
 	// The speech models in Settings, fetched and removed there, see
 	// speechmodels.go. Where a download stands is the event speech.
 	voices := newSpeechModels(speech.Dir(dir), func(st SpeechState) {

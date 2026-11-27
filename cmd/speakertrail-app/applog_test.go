@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+	"github.com/timmrkz/speakertrail/internal/store"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -333,7 +334,7 @@ func TestAPanicInARequestIsInTheAppsLog(t *testing.T) {
 // line is kept in memory, not in the file.
 func TestSaidWritesTheAppLog(t *testing.T) {
 	_, read := testLog(t)
-	h := handler(nil, logAPI{log: theLog})
+	h := handler(nil, newLogAPI(theLog, nobody(t), nil))
 	say := func(lines []SaidLine) int {
 		body, _ := json.Marshal(lines)
 		rec := httptest.NewRecorder()
@@ -406,7 +407,7 @@ func TestSaidWritesTheAppLog(t *testing.T) {
 // goes.
 func TestActsTieTheLinesTheySetOff(t *testing.T) {
 	_, read := testLog(t)
-	h := handler(nil, logAPI{log: theLog})
+	h := handler(nil, newLogAPI(theLog, nobody(t), nil))
 	act := func(a Act) {
 		body, _ := json.Marshal(a)
 		rec := httptest.NewRecorder()
@@ -439,6 +440,68 @@ func TestActsTieTheLinesTheySetOff(t *testing.T) {
 	}
 }
 
+// nobody is a store that knows no people.
+func nobody(t *testing.T) *store.Store {
+	t.Helper()
+	st, err := store.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st
+}
+
+// Pressing Stop while a run reads a profile wrote the tooltip of the
+// button into the log, and with it the name of the person read, issue
+// #104. The Go side takes every person's name and handle out of what the
+// window says and does, however the window marked it, also when several
+// requests come at once.
+func TestTheLogNamesNoPerson(t *testing.T) {
+	_, read := testLog(t)
+	st, err := store.Open(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Update(func(d *store.Data) error {
+		s, err := d.AddSearch("Coach Bonn", 1, testNow)
+		if err != nil {
+			return err
+		}
+		d.AddFound(store.Found{URL: "https://www.linkedin.com/in/lea-probe-7a1", Handle: "lea-probe-7a1", Name: "Lea Probe", City: "Bonn"}, s, 1, testNow)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := handler(nil, newLogAPI(theLog, st, nil))
+	post := func(path string, v any) {
+		body, _ := json.Marshal(v)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body)))
+		if rec.Code != http.StatusNoContent {
+			t.Errorf("%s answered %d", path, rec.Code)
+		}
+	}
+	var wg sync.WaitGroup
+	for i := range 4 {
+		wg.Go(func() {
+			post("/api/log/acted", Act{ID: fmt.Sprintf("a%d", i), What: `pressed button.btn "Reading the profile of Lea Probe. 0 of 1 profile. 3 s so far"`})
+			post("/api/log/said", []SaidLine{{Level: "warn", Text: fmt.Sprintf("calls %d: could not open https://www.linkedin.com/in/lea-probe-7a1 for Leas page", i)}})
+		})
+	}
+	wg.Wait()
+	lines := read()
+	if l := find(lines, `pressed button.btn "Reading the profile of [name] [name]. 0 of 1 profile`); l == nil {
+		t.Error("the act is not in the log with the name taken out")
+	}
+	if l := find(lines, "calls 0: could not open https://www.linkedin.com/in/[name] for [name]s page"); l == nil {
+		t.Error("the window's line is not in the log with the name and handle taken out")
+	}
+	for _, l := range lines {
+		if text := fmt.Sprint(l); strings.Contains(text, "Lea") || strings.Contains(text, "Probe") || strings.Contains(text, "lea-probe") {
+			t.Errorf("a line names the person: %s", text)
+		}
+	}
+}
+
 // Settings shows the app's log, its files with the older ones, their size
 // and their lines, shows it in its folder, and removes them all, and
 // nothing else in their folder. The next line starts a new log, which
@@ -462,7 +525,7 @@ func TestTheLogCanBeRemovedWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	var shown []string
-	h := handler(nil, logAPI{log: theLog, show: func(p string) error { shown = append(shown, p); return nil }})
+	h := handler(nil, newLogAPI(theLog, nobody(t), func(p string) error { shown = append(shown, p); return nil }))
 	ask := func(method, path string) (int, LogStatus) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(method, path, nil))

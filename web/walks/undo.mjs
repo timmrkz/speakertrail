@@ -3,7 +3,8 @@
 // page it changed opens, what came back shows, and no toast or link
 // offers an Undo of its own. Tim, 22 November 2026, #71. A person's
 // changes are walked in walks/person.mjs, the template's in
-// walks/template.mjs. `make walks` runs them, and so does CI.
+// walks/template.mjs. The exclusions show Go's order and counts after
+// adding and removing one, #105. `make walks` runs them, and so does CI.
 import { chromium } from 'playwright'
 import { url, server } from './lib/mock.mjs'
 
@@ -76,6 +77,44 @@ const walks0 = [
       await chip(page, 'Sichtbarkeit').waitFor({ state: 'detached' })
       await menu(page, 'undo')
       await chip(page, 'Sichtbarkeit').waitFor()
+      return ''
+    },
+  },
+  {
+    // #105: the window sorted a new exclusion itself, so one with an
+    // umlaut jumped on the next load, and kept every other count, though
+    // a person counts for the first exclusion that matches.
+    name: 'An exclusion added or removed shows the order and the counts Go answers, Ä with the A',
+    async run(page) {
+      await searches(page)
+      const list = page.locator('details.exclusions')
+      await list.locator('summary').click()
+      const num = (phrase) => chip(page, phrase).locator('.num')
+      await num('Online Marketing').filter({ hasText: '1' }).waitFor()
+      const total = await list.locator('summary .count').innerText()
+      const add = async (phrase) => {
+        await page.locator('#new-exclusion').fill(phrase)
+        await page.locator('#new-exclusion').press('Enter')
+        await chip(page, phrase).waitFor()
+      }
+      const order = () => page.locator('li.phrase > span.ellipsis').allInnerTexts()
+      // Coach comes first in the order and so takes the person Online
+      // Marketing hid, "Online-Marketing für Coaches".
+      await add('Coach')
+      await num('Online Marketing').waitFor({ state: 'detached' })
+      if ((await num('Coach').count()) !== 1) return 'Coach shows no count, though it hides the person Online Marketing hid'
+      await add('Ärztin')
+      const after = await order()
+      if (after[0] !== 'Ärztin' || after[1] !== 'Coach') return `the order is ${after.join(', ')}, want Ärztin then Coach first`
+      await page.reload()
+      await list.locator('summary').click()
+      if ((await order()).join() !== after.join()) return `after a reload the order is ${(await order()).join(', ')}, it was ${after.join(', ')}`
+      await chip(page, 'Coach').locator('button.remove').click()
+      await num('Online Marketing').filter({ hasText: '1' }).waitFor()
+      await chip(page, 'Ärztin').locator('button.remove').click()
+      await chip(page, 'Ärztin').waitFor({ state: 'detached' })
+      const now = await list.locator('summary .count').innerText()
+      if (now !== total) return `the count says ${now} after both are gone, it said ${total}`
       return ''
     },
   },

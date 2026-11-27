@@ -394,17 +394,22 @@ stands between its words, and also written as one word: "Online
 Marketing" matches "Online-Marketing-Expertin" and "#onlinemarketing", but
 "Coach" does not match "Lifecoach".
 
-`GET /api/exclusions` answers `[{"id": 1, "phrase": "Online Marketing",
-"people": 3}]`, in the order of the phrases. `people` is how many people
-it hides now. Someone two exclusions match counts for the first.
+`GET /api/exclusions` answers `{"exclusions": [{"id": 1, "phrase":
+"Online Marketing", "people": 3}], "hiding": 3}`, in the German order of
+the phrases, "Ärztin" with the A, whatever their case. `people` is how
+many people one hides now, and `hiding` how many they hide together.
+Someone two exclusions match counts for the first.
 
 `POST /api/exclusions` with `{"phrase": "Personal Branding"}` adds one and
-answers it with 201. The phrase keeps its words, with single spaces
+answers every exclusion the same way, with 201, since a new one may take
+people from the others. The phrase keeps its words, with single spaces
 between them, at most 60 characters. The same phrase twice answers 409,
 one without a word 400.
 
-`DELETE /api/exclusions/{id}` removes one and answers 204. The people it
-hid come back.
+`DELETE /api/exclusions/{id}` removes one and answers every exclusion
+left, with 200. The people it hid come back, or count for another that
+matches them. The window neither sorts nor counts exclusions itself
+(#105).
 
 ## Speech models
 

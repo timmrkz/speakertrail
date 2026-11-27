@@ -114,3 +114,62 @@ func TestUnnamedTakesWholeWordsOnly(t *testing.T) {
 		t.Errorf("a name of two letters took %q", got)
 	}
 }
+
+// What the window writes into the app's log loses the name and handle of
+// every person, whoever they are, also when a tooltip named the person a
+// run reads, issue #104. Words that only start like a name keep their
+// letters, and a person found later is taken out by the next call.
+func TestUnnamedTakesEveryPersonOutOfTheLog(t *testing.T) {
+	st, err := Open(t.TempDir(), func() time.Time { return t0 })
+	if err != nil {
+		t.Fatal(err)
+	}
+	add := func(name, handle string) {
+		t.Helper()
+		if err := st.Update(func(d *Data) error {
+			s, err := d.AddSearch("Coach Bonn", 1, t0)
+			if err != nil && s == nil {
+				return err
+			}
+			d.AddFound(Found{URL: "https://www.linkedin.com/in/" + handle, Handle: handle, Name: name, City: "Bonn"}, s, 1, t0)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := st.Unnamed()("Reading the profile of Lea Probe"); got != "Reading the profile of Lea Probe" {
+		t.Errorf("with nobody known it gave %q", got)
+	}
+	add("Lea Probe", "lea-probe-7a1")
+	add("Jörg Müller-Lüdenscheidt", "joerg-ml")
+	// Exa gives a name as it finds it, in lower case too, and some are
+	// short. The review of #129 found both left in the log.
+	add("ida von der beispiel", "idvdb")
+	add("Bo Li", "bl")
+	add("Al Probst", "ap")
+	clean := st.Unnamed()
+	for in, want := range map[string]string{
+		`pressed button.btn "Reading the profile of Lea Probe. 1 of 3 profiles"`: `pressed button.btn "Reading the profile of [name] [name]. 1 of 3 profiles"`,
+		"Leas Studio, LEA PROBE":                      "[name]s Studio, [name] [name]",
+		"Leadership and probing":                      "Leadership and probing",
+		"GET /api/people/12 for lea-probe-7a1 done":   "GET /api/people/12 for [name] done",
+		"https://www.linkedin.com/in/joerg-ml/":       "https://www.linkedin.com/in/[name]/",
+		"Joerg Mueller-Luedenscheidt und Jörg":        "[name] [name]-[name] und [name]",
+		"Run done. 2 new people":                      "Run done. 2 new people",
+		"Reading the profile of ida von der beispiel": "Reading the profile of [name] von der [name]",
+		"Reading the profile of Bo Li and 1 more":     "Reading the profile of [name] [name] and 1 more",
+		"Al and als, Bos":                             "[name] and als, Bos",
+		"":                                            "",
+	} {
+		if got := clean(in); got != want {
+			t.Errorf("%q gave %q, want %q", in, got, want)
+		}
+	}
+	add("Wiebke Quandtmann", "wq")
+	if got := clean("Wiebke"); got != "Wiebke" {
+		t.Errorf("an earlier call took out a person found after it: %q", got)
+	}
+	if got := st.Unnamed()("Wiebke wq"); got != "[name] wq" {
+		t.Errorf("a later call gave %q, want the new name out and a handle of two letters kept", got)
+	}
+}

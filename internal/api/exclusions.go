@@ -15,22 +15,32 @@ type exclusionJSON struct {
 	People int    `json:"people"`
 }
 
+// exclusionsJSON is every exclusion, in the order of their phrases, and
+// how many people they hide together. Adding and removing one answers it
+// too, since either moves people between the others, so the window sorts
+// and counts nothing itself, issue #105.
+type exclusionsJSON struct {
+	Exclusions []exclusionJSON `json:"exclusions"`
+	Hiding     int             `json:"hiding"`
+}
+
 // listExclusions lists the exclusions in the order of their phrases. Who
 // two of them match counts for the first.
-func listExclusions(d *store.Data) []exclusionJSON {
+func listExclusions(d *store.Data) exclusionsJSON {
+	hidden := d.Hidden()
 	per := map[string]int{}
-	for _, phrase := range d.Hidden() {
+	for _, phrase := range hidden {
 		per[phrase]++
 	}
-	out := []exclusionJSON{}
+	out := exclusionsJSON{Exclusions: []exclusionJSON{}, Hiding: len(hidden)}
 	for _, x := range d.SortedExclusions() {
-		out = append(out, exclusionJSON{ID: x.ID, Phrase: x.Phrase, People: per[x.Phrase]})
+		out.Exclusions = append(out.Exclusions, exclusionJSON{ID: x.ID, Phrase: x.Phrase, People: per[x.Phrase]})
 	}
 	return out
 }
 
 func (a *API) exclusions(w http.ResponseWriter, r *http.Request) {
-	var out []exclusionJSON
+	var out exclusionsJSON
 	a.Store.Read(func(d *store.Data) { out = listExclusions(d) })
 	send(w, http.StatusOK, out)
 }
@@ -42,14 +52,12 @@ func (a *API) addExclusion(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &body) {
 		return
 	}
-	var id int64
 	err := a.Store.Add(func(d *store.Data) (store.Thing, error) {
 		x, err := d.AddExclusion(body.Phrase, a.Store.Now())
 		if err != nil {
 			return store.Thing{}, err
 		}
-		id = x.ID
-		return store.ExclusionThing(id), nil
+		return store.ExclusionThing(x.ID), nil
 	})
 	switch {
 	case errors.Is(err, store.ErrExclusionExists):
@@ -62,23 +70,13 @@ func (a *API) addExclusion(w http.ResponseWriter, r *http.Request) {
 		a.internal(w, r, err)
 		return
 	}
-	var out *exclusionJSON
-	a.Store.Read(func(d *store.Data) {
-		for _, x := range listExclusions(d) {
-			if x.ID == id {
-				out = &x
-			}
-		}
-	})
-	if out == nil {
-		a.internal(w, r, errors.New("the new exclusion is gone"))
-		return
-	}
+	var out exclusionsJSON
+	a.Store.Read(func(d *store.Data) { out = listExclusions(d) })
 	send(w, http.StatusCreated, out)
 }
 
-// deleteExclusion removes one. The people it hid come back. Undo in the
-// Edit menu puts it back.
+// deleteExclusion removes one, and answers every exclusion left. The
+// people it hid come back. Undo in the Edit menu puts it back.
 func (a *API) deleteExclusion(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -90,6 +88,6 @@ func (a *API) deleteExclusion(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	}) {
-		w.WriteHeader(http.StatusNoContent)
+		a.exclusions(w, r)
 	}
 }

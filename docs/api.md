@@ -25,9 +25,11 @@ Someone Tim connected with is only under `connected`, and someone whose
 profile he rejected only under `rejected`. `all` holds the
 people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
-their profile is rejected. `new` holds whoever came in during the last 7
-days, found by a search or added from a link, connected or not, never
-someone whose profile he rejected, and always the newest first.
+their profile is rejected. `new` holds whoever came in during the last
+`new_days` days, found by a search or added from a link, connected or
+not, never someone whose profile he rejected, and always the newest
+first. `new_days` is the setting of that name, 7 until Tim changes it in
+Settings, and comes with the answer so the interface can say it.
 
 When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:
@@ -39,7 +41,7 @@ the links add nobody. `people` are those here, under any filter. Without
 links, `links` is null.
 
 ```json
-{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" } }
+{ "people": [], "counts": { "all": 4, "new": 2, "connected": 1, "rejected": 0 }, "links": { "new": 2, "here": [], "other": 1, "act": "add" }, "new_days": 7 }
 ```
 
 People whom one of Tim's exclusions leaves out are not in the list or the
@@ -61,7 +63,9 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
       "linkedin": { "url": "https://www.linkedin.com/in/lea-beispiel", "born_about": 2001, "age_reason": "Bachelor finished 2022", "roles": "Gründerin, Studio Beispiel", "last_active": "2026-10-10T00:00:00Z" }
     }
   ],
-  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 }
+  "counts": { "all": 1, "new": 1, "connected": 0, "rejected": 0 },
+  "links": null,
+  "new_days": 7
 }
 ```
 
@@ -249,7 +253,9 @@ until Tim sets it. It takes a city the app knows in any spelling, like
 `"Cologne"`, and keeps its German name, `"Köln"`. Any other place gets
 400. Where LinkedIn opens is not one of them, it has its own endpoints
 below. `PATCH /api/settings/{key}` with `{"value": 5}` changes one. A
-value of the wrong kind gets 400, an unknown key 404.
+value of the wrong kind gets 400, so does a negative number, and a part
+of a number where the setting counts whole ones, like `2.5` days. An
+unknown key gets 404.
 
 `GET /api/keys` says whether the Exa key is saved and how many searches
 this month used, never the key itself:

@@ -216,6 +216,9 @@ func TestSettings(t *testing.T) {
 	if err := d.SetSetting("profile_searches_per_run", json.RawMessage(`-1`), t0); err == nil {
 		t.Error("a negative number was taken")
 	}
+	if err := d.SetSetting("profile_searches_per_run", json.RawMessage(`2.5`), t0); err == nil {
+		t.Error("a part of a number was taken for a whole number")
+	}
 	if err := d.SetSetting("nothing_like_it", json.RawMessage(`1`), t0); err == nil {
 		t.Error("an unknown setting was taken")
 	}
@@ -280,6 +283,20 @@ func TestListPeople(t *testing.T) {
 	same("words", list(PeopleQuery{Q: "dana"}), dana)
 	same("words of someone connected", list(PeopleQuery{Q: "cem"}))
 	same("words of someone connected, under Connected", list(PeopleQuery{Q: "cem", Filter: "connected"}), young)
+
+	// How long someone counts as new is the setting new_days, a week
+	// until Tim changes it.
+	days := func(n string) {
+		t.Helper()
+		if err := d.SetSetting(NewDays, json.RawMessage(n), t0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	days("30")
+	same("new for 30 days", list(PeopleQuery{Filter: "new"}), unknown, dana, young, old)
+	days("0")
+	same("new for no day", list(PeopleQuery{Filter: "new"}))
+	days("7")
 
 	_, counts, _ := d.ListPeople(PeopleQuery{Filter: "connected", Now: now})
 	if counts["all"] != 3 || counts["new"] != 3 || counts["connected"] != 1 {

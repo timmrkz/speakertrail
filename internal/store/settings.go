@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -27,12 +28,18 @@ var Defaults = []Default{
 	{"probation_weeks", "3", "Weeks a new search may find nobody before runs leave it out"},
 	{"retire_after_empty_checks", "4", "Runs in a row without anyone new before a search is left out"},
 	{HomeCity, `""`, "Where you are, a city in NRW like Köln. People nearer to it come first"},
+	{NewDays, "7", "Days someone stays under New after a search found them or you added them"},
 	{FirstMessagePrompt, mustJSON(DefaultFirstMessagePrompt), "What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them"},
 }
 
 // HomeCity is the setting that says where Tim is, the city distances
 // for the fit are measured from, see docs/fit-score.md.
 const HomeCity = "home_city"
+
+// NewDays is the setting that says how many days someone counts as new
+// under New after they came in, found by a search or added by hand. It was
+// a week, always, until Tim asked for a setting on 27 November 2026.
+const NewDays = "new_days"
 
 // FirstMessagePrompt is the setting that holds the prompt the language
 // model writes the hook of a first message from, see internal/draft. Its
@@ -223,6 +230,9 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 		var n float64
 		if err := json.Unmarshal(value, &n); err != nil || n < 0 {
 			return fmt.Errorf("%s takes a number of 0 or more", key)
+		}
+		if n != math.Trunc(n) && !strings.ContainsAny(def.Value, ".eE") {
+			return fmt.Errorf("%s takes a whole number", key)
 		}
 	}
 	var compact bytes.Buffer

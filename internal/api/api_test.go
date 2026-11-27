@@ -130,11 +130,12 @@ func TestARunFromStartToPeople(t *testing.T) {
 	}
 
 	var people struct {
-		People []personJSON
-		Counts map[string]int
+		People  []personJSON
+		Counts  map[string]int
+		NewDays int `json:"new_days"`
 	}
 	call(t, a, "GET", "/api/people?sort=young&filter=all", "", &people)
-	if len(people.People) != 1 || people.Counts["connected"] != 0 || people.Counts["all"] != 1 {
+	if len(people.People) != 1 || people.Counts["connected"] != 0 || people.Counts["all"] != 1 || people.NewDays != 7 {
 		t.Fatalf("people = %+v", people)
 	}
 	p := people.People[0]
@@ -157,6 +158,18 @@ func TestARunFromStartToPeople(t *testing.T) {
 	if len(detail.FitParts) != 4 || detail.FitScore != sum || p.FitScore != sum || sum <= 0 {
 		t.Errorf("fit %d in the list, %d on the person, parts %+v", p.FitScore, detail.FitScore, detail.FitParts)
 	}
+	// New holds her for as many days as the setting new_days says.
+	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":0}`, nil); code != http.StatusOK {
+		t.Fatalf("new for no day: %d", code)
+	}
+	call(t, a, "GET", "/api/people?filter=new", "", &people)
+	if len(people.People) != 0 || people.Counts["new"] != 0 || people.NewDays != 0 {
+		t.Errorf("new for no day = %+v", people)
+	}
+	if code := call(t, a, "PATCH", "/api/settings/new_days", `{"value":2.5}`, nil); code != http.StatusBadRequest {
+		t.Errorf("a part of a day: %d", code)
+	}
+	call(t, a, "PATCH", "/api/settings/new_days", `{"value":7}`, nil)
 	// Connected, she leaves All for Connected.
 	call(t, a, "GET", "/api/people?filter=all", "", &people)
 	if len(people.People) != 0 || people.Counts["all"] != 0 || people.Counts["new"] != 1 || people.Counts["connected"] != 1 {

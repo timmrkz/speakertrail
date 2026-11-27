@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -804,16 +805,17 @@ func TestAddStartStopAndReadingFromSeveralGoroutines(t *testing.T) {
 				t.Errorf("Add: %v", err)
 			}
 		})
-		// A link added and taken out again by Undo, meanwhile.
+		// Links added, and Undo and Redo in the Edit menu, meanwhile,
+		// which take out and put back whom adding or a run brought in.
 		wg.Go(func() {
-			out, err := e.Add(fmt.Sprintf("https://www.linkedin.com/in/undone-%d", i))
-			if err != nil {
+			if _, err := e.Add(fmt.Sprintf("https://www.linkedin.com/in/undone-%d", i)); err != nil {
 				t.Errorf("Add: %v", err)
 			}
-			for _, id := range out.New {
-				if err := e.Remove(id); err != nil {
-					t.Errorf("Remove: %v", err)
-				}
+			if _, err := st.Undo(); err != nil && !errors.Is(err, store.ErrChangedSince) {
+				t.Errorf("Undo: %v", err)
+			}
+			if _, err := st.Redo(); err != nil && !errors.Is(err, store.ErrChangedSince) {
+				t.Errorf("Redo: %v", err)
 			}
 		})
 		wg.Go(func() {
@@ -837,8 +839,12 @@ func TestAddStartStopAndReadingFromSeveralGoroutines(t *testing.T) {
 			}
 			seen[p.LinkedIn.URL] = true
 		}
-		if len(seen) != 5 {
-			t.Errorf("%d people added from links, want 5: Ida and four probes", len(seen))
+		// Undo may have taken out any of them, but Redo never put
+		// anyone back twice.
+		for _, p := range d.People {
+			if d.Person(p.ID) != p {
+				t.Errorf("person %d is in the file twice", p.ID)
+			}
 		}
 	})
 }
@@ -928,9 +934,9 @@ func TestALinkAddedAgainAfterAFailedReadWaitsForTheNextRun(t *testing.T) {
 	})
 }
 
-// Undo takes someone added out of the queue of the going run, so their
-// profile is never read, and out of the run's count.
-func TestRemoveTakesSomeoneAddedOutOfTheRun(t *testing.T) {
+// Undo of adding links takes whom they brought in out of the going run,
+// and out of its count, so a read of them under way keeps nothing.
+func TestUndoOfAddingTakesWhomItAddedOutOfTheRun(t *testing.T) {
 	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
 	e, st := newEngine(t, f)
 	id, _, err := e.Start("manual", 0)
@@ -942,28 +948,205 @@ func TestRemoveTakesSomeoneAddedOutOfTheRun(t *testing.T) {
 	if err != nil || len(out.New) != 2 {
 		t.Fatalf("Add = %+v, %v", out, err)
 	}
-	if err := e.Remove(out.New[1]); err != nil {
+	u, err := st.Undo()
+	if err != nil || !u.Done || u.Said != "Took out 2 people you added" || !slices.Equal(u.Gone, out.New) {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	close(f.hold)
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); len(r.Links) != 0 || len(r.Reads) != 0 {
+			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
+		}
+		for _, p := range out.New {
+			if d.Person(p) != nil {
+				t.Errorf("person %d taken out is still there", p)
+			}
+		}
+	})
+}
+
+// Links added while a run goes, undone and done again, are read once, and
+// the run's count of reads holds, since Undo and Redo keep its queue in
+// step.
+func TestUndoAndRedoOfAddingWhileARunGoesReadsOnce(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), readHold: make(chan struct{}), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := e.Remove(out.New[1]); !errors.Is(err, store.ErrNoPerson) {
-		t.Errorf("taken out twice: %v", err)
+	<-f.started
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
 	}
+	if u, err := e.Undo(); err != nil || len(u.Gone) != 1 {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	if u, err := e.Redo(); err != nil || !u.Done {
+		t.Fatalf("redo = %+v, %v", u, err)
+	}
+	close(f.readHold)
 	close(f.hold)
 	e.Wait()
 	f.mu.Lock()
 	links := slices.Clone(f.links)
 	f.mu.Unlock()
-	if len(links) != 1 || links[0] != ida.URL {
-		t.Errorf("read %v, want only Ida's profile", links)
+	if len(links) != 1 {
+		t.Errorf("Exa read %v, want Ida once", links)
 	}
 	st.Read(func(d *store.Data) {
 		if r := d.Run(id); len(r.Links) != 1 || len(r.Reads) != 1 {
 			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
 		}
-		if d.Person(out.New[1]) != nil {
-			t.Error("the person taken out is still there")
+	})
+}
+
+// A read job a worker took while Undo had taken the person out is gone,
+// so the Redo that puts them back queues their read again, and the run
+// reads them before it ends.
+func TestRedoQueuesTheReadAgain(t *testing.T) {
+	f := &finder{hold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	// Five searches: four take every worker, the fifth waits behind the read.
+	_ = st.Update(func(d *store.Data) error {
+		for _, q := range []string{"Gründerin Bonn", "Gründerin Essen", "Gründerin Dortmund", "Gründerin Münster"} {
+			if _, err := d.AddSearch(q, 0, t0); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	id, _, err := e.Start("manual", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range SideBySide {
+		<-f.started
+	}
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Undo(); err != nil {
+		t.Fatal(err)
+	}
+	// One worker lets go of its search, and takes whatever is queued next,
+	// up to the fifth search.
+	f.hold <- struct{}{}
+	for got := <-f.started; got == ida.URL; got = <-f.started {
+	}
+	if _, err := e.Redo(); err != nil {
+		t.Fatal(err)
+	}
+	close(f.hold)
+	e.Wait()
+	st.Read(func(d *store.Data) {
+		if r := d.Run(id); len(r.Links) != 1 || len(r.Reads) != 1 {
+			t.Errorf("the run had %d links and %d reads", len(r.Links), len(r.Reads))
 		}
 	})
+}
+
+// Someone here already whose read failed is asked for again when their
+// link is added again. Once the run read them, Undo of adding them still
+// opens them again, and their profile stays.
+func TestUndoOfAddingSomeoneReadSince(t *testing.T) {
+	f := &finder{read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	var who int64
+	_ = st.Update(func(d *store.Data) error {
+		p, _, _ := d.AddLink(ida.URL, "ida-probe", 0, t0)
+		p.Connect(false, t0)
+		p.ToRead, p.ReadError = false, NotIndexed
+		who = p.ID
+		return nil
+	})
+	if _, err := e.Add(ida.URL); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	u, err := e.Undo()
+	if err != nil || !u.Done {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	st.Read(func(d *store.Data) {
+		p := d.Person(who)
+		if p.Connected || p.Name != ida.Name || p.ToRead {
+			t.Errorf("after the undo connected %v, named %q, to read %v", p.Connected, p.Name, p.ToRead)
+		}
+	})
+}
+
+// A run is one step when it ends: Undo takes out whom it found, and Redo
+// puts them back as they were.
+func TestUndoOfARunTakesOutWhomItFound(t *testing.T) {
+	e, st := newEngine(t, &finder{profiles: invented})
+	if _, _, err := e.Start("manual", 0); err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	var lea store.Person
+	st.Read(func(d *store.Data) { lea = *d.People[0] })
+	u, err := st.Undo()
+	if err != nil || !u.Done || u.Said != "Took out 1 person the run found" || u.Shows.Kind != "people" {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	st.Read(func(d *store.Data) {
+		if len(d.People) != 0 {
+			t.Errorf("%d people after the undo, want none", len(d.People))
+		}
+	})
+	u, err = st.Redo()
+	if err != nil || !u.Done || u.Said != "Put back 1 person the run found" {
+		t.Fatalf("redo = %+v, %v", u, err)
+	}
+	st.Read(func(d *store.Data) {
+		if p := d.Person(lea.ID); p == nil || !reflect.DeepEqual(*p, lea) {
+			t.Errorf("after the redo %+v, want %+v", p, lea)
+		}
+	})
+}
+
+// Someone a run found whom Tim marked connected while it went stays when
+// the run is undone, and the undo says so.
+func TestUndoOfARunKeepsWhomTimChangedMeanwhile(t *testing.T) {
+	f := &finder{profiles: invented, readHold: make(chan struct{}), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	said := make(heard, 64)
+	e.Log = slog.New(said)
+	// Someone whose profile the run reads, so it goes on after the search.
+	_ = st.Update(func(d *store.Data) error {
+		d.AddLink(ida.URL, "ida-probe", 0, t0)
+		return nil
+	})
+	if _, _, err := e.Start("manual", 0); err != nil {
+		t.Fatal(err)
+	}
+	for msg := <-said; msg != "a search was asked"; msg = <-said {
+	}
+	var lea int64
+	st.Read(func(d *store.Data) { lea = d.PersonByProfile("https://www.linkedin.com/in/lea-beispiel").ID })
+	if err := st.Edit(func(d *store.Data) error {
+		d.Person(lea).Connect(true, t0)
+		return nil
+	}, store.PersonThing(lea)); err != nil {
+		t.Fatal(err)
+	}
+	close(f.readHold)
+	e.Wait()
+	u, err := st.Undo()
+	if err != nil || !u.Done || u.Said != "1 person the run found stays, since you changed them" || len(u.Gone) != 0 {
+		t.Fatalf("undo = %+v, %v", u, err)
+	}
+	st.Read(func(d *store.Data) {
+		if p := d.Person(lea); p == nil || !p.Connected {
+			t.Errorf("Lea after the undo: %+v", p)
+		}
+	})
+	// The next undo is the connect.
+	if u, err := st.Undo(); err != nil || u.Shows == nil || *u.Shows != store.PersonThing(lea) {
+		t.Fatalf("second undo = %+v, %v", u, err)
+	}
 }
 
 // A profile Tim pastes while Exa is still asked for it wins over what Exa
@@ -1150,8 +1333,9 @@ func TestAPageAddsSomeoneNew(t *testing.T) {
 	if id, err := e.Whose(page, links, 0); id != first || err != nil {
 		t.Errorf("her page again: %d %v", id, err)
 	}
-	if err := e.Remove(first); err != nil {
-		t.Fatal(err)
+	// Adding her was one step, which Undo takes back.
+	if u, err := st.Undo(); err != nil || !slices.Equal(u.Gone, []int64{first}) {
+		t.Fatalf("undo = %+v, %v", u, err)
 	}
 
 	// As text alone, Exa gives the link, and someone not connected stays so.
@@ -1286,8 +1470,13 @@ func TestAwaitReadEndsWithAPasteOrUndo(t *testing.T) {
 		if !over(read) || over(queued) {
 			t.Errorf("after the paste: the one pasted let go %v, the other %v", over(read), over(queued))
 		}
-		if err := e.Remove(queued); err != nil {
+		// Undo takes back the paste, then the adding, which takes out
+		// everyone it added.
+		if _, err := e.Undo(); err != nil {
 			t.Fatal(err)
+		}
+		if u, err := e.Undo(); err != nil || len(u.Gone) != len(out.New) {
+			t.Fatalf("undo of adding = %+v, %v", u, err)
 		}
 		synctest.Wait()
 		if !over(queued) {

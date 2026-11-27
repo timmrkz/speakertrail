@@ -94,6 +94,25 @@ const walks0 = [
     },
   },
   {
+    // Links added whose profiles wait for the Exa key say so under Run,
+    // where they went in, not in a toast.
+    name: 'Links added that wait for the Exa key say so under Run, with no toast',
+    async run(page) {
+      await page.route('**/api/people', (route) => route.request().method() === 'POST'
+        ? route.fulfill({ json: { run: 0, new: [], here: [], connected: [], other: 0, drafting: false, wait: 'Add the Exa key in Settings first, runs ask Exa for the profiles' } })
+        : route.fallback())
+      await page.goto(`${url}/app/people`)
+      const field = page.locator('main .search input')
+      await field.fill('https://www.linkedin.com/in/example-nobody-here')
+      await field.press('Enter')
+      const line = page.locator('.controls .problem')
+      await line.waitFor()
+      if ((await words(line)) !== 'Added. Add the Exa key in Settings first, runs ask Exa for the profiles') return `the line says ${JSON.stringify(await words(line))}`
+      if (await page.locator('.toast').count()) return 'a toast shows too'
+      return ''
+    },
+  },
+  {
     // Undo in the Edit menu has no control of its own, so what went wrong
     // with it is a toast, as Tim chose on 27 November 2026.
     name: 'Undo in the Edit menu the app refuses says so in a toast',

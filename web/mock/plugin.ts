@@ -98,6 +98,8 @@ interface PersonRow {
   // found.
   linkedin?: Omit<NonNullable<Person['linkedin']>, 'url'>
   searchId?: number
+  // The run whose search found them, for Undo of that run.
+  firstRun?: number
   // The first message to them and when it was drafted.
   draft?: string
   drafted_at?: string
@@ -598,6 +600,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
         if (person) person.read = 'next'
       }
       reads.queue = reads.queue.filter((x) => x.run !== run.id)
+      ranStep(s, run.id)
       return stop()
     }
     const since = clockDate().toISOString()
@@ -608,7 +611,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
       if (next && p.checks_done % 4 === 0) {
         s.people.push({
           id: Math.max(...s.people.map((x) => x.id)) + 1, name: next[0], headline: next[1], city: 'Köln', fit: 'founder', first_seen: since, notes: '',
-          profiles: [], affiliations: [], linkedin: { born_about: 1996, age_reason: 'Bachelor from 2018', roles: next[1], last_active: since },
+          profiles: [], affiliations: [], linkedin: { born_about: 1996, age_reason: 'Bachelor from 2018', roles: next[1], last_active: since }, firstRun: run.id,
         })
         run.people_new++
       }
@@ -644,6 +647,7 @@ function startRun(s: State, kind: Run['kind'], checks: number): Run {
       run.finished_at = clockDate().toISOString()
       run.state = 'finished'
       run.progress = null
+      ranStep(s, run.id)
       stop()
     }
   }, 1000)
@@ -742,10 +746,16 @@ const ROUTES: [string, RegExp, Handler][] = [
     const added: number[] = []
     const here: number[] = []
     const connected: number[] = []
+    // One step, like store.Bring: Undo takes out whom it added and opens
+    // again whom it marked connected.
+    const marks: Change[] = []
     for (const link of found.profiles) {
       const p = s.people.find((x) => linkOf(x) === link)
       if (p) {
-        if (!p.connected) connected.push(p.id)
+        if (!p.connected) {
+          connected.push(p.id)
+          marks.push({ thing: { kind: 'person', id: p.id }, before: { connected: 'false' }, after: { connected: 'true' } })
+        }
         p.connected = true
         here.push(p.id)
         continue
@@ -758,6 +768,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       })
       added.push(id)
     }
+    record({ changes: marks, people: added.length ? { run: 0, ids: added, gone: [] } : undefined })
     let run = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
     if (added.length) {
       if (!run) run = startRun(s, 'add', 0)
@@ -779,22 +790,6 @@ const ROUTES: [string, RegExp, Handler][] = [
       }
     }
     return ok({ run: run?.id ?? 0, new: added, here, connected, other: found.other, open, drafting })
-  }],
-  ['DELETE', /^\/api\/people\/(\d+)$/, (s, m) => {
-    const p = s.people.find((x) => x.id === Number(m[1]))
-    if (!p) return err(404, 'Not found')
-    if (p.read === undefined) return err(409, 'Only someone added from a link can be taken out again')
-    s.people = s.people.filter((x) => x !== p)
-    // Like the app: out of the run that had not read it yet.
-    for (const q of reads.queue.filter((x) => x.id === p.id)) {
-      const run = s.runs.find((r) => r.id === q.run)
-      if (run?.progress) run.progress.reads = run.progress.reads_expected = run.progress.reads - 1
-    }
-    reads.queue = reads.queue.filter((x) => x.id !== p.id)
-    // Like the app: their draft has nobody left to write to.
-    const d = drafts.get(p.id)
-    if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
-    return { status: 204 }
   }],
   ['PUT', /^\/api\/people\/(\d+)\/profile$/, (s, m, _q, b) => {
     const p = s.people.find((x) => x.id === Number(m[1]))
@@ -834,6 +829,7 @@ const ROUTES: [string, RegExp, Handler][] = [
       connected: /^[·•]?\s*(1st|1\.)$/.test(lines[at]), read: '',
     }
     s.people.push(added)
+    record({ changes: [], people: { run: 0, ids: [id], gone: [] } })
     return pasteOn(s, added, b, true)
   }],
   ['GET', /^\/api\/people\/(\d+)$/, (s, m) => {
@@ -1436,13 +1432,21 @@ function seeded(seed: number): () => number {
 // the fields it changed as they were before and after. An undo puts back
 // only those, and refuses when one changed since. A search or an
 // exclusion added is taken out by its undo, and one removed comes back
-// with its id.
+// with its id. A run is one step when it ends, and so are links or a
+// page that brought people in: the undo takes them out, but for those a
+// step below it changed, and the redo puts them back.
 type Fields = Record<string, string | undefined>
-interface UndoStep {
+interface Change {
   thing: UndoThing
   // Undefined is a thing that is not there.
   before?: Fields
   after?: Fields
+}
+interface UndoStep {
+  changes: Change[]
+  // Whom a run found, or links or a page added, and whom the last undo
+  // took out, as they were.
+  people?: { run: number; ids: number[]; gone: PersonRow[] }
 }
 const undoSteps = { undo: [] as UndoStep[], redo: [] as UndoStep[] }
 // The drafts a paste started, by person, with when the page was kept.
@@ -1465,6 +1469,8 @@ function snap(s: State, t: UndoThing): Fields | undefined {
       const row = s.settings.find((x: Setting) => x.key === t.key)
       return row && { value: JSON.stringify(row.value) }
     }
+    case 'people':
+      return undefined
     default: {
       const x = listOf(s, t.kind).find((y) => y.id === t.id)
       return x && fieldsOf(x)
@@ -1473,6 +1479,7 @@ function snap(s: State, t: UndoThing): Fields | undefined {
 }
 function place(s: State, t: UndoThing, now: Fields | undefined, put: Fields | undefined) {
   const parsed = (f: Fields) => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined).map(([k, v]) => [k, JSON.parse(v!)]))
+  if (t.kind === 'people') return
   if (t.kind === 'template') {
     template = JSON.parse(put!.parts!)
     return
@@ -1504,7 +1511,7 @@ function edit(s: State, t: UndoThing, fn: () => void) {
   const before = snap(s, t)
   fn()
   const after = snap(s, t)
-  let step: UndoStep
+  let step: Change
   if (!before || !after) {
     if (!before && !after) return
     step = { thing: t, before, after }
@@ -1517,34 +1524,110 @@ function edit(s: State, t: UndoThing, fn: () => void) {
     }
     if (!Object.keys(step.after!).length) return
   }
+  record({ changes: [step] })
+}
+function record(step: UndoStep) {
+  if (!step.changes.length && !step.people) return
   undoSteps.undo = [...undoSteps.undo, step].slice(-200)
   undoSteps.redo = []
 }
+// The end of a run, like store.EndRun: whom its searches found is one
+// step, and Redo stays as it is.
+function ranStep(s: State, run: number) {
+  const ids = s.people.filter((p) => p.firstRun === run).map((p) => p.id)
+  if (ids.length) undoSteps.undo = [...undoSteps.undo, { changes: [], people: { run, ids, gone: [] } }].slice(-200)
+}
+// Takes someone out, and out of the runs that had not read them yet.
+function takeOut(s: State, id: number) {
+  s.people = s.people.filter((x) => x.id !== id)
+  for (const q of reads.queue.filter((x) => x.id === id)) {
+    const run = s.runs.find((r) => r.id === q.run)
+    if (run?.progress) run.progress.reads = run.progress.reads_expected = run.progress.reads - 1
+  }
+  reads.queue = reads.queue.filter((x) => x.id !== id)
+}
+const countOf = (n: number) => (n === 1 ? '1 person' : `${n} people`)
+const stays = (n: number) => (n === 1 ? 'stays' : 'stay')
+const isAre = (n: number) => (n === 1 ? 'is' : 'are')
 function undoStep(s: State, back: boolean) {
   const from = back ? 'undo' : 'redo'
   const to = back ? 'redo' : 'undo'
   const step = undoSteps[from].at(-1)
   if (!step) return ok({ done: false })
-  const [want, put] = back ? [step.after, step.before] : [step.before, step.after]
-  const now = snap(s, step.thing)
-  if (!now !== !want || (want && now && Object.keys(want).some((k) => now[k] !== want[k]))) {
-    undoSteps[from] = []
-    return err(409, 'This has changed since, so it cannot be taken back')
+  for (const c of step.changes) {
+    const want = back ? c.after : c.before
+    const now = snap(s, c.thing)
+    if (!now !== !want || (want && now && Object.keys(want).some((k) => now[k] !== want[k]))) {
+      undoSteps[from] = []
+      return err(409, 'This has changed since, so it cannot be taken back')
+    }
   }
-  place(s, step.thing, now, put)
+  for (const c of step.changes) place(s, c.thing, snap(s, c.thing), back ? c.before : c.after)
+  let said: string | undefined
+  const b = step.people
+  if (b) {
+    const whose = b.run ? 'the run found' : 'you added'
+    if (back) {
+      const below = undoSteps.undo.slice(0, -1)
+      let kept = 0
+      b.gone = []
+      for (const id of b.ids) {
+        const p = s.people.find((x) => x.id === id)
+        if (!p) continue
+        if (below.some((st) => st.changes.some((c) => c.thing.kind === 'person' && c.thing.id === id))) {
+          kept++
+          continue
+        }
+        b.gone.push(p)
+        takeOut(s, id)
+        // Like the app: a draft of someone taken out stops.
+        const d = drafts.get(id)
+        if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
+      }
+      const gone = b.gone.length
+      if (!kept) said = `Took out ${countOf(gone)} ${whose}`
+      else if (!gone) said = `${countOf(kept)} ${whose} ${stays(kept)}, since you changed them`
+      else said = `Took out ${countOf(gone)} ${whose}. ${kept} you changed since ${stays(kept)}`
+    } else {
+      let back = 0
+      let here = 0
+      for (const g of b.gone) {
+        if (s.people.some((x) => x.id === g.id || (linkOf(x) && linkOf(x) === linkOf(g)))) {
+          here++
+          continue
+        }
+        const i = s.people.findIndex((y) => y.id > g.id)
+        s.people.splice(i < 0 ? s.people.length : i, 0, g)
+        // Like the app: someone who waits for their read joins the run
+        // that goes now.
+        const going = s.runs.find((r) => r.state === 'going' && r.kind !== 'check')
+        if ((g.read === 'waiting' || g.read === 'reading') && going?.progress) {
+          g.read = 'waiting'
+          reads.queue.push({ id: g.id, run: going.id })
+          going.progress.reads = going.progress.reads_expected = going.progress.reads + 1
+        } else if (g.read === 'reading') g.read = 'next'
+        back++
+      }
+      b.gone = []
+      const again = `${isAre(here)} here again since and ${stays(here)} as they are`
+      if (!here) said = `Put back ${countOf(back)} ${whose}`
+      else if (!back) said = `${countOf(here)} ${whose} ${again}`
+      else said = `Put back ${countOf(back)} ${whose}. ${here} ${again}`
+    }
+  }
   undoSteps[from] = undoSteps[from].slice(0, -1)
   undoSteps[to] = [...undoSteps[to], step]
   // Like draft.Drafter.Undone: an undo of the page whose paste started a
   // draft stops it.
-  const t = step.thing
-  const p = t.kind === 'person' ? s.people.find((x) => x.id === t.id) : undefined
+  const t = step.changes[0]?.thing
+  const p = t?.kind === 'person' ? s.people.find((x) => x.id === t.id) : undefined
   const started = p && pastedDrafts.get(p.id)
   if (p && back && started !== undefined && started !== p.text_at) {
     pastedDrafts.delete(p.id)
     const d = drafts.get(p.id)
     if (d && !['done', 'failed', 'cancelled'].includes(draftJob(s, d).state)) d.cancelled = true
   }
-  return ok({ done: true, shows: step.thing })
+  return ok({ done: true, shows: b ? { kind: 'people' } : t, said })
 }
 
 // Spelled the way internal/search spells a name, without its initials

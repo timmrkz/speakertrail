@@ -281,14 +281,14 @@ mode, from the mockups on https://claude.ai/artifact/U93dDSXobhvZGMmdYAPHec.
   testing #60 on 22 November 2026, issue #72: an error over the whole
   window is far from what failed. It stays until the place is used
   again, and a failure Tim cannot put right offers Report. Only what has
-  no control of its own, Undo or Redo in the Edit menu, a page pasted
-  anywhere in the window and the Undo of a toast that is gone, is a red
-  toast (Tim, 27 November 2026). Two more stay toasts on purpose: links
-  added that wait for the Exa key, since the toast holds their Undo, and
-  a run that ended with failures, which says how the whole run went. A
-  field typed wrong, a search or exclusion there already and a choice
-  still to make in Settings say so the same way, with `needs`, and stay
-  out of Settings, Logs, since nothing went wrong. The Exa key, a
+  no control of its own, Undo or Redo in the Edit menu and a page pasted
+  anywhere in the window, is a red toast (Tim, 27 November 2026), and so
+  is a run that ended with failures, which says how the whole run went.
+  Links added whose profiles wait for something, like the Exa key, say
+  so under Run. A field typed wrong, a search or exclusion there already
+  and a choice still to make in Settings say so the same way, with
+  `needs`, and stay out of Settings, Logs, since nothing went wrong. The
+  Exa key, a
   setting, where LinkedIn opens, the template and Updates still keep a
   line of their own at the control, issue #126. `walks/problems.mjs`
   refuses requests on each kind of place and finds the words there and

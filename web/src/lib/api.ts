@@ -199,13 +199,17 @@ export interface PastedProfile {
 export interface Undone {
   done: boolean
   shows?: UndoThing
+  // What a step that took people out or put them back did, to say.
+  said?: string
 }
 
 // What one step changed: a person, a search or an exclusion by its id,
-// the template, or a setting by its key, see store.Thing.
+// the template, a setting by its key, or the people a run found or links
+// or a page added, see store.Thing.
 export type UndoThing =
   | { kind: 'person' | 'search' | 'exclusion'; id: number }
   | { kind: 'template' }
+  | { kind: 'people' }
   | { kind: 'setting'; key: string }
 
 export interface LinksFound {
@@ -221,7 +225,7 @@ export interface Added {
   run: number
   new: number[]
   here: number[]
-  // Those here already whom adding marked connected, for Undo.
+  // Those here already whom adding marked connected.
   connected: number[]
   other: number
   // The person to open: the one here the links lead to, when they add
@@ -805,8 +809,6 @@ export const api = {
   removeAppLog: () => request<LogStatus>('DELETE', '/api/log'),
   people: (q: PeopleQuery) => request<{ people: Person[]; counts: Record<PeopleFilter, number>; links: LinksFound | null; new_days: number }>('GET', `/api/people${qs(q)}`),
   addPeople: (text: string) => request<Added>('POST', '/api/people', { text }),
-  // Takes out again someone added from a link, for Undo.
-  removePerson: (id: number) => request<void>('DELETE', `/api/people/${id}`),
   person: (id: number) => request<PersonDetail>('GET', `/api/people/${id}`),
   // Keeps a LinkedIn page Tim copied in Chrome as a person's profile.
   pasteProfile: (id: number, text: string) => request<PastedProfile>('PUT', `/api/people/${id}/profile`, { text }),

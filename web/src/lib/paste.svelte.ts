@@ -10,9 +10,8 @@
 // requests LinkedIn itself: Tim opened the page. A toast says it was
 // kept, and Undo in the Edit menu takes it back, see history.svelte.ts,
 // which also stops the draft it started, see draft.Drafter.Undone.
-// Someone the page added is taken out by the toast's Undo, as for a
-// link, until adding moves into the history too, see issue #71. The
-// toast never names the person, since every toast goes into the app's
+// Someone the page added is taken out by Undo in the Edit menu, as for a
+// link, the page with them. The toast never names the person, since every toast goes into the app's
 // log.
 
 import { api } from './api'
@@ -89,30 +88,18 @@ class Pasting {
       if (r.drafting) void draftWatch.read()
       const drafting = r.drafting ? ', and drafting the first message' : ''
       if (r.added) {
-        // Someone new, whom Undo takes out again, as for a link.
-        toast.show(`Added them from the page${drafting}`, 'plain', { label: 'Undo', run: () => void this.unadd(id) })
+        // Someone new, whom Undo in the Edit menu takes out again, as
+        // for a link.
+        toast.show(`Added them from the page${drafting}`)
         return
       }
       if (r.named) toast.show(`Kept the page as their profile${drafting}`)
       else toast.show(`Kept the page as their profile${drafting}. Its name is not the one in their link, so check it is theirs`, 'bad')
     } catch (e) {
       // A page pasted anywhere in the window has no control of its own,
-      // nor has the Undo of a toast that is gone, so a toast says what
-      // went wrong with either (Tim, 27 November 2026, #72).
+      // so a toast says what went wrong with it (Tim, 27 November 2026,
+      // #72).
       toast.show(errorText(e), 'bad')
-    }
-  }
-
-  // Undo of someone the page added takes them out, and the app stops
-  // their draft.
-  private async unadd(id: number) {
-    try {
-      await api.removePerson(id)
-      if (openPerson() === id) navigate('/app/people')
-    } catch (e) {
-      toast.show(errorText(e), 'bad', null, true)
-    } finally {
-      this.changed++
     }
   }
 }

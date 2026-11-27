@@ -46,15 +46,15 @@ const walks0 = [
     name: 'New holds and says as many days as the setting gives',
     async run(page) {
       const week = await shown(page)
-      if (week.title !== 'Found or added in the last 7 days, newest first') return `with a week New says "${week.title}"`
+      if (week.title !== 'Found or added in the last 7 days') return `with a week New says "${week.title}"`
       try {
         await setDays(page, 1)
         const day = await shown(page)
-        if (day.title !== 'Found or added in the last day, newest first') return `with one day New says "${day.title}"`
+        if (day.title !== 'Found or added in the last day') return `with one day New says "${day.title}"`
         if (day.count >= week.count) return `New holds ${day.count} with one day and ${week.count} with 7`
         await setDays(page, 60)
         const longer = await shown(page)
-        if (longer.title !== 'Found or added in the last 60 days, newest first') return `with 60 days New says "${longer.title}"`
+        if (longer.title !== 'Found or added in the last 60 days') return `with 60 days New says "${longer.title}"`
         if (longer.count < week.count) return `New holds ${longer.count} with 60 days and ${week.count} with 7`
       } finally {
         // Put back as it was, for the walk after.

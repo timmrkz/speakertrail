@@ -27,10 +27,10 @@ people he has neither connected with nor rejected, so it shrinks as he
 goes through them. Someone connected stays under `connected` even when
 their profile is rejected. `new` holds whoever came in during the last
 `new_days` days, found by a search or added from a link, connected or
-not, never someone whose profile he rejected, and always the newest
-first. `new_days` is the setting of that name, 7 until Tim changes it in
-Settings, at least 1, and comes with the answer so the interface can say
-it.
+not, never someone whose profile he rejected, in the order `sort` asks
+for like every filter. `new_days` is the setting of that name, 7 until
+Tim changes it in Settings, at least 1, and comes with the answer so the
+interface can say it.
 
 When `q` holds links, like LinkedIn profile links pasted into the search,
 it is no search for words. `links` then says what adding them would do:
@@ -214,7 +214,8 @@ a profile search.
 
 `GET /api/sources?kind=profile_search&q=köln` lists them, with how many
 people each found, `people`, and how many of those Tim connected with,
-`people_connected`.
+`people_connected`. `made_from` is the search a run made this one from, in
+another city, and missing for a search Tim added.
 
 `POST /api/sources` with `{"query": "Yogalehrerin Bonn"}` adds a search and
 answers 201 with it. The same search again, in any case, gets 409.
@@ -234,7 +235,16 @@ of people added from links that a run before did not read, and answers
 `{"run_id": 3, "started": true}`. When a run already goes, `started` is
 false and `run_id` is that run. Without an Exa key, with the key kept
 back by macOS because its password box was closed, with the month's
-budget spent, or with no search due it gets 409 and says which.
+budget spent, or with nothing to search it gets 409 and says which.
+
+A run takes `profile_searches_per_run` searches. When fewer are due, it
+makes new ones to fill the room, so Run always searches: a kind of person
+from a search that led to a connection, like "Gründer unter 30" of
+"Gründer unter 30 Köln", in one of the 30 biggest cities of NRW it was
+never asked in, the nearest to Where you are first. The kinds go by their
+connections, the most first, and take turns. A kind with more searches paused than searches Tim
+added still going, or with words of an exclusion, is left alone. Only when
+no kind is left to spread is there nothing to search.
 
 `GET /api/runs/current` answers `{"run": null}` or the going run, with
 `progress`: how many searches it asks, `checks` and `checks_done`, how

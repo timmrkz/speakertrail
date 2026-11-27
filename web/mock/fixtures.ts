@@ -187,6 +187,8 @@ export interface MockSource {
   health: Health
   health_note: string
   discovered_from: string
+  // The search a run made this one from, in another city.
+  made_from?: string
   last_found: number | null
   last_mode: string
   last_error: string
@@ -274,6 +276,13 @@ export function buildSources(): MockSource[] {
       checked_hours_ago: found === null ? null : lastRun - 0.2 - (id % 5) * 0.01,
     })
   }
+  // One a run made from another, in a city near Köln, as store.Spread does.
+  out.push({
+    id: 110, name: 'Gründerin direkt nach dem Studium Leverkusen', kind: 'profile_search', url: null, query: 'Gründerin direkt nach dem Studium Leverkusen',
+    category: 'Profile search', city: 'Leverkusen', status: 'active', fetch_mode: 'auto', notes: '', checks: 1, empty_checks_in_row: 0, points: 0,
+    health: 'ok', health_note: '', discovered_from: '', made_from: 'Gründerin direkt nach dem Studium Düsseldorf',
+    last_found: 2, last_mode: 'search', last_error: '', last_http: 200, checked_hours_ago: lastRun - 0.25,
+  })
   return out
 }
 

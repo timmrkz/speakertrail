@@ -152,11 +152,20 @@ half and the part changes no order.
 | --- | --- |
 | 30 or younger | all of it |
 | 31 to 39 | a tenth less for every year past 30, so 35 has half |
-| 40 or older | none |
+| 40 | none |
+| 41 to 59 | below none, a tenth more for every year past 40, so 50 takes the part away |
+| 60 or older | minus twice the part |
 | not known | half |
 
 An age the headline gives beats the guess, as today. Nobody is left
-out for age.
+out for age. Like Who they are, Younger takes away no more than the
+other parts give, so the fit stays 0 or more.
+
+Tim, 27 November 2026, from a report: people around 50 should not make
+it to the top. With none from 40 on, a 53 year old stood ninth of the
+302 people under All. Going on below none, the first person over 50
+stands 48th there. Under New, where he saw it, a 54 year old falls from
+first to 17th.
 
 ### 5. Like your picks
 
@@ -275,6 +284,19 @@ searches without connections, those whose open people have the best fit
 come first, the mean of their 10 best. A search with 5 people Tim
 rejected, and none he connected with, pauses itself, with a line
 that says why. Tim resumes it with one click.
+
+**Searches spread to more cities.** Built on 27 November 2026, before
+the rest of this section, after Tim pressed Run and got "No search is
+due": he wants more people whenever he asks. A run takes
+`profile_searches_per_run` searches, and when fewer are due it fills the
+room with new ones, `store.Spread`. Each is a kind of person from a
+search that led to a connection, like "Gründer unter 30" of "Gründer
+unter 30 Köln", in one of the 30 biggest cities of NRW it was never asked
+in, the nearest to Where you are first. The kinds go by their
+connections, the most first, and take turns. A kind with more searches paused than searches Tim
+added still going, or with words of an exclusion, is left alone. Searches
+says which search each was made from. Each costs one call to Exa against
+the month's budget, like any search.
 
 **New searches from Tim's picks.** After a run, the app makes up to 2
 new searches from the headline words that count most for Like your

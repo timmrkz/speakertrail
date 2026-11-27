@@ -43,7 +43,9 @@ type searchJSON struct {
 	Health         string         `json:"health"`
 	HealthNote     string         `json:"health_note"`
 	DiscoveredFrom string         `json:"discovered_from"`
-	People         int            `json:"people"`
+	// MadeFrom is the search a run made this one from, see store.Spread.
+	MadeFrom string `json:"made_from,omitempty"`
+	People   int    `json:"people"`
 	// PeopleConnected is how many of them Tim connected with.
 	PeopleConnected int `json:"people_connected"`
 }
@@ -53,7 +55,7 @@ func searchOf(d *store.Data, s *store.Search) searchJSON {
 		ID: s.ID, Name: s.Query, Kind: "profile_search", Query: s.Query, Category: "Profile search",
 		City: place.CityOf(s.Query), Status: s.Status, FetchMode: "auto", Notes: s.Notes,
 		LastCheckedAt: ptrTime(s.LastRun), NextCheckAt: ptrTime(s.NextRun), Checks: s.Runs,
-		EmptyInRow: s.EmptyInRow, Points: s.Points, Health: "never",
+		EmptyInRow: s.EmptyInRow, Points: s.Points, Health: "never", MadeFrom: s.From,
 	}
 	if c := s.Last; c != nil {
 		out.LastCheck = &lastCheckJSON{PeopleFound: c.PeopleFound, Mode: "search", Error: c.Error, HTTPStatus: 200}

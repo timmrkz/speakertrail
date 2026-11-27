@@ -91,6 +91,8 @@ func main() {
 		err = sign(os.Args[2:])
 	case "harden":
 		err = harden(os.Args[2:])
+	case "signed-before":
+		err = signedBeforeCommand(os.Args[2:])
 	case "list":
 		err = list(os.Args[2:])
 	case "unreachable":
@@ -109,7 +111,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | harden -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
 	os.Exit(2)
 }
 

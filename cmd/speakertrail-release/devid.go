@@ -108,16 +108,20 @@ type devID struct {
 	// the app against once they are signed: Tim's team in Apple's own
 	// certificate, see teamRequirement.
 	requirement string
+	// kept is the folder signed-before wrote earlier copies of the
+	// libraries to, or empty, see keepSigned.
+	kept string
 }
 
 // harden is the command.
 //
-//	harden -zip F -team-file F
+//	harden -zip F -team-file F [-kept D]
 //	    in publish.yml: sign the app in a build's zip with the Developer ID
 //	    from SPEAKERTRAIL_DEVELOPER_ID, base64, and its password from
 //	    SPEAKERTRAIL_DEVELOPER_ID_PASSWORD, and write the team to
 //	    GITHUB_OUTPUT. With no team in the file, it says so and signs
-//	    nothing. With a team and no certificate, it fails.
+//	    nothing. With a team and no certificate, it fails. A library that
+//	    is the same signed code as an earlier copy in D keeps that copy.
 //	harden -app A -p12 F -identity N -timestamp=false
 //	    in CI: sign a bundle with a certificate made for the test.
 func harden(args []string) error {
@@ -136,12 +140,13 @@ func hardenWith(tools macOS, args []string) error {
 	entitlements := fs.String("entitlements", "build/entitlements.plist", "what the app is signed as entitled to")
 	timestamp := fs.Bool("timestamp", true, "with Apple's time stamp")
 	requirement := fs.String("requirement", "", "what codesign checks the signed code against, for -app")
+	kept := fs.String("kept", "", "the folder signed-before wrote earlier copies of the libraries to")
 	_ = fs.Parse(args)
 	// The secrets are read once and leave the environment at once, so no
 	// program harden starts inherits them.
 	cert := os.Getenv("SPEAKERTRAIL_DEVELOPER_ID")
 	d := devID{macOS: tools, p12: *p12, password: os.Getenv("SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"),
-		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement}
+		identity: *identity, entitlements: *entitlements, timestamp: *timestamp, requirement: *requirement, kept: *kept}
 	for _, k := range []string{"SPEAKERTRAIL_DEVELOPER_ID", "SPEAKERTRAIL_DEVELOPER_ID_PASSWORD"} {
 		if err := os.Unsetenv(k); err != nil {
 			return err
@@ -333,6 +338,12 @@ func (d devID) signApp(app string) (err error) {
 		if err := sign("--identifier", codeIdentifier(code), code); err != nil {
 			return err
 		}
+	}
+	// A library whose code did not change keeps the bytes it was signed
+	// with before, before the app is sealed around it, see kept.go. It is
+	// checked below like every other.
+	if err := keepSigned(filepath.Dir(app), d.kept, inner, os.Stdout); err != nil {
+		return err
 	}
 	// Signing the bundle signs its program, with the entitlements, and
 	// seals everything else in it.

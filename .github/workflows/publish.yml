@@ -316,6 +316,25 @@ jobs:
             exit 1
           fi
 
+      # The libraries of the builds the release holds, main's first, as
+      # they were signed then. harden keeps such a copy in place of a
+      # library it signed afresh when the two are the same signed code, so
+      # a library whose code did not change is the same file in every
+      # build, #128. In a step without any secret, since what the release
+      # holds is untrusted, and harden checks a kept copy like any other.
+      # What cannot be had costs only the keeping. See kept.go.
+      - id: before
+        if: steps.check.outcome == 'success'
+        name: Earlier copies of the libraries
+        continue-on-error: true
+        env:
+          CHANNEL: ${{ steps.which.outputs.channel }}
+        run: |
+          gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
+          gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
+          "$RUNNER_TEMP/speakertrail-release" signed-before -list "$RUNNER_TEMP/channels.json" \
+            -assets "$RUNNER_TEMP/assets.json" -channel "$CHANNEL" -out "$RUNNER_TEMP/kept"
+
       # Every build Tim gets is signed again with his Developer ID and the
       # hardened runtime, so no other program can put its code into the
       # app, and macOS knows the app again after an update and does not ask
@@ -332,7 +351,7 @@ jobs:
           SPEAKERTRAIL_DEVELOPER_ID_PASSWORD: ${{ secrets.SPEAKERTRAIL_DEVELOPER_ID_PASSWORD }}
           ZIP: ${{ steps.which.outputs.zip }}
         run: |
-          if ! "$RUNNER_TEMP/speakertrail-release" harden -zip "dist/$ZIP" 2> "$RUNNER_TEMP/refused.txt"; then
+          if ! "$RUNNER_TEMP/speakertrail-release" harden -zip "dist/$ZIP" -kept "$RUNNER_TEMP/kept" 2> "$RUNNER_TEMP/refused.txt"; then
             cat "$RUNNER_TEMP/refused.txt" >&2
             exit 1
           fi
@@ -355,9 +374,9 @@ jobs:
         env:
           ZIP: ${{ steps.which.outputs.zip }}
           CHANNEL: ${{ steps.which.outputs.channel }}
+        # The release's files and the channel list are the ones the step
+        # before read, so the builds patched against are the same.
         run: |
-          gh release view dev --json assets > "$RUNNER_TEMP/assets.json" || true
-          gh release download dev --pattern channels.json --dir "$RUNNER_TEMP" --clobber || true
           if ! "$RUNNER_TEMP/speakertrail-release" pack -zip "dist/$ZIP" -out "$RUNNER_TEMP/packed" \
             -channel "$CHANNEL" -list "$RUNNER_TEMP/channels.json" -assets "$RUNNER_TEMP/assets.json" \
             2> "$RUNNER_TEMP/refused.txt"; then

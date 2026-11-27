@@ -59,7 +59,10 @@ then on every build comes from GitHub.
    what the app links and asks for with `cmd/speakertrail-release check`,
    in a step that has no key, and signs the app again with Tim's
    Developer ID and the hardened runtime, see
-   [The Developer ID](#the-developer-id). `speakertrail-release pack`
+   [The Developer ID](#the-developer-id). A library whose code did not
+   change keeps the bytes it was signed with in an earlier build, so it
+   is the same file and needs no new piece or patch, see
+   [Signed once](#signed-once). `speakertrail-release pack`
    writes the build again in parts, see What an update downloads below.
    `sign` signs the zip and the stored zip with the key from the
    environment `updates`. The pieces the release does not hold yet go
@@ -313,6 +316,26 @@ The certificate runs out on the date Keychain Access shows, Tim's first
 on 21 December 2027. A new one is made with steps 2 to 6. Every signature
 carries Apple's time stamp, so a build signed before then stays good
 after.
+
+### Signed once
+
+codesign puts the time of signing and Apple's time stamp into every
+signature, so a library signed again is a new file, though its code is
+the same. Until 27 November 2026 four of the five files of every build
+were new for that alone, #128. So `speakertrail-release signed-before`,
+in a step without any secret, downloads each library and program of the
+builds the release holds, main's first, two of each at most. `harden`
+signs every one afresh as before, then puts an earlier copy in its
+place when the two are the same signed code: the same bytes up to the
+signature, the same code directory, requirements and entitlements, and
+the same certificates in the CMS. The code directory does not cover
+the certificate, so a library signed before the certificate was renewed
+or revoked is never kept. The app is sealed after that, around what was
+kept, and codesign checks every file against Tim's team as it does any.
+A copy that is not the same in every way is not kept, see
+`cmd/speakertrail-release/kept.go`. The app's own program is always
+signed afresh: its signature binds the `Info.plist`, which names the
+version.
 
 The builds are not notarised. Notarising is what lets a downloaded app
 open past Gatekeeper on any Mac. The app downloads its updates itself,

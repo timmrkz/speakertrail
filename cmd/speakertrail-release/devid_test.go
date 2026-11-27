@@ -40,6 +40,11 @@ type fakeMac struct {
 	// fetched is what apple.com sends, and roots what macOS ships as
 	// Apple Root CA, in PEM.
 	fetched, roots []byte
+	// certs, when set, are the certificates codesign signs with, which
+	// puts a CMS blob in each signature, with a time that is new on each
+	// signing, as Apple's codesign does. stamps counts the signings.
+	certs  [][]byte
+	stamps int
 }
 
 func (m *fakeMac) tools() macOS {
@@ -90,6 +95,10 @@ func (m *fakeMac) tools() macOS {
 					}
 				}
 				p.signed, p.flags, p.team = true, m.flags, "TEAM123456"
+				if m.certs != nil {
+					m.stamps++
+					p.cms = testCMS(m.certs, m.stamps, true)
+				}
 				return nil, os.WriteFile(target, p.bytes(), 0o755)
 			}
 			return nil, nil

@@ -71,7 +71,8 @@ counts, unless Tim connected with them, see [Exclusions](#exclusions).
 kept, see [fit-score.md](fit-score.md).
 `linkedin` is null once the profile is rejected.
 
-`read` says where the profile of someone added from a link stands:
+`read` says where the profile of someone added from a link, or whose
+text Exa cut, stands:
 `reading` now, with `read_since` when it began and `read_ms` about how
 long a read takes, measured from the last reads and null until there is
 one, `waiting` its turn in the run, `next` for the next run, which reads
@@ -112,7 +113,9 @@ the headline the line after it, the city from the first line after it
 in the shape of a place, like "Köln, Nordrhein-Westfalen, Deutschland".
 The page is read by its sections: the top, then About, Experience,
 Education and the rest, and the feed of posts, Activity, last, so the
-8000 characters it is cut at, like Exa's text, go to who they are first.
+8000 characters it is cut at go to who they are first. Exa's text keeps
+its activity in up to half of them, since the dates of a pasted page
+are not read, see [search-strategy.md](search-strategy.md).
 LinkedIn's menu and buttons, and its blocks of other people, like
 "People who follow … also follow", Highlights, Interests and "People
 also viewed", are left out, so are LinkedIn's footer, from Accessibility

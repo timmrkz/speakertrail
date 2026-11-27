@@ -85,6 +85,9 @@ type Data struct {
 	// Settings to draft with, downloaded or not. Empty until Tim picks one,
 	// and then the largest on the Mac drafts.
 	LanguageModel string `json:"language_model,omitempty"`
+	// CutRead says the people whose profile text Exa cut were marked once
+	// to be read again, see readCutAgain.
+	CutRead bool `json:"cut_read,omitempty"`
 	// Template is the template a first message is put together from, as
 	// Tim changed it in Settings, nil while it is his first one. See
 	// template.go.
@@ -165,9 +168,10 @@ type Person struct {
 	Rubric int `json:"rubric"`
 	// FoundBy are the searches that found them, each with the last time.
 	FoundBy []Sighting `json:"found_by"`
-	// ToRead says Tim added them from a link and a run has not read their
-	// profile from Exa yet. Until it does they are named by the handle in
-	// the link. The next run reads it.
+	// ToRead says the next run reads their profile from Exa: Tim added
+	// them from a link and no run has read it yet, and until one does they
+	// are named by the handle in the link, or their text was cut, see
+	// readCutAgain.
 	ToRead bool `json:"to_read,omitempty"`
 	// ReadError says why the last read of their profile failed, like a
 	// profile Exa's index does not hold yet.
@@ -324,6 +328,7 @@ func Open(dir string, now func() time.Time) (*Store, error) {
 	if err := s.readTexts(raw); err != nil {
 		return nil, err
 	}
+	s.data.readCutAgain()
 	return s, nil
 }
 

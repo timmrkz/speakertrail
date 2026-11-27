@@ -78,7 +78,8 @@ did that led to it, see Acts below, `toast` for a toast about something
 that went wrong, `run` and `search` for the
 run and the search a line is about, by id, `ms` for how long a check
 took, `profiles`, `found` and `new` for what it found, counted and never
-named, `path` for a request,
+named, `characters` for how long the text of a profile Exa gave was, and
+`longest` the longest a search got, `path` for a request,
 `error`, `stack`, and `build`, `channel`, `commit`, `os` and `arch` when
 the app starts.
 

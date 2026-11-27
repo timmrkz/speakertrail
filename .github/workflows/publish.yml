@@ -443,13 +443,19 @@ jobs:
           gh release view dev --json assets --jq '.assets[].name' > "$RUNNER_TEMP/there.txt"
           # Another channel's publish may upload the same piece at the same
           # moment. It holds the same bytes, so one that is there once the
-          # upload failed is uploaded.
+          # upload failed is uploaded. A patch that cannot go up costs the
+          # app its piece, never the build its place on Updates, so it is
+          # a warning and the publish goes on.
           for f in "$PACKED"/piece-*.zst "$PACKED"/patch-*.bsdiff; do
             [ -e "$f" ] || continue
             name=$(basename "$f")
             grep -qxF "$name" "$RUNNER_TEMP/there.txt" && continue
             gh release upload dev "$f" ||
-              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name"
+              gh release view dev --json assets --jq '.assets[].name' | grep -qxF "$name" ||
+              case $name in
+              patch-*) echo "::warning::$name could not be uploaded, so the app downloads that file's piece." ;;
+              *) exit 1 ;;
+              esac
           done
           gh release upload dev "dist/$ZIP" --clobber
           cp "$PACKED/app.zip.zst" "dist/$ZIP.zst"
@@ -475,13 +481,16 @@ jobs:
             -f description="On the Updates page as $CHANNEL" >/dev/null
 
   # Also when publish was skipped, for a run that left no zip: the close
-  # of a pull request is how it leaves the list.
+  # of a pull request is how it leaves the list. And when it failed or was
+  # cancelled: the list is written from the entries there are, and only
+  # this job makes room on the release. On 27 November 2026 it ran only
+  # after a publish that worked, so once the release was full no publish
+  # worked and nothing made room, for an hour.
   list:
     needs: publish
     if: >-
       always() && github.event.action == 'completed' &&
-      github.event.workflow_run.head_repository.full_name == github.repository &&
-      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     concurrency:
@@ -514,10 +523,10 @@ jobs:
         name: Write the channel list from every entry
         run: sh scripts/channel-list.sh
 
-      # A zip no entry points at is gone an hour after it was made, with
-      # its packed zip, and so are the parts of every build no new build is
-      # patched against and every piece and patch no remaining parts name.
-      # Not at once: a publish that runs beside this job may have uploaded
+      # A zip no entry points at is gone half an hour after it was made,
+      # with its packed zip, and so are the parts of every build no new
+      # build is patched against, every piece no remaining parts name, and
+      # every patch no listed build's parts name. Not at once: a publish that runs beside this job may have uploaded
       # files whose entry this job has not seen yet. A piece that goes all
       # the same, because a publish found it there and did not upload it
       # again, costs the app the packed zip of that one build, never the

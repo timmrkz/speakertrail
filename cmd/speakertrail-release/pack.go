@@ -49,8 +49,16 @@ func packCommand(args []string) error {
 	if r, err := readRelease(*listPath, *assetsPath); err != nil {
 		fmt.Printf("::warning::The release could not be read, so this build has no patches: %v\n", err)
 	} else {
-		for _, p := range b.readParts(r.bases(), os.Stdout) {
-			b.parts = append(b.parts, p)
+		names := r.bases()
+		read := b.readParts(names, os.Stdout)
+		for _, name := range names {
+			if p, ok := read[name]; ok {
+				b.parts = append(b.parts, p)
+			}
+		}
+		b.most = r.patchRoom()
+		if b.most < patchesPerBuild {
+			fmt.Printf("::warning::The release holds %d of the %d files it may, so this build has at most %d patches.\n", len(r.assets), maxAssets, b.most)
 		}
 	}
 	return pack(*zipPath, *out, updates.NewPacker(), b, os.Stdout)

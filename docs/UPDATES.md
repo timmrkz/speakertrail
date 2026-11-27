@@ -72,10 +72,22 @@ then on every build comes from GitHub.
    not open any more, the list names those merged as `merged` and those
    closed without a merge as `closed`. A newer commit whose build failed
    is not said to be on its way. `speakertrail-release unreachable` then
-   names, and gh removes, an hour after they went up, the zips and packed zips no entry points
-   at, the parts of every build that is neither listed nor one of the
-   newest eight that left the list, and the pieces and patches no
-   remaining parts name.
+   names, and gh removes, half an hour after they went up, the zips and
+   packed zips no entry points at, the parts of every build that is
+   neither listed nor one of the newest eight that left the list, the
+   pieces no remaining parts name, and the patches no listed build's
+   parts name. A build that left the list is patched from, never updated
+   to, so its pieces stay and its patches go. The list job runs after
+   every build, also one whose publish failed, so a full release always
+   makes room again.
+
+GitHub lets a release hold 1,000 files. On 27 November 2026 `dev` held
+them all: every build kept patches from every other, eight pull requests
+were open, and an hour of pushes stayed. Every publish failed for an
+hour and the builds of #123, #124 and #125 never reached Updates. Now a
+build has at most sixty patches, fewer once the release holds more than
+800 files, and a patch that cannot be uploaded costs the app that file's
+piece, never the build its place on Updates.
 
 A build takes a few minutes after the push. A version reads like
 `0.1.0-pr9.e808a87`: the app's version, the channel and the commit.
@@ -104,7 +116,8 @@ Only what changed, and of a file that changed, only the difference.
   newest eight that left it, such as the last build of a pull request
   just merged. The parts name each patch by the SHA-256 of the file it
   starts from. A patch is kept only where it weighs less than the piece.
-  A build older than the one running was published before it, so
+  A build has at most sixty, from the newest of those builds first,
+  since the one an app runs is most likely among them. A build older than the one running was published before it, so
   picking it takes the piece.
 - **The app puts the build together.** It writes the stored zip from the
   files it already has with the same bytes, a file made from its own and

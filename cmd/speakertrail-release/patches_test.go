@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -74,7 +76,7 @@ func releaseServing(t *testing.T, files map[string][]byte) *httptest.Server {
 
 // basesFrom is pack's bases, read from the release srv serves.
 func basesFrom(srv *httptest.Server, names []string, log io.Writer) bases {
-	b := bases{from: srv.URL + "/dev/", client: srv.Client()}
+	b := bases{from: srv.URL + "/dev/", client: srv.Client(), most: patchesPerBuild}
 	for _, name := range names {
 		if p, ok := b.readParts([]string{name}, log)[name]; ok {
 			b.parts = append(b.parts, p)
@@ -194,6 +196,65 @@ func TestWhatCannotBeHadToPatchAgainstCostsOnlyThePatches(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "no patch of "+app) {
 		t.Errorf("the log does not say why the program has no patch:\n%s", log.String())
+	}
+}
+
+// A build has at most the patches it has room for, and those are from
+// the builds patched against that come first, the newest: the build an
+// app runs is most likely one of them. The release holds at most a
+// thousand files, and patches from every build to every build filled it.
+//
+// On the real disk: the release tool reads the zip, and writes the packed build, as files.
+func TestABuildHasThePatchesFromTheNewestBuildsItHasRoomFor(t *testing.T) {
+	release(t)
+	app := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+	served := map[string][]byte{}
+	var olds [][]byte
+	for i, name := range []string{"app-pr-3", "app-pr-2", "app-main-1"} {
+		files := theApp("main")
+		old := programOf(append(append([]byte{}, code...), byte(i)))
+		files[app] = old
+		olds = append(olds, old)
+		for n, data := range published(t, packed(t, files), name+".zip") {
+			served[n] = data
+		}
+	}
+	srv := releaseServing(t, served)
+
+	files := theApp("main")
+	files[app] = programOf(changed)
+	dir := t.TempDir()
+	in := filepath.Join(dir, "build.zip")
+	if err := os.WriteFile(in, zipped(t, files), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for most, want := range map[int]int{0: 0, 1: 1, 2: 2, patchesPerBuild: 3} {
+		out := filepath.Join(dir, fmt.Sprint("packed-", most))
+		var log bytes.Buffer
+		b := basesFrom(srv, []string{"app-pr-3.parts.json", "app-pr-2.parts.json", "app-main-1.parts.json"}, &log)
+		b.most = most
+		if err := pack(in, out, packer, b, &log); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, part := range partsIn(t, out).Parts {
+			for _, pt := range part.Patches {
+				got = append(got, pt.From)
+			}
+		}
+		slices.Sort(got)
+		var from []string
+		for _, old := range olds[:want] {
+			from = append(from, sum(old))
+		}
+		slices.Sort(from)
+		if !slices.Equal(got, from) {
+			t.Errorf("with room for %d, the patches are from %.12v, want from the newest %d", most, got, want)
+		}
+		patches, _ := filepath.Glob(filepath.Join(out, "patch-*"))
+		if len(patches) != want {
+			t.Errorf("with room for %d, %d patches were written, want %d", most, len(patches), want)
+		}
 	}
 }
 

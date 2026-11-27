@@ -35,8 +35,27 @@ const leftBases = 8
 
 // keptFor is how long a file no build reaches stays on the release: a
 // publish that runs beside the clean-up may have uploaded files whose
-// entry the list has not seen yet.
-const keptFor = time.Hour
+// entry the list has not seen yet. A publish ends within its
+// timeout-minutes, 20, so half an hour is enough. An hour was, on 27
+// November 2026, the part of the release a burst of pushes filled up.
+const keptFor = 30 * time.Minute
+
+// maxAssets is how many files GitHub lets one release hold. An upload
+// past it is refused, and on 27 November 2026 every publish failed for
+// an hour, so the builds of three pull requests never reached Updates.
+const maxAssets = 1000
+
+// keepFree is how many files of the release a build's patches leave
+// free: for its own pieces, zips and parts, and for the publishes of
+// other channels that run beside it and counted the same files.
+const keepFree = 200
+
+// patchesPerBuild is how many patches one build has at most. Every
+// build an app may run gets patches to every listed build, so without a
+// bound the patches grow with the square of the open pull requests, and
+// eight of them were more than the release can hold. Sixty is the
+// changed files of a usual build against its newest few bases.
+const patchesPerBuild = 60
 
 // asset is a file of the dev, as
 // `gh release view dev --json assets` writes it.
@@ -99,7 +118,9 @@ func (r dev) holds(name string) bool {
 
 // bases names the parts files of the builds a new build is patched
 // against: every build the channel list names, and the newest leftBases
-// that left it. Only what the release holds, each once.
+// that left it. Only what the release holds, each once, the newest first,
+// since the build an app runs is most likely one of the newest, and the
+// patches from those are the ones a build keeps when it may not have all.
 func (r dev) bases() []string {
 	var out []string
 	add := func(name string) {
@@ -122,15 +143,37 @@ func (r dev) bases() []string {
 			add(a.Name)
 		}
 	}
+	slices.SortStableFunc(out, func(a, b string) int {
+		return r.created(b).Compare(r.created(a))
+	})
 	return out
+}
+
+// created is when the release's file of this name was uploaded.
+func (r dev) created(name string) time.Time {
+	for _, a := range r.assets {
+		if a.Name == name {
+			return a.CreatedAt
+		}
+	}
+	return time.Time{}
+}
+
+// patchRoom is how many patches a new build may have: patchesPerBuild,
+// or fewer when the release is close to holding maxAssets files.
+func (r dev) patchRoom() int {
+	return max(0, min(patchesPerBuild, maxAssets-keepFree-len(r.assets)))
 }
 
 // unreachable names the files of the release that no build an app may
 // run reaches, older than keptFor at now: a build's zip and its packed
 // zip when the list does not point at it, the parts of every build that
-// is not one of bases, and every piece and patch that no parts in parts
-// name. parts holds the parts of bases that could be read. When one could
-// not, every piece and patch stays, since nothing then says which may go.
+// is not one of bases, every piece that no parts in parts name, and
+// every patch that no parts of a listed build name. A build that left the
+// list is only patched from, never updated to, so its pieces stay for
+// pack and its patches go. parts holds the parts of bases that could be
+// read. When one could not, every piece and patch stays, since nothing
+// then says which may go.
 // When the release's files cannot be the whole of them, because a zip the
 // list points at is not among them or a file has no time, nothing goes.
 func (r dev) unreachable(parts map[string]updates.Parts, now time.Time) []string {
@@ -145,8 +188,10 @@ func (r dev) unreachable(parts map[string]updates.Parts, now time.Time) []string
 		}
 	}
 	kept := map[string]bool{}
+	listed := map[string]bool{}
 	for _, zip := range r.zips() {
 		kept[zip], kept[updates.PackedName(zip)] = true, true
+		listed[updates.PartsName(zip)] = true
 	}
 	known := true
 	for _, name := range r.bases() {
@@ -161,6 +206,9 @@ func (r dev) unreachable(parts map[string]updates.Parts, now time.Time) []string
 				continue
 			}
 			kept[updates.PieceName(part.SHA256)] = true
+			if !listed[name] {
+				continue
+			}
 			for _, pt := range part.Patches {
 				kept[updates.PatchName(pt.From, part.SHA256)] = true
 			}

@@ -34,11 +34,15 @@ import (
 // them cannot be had costs only its patches, never the publish.
 
 // bases is what pack patches against: the parts of builds the release
-// holds, and the folder of the release their pieces are read from.
+// holds, the newest first, the folder of the release their pieces are
+// read from, and how many patches the build may have at most, see
+// patchRoom. The patches from the first parts are the ones made when not
+// all may be.
 type bases struct {
 	parts  []updates.Parts
 	from   string
 	client *http.Client
+	most   int
 }
 
 // patchTakes is the longest reading one file of the release may take.
@@ -49,9 +53,10 @@ const patchTakes = 5 * time.Minute
 // the file's piece, and names them in p.
 func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log io.Writer) {
 	// The files of every build patched against, by where they are in the
-	// app, each once.
+	// app, each once, and the first build that has each.
 	olds := map[string]map[string]updates.Part{}
-	for _, bp := range b.parts {
+	rank := map[string]int{}
+	for i, bp := range b.parts {
 		for _, part := range bp.Parts {
 			inside, ok := updates.InApp(part.Name)
 			if part.Bytes != nil || !ok {
@@ -61,6 +66,9 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 				olds[inside] = map[string]updates.Part{}
 			}
 			olds[inside][part.SHA256] = part
+			if _, ok := rank[part.SHA256]; !ok {
+				rank[part.SHA256] = i
+			}
 		}
 	}
 	type job struct {
@@ -84,6 +92,17 @@ func addPatches(p *updates.Parts, stored io.ReaderAt, b bases, out string, log i
 			}
 		}
 		at += part.Size
+	}
+	// At most b.most, the patches from the newest builds, and of those the
+	// largest files first, whose patches save the most.
+	slices.SortStableFunc(jobs, func(a, c *job) int {
+		return cmp.Or(cmp.Compare(rank[a.old.SHA256], rank[c.old.SHA256]),
+			cmp.Compare(p.Parts[c.part].Size, p.Parts[a.part].Size),
+			cmp.Compare(a.part, c.part), cmp.Compare(a.old.SHA256, c.old.SHA256))
+	})
+	if len(jobs) > b.most {
+		fmt.Fprintf(log, "%d patches could be made, and %d are, from the newest builds\n", len(jobs), max(b.most, 0))
+		jobs = jobs[:max(b.most, 0)]
 	}
 	work := make(chan *job)
 	var wg sync.WaitGroup

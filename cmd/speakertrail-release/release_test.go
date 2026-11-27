@@ -61,7 +61,7 @@ func onDev(t *testing.T, channels []string, assets []asset) dev {
 
 // A new build is patched against every build the channel list names and
 // the newest that left it, each once, and only those the release holds
-// the parts of.
+// the parts of, the newest first.
 func TestTheBuildsPatchedAgainstAreTheListedAndTheNewestThatLeft(t *testing.T) {
 	assets := []asset{
 		{"app-main.zip", now.Add(-time.Hour)},
@@ -79,17 +79,17 @@ func TestTheBuildsPatchedAgainstAreTheListedAndTheNewestThatLeft(t *testing.T) {
 	r := onDev(t, []string{"main", "pr-5", "pr-6"}, assets)
 
 	got := r.bases()
-	want := append([]string{"app-main.parts.json", "app-pr-5.parts.json"}, left[:leftBases]...)
+	want := append(append([]string{"app-main.parts.json"}, left[:leftBases]...), "app-pr-5.parts.json")
 	if !slices.Equal(got, want) {
 		t.Errorf("the builds patched against are\n%v\nwant\n%v", got, want)
 	}
 }
 
-// What no build an app may run reaches goes once it is an hour old: the
+// What no build an app may run reaches goes once it is keptFor old: the
 // zips the list no longer points at, the parts of the builds no longer
 // patched against, and the pieces and patches no remaining parts name.
 // The rest of the release stays.
-func TestWhatNoBuildReachesGoesAfterAnHour(t *testing.T) {
+func TestWhatNoBuildReachesGoesAfterAWhile(t *testing.T) {
 	old := now.Add(-2 * time.Hour)
 	assets := []asset{
 		{"channels.json", old},
@@ -108,7 +108,7 @@ func TestWhatNoBuildReachesGoesAfterAnHour(t *testing.T) {
 		{"piece-" + sha("c") + ".zst", old},
 		{"patch-" + sha("c") + "-" + sha("a") + ".bsdiff", old},
 		// Named by nothing, and only just uploaded by a publish beside this,
-		// or exactly an hour ago.
+		// or exactly keptFor ago.
 		{"piece-" + sha("d") + ".zst", now.Add(-time.Minute)},
 		{"app-pr-9.zip", now.Add(-time.Minute)},
 		{"piece-" + sha("e") + ".zst", now.Add(-keptFor)},
@@ -149,6 +149,60 @@ func TestWhatNoBuildReachesGoesAfterAnHour(t *testing.T) {
 	slices.Sort(want)
 	if !slices.Equal(got, want) {
 		t.Errorf("what goes is\n%v\nwant\n%v", got, want)
+	}
+}
+
+// A build that left the list is patched from and never updated to, so
+// its parts and pieces stay while it is one of the newest, and its own
+// patches go. A listed build keeps its patches. Patches of every build
+// that left the list filled the release on 27 November 2026.
+func TestTheBuildsThatLeftTheListKeepTheirPiecesAndNotTheirPatches(t *testing.T) {
+	old := now.Add(-2 * time.Hour)
+	toMain := "patch-" + sha("b") + "-" + sha("a") + ".bsdiff"
+	toLeft := "patch-" + sha("a") + "-" + sha("b") + ".bsdiff"
+	r := onDev(t, []string{"main"}, []asset{
+		{"app-main.zip", old},
+		{"app-main.zip.zst", old},
+		{"app-main.parts.json", old},
+		{"app-pr-7.parts.json", old},
+		{"piece-" + sha("a") + ".zst", old},
+		{"piece-" + sha("b") + ".zst", old},
+		{toMain, old},
+		{toLeft, old},
+	})
+	program := "Speaker Trail.app/Contents/MacOS/speakertrail-app"
+	parts := map[string]updates.Parts{
+		"app-main.parts.json": {Parts: []updates.Part{
+			{Name: program, SHA256: sha("a"), Patches: []updates.Patch{{From: sha("b")}}},
+		}},
+		"app-pr-7.parts.json": {Parts: []updates.Part{
+			{Name: program, SHA256: sha("b"), Patches: []updates.Patch{{From: sha("a")}}},
+		}},
+	}
+	if !slices.Contains(r.bases(), "app-pr-7.parts.json") {
+		t.Fatal("pr-7 is not patched against, want it among the newest that left")
+	}
+
+	if got := r.unreachable(parts, now); !slices.Equal(got, []string{toLeft}) {
+		t.Errorf("what goes is %v, want only the patch to the build that left, %v", got, toLeft)
+	}
+}
+
+// A build has room for patchesPerBuild patches, and for fewer once the
+// release comes close to the most files GitHub lets it hold, so a
+// publish never fails for a full release.
+func TestABuildHasFewerPatchesOnAFullRelease(t *testing.T) {
+	for have, want := range map[int]int{
+		0:                                      patchesPerBuild,
+		maxAssets - keepFree - patchesPerBuild: patchesPerBuild,
+		maxAssets - keepFree - 10:              10,
+		maxAssets - keepFree:                   0,
+		maxAssets + 5:                          0,
+	} {
+		r := dev{assets: make([]asset, have)}
+		if got := r.patchRoom(); got != want {
+			t.Errorf("with %d files on the release, a build has room for %d patches, want %d", have, got, want)
+		}
 	}
 }
 

@@ -24,8 +24,15 @@ import (
 // person, a search, an exclusion, the template or a setting, before and
 // after it. What differs is one step. A change that changed nothing is no
 // step. A search or an exclusion Tim adds goes through Add, since it has
-// no id before it is added. A run, a check and anything else the engine
-// does on its own goes through Update, and is no step.
+// no id before it is added, and links or a page that bring people in go
+// through Bring. A check, a read and anything else the engine does on its
+// own goes through Update, and is no step.
+//
+// A run is one step when it ends, EndRun: the people its searches found
+// new. Its undo takes them out, and its redo puts them back. Someone a
+// step still in Undo changed, marked connected for example, was changed
+// since the run found them, so they stay, and the undo says so. FrameFairy
+// leaves its jobs out of its history. Tim asked for runs (#71).
 //
 // An undo puts back only the fields the step changed, never the whole
 // file, because a run may have written into the same person or search
@@ -90,9 +97,21 @@ type change struct {
 	before, after fields
 }
 
-// step is one change Tim made.
+// step is one change Tim made, or a run.
 type step struct {
 	changes []change
+	// people are whom the step brought in, nil when it brought nobody.
+	people *brought
+}
+
+// brought are the people a run found new, or links or a page added.
+type brought struct {
+	// run is the run that found them, zero for people Tim added.
+	run int64
+	ids []int64
+	// gone are the people the last undo took out, as they were then,
+	// which the redo puts back.
+	gone []Person
 }
 
 // history is the undo and redo of the app, under the store's lock.
@@ -105,28 +124,60 @@ type history struct {
 type Undone struct {
 	Done  bool   `json:"done"`
 	Shows *Thing `json:"shows,omitempty"`
+	// Said is what a step that took people out or put them back did,
+	// like "Took out 12 people the run found", for the page to say.
+	Said string `json:"said,omitempty"`
+	// Gone are the people the undo took out, so whatever still works on
+	// them stops, a draft above all.
+	Gone []int64 `json:"-"`
 }
+
+// PeopleThing is the people a step brought in or took out.
+func PeopleThing() Thing { return Thing{Kind: "people"} }
 
 // Edit is Update for a change Tim makes, which Undo can take back. what
 // is everything fn may change that Undo should put back. Whatever else fn
 // changes is saved and stays when the step is undone, like how long a
 // draft took.
 func (s *Store) Edit(fn func(d *Data) error, what ...Thing) error {
+	return s.change(func(*Data) []Thing { return what }, func(d *Data) ([]int64, error) {
+		return nil, fn(d)
+	})
+}
+
+// Bring is Edit for a change that brings people in, links or a page Tim
+// added. fn gives the ids of the people it added. what are those here
+// already it may change, read before fn, like whom adding marks
+// connected. Undo takes out whom it added, as they are by then, and
+// Redo puts them back.
+func (s *Store) Bring(what func(d *Data) []Thing, fn func(d *Data) ([]int64, error)) error {
+	return s.change(what, fn)
+}
+
+func (s *Store) change(what func(d *Data) []Thing, fn func(d *Data) ([]int64, error)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	before := make([]fields, len(what))
-	for i, t := range what {
+	var things []Thing
+	if what != nil {
+		things = what(s.data)
+	}
+	before := make([]fields, len(things))
+	for i, t := range things {
 		f, err := s.data.fieldsOf(t)
 		if err != nil {
 			return err
 		}
 		before[i] = f
 	}
-	if err := s.update(fn); err != nil {
+	var added []int64
+	if err := s.update(func(d *Data) (err error) {
+		added, err = fn(d)
+		return err
+	}); err != nil {
 		return err
 	}
 	var st step
-	for i, t := range what {
+	for i, t := range things {
 		after, err := s.data.fieldsOf(t)
 		if err != nil {
 			return err
@@ -135,7 +186,33 @@ func (s *Store) Edit(fn func(d *Data) error, what ...Thing) error {
 			st.changes = append(st.changes, c)
 		}
 	}
+	if len(added) > 0 {
+		st.people = &brought{ids: added}
+	}
 	s.record(st)
+	return nil
+}
+
+// EndRun is Update for the end of a run, which makes the people its
+// searches found new one step. Whom Tim added from a link while it went
+// are no part of it, adding them was a step of its own. Unlike a change
+// Tim makes, it leaves Redo as it is, since Tim did nothing at its end,
+// and each step there checks what it rests on when it is taken.
+func (s *Store) EndRun(run int64, fn func(d *Data) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.update(fn); err != nil {
+		return err
+	}
+	var ids []int64
+	for _, p := range s.data.People {
+		if p.FirstRunID == run && p.Evidence != AddedByHand {
+			ids = append(ids, p.ID)
+		}
+	}
+	if len(ids) > 0 {
+		s.push(step{people: &brought{run: run, ids: ids}})
+	}
 	return nil
 }
 
@@ -164,14 +241,20 @@ func (s *Store) Add(fn func(d *Data) (Thing, error)) error {
 
 // record keeps a step, unless it changed nothing. A new step clears Redo.
 func (s *Store) record(st step) {
-	if len(st.changes) == 0 {
+	if len(st.changes) == 0 && st.people == nil {
 		return
 	}
+	s.push(st)
+	s.hist.redo = nil
+}
+
+// push puts a step on Undo, and lets go of the oldest beyond
+// historyDepth.
+func (s *Store) push(st step) {
 	s.hist.undo = append(s.hist.undo, st)
 	if len(s.hist.undo) > historyDepth {
 		s.hist.undo = s.hist.undo[len(s.hist.undo)-historyDepth:]
 	}
-	s.hist.redo = nil
 }
 
 // changed is what a change did to t, when it did anything: the fields
@@ -207,6 +290,8 @@ func (s *Store) step(back bool) (Undone, error) {
 		return Undone{}, nil
 	}
 	st := (*from)[len(*from)-1]
+	var out Undone
+	var gone []Person
 	err := s.update(func(d *Data) error {
 		for _, c := range st.changes {
 			want, put := c.after, c.before
@@ -240,6 +325,19 @@ func (s *Store) step(back bool) (Undone, error) {
 				return err
 			}
 		}
+		if st.people == nil {
+			return nil
+		}
+		if back {
+			var kept int
+			gone, kept = st.people.takeOut(d, (*from)[:len(*from)-1])
+			for _, p := range gone {
+				out.Gone = append(out.Gone, p.ID)
+			}
+			out.Said = st.people.tookOut(len(gone), kept)
+		} else {
+			out.Said = st.people.putBack(d)
+		}
 		return nil
 	})
 	if errors.Is(err, ErrChangedSince) {
@@ -252,10 +350,120 @@ func (s *Store) step(back bool) (Undone, error) {
 	if err != nil {
 		return Undone{}, err
 	}
+	if st.people != nil {
+		// Only once the file holds it, so a failed write leaves the
+		// step as it was.
+		st.people.gone = gone
+	}
 	*from = (*from)[:len(*from)-1]
 	*to = append(*to, st)
-	shows := st.changes[0].thing
-	return Undone{Done: true, Shows: &shows}, nil
+	out.Done = true
+	shows := PeopleThing()
+	if st.people == nil {
+		shows = st.changes[0].thing
+	}
+	out.Shows = &shows
+	return out, nil
+}
+
+// takeOut takes out the people a step brought in, but for those a step
+// below it changed since, which are kept. It gives whom it took out, as
+// they were.
+func (b *brought) takeOut(d *Data, below []step) (gone []Person, kept int) {
+	for _, id := range b.ids {
+		p := d.Person(id)
+		if p == nil {
+			continue
+		}
+		if changedBy(below, id) {
+			kept++
+			continue
+		}
+		c := *p
+		c.Signals, c.FoundBy = slices.Clone(p.Signals), slices.Clone(p.FoundBy)
+		gone = append(gone, c)
+		d.takeOut(id)
+	}
+	return gone, kept
+}
+
+// putBack puts back the people the last undo took out, with their ids,
+// and says what it did. Someone here again under their link since, found
+// by another run or added again, stays as they are.
+func (b *brought) putBack(d *Data) string {
+	back, here := 0, 0
+	for _, g := range b.gone {
+		if d.Person(g.ID) != nil || d.PersonByProfile(g.LinkedIn.URL) != nil {
+			here++
+			continue
+		}
+		p := g
+		p.Signals, p.FoundBy = slices.Clone(g.Signals), slices.Clone(g.FoundBy)
+		// The text goes through SetProfileText, which writes it to its
+		// own file.
+		p.LinkedIn.Text = ""
+		d.People = insertByID(d.People, &p, func(o *Person) int64 { return o.ID })
+		d.SetProfileText(&p, g.LinkedIn.Text, g.LinkedIn.TextAt)
+		back++
+	}
+	switch {
+	case here == 0:
+		return "Put back " + count(back) + " " + b.whose()
+	case back == 0:
+		return count(here) + " " + b.whose() + " " + are(here) + " here again since and " + stay(here) + " as they are"
+	}
+	return "Put back " + count(back) + " " + b.whose() + ". " + fmt.Sprint(here) + " " + are(here) + " here again since and " + stay(here) + " as they are"
+}
+
+// tookOut says what an undo of the step did.
+func (b *brought) tookOut(gone, kept int) string {
+	switch {
+	case kept == 0:
+		return "Took out " + count(gone) + " " + b.whose()
+	case gone == 0:
+		return count(kept) + " " + b.whose() + " " + stay(kept) + ", since you changed them"
+	}
+	return "Took out " + count(gone) + " " + b.whose() + ". " + fmt.Sprint(kept) + " you changed since " + stay(kept)
+}
+
+func (b *brought) whose() string {
+	if b.run != 0 {
+		return "the run found"
+	}
+	return "you added"
+}
+
+// changedBy says whether one of steps changed the person.
+func changedBy(steps []step, id int64) bool {
+	for _, st := range steps {
+		for _, c := range st.changes {
+			if c.thing == PersonThing(id) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func count(n int) string {
+	if n == 1 {
+		return "1 person"
+	}
+	return fmt.Sprint(n, " people")
+}
+
+func are(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
+}
+
+func stay(n int) string {
+	if n == 1 {
+		return "stays"
+	}
+	return "stay"
 }
 
 // differ gives the fields that differ between before and after, as they
@@ -497,7 +705,12 @@ func setValueFields[T any](x *T, put fields) error {
 // with the step, but a run that worked them out since does not make an
 // undo refuse, as FrameFairy leaves what follows from a clip out of its
 // changes. The next run works them out again.
-var derived = map[string]bool{"signals": true, "score": true, "rubric": true}
+//
+// Whether a run reads someone's profile, and why the last read failed, are
+// the run's too: adding someone here already asks for their profile once
+// more, and a run that read it since does not make the undo of adding
+// them refuse.
+var derived = map[string]bool{"signals": true, "score": true, "rubric": true, "to_read": true, "read_error": true}
 
 // linkedInPrefix marks the fields of a person's LinkedIn profile, so a
 // change to one of them is a change to that field alone.

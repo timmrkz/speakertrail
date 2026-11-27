@@ -114,7 +114,7 @@ func cutByExa(text string) bool {
 // AddPage adds someone from a LinkedIn page Tim pasted, under the link
 // of their profile, named as the page names them, and connected when
 // the page says so. Like someone added from a link, Undo takes them out
-// again, see RemoveAdded. The page is their profile, see Paste, so no
+// again, see Store.Bring. The page is their profile, see Paste, so no
 // run reads it. Someone here under that link already is given back.
 func (d *Data) AddPage(url, name string, connected bool, at time.Time) (p *Person, isNew bool) {
 	if p = d.PersonByProfile(url); p != nil {
@@ -132,23 +132,16 @@ func (d *Data) AddPage(url, name string, connected bool, at time.Time) (p *Perso
 // ErrNoPerson is an id nobody has.
 var ErrNoPerson = errors.New("no such person")
 
-// ErrNotAdded refuses to take out someone a search found: only whom Tim
-// added from a link goes again, see RemoveAdded.
-var ErrNotAdded = errors.New("only someone added from a link can be taken out again")
-
-// RemoveAdded takes out someone Tim added from a link, for Undo, and
-// leaves them out of the runs that had not read their profile yet. A run
-// that read it keeps the read, which was paid for.
-func (d *Data) RemoveAdded(id int64) error {
+// takeOut takes a person out of the app, for Undo of the step that
+// brought them in, and leaves them out of the runs that had not read
+// their profile yet. A run that read it keeps the read, which was paid
+// for.
+func (d *Data) takeOut(id int64) {
 	i := slices.IndexFunc(d.People, func(p *Person) bool { return p.ID == id })
 	if i < 0 {
-		return ErrNoPerson
+		return
 	}
-	p := d.People[i]
-	if p.Evidence != AddedByHand || len(p.FoundBy) > 0 {
-		return ErrNotAdded
-	}
-	if p.LinkedIn.Text != "" {
+	if d.People[i].LinkedIn.Text != "" {
 		d.textsChanged = true
 	}
 	d.People = slices.Delete(d.People, i, i+1)
@@ -157,7 +150,6 @@ func (d *Data) RemoveAdded(id int64) error {
 			r.Links = slices.DeleteFunc(r.Links, func(x int64) bool { return x == id })
 		}
 	}
-	return nil
 }
 
 // Pasted is a profile Tim pasted from his browser, or what a person was

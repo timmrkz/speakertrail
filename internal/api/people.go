@@ -335,24 +335,6 @@ func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
 	send(w, http.StatusOK, out)
 }
 
-// removePerson takes out someone added from a link, for Undo.
-func (a *API) removePerson(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
-	if !ok {
-		return
-	}
-	switch err := a.Engine.Remove(id); {
-	case errors.Is(err, store.ErrNoPerson):
-		fail(w, http.StatusNotFound, "Not found")
-	case errors.Is(err, store.ErrNotAdded):
-		fail(w, http.StatusConflict, capital(err.Error()))
-	case err != nil:
-		a.internal(w, r, err)
-	default:
-		w.WriteHeader(http.StatusNoContent)
-	}
-}
-
 func (a *API) sendPerson(w http.ResponseWriter, id int64) {
 	if out := a.detail(id); out != nil {
 		send(w, http.StatusOK, out)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -147,21 +148,11 @@ func TestPeopleListedWhileLinksAreAddedFromSeveralGoroutines(t *testing.T) {
 	}
 }
 
-// Undo takes out again whom adding brought in, and nobody else.
+// Adding links is one step: Undo in the Edit menu takes out again whom
+// it brought in, opens again whom it marked connected, and leaves
+// everyone else. Redo does it again.
 func TestUndoAddingPeople(t *testing.T) {
 	a, st, e := newAPI(t)
-	var added struct{ New []int64 }
-	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/neu-hier-3"}`, &added)
-	e.Wait()
-	if len(added.New) != 1 {
-		t.Fatalf("added %+v", added)
-	}
-	if code := call(t, a, "DELETE", fmt.Sprintf("/api/people/%d", added.New[0]), "", nil); code != http.StatusNoContent {
-		t.Fatalf("undo: %d", code)
-	}
-	if code := call(t, a, "GET", fmt.Sprintf("/api/people/%d", added.New[0]), "", nil); code != http.StatusNotFound {
-		t.Errorf("the person taken out is still there: %d", code)
-	}
 	var found int64
 	_ = st.Update(func(d *store.Data) error {
 		s, _ := d.AddSearch("Gründerin Köln", 0, t0)
@@ -169,8 +160,32 @@ func TestUndoAddingPeople(t *testing.T) {
 		found = p.ID
 		return nil
 	})
-	if code := call(t, a, "DELETE", fmt.Sprintf("/api/people/%d", found), "", nil); code != http.StatusConflict {
-		t.Errorf("someone a search found was taken out: %d", code)
+	var added struct{ New, Connected []int64 }
+	call(t, a, "POST", "/api/people", `{"text":"https://www.linkedin.com/in/neu-hier-3 https://www.linkedin.com/in/jo-muster"}`, &added)
+	e.Wait()
+	if len(added.New) != 1 || !slices.Equal(added.Connected, []int64{found}) {
+		t.Fatalf("added %+v", added)
+	}
+	var u store.Undone
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Took out 1 person you added" || u.Shows.Kind != "people" {
+		t.Fatalf("undo: %d %+v", code, u)
+	}
+	if code := call(t, a, "GET", fmt.Sprintf("/api/people/%d", added.New[0]), "", nil); code != http.StatusNotFound {
+		t.Errorf("the person taken out is still there: %d", code)
+	}
+	var jo personDetail
+	if call(t, a, "GET", fmt.Sprintf("/api/people/%d", found), "", &jo); jo.Connected {
+		t.Error("Jo is still connected after the undo")
+	}
+	if code := call(t, a, "POST", "/api/redo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Put back 1 person you added" {
+		t.Fatalf("redo: %d %+v", code, u)
+	}
+	var back personDetail
+	if code := call(t, a, "GET", fmt.Sprintf("/api/people/%d", added.New[0]), "", &back); code != http.StatusOK || back.Name != "neu-hier-3" || !back.Connected {
+		t.Errorf("after the redo: %d %+v", code, back)
+	}
+	if call(t, a, "GET", fmt.Sprintf("/api/people/%d", found), "", &jo); !jo.Connected {
+		t.Error("Jo is open after the redo")
 	}
 }
 

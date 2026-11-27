@@ -93,8 +93,8 @@ func TestDraftAFirstMessage(t *testing.T) {
 // Chrome copied with it, keeps it as their profile, and drafts the first
 // message of someone connected who has none (Tim's report of 24
 // November 2026, #88 and #89). Undo in the Edit menu takes back the
-// draft, then the paste. The paste that added someone is no step of its
-// own: the toast's Undo takes them out.
+// draft, then the paste. The paste that added someone is part of adding
+// them, which the next undo takes back.
 func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 	a, st, e := newAPI(t)
 	var added struct{ New []int64 }
@@ -144,15 +144,16 @@ func TestAPastedPageFindsItsPersonAndDrafts(t *testing.T) {
 		t.Fatalf("someone new: %d %+v", code, out)
 	}
 	a.Drafts.Wait()
-	// Undo in the Edit menu takes back their draft, and nothing more.
-	for _, want := range []bool{true, false} {
-		var u store.Undone
-		if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || u.Done != want {
-			t.Fatalf("undo after adding: %d %+v, want done %v", code, u, want)
-		}
+	// Undo in the Edit menu takes back their draft, then adding them.
+	var u store.Undone
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Shows.Kind != "person" {
+		t.Fatalf("undo of the draft: %d %+v", code, u)
 	}
-	if code := call(t, a, "DELETE", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNoContent {
-		t.Errorf("undo someone new: %d", code)
+	if code := call(t, a, "POST", "/api/undo", "{}", &u); code != http.StatusOK || !u.Done || u.Said != "Took out 1 person you added" {
+		t.Fatalf("undo of adding: %d %+v", code, u)
+	}
+	if code := call(t, a, "GET", "/api/people/"+itoa(out.Person.ID), "", nil); code != http.StatusNotFound {
+		t.Errorf("someone new is still there after the undo: %d", code)
 	}
 	// Pasted as text alone, Exa is asked for the link by the name and
 	// headline, and knows only another name, so it says what is missing.

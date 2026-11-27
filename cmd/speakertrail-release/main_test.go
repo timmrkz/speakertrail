@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -135,9 +136,9 @@ func TestANewKeyIsNotMadeOverAnOldOne(t *testing.T) {
 	}
 }
 
-// On the real disk: the release tool reads the entries and writes the list as files.
+// On the real disk: the release tool signs the entries as files.
 func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
-	release(t)
+	key := release(t)
 	good := signed(t, "main", "main")
 	pr := signed(t, "pr-58", "#58 Small things")
 
@@ -154,15 +155,17 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out := filepath.Join(t.TempDir(), "channels.json")
-	if err := list([]string{"-out", out, "-newest", "pr-58=0123456789ab", "-conflict", "pr-58", good, pr, forgedPath}); err != nil {
-		t.Fatal(err)
+	entries := map[string][]byte{}
+	for name, path := range map[string]string{"channel-main.json": good, "channel-pr-58.json": pr, "channel-pr-59.json": forgedPath} {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries[name] = data
 	}
-	written, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := updates.Parse(written)
+	now := time.Date(2026, 11, 27, 21, 0, 0, 500, time.UTC)
+	l, err := makeList(entries, map[string]string{"pr-58": "0123456789abcdef"}, map[string]bool{"pr-58": true}, nil,
+		key.Public().(ed25519.PublicKey), now, io.Discard)
 	if err != nil {
 		t.Fatalf("the app cannot read the list: %v", err)
 	}
@@ -186,48 +189,20 @@ func TestTheListLeavesOutWhatNoAppWouldTake(t *testing.T) {
 	}
 	// When it was written, so the app can tell the newer of the list's two
 	// copies.
-	if age := time.Since(l.Written); l.Written.IsZero() || age < 0 || age > time.Minute { //nolint:forbidigo // reads when the list was written, waits on nothing
+	if !l.Written.Equal(now.Truncate(time.Second)) {
 		t.Errorf("the list says it was written at %v", l.Written)
 	}
 }
 
-// On the real disk: the workflow hands the list the pull requests that are
-// not open any more, as gh writes them, merged in one file and closed in
-// another. The list says which were merged and which closed, so the app
-// does not call a merged one closed, as it did PR #46. A file that cannot
-// be read leaves the list written all the same.
+// The list says which pull requests that are not open any more were
+// merged and which closed, newest first, so the app does not call a
+// merged one closed, as it did PR #46.
 func TestTheListSaysWhichPullRequestsWereMerged(t *testing.T) {
-	release(t)
-	good := signed(t, "main", "main")
-	dir := t.TempDir()
-	merged := filepath.Join(dir, "merged.json")
-	closed := filepath.Join(dir, "closed.json")
-	// gh lists merged ones under closed too, so both files may name one.
-	if err := os.WriteFile(merged, []byte(`[{"number": 46, "state": "MERGED"}, {"number": 50, "state": "MERGED"}]`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(closed, []byte(`[{"number": 46, "state": "MERGED"}, {"number": 12, "state": "CLOSED"}, {"number": 60, "state": "OPEN"}]`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out := filepath.Join(dir, "channels.json")
-	if err := list([]string{"-out", out, "-ended", merged, "-ended", closed, "-ended", filepath.Join(dir, "missing.json"), good}); err != nil {
-		t.Fatal(err)
-	}
-	written, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := updates.Parse(written)
-	if err != nil {
-		t.Fatalf("the app cannot read the list: %v", err)
-	}
-	if got := strings.Join(l.Merged, " "); got != "pr-50 pr-46" {
+	merged, closed := endedChannels([]endedPull{{46, true}, {50, true}, {46, true}, {12, false}, {0, false}})
+	if got := strings.Join(merged, " "); got != "pr-50 pr-46" {
 		t.Errorf("merged %q, want pr-50 pr-46", got)
 	}
-	if got := strings.Join(l.Closed, " "); got != "pr-12" {
+	if got := strings.Join(closed, " "); got != "pr-12" {
 		t.Errorf("closed %q, want pr-12", got)
-	}
-	if l.Ended("pr-60") != "" {
-		t.Error("an open pull request is said to have ended")
 	}
 }

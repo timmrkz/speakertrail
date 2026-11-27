@@ -3,11 +3,8 @@ package main
 import (
 	"cmp"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -273,27 +270,4 @@ func (b bases) readParts(names []string, log io.Writer) map[string]updates.Parts
 		out[name] = p
 	}
 	return out
-}
-
-// unreachableCommand writes the names of the files of the release that no
-// build an app may run reaches, one a line, for gh to remove.
-func unreachableCommand(args []string) error {
-	fs := flag.NewFlagSet("unreachable", flag.ExitOnError)
-	listPath := fs.String("list", "", "the channel list")
-	assetsPath := fs.String("assets", "", "the release's files, as gh release view dev --json assets writes them")
-	from := fs.String("from", updates.EntriesURL, "the folder of the release the parts are read from")
-	_ = fs.Parse(args)
-	if *listPath == "" || *assetsPath == "" {
-		return errors.New("unreachable needs -list and -assets")
-	}
-	r, err := readRelease(*listPath, *assetsPath)
-	if err != nil {
-		return err
-	}
-	b := bases{from: *from, client: &http.Client{}}
-	for _, name := range r.unreachable(b.readParts(r.bases(), os.Stderr), time.Now()) {
-		fmt.Fprintln(os.Stderr, "removing", name)
-		fmt.Println(name)
-	}
-	return nil
 }

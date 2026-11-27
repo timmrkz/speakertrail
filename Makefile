@@ -230,7 +230,6 @@ $(GOLANGCI_LINT):
 # goroutine's stack, well inside the limit of CI's go job.
 unit:
 	@$(GO) test -race -timeout 2m ./...
-	@sh scripts/needs-build-test.sh >/dev/null && printf 'ok  \tscripts/needs-build.sh\n'
 
 interface: web/node_modules/.package-lock.json
 	@out=$$(cd web && $(NPM) run --silent check 2>&1) || { echo "$$out"; exit 1; }

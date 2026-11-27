@@ -6,7 +6,7 @@ package main
 // request opened after its push came in. builds.yml only calls it. See
 // What happens on a push in docs/UPDATES.md. FrameFairy has the same
 // command, buildPlan in its plan.go, which also decides there whether a
-// commit needs a build, still scripts/needs-build.sh here, #57.
+// commit needs a build, needsBuild in needs.go here.
 //
 // A pull request is built by its push or by its opening, never by both.
 // A session pushes its branch and opens the pull request seconds later, so

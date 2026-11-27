@@ -47,15 +47,20 @@ then on every build comes from GitHub.
    main, and a second commit pushed in the same second as the opening,
    wait for the next push. A
    commit that only changes the docs against the build there is gets no
-   build of its own, see `scripts/needs-build.sh`. The build leaves a zip
+   build of its own and starts no Mac, `speakertrail-release
+   needs-build`, asked on Linux. The build leaves a zip
    and nothing else. It gets no secret, because a branch runs its own
    copy of this file.
 2. `.github/workflows/publish.yml` runs from main whenever a build starts
-   or ends, whatever branch was built. It takes only runs of `builds.yml`
+   or ends, whatever branch was built. Every step is one command of
+   `cmd/speakertrail-release`, which makes each decision in Go, with
+   tests, and asks GitHub's REST API itself, as FrameFairy's does. It
+   takes only runs of `builds.yml`
    started by a push or by a pull request opened or reopened, and starts
    a Mac only once a job on Linux found the zip the build left. It works out the channel, commit and version again
    from GitHub's own record of the run, and refuses a commit that is not
-   in the history of main or of the pull request it is for. It checks
+   in the history of main or of the pull request it is for,
+   `publish-plan`. It checks
    what the app links and asks for with `cmd/speakertrail-release check`,
    in a step that has no key, and signs the app again with Tim's
    Developer ID and the hardened runtime, see
@@ -67,26 +72,30 @@ then on every build comes from GitHub.
    `sign` signs the zip and the stored zip with the key from the
    environment `updates`, and signs when the build was made, see
    [No step back](#no-step-back). An entry already there that was made
-   later stays, and this build is not published. The pieces the release does not hold yet go
-   up to the pre-release `dev`, then the zip, the stored zip packed and
-   its parts, then its entry. The commit that was built gets the status
-   **Ready to update to** on the pull request, and only then do the
-   patches it lacks go up. An app that updates before they are there
-   takes the piece of each file whose patch is missing.
-3. `scripts/channel-list.sh` writes the channel list again from every
+   later stays, and this build is not published. `publish` uploads the
+   pieces the release does not hold yet to the pre-release `dev`, then
+   the zip, the stored zip packed and its parts, then its entry. The
+   commit that was built gets the status **Ready to update to** on the
+   pull request, and only then do the patches it lacks go up. An app that
+   updates before they are there takes the piece of each file whose
+   patch is missing. A build that is not published, whatever failed, says
+   why in that status, `not-published`.
+3. `speakertrail-release channels` writes the channel list again from every
    entry, as `channels-a.json` and `channels-b.json` in `dev`. A pull
    request that closed leaves the list. Of the newest two hundred that are
    not open any more, the list names those merged as `merged` and those
    closed without a merge as `closed`. A newer commit whose build failed
-   is not said to be on its way. `speakertrail-release unreachable` then
-   names, and gh removes, half an hour after they went up, the zips and
+   is not said to be on its way. It then removes, half an hour after
+   they went up, the zips and
    packed zips no entry points at, the parts of every build that is
    neither listed nor one of the newest three that left the list, the
    pieces no remaining parts name, and the patches no listed build's
    parts name. A build that left the list is patched from, never updated
    to, so its pieces stay and its patches go. The list job runs after
    every build, also one whose publish failed, so a full release always
-   makes room again.
+   makes room again. It and the job that writes the list as a build
+   starts both cancel a publish that has waited half an hour to enter
+   the environment, `unstick`.
 
 GitHub lets a release hold 1,000 files, and refuses an upload past them.
 A build has at most sixty patches, fewer once `dev` holds more than 740

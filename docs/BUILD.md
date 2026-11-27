@@ -100,7 +100,7 @@ docker volume rm speakertrail_postgres
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `lint`, `unit`, `interface` and `walks` |
 | `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |
-| `make unit` | every Go test under the race detector, and the test of `scripts/needs-build.sh`. Go's test cache is on, so what did not change is not tested again |
+| `make unit` | every Go test under the race detector. Go's test cache is on, so what did not change is not tested again |
 | `make interface` | a type check of the interface and its tests, with vitest |
 | `make walks` | the interface driven in Chromium with invented data, the walks in `web/walks/`, side by side |
 | `make check` | what this machine has and still needs |

@@ -1186,3 +1186,56 @@ func TestAPageAddsSomeoneNew(t *testing.T) {
 		t.Errorf("someone new with someone open: %v", err)
 	}
 }
+
+// A draft waits on the run that reads a profile rather than ask Exa for
+// it again (#115). AwaitRead, from several goroutines at once, returns
+// once the read is kept, at once for someone the run does not read,
+// early when its context ends, and as soon as a paste kept the profile.
+func TestAwaitReadFromSeveralGoroutines(t *testing.T) {
+	f := &finder{readHold: make(chan struct{}), started: make(chan string, 64), read: map[string]search.Profile{ida.URL: ida}}
+	e, st := newEngine(t, f)
+	out, err := e.Add(ida.URL + " linkedin.com/in/neu-hier-3")
+	if err != nil || len(out.New) != 2 {
+		t.Fatalf("Add = %+v, %v", out, err)
+	}
+	<-f.started
+	<-f.started
+	idaID, neuID := out.New[0], out.New[1]
+	if waited, err := e.AwaitRead(context.Background(), 999); waited || err != nil {
+		t.Errorf("nobody the run reads: %v, %v", waited, err)
+	}
+	ended, cancel := context.WithCancel(context.Background())
+	cancel()
+	if waited, err := e.AwaitRead(ended, idaID); !waited || !errors.Is(err, context.Canceled) {
+		t.Errorf("a context that ended: %v, %v", waited, err)
+	}
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			if _, err := e.AwaitRead(context.Background(), idaID); err != nil {
+				t.Error(err)
+			}
+			// Whether it waited or came after the read, the profile is
+			// kept once it returns.
+			st.Read(func(d *store.Data) {
+				if d.Person(idaID).LinkedIn.Text == "" {
+					t.Error("AwaitRead returned before the profile was kept")
+				}
+			})
+			e.Reading()
+		})
+	}
+	pasted := make(chan struct{})
+	go func() {
+		defer close(pasted)
+		_, _ = e.AwaitRead(context.Background(), neuID)
+	}()
+	if _, err := e.Paste(neuID, "Neu Hier\nCoach in Bonn\nInfo\nIch coache.", false); err != nil {
+		t.Fatal(err)
+	}
+	// The paste lets the waiter go while Exa is still asked.
+	<-pasted
+	close(f.readHold)
+	wg.Wait()
+	e.Wait()
+}

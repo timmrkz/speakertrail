@@ -315,13 +315,21 @@ func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
 	added, err := a.Engine.Add(in.Text)
 	out := struct {
 		engine.Added
-		// Open is the one person the links lead to who was here
-		// already, for People to open, when they add nobody new.
+		// Open is the person for People to open: the one the links lead
+		// to who was here already, when they add nobody new, or the one
+		// they add, when they lead to nobody else (#115).
 		Open int64  `json:"open,omitempty"`
 		Wait string `json:"wait,omitempty"`
+		// Drafting says the first message to the one person added is
+		// being drafted, see draft.Drafter.Start.
+		Drafting bool `json:"drafting"`
 	}{Added: added}
 	if actOf(len(added.New), added.Here, added.Other) == "open" {
 		out.Open = added.Here[0]
+	}
+	one := len(added.New) == 1 && len(added.Here) == 0 && added.Other == 0
+	if one {
+		out.Open = added.New[0]
 	}
 	switch {
 	case errors.Is(err, engine.ErrNoLinks):
@@ -335,6 +343,15 @@ func (a *API) addPeople(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		a.internal(w, r, err)
 		return
+	}
+	// The one person added is open, and their first message is what Tim
+	// does next, so it starts now, as a pasted page's does. Its draft
+	// reads the profile the run reads, see draft.Drafter.Await. Without
+	// the Exa key or budget the profile waits for the next run, so no
+	// draft starts, and without a model Draft says why.
+	if one && out.Wait == "" && a.Drafts != nil {
+		_, err := a.Drafts.Start(out.Open)
+		out.Drafting = err == nil
 	}
 	send(w, http.StatusOK, out)
 }
@@ -353,6 +370,10 @@ func (a *API) removePerson(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		a.internal(w, r, err)
 	default:
+		// Their draft has nobody left to write to.
+		if a.Drafts != nil {
+			_ = a.Drafts.Cancel(id)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

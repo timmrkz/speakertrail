@@ -57,6 +57,10 @@ type Job struct {
 	// answer did not fit the schema, so the message has … there for Tim
 	// to write.
 	Problem string `json:"problem,omitempty"`
+	// NoCopy says a failed draft failed because Exa's index has no copy
+	// of their profile, ErrNoCopy, so the window need not say it a second
+	// time beside the person's own line of it.
+	NoCopy bool `json:"no_copy,omitempty"`
 	// Seq is higher for every change than for the one before it, of any
 	// draft, so the window keeps the newer of an answer and an event.
 	Seq int64 `json:"seq"`
@@ -78,6 +82,11 @@ var ErrNoCopy = errors.New("Exa has no copy of their profile. Open it in Chrome,
 // ErrNoPerson is a draft asked for someone who is not in the file.
 var ErrNoPerson = errors.New("there is no person")
 
+// errGone is a draft of someone taken out of the app while it ran, like
+// by Undo of the links that added them. It ends as cancelled, since
+// nobody is left to write to.
+var errGone = errors.New("they were taken out of the app")
+
 // ErrNoModel is a draft asked for before a language model is downloaded.
 var ErrNoModel = errors.New("download a language model in Settings first. It writes the message on this Mac")
 
@@ -95,6 +104,12 @@ type Drafter struct {
 	// Finder reads a profile from Exa. It fails with engine.ErrNoKey
 	// while no key is saved, and with why when the key could not be read.
 	Finder func() (Finder, error)
+	// Await waits while the going run reads a person's profile, or has
+	// it still to read, and says whether it did, engine.Engine.AwaitRead
+	// in the app. A draft of someone with no profile text asks it before
+	// it asks Exa, so one profile is never read twice. Nil waits for
+	// nothing.
+	Await func(ctx context.Context, personID int64) (bool, error)
 	// Ask asks the model for JSON that fits schema, language.AskFor when
 	// nil. A test puts its own.
 	Ask func(ctx context.Context, s *language.Server, messages []language.Message, schema json.RawMessage, heard func(string)) (language.Answer, error)
@@ -237,7 +252,7 @@ func (d *Drafter) Pasted(personID int64) (j Job, ok bool) {
 		d.mu.Unlock()
 		return Job{}, false
 	}
-	noCopy := there && was.State == "failed" && was.Error == Sentence(ErrNoCopy.Error())
+	noCopy := there && was.State == "failed" && was.NoCopy
 	if !empty || !connected && !noCopy {
 		d.mu.Unlock()
 		return Job{}, false
@@ -412,13 +427,13 @@ func (d *Drafter) run(ctx context.Context, id int64) {
 		switch {
 		case err == nil:
 			j.State, j.Fraction = "done", 1
-		case ctx.Err() != nil:
+		case ctx.Err() != nil, errors.Is(err, errGone):
 			j.State, j.Text = "cancelled", ""
 		default:
-			j.State, j.Error = "failed", Sentence(err.Error())
+			j.State, j.Error, j.NoCopy = "failed", Sentence(err.Error()), errors.Is(err, ErrNoCopy)
 		}
 	})
-	if err != nil && ctx.Err() == nil {
+	if err != nil && ctx.Err() == nil && !errors.Is(err, errGone) {
 		d.log().Warn("a first message was not drafted", "person", id, "error", err)
 	}
 }
@@ -440,27 +455,44 @@ func (d *Drafter) update(id int64, change func(*Job)) {
 // draft is the work of one draft: the profile, the prompt, the model and
 // the message.
 func (d *Drafter) draft(ctx context.Context, id int64) error {
+	// When it was asked for, so a read a run made since is not made again.
+	var asked time.Time
+	d.mu.Lock()
+	if j, ok := d.jobs[id]; ok {
+		asked = j.StartedAt
+	}
+	d.mu.Unlock()
 	var name, notes, link, text string
 	var earlier []store.DraftTime
 	var prompt string
 	var template store.Template
-	d.Store.Read(func(data *store.Data) {
-		if p := data.Person(id); p != nil {
-			name, notes, link, text = p.Name, p.Notes, p.LinkedIn.URL, p.LinkedIn.Text
-		}
-		earlier = slices.Clone(data.DraftTimes)
-		prompt = data.Text(store.FirstMessagePrompt)
-		template = data.FirstMessageTemplate()
-	})
+	found, missed := false, false
+	person := func() {
+		d.Store.Read(func(data *store.Data) {
+			p := data.Person(id)
+			if found = p != nil; found {
+				name, notes, link, text = p.Name, p.Notes, p.LinkedIn.URL, p.LinkedIn.Text
+				missed = text == "" && slices.ContainsFunc(data.Runs, func(r *store.Run) bool {
+					return slices.ContainsFunc(r.Reads, func(x store.Read) bool {
+						return x.PersonID == id && x.Error == engine.NotIndexed && !x.At.Before(asked)
+					})
+				})
+			}
+			earlier = slices.Clone(data.DraftTimes)
+			prompt = data.Text(store.FirstMessagePrompt)
+			template = data.FirstMessageTemplate()
+		})
+	}
+	person()
+	if !found {
+		return errGone
+	}
 	if link == "" && text == "" {
 		return errors.New("this person has no LinkedIn profile to write from")
 	}
 	if err := template.Check(); err != nil {
 		return fmt.Errorf("the first message template in Settings cannot be used: %w", err)
 	}
-	// The message is put together before the model writes, so it is on
-	// screen at once, with … where the model's part goes.
-	message := d.put(template, name, link)
 	m, path, err := d.Model()
 	if err != nil {
 		return err
@@ -487,10 +519,35 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 
 	if text == "" {
 		d.update(id, func(j *Job) { j.State, j.Model = "reading", m.Title; progress(j) })
-		if text, err = d.read(ctx, id, link); err != nil {
-			return err
+		// The run that reads their profile now, or has it still to read,
+		// is waited for rather than asked again of Exa. What it read
+		// names them too, so the message greets the name it found. It
+		// may have read it a moment ago, so the person is read again
+		// whether it waited or not.
+		if d.Await != nil {
+			if _, err = d.Await(ctx, id); err != nil {
+				return err
+			}
+		}
+		person()
+		if !found {
+			return errGone
+		}
+		switch {
+		case text != "":
+		// What a run found missing since the draft was asked for is not
+		// asked for again.
+		case missed:
+			return ErrNoCopy
+		default:
+			if text, err = d.read(ctx, id, link); err != nil {
+				return err
+			}
 		}
 	}
+	// The message is put together before the model writes, so it is on
+	// screen at once, with … where the model's part goes.
+	message := d.put(template, name, link)
 	if d.Check != nil {
 		if err := d.Check(m); err != nil {
 			return err
@@ -567,7 +624,7 @@ func (d *Drafter) draft(ctx context.Context, id int64) error {
 	err = d.Store.Edit(func(data *store.Data) error {
 		p := data.Person(id)
 		if p == nil {
-			return errors.New("they were removed while the message was written")
+			return errGone
 		}
 		p.Draft, p.DraftedAt, p.UpdatedAt = written, d.now(), d.now()
 		data.Drafted(took)

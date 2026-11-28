@@ -127,8 +127,15 @@ in the shape of a place, like "Köln, Nordrhein-Westfalen, Deutschland".
 The page is read by its sections: the top, then About, Experience,
 Education and the rest, and the feed of posts, Activity, last, so the
 8000 characters it is cut at go to who they are first. Exa's text keeps
-its activity in up to half of them, since the dates of a pasted page
-are not read, see [search-strategy.md](search-strategy.md).
+its activity in up to half of them, see
+[search-strategy.md](search-strategy.md). LinkedIn dates each entry of
+Activity by how long ago it was, like "2w •" or "5 Std. •", so each
+becomes its day, counted back from the paste, in the shape Exa's index
+writes it, like "[2026-11-13 · Post]". An entry under a line like "…
+likes this" or "… gefällt das" is a Reaction, dated by the post it is
+on. The newest entry is when they were last active, unless Exa knew of
+something newer, and Active lately scores it as it scores Exa's, see
+[fit-score.md](fit-score.md#2-active-lately).
 LinkedIn's menu and buttons, and its blocks of other people, like
 "People who follow … also follow", Highlights, Interests and "People
 also viewed", are left out, so are LinkedIn's footer, from Accessibility

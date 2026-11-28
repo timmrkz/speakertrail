@@ -530,11 +530,11 @@ func (e *Engine) Paste(id int64, text string, added bool) (named bool, err error
 			return store.ErrNoPerson
 		}
 		now := e.Store.Now()
-		prof, linked := search.Pasted(text, p.LinkedIn.URL)
+		prof, linked := search.Pasted(text, p.LinkedIn.URL, now)
 		if prof.Text == "" {
 			return ErrNothingPasted
 		}
-		f := store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City}
+		f := store.Pasted{Text: prof.Text, Name: prof.Name, Headline: cmpOr(prof.Headline, p.Headline), City: p.City, LastActive: prof.LastActive}
 		named = linked
 		if city := cityOf(prof.Location); city != "" {
 			f.City = city
@@ -589,7 +589,7 @@ var ErrNoPageName = errors.New("the page shows no name above how you are connect
 // They are connected when the page says "· 1st". The caller keeps the
 // page as their profile, see Paste.
 func (e *Engine) AddPage(ctx context.Context, text string, hrefs []string) (id int64, isNew bool, err error) {
-	page, _ := search.Pasted(text, "")
+	page, _ := search.Pasted(text, "", time.Time{})
 	if page.Name == "" {
 		return 0, false, ErrNoPageName
 	}

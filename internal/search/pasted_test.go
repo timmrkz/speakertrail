@@ -3,7 +3,9 @@ package search_test
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/timmrkz/speakertrail/internal/rubric"
 	"github.com/timmrkz/speakertrail/internal/search"
 )
 
@@ -37,7 +39,7 @@ Lena Muster
 Coach`
 
 func TestPasted(t *testing.T) {
-	p, linked := search.Pasted(page, "https://www.linkedin.com/in/joerg-probe-7a1b2c3")
+	p, linked := search.Pasted(page, "https://www.linkedin.com/in/joerg-probe-7a1b2c3", time.Time{})
 	if !linked || p.Name != "Jörg Probe" || p.Headline != "Inhaber | Probe Möbel, Bielefeld" || p.Location != "Bielefeld, Nordrhein-Westfalen, Deutschland" {
 		t.Errorf("read %q, %q, %q", p.Name, p.Headline, p.Location)
 	}
@@ -51,11 +53,11 @@ func TestPasted(t *testing.T) {
 	}
 	// A page of someone else is read all the same, by where LinkedIn
 	// puts the name, but says it is not the one in the link.
-	if q, linked := search.Pasted(page, "https://www.linkedin.com/in/ida-probe"); linked || q.Name != "Jörg Probe" || !strings.Contains(q.Text, "Probe Möbel") {
+	if q, linked := search.Pasted(page, "https://www.linkedin.com/in/ida-probe", time.Time{}); linked || q.Name != "Jörg Probe" || !strings.Contains(q.Text, "Probe Möbel") {
 		t.Errorf("another's page %+v, linked %v", q, linked)
 	}
 	// A long page is cut to what a first message is written from.
-	if long, _ := search.Pasted(page+strings.Repeat("\nEin Beitrag über Eiche", 1000), "https://www.linkedin.com/in/joerg-probe"); len([]rune(long.Text)) > search.TextChars {
+	if long, _ := search.Pasted(page+strings.Repeat("\nEin Beitrag über Eiche", 1000), "https://www.linkedin.com/in/joerg-probe", time.Time{}); len([]rune(long.Text)) > search.TextChars {
 		t.Errorf("kept %d characters", len([]rune(long.Text)))
 	}
 }
@@ -72,7 +74,7 @@ func TestPastedHeadlinesAndNames(t *testing.T) {
 		{"Menü\nMara Beispiel | Coach 🌱\nCoach\nBerlin, Berlin, Deutschland", "mara-beispiel", "Mara Beispiel", "Coach", "Berlin, Berlin, Deutschland"},
 		{"Mara Beispiel\nBielefeld, Nordrhein-Westfalen, Deutschland\nInfo", "mara-beispiel", "Mara Beispiel", "", "Bielefeld, Nordrhein-Westfalen, Deutschland"},
 	} {
-		p, _ := search.Pasted(c.page, "https://www.linkedin.com/in/"+c.link)
+		p, _ := search.Pasted(c.page, "https://www.linkedin.com/in/"+c.link, time.Time{})
 		if p.Name != c.name || p.Headline != c.headline || p.Location != c.location {
 			t.Errorf("%q: read %q, %q, %q", c.page, p.Name, p.Headline, p.Location)
 		}
@@ -174,7 +176,7 @@ Ida Probe
 Coach`
 
 func TestPastedAsChromeCopiesIt(t *testing.T) {
-	p, linked := search.Pasted(realPage+strings.Repeat("\n\nLange Rede, kurzer Sinn, ein Beitrag mehr.", 400), "https://www.linkedin.com/in/marabeispiel")
+	p, linked := search.Pasted(realPage+strings.Repeat("\n\nLange Rede, kurzer Sinn, ein Beitrag mehr.", 400), "https://www.linkedin.com/in/marabeispiel", time.Time{})
 	if !linked || p.Name != "Mara S. Beispiel" || p.Headline != "Gründerin Probe Keramik | M.Sc. Design | Mentorin" || p.Location != "Dortmund, North Rhine-Westphalia, Germany" {
 		t.Errorf("read %q, %q, %q, linked %v", p.Name, p.Headline, p.Location, linked)
 	}
@@ -263,7 +265,7 @@ English
 Deutsch`
 
 func TestPastedWithFooterAndMessage(t *testing.T) {
-	p, linked := search.Pasted(footerPage, "https://www.linkedin.com/in/mara-s-beispiel")
+	p, linked := search.Pasted(footerPage, "https://www.linkedin.com/in/mara-s-beispiel", time.Time{})
 	if !linked || p.Name != "Mara Beispiel" || p.Headline != "Gründerin Probe Keramik | Abitur 2027" {
 		t.Errorf("read %q, %q, linked %v", p.Name, p.Headline, linked)
 	}
@@ -275,6 +277,82 @@ func TestPastedWithFooterAndMessage(t *testing.T) {
 	for _, left := range []string{"Accessibility", "Talent Solutions", "LinkedIn Corporation", "Tom Beobachter", "messaging overlay", "Compose message", "Emoji", "Mara Beispiel Profile", "1st degree"} {
 		if strings.Contains(p.Text, left) {
 			t.Errorf("the text keeps %q:\n%s", left, p.Text)
+		}
+	}
+}
+
+// The Activity section of a page Tim pasted on 27 November 2026, with
+// every person invented, as LinkedIn dates its entries: by how long ago,
+// from the day of the paste. The newest is a reaction to someone else's
+// post, the one before a post of her own.
+const activityPage = `Mara Beispiel
+· 1st
+Gründerin Probe Keramik
+Köln, North Rhine-Westphalia, Germany
+About
+Ich töpfere seit zehn Jahren.
+Activity
+737 followers
+Mara Beispiel likes this
+Otto Muster
+Founder Muster Labs
+3d •
+Ein neues Studio in Köln.
+Mara Beispiel
+Gründerin Probe Keramik
+2w • Edited •
+Heute haben wir den neuen Brennofen eingeweiht.
+Mara Beispiel
+Gründerin Probe Keramik
+3mo •
+Unser erster Markt.`
+
+var pastedAt = time.Date(2026, 11, 27, 15, 0, 0, 0, time.UTC)
+
+func TestAPastedPageSaysWhenTheyWereLastActive(t *testing.T) {
+	p, _ := search.Pasted(activityPage, "https://www.linkedin.com/in/mara-beispiel", pastedAt)
+	if want := pastedAt.AddDate(0, 0, -3); !p.LastActive.Equal(want) {
+		t.Errorf("last active %v, want %v", p.LastActive, want)
+	}
+	// The ages are days in the text kept, the way Exa's index writes
+	// them, so a draft and the rubric read when, not how long before an
+	// unknown day.
+	for _, kept := range []string{"[2026-11-24 · Reaction]", "[2026-11-13 · Post]", "[2026-08-27 · Post]"} {
+		if !strings.Contains(p.Text, kept) {
+			t.Errorf("the text lacks %q:\n%s", kept, p.Text)
+		}
+	}
+	if strings.Contains(p.Text, "3d •") || strings.Contains(p.Text, "2w •") {
+		t.Errorf("the text keeps an age:\n%s", p.Text)
+	}
+	wrote, known := rubric.Writing(p.Text)
+	if !known || !wrote.Equal(time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)) {
+		t.Errorf("wrote %v, known %v", wrote, known)
+	}
+}
+
+// LinkedIn's ages in German and English, each read as the day it was.
+func TestTheAgesOfAPastedPage(t *testing.T) {
+	for age, want := range map[string]time.Time{
+		"12m •": pastedAt.Add(-12 * time.Minute), "5h •": pastedAt.Add(-5 * time.Hour), "2d •": pastedAt.AddDate(0, 0, -2),
+		"1w •": pastedAt.AddDate(0, 0, -7), "3mo •": pastedAt.AddDate(0, -3, 0), "1yr •": pastedAt.AddDate(-1, 0, 0),
+		"12 Min. •": pastedAt.Add(-12 * time.Minute), "5 Std. •": pastedAt.Add(-5 * time.Hour), "2 T. •": pastedAt.AddDate(0, 0, -2),
+		"1 Wo. •": pastedAt.AddDate(0, 0, -7), "3 Mon. •": pastedAt.AddDate(0, -3, 0), "1 J. •": pastedAt.AddDate(-1, 0, 0),
+	} {
+		p, _ := search.Pasted("Mara Beispiel\n· 1st\nAktivitäten\nMara Beispiel\n"+age+"\nEin Beitrag.", "https://www.linkedin.com/in/mara-beispiel", pastedAt)
+		if !p.LastActive.Equal(want) {
+			t.Errorf("%q: last active %v, want %v", age, p.LastActive, want)
+		}
+	}
+	// An age outside the Activity section, or a page without the day of
+	// its paste, says nothing of when they were active.
+	for _, page := range []string{"Mara Beispiel\n· 1st\nAbout\n2d • im Urlaub", "Mara Beispiel\n· 1st\nActivity\n2d •"} {
+		at := pastedAt
+		if strings.Contains(page, "Activity") {
+			at = time.Time{}
+		}
+		if p, _ := search.Pasted(page, "", at); !p.LastActive.IsZero() {
+			t.Errorf("%q: last active %v", page, p.LastActive)
 		}
 	}
 }

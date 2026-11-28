@@ -159,6 +159,9 @@ type Pasted struct {
 	Name     string `json:"name"`
 	Headline string `json:"headline"`
 	City     string `json:"city"`
+	// LastActive is the newest entry of Activity on the page, zero when
+	// it lists none.
+	LastActive time.Time `json:"last_active,omitzero"`
 }
 
 // Paste keeps a profile page Tim copied in his browser as a person's
@@ -166,11 +169,15 @@ type Pasted struct {
 // written from it. Their name, headline and city become the page's, a
 // name only when it gives one. Nobody reads their profile from Exa then.
 // An empty text takes the profile away again, and someone Tim added from
-// a link waits for the next run to read it from Exa.
+// a link waits for the next run to read it from Exa. When they were last
+// active is the page's, unless Exa knew of something newer.
 func (d *Data) Paste(p *Person, f Pasted, at time.Time) {
 	d.SetProfileText(p, f.Text, at)
 	if f.Name != "" {
 		p.Name = f.Name
+	}
+	if f.LastActive.After(p.LinkedIn.LastActive) {
+		p.LinkedIn.LastActive = f.LastActive
 	}
 	p.Headline, p.LinkedIn.Headline, p.City = f.Headline, f.Headline, f.City
 	p.UpdatedAt = at

@@ -134,7 +134,10 @@
         <span class="sr-only">{setting.description}</span>
       </button>
     {:else if kind === 'number'}
-      <input {id} class="input num-input" type="text" inputmode="decimal" bind:value={text} oninput={() => (status = 'idle')}
+      <!-- A number field, so Up and Down step it, never below the least
+           the app takes. It saves when left, as the others do. -->
+      <input {id} class="input num-input" type="number" step="1" min={setting.min} value={text}
+        oninput={(e) => { text = e.currentTarget.value; status = 'idle' }}
         onblur={() => save()} onkeydown={keydown} aria-invalid={!parsed.ok ? 'true' : undefined} />
     {:else if long}
       <textarea {id} class="textarea" rows={lines} bind:value={text} oninput={() => (status = 'idle')}
@@ -176,7 +179,10 @@
   .long .foot { justify-content: flex-start; }
   .bare { padding: 0; }
   .editor .input { width: 220px; }
-  .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; }
+  .num-input { width: 96px !important; text-align: right; font-variant-numeric: tabular-nums; appearance: textfield; }
+  /* The arrow keys step the number, WebKit's little arrows are left out,
+     so the field looks as it did. */
+  .num-input::-webkit-inner-spin-button, .num-input::-webkit-outer-spin-button { appearance: none; margin: 0; }
   .foot { grid-column: 1 / -1; display: flex; gap: var(--gap-control); justify-content: flex-end; }
   .foot:empty { display: none; }
   .switch {

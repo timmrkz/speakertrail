@@ -1186,6 +1186,34 @@ func TestAPasteWhileExaReadsWins(t *testing.T) {
 	})
 }
 
+// A pasted page says when they were last active and whether they wrote,
+// read from the ages of its Activity, counted back from the paste, so it
+// scores like a profile from Exa (#118).
+func TestAPastedPageSaysWhenTheyWereActive(t *testing.T) {
+	e, st := newEngine(t, &finder{})
+	out, err := e.Add("https://www.linkedin.com/in/ida-probe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.Wait()
+	page := "Ida Probe\n· 1st\nGründerin | Probe Werkstatt\nActivity\nIda Probe likes this\nOtto Muster\n2d •\nEin Beitrag.\nIda Probe\n1w •\nIch drechsle."
+	if _, err := e.Paste(out.New[0], page, false); err != nil {
+		t.Fatal(err)
+	}
+	st.Read(func(d *store.Data) {
+		l := d.Person(out.New[0]).LinkedIn
+		if !l.LastActive.Equal(t0.AddDate(0, 0, -2)) || !l.Wrote || !l.LastWrote.Equal(time.Date(2026, 11, 3, 0, 0, 0, 0, time.UTC)) {
+			t.Errorf("last active %v, wrote %v on %v", l.LastActive, l.Wrote, l.LastWrote)
+		}
+		_, parts := rubric.Fit(rubric.FitPerson{LastActive: l.LastActive, LastWrote: l.LastWrote, Wrote: l.Wrote, Now: t0})
+		for _, part := range parts {
+			if part.Key == "active" && (part.Points <= 0 || part.Why != "Wrote on 3 November 2026, reacted since") {
+				t.Errorf("active lately: %+v", part)
+			}
+		}
+	})
+}
+
 // A link with no name in it is not asked for by name, so it takes no
 // second search from the budget, and with the last search it is told
 // apart as not in the index, not left for next month.

@@ -64,6 +64,35 @@ const walks0 = [
     },
   },
   {
+    // Tim asked on 27 November 2026 that every number field step with the
+    // arrow keys (#122). Up and Down step it, never below the least the
+    // app takes, and leaving it saves what it says.
+    name: 'Up and Down step the days, never below one, and leaving the field saves them',
+    async run(page) {
+      await page.goto(`${url}/app/settings`)
+      const field = page.locator('#set-new_days')
+      const foot = page.locator('.setting').filter({ has: field }).locator('.foot')
+      try {
+        await field.focus()
+        await page.keyboard.press('ArrowUp')
+        if ((await field.inputValue()) !== '8') return `after Up the field says ${await field.inputValue()}`
+        await field.blur()
+        await foot.filter({ hasText: 'Saved' }).waitFor()
+        for (let i = 0; i < 9; i++) await field.press('ArrowDown')
+        if ((await field.inputValue()) !== '1') return `after Down nine times from 8 the field says ${await field.inputValue()}`
+        await field.blur()
+        await foot.filter({ hasText: 'Saved' }).waitFor()
+        const saved = await page.evaluate(async () => (await (await fetch('/api/settings')).json()).settings.find((s) => s.key === 'new_days').value)
+        if (saved !== 1) return `the app holds ${saved} days`
+      } finally {
+        // Put back as it was, for the walk after, when it changed.
+        await page.goto(`${url}/app/settings`)
+        if ((await page.locator('#set-new_days').inputValue()) !== '7') await setDays(page, 7)
+      }
+      return ''
+    },
+  },
+  {
     name: 'No day and a part of a day are refused, and the setting keeps what it had',
     async run(page) {
       await page.goto(`${url}/app/settings`)

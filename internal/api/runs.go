@@ -313,3 +313,17 @@ func (a *API) setKey(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// removeKey deletes the saved key, which only Remove in Settings asks
+// for. A save of nothing is refused instead, so it never removes it.
+func (a *API) removeKey(w http.ResponseWriter, r *http.Request) {
+	if a.Keys == nil {
+		fail(w, http.StatusNotImplemented, "Keys cannot be removed here")
+		return
+	}
+	if err := a.Keys.Remove(); err != nil {
+		fail(w, http.StatusInternalServerError, capital(err.Error()))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

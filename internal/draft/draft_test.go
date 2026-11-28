@@ -487,8 +487,23 @@ func TestTheWindowHearsChangesInOrder(t *testing.T) {
 	r := newRig(t)
 	id := r.person(t, "Mara Beispiel", "# Mara Beispiel\n\n## About\n\nIch töpfere in Köln.")
 	told := r.d.Told
+	// The draft waits to ask for its model until Start's goroutine tells
+	// the window it is queued. Else the draft's own goroutine may tell
+	// it first, and would wait in Told for itself to end: CI hung so on
+	// 28 November 2026.
+	heard := make(chan struct{})
+	model := r.d.Model
+	var asked atomic.Int32
+	r.d.Model = func() (language.Model, string, error) {
+		// The first ask is Start's own, the second the draft's.
+		if asked.Add(1) == 2 {
+			<-heard
+		}
+		return model()
+	}
 	r.d.Told = func(j Job) {
 		if j.State == "queued" {
+			close(heard)
 			// Held until the queue runs dry, which is after the draft
 			// ended, so the later changes wait to be told.
 			r.d.mu.Lock()

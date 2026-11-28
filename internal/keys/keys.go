@@ -163,13 +163,30 @@ func (e *Exa) removeOld() {
 	}
 }
 
-// Set saves a key, and an empty one removes it. Removing leaves the file
-// empty, so the keychain stays done with.
+// Set saves a key. An empty one, or one of only spaces, is refused, so
+// a mistake never removes the key. Remove does that.
 func (e *Exa) Set(key string) error {
 	key = strings.TrimSpace(key)
+	if key == "" {
+		return errors.New("paste the key from dashboard.exa.ai")
+	}
 	if strings.ContainsAny(key, " \t\r\n") || len(key) > 200 {
 		return errors.New("that does not look like an Exa key. Copy it from dashboard.exa.ai")
 	}
+	return e.save(key)
+}
+
+// Remove deletes the saved key. It leaves the file empty, so the
+// keychain stays done with.
+func (e *Exa) Remove() error {
+	if err := e.save(""); err != nil {
+		return errors.New("the Exa key could not be removed. Try again")
+	}
+	return nil
+}
+
+// save writes the key, or an empty file for none.
+func (e *Exa) save(key string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := e.write(key); err != nil {

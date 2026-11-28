@@ -77,7 +77,12 @@ func TestTheSavedKeyComesBeforeTheEnvironment(t *testing.T) {
 	if err := e.Set("two words"); err == nil {
 		t.Error("a key with a space was taken")
 	}
-	if err := e.Set(""); err != nil || key(e) != "from-the-terminal" || file(t, e) != "" {
+	for _, blank := range []string{"", "   ", " \t\n"} {
+		if err := e.Set(blank); err == nil || key(e) != "saved-in-settings" {
+			t.Errorf("saving %q: %v, get %q, file %q", blank, err, key(e), file(t, e))
+		}
+	}
+	if err := e.Remove(); err != nil || key(e) != "from-the-terminal" || file(t, e) != "" {
 		t.Errorf("removing: %v, get %q, file %q", err, key(e), file(t, e))
 	}
 	delete(env, "EXA_API_KEY")

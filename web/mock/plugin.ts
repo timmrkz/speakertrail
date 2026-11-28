@@ -1237,8 +1237,15 @@ const ROUTES: [string, RegExp, Handler][] = [
   }],
   // Like the app: whether the Exa key is saved, never the key.
   ['GET', /^\/api\/keys$/, (s) => ok({ keys: [{ provider: 'exa', used: 42, budget: Number(setting(s, 'exa_monthly_searches') ?? 1000), set: exaKey !== '' }] })],
+  // Like the app: a key of nothing is refused, and only DELETE removes it.
   ['PUT', /^\/api\/keys\/exa$/, (_s, _m, _q, b) => {
-    exaKey = String(b.key ?? '').trim()
+    const key = String(b.key ?? '').trim()
+    if (!key) return err(400, 'Paste the key from dashboard.exa.ai')
+    exaKey = key
+    return { status: 204 }
+  }],
+  ['DELETE', /^\/api\/keys\/exa$/, () => {
+    exaKey = ''
     return { status: 204 }
   }],
   ['GET', /^\/api\/linkedin$/, () => ok(where())],

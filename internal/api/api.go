@@ -22,7 +22,10 @@ import (
 type Keys interface {
 	// Has says whether the key is saved, without reading it.
 	Has() bool
+	// Set saves a key, and refuses an empty one.
 	Set(key string) error
+	// Remove deletes the saved key.
+	Remove() error
 }
 
 // API is the handler.
@@ -73,6 +76,7 @@ func New(st *store.Store, e *engine.Engine, keys Keys, log *slog.Logger) *API {
 	m.HandleFunc("PATCH /api/settings/{key}", a.patchSetting)
 	m.HandleFunc("GET /api/keys", a.keys)
 	m.HandleFunc("PUT /api/keys/exa", a.setKey)
+	m.HandleFunc("DELETE /api/keys/exa", a.removeKey)
 	m.HandleFunc("GET /api/linkedin", a.linkedin)
 	m.HandleFunc("PUT /api/linkedin", a.setLinkedin)
 	m.HandleFunc("POST /api/people/{id}/linkedin", a.openLinkedin)

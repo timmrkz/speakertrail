@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 )
 
 // The person a LinkedIn page Tim pasted belongs to, wherever he pasted
@@ -58,7 +59,7 @@ func LinkNamed(link string, names []string) int {
 // PageName is the name on a page, read where LinkedIn puts it, right
 // above how near Tim is to them, empty when the page has no such line.
 func PageName(text string) string {
-	p, _ := Pasted(text, "")
+	p, _ := Pasted(text, "", time.Time{})
 	return p.Name
 }
 

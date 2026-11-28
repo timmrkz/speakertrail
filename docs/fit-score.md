@@ -110,11 +110,15 @@ Writing says more than a like. A reaction counts half as much as a post
 or a comment of the same day, so a comment a week ago can count for
 more than a like yesterday. The kind is read from the profile's
 activity lines, `rubric.Writing`. Exa's index writes the name first,
-like "Erika Beispiel liked this": "liked this" and "reacted on this"
-are a reaction, so is an entry that starts with "Gefällt mir" or
-"Likes". Anything else, like "posted this", "shared this", "reposted
+like "Erika Beispiel liked this": "liked this", "reacted on this",
+"loves this", "finds this insightful" and "gefällt das" are a reaction,
+so is an entry that starts with "Gefällt mir" or "Likes". One rule,
+`rubric.Reaction`, reads Exa's text and a page Tim pasted. Anything else, like "posted this", "shared this", "reposted
 this", "commented on a post" or "replied to a comment", is writing. So
-a word for a reaction the app does not know counts as writing. Whom the
+a word for a reaction the app does not know counts as writing. A page
+Tim pasted has its ages written as days the same way, a Reaction under
+a line of their name and a reaction, like "Mara Beispiel likes this", a
+Post otherwise, see [api.md](api.md). Whom the
 app has no profile text of, mostly people found before 20 November
 2026, counts as reacting, since most people on LinkedIn do not post:
 only 11 of 60 had in six months, in a test on 30 September 2026. A

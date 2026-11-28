@@ -212,3 +212,28 @@ func TestATextCutByExaIsReadAgainOnce(t *testing.T) {
 		}
 	})
 }
+
+// A pasted page says when they were last active, unless Exa knew of
+// something newer, and a page with no Activity keeps what was known
+// (#118).
+func TestAPasteKeepsTheNewestActivity(t *testing.T) {
+	d := &Data{}
+	d.fill()
+	p, _, _ := d.AddLink("https://www.linkedin.com/in/ada-beispiel", "ada-beispiel", 0, t0)
+	page := Pasted{Text: "Ada Beispiel\nYogalehrerin", Name: "Ada Beispiel"}
+	for _, c := range []struct {
+		known, pasted, want time.Time
+	}{
+		{time.Time{}, t0.AddDate(0, 0, -3), t0.AddDate(0, 0, -3)},
+		{t0.AddDate(0, 0, -1), t0.AddDate(0, 0, -3), t0.AddDate(0, 0, -1)},
+		{t0.AddDate(0, 0, -5), t0.AddDate(0, 0, -3), t0.AddDate(0, 0, -3)},
+		{t0.AddDate(0, 0, -5), time.Time{}, t0.AddDate(0, 0, -5)},
+	} {
+		p.LinkedIn.LastActive = c.known
+		page.LastActive = c.pasted
+		d.Paste(p, page, t0)
+		if !p.LinkedIn.LastActive.Equal(c.want) {
+			t.Errorf("known %v, pasted %v: last active %v, want %v", c.known, c.pasted, p.LinkedIn.LastActive, c.want)
+		}
+	}
+}

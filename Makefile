@@ -18,9 +18,6 @@
 #                   itself, see docs/UPDATES.md
 #   make update-key make the key builds are signed with, once, see
 #                   docs/UPDATES.md
-#   make carry-over the people you connected with in the old Docker
-#                   version, into the app. Once, while Docker still has the
-#                   old database
 #   make mock       the interface alone in a browser, with invented data
 #   make test       all tests: lint, unit, interface and walks
 #   make lint       gofmt, go vet and golangci-lint, see .golangci.yml
@@ -88,7 +85,7 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
+.PHONY: all app run install update-key tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
 
 help:
 	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
@@ -175,11 +172,6 @@ ifeq ($(UNAME),Darwin)
 else
 	@echo "make install puts the Mac app in /Applications, and this is not a Mac."
 endif
-
-# The people connected in the old Docker version, read from its database
-# volume and added to the app's file. See scripts/carry-over.sh.
-carry-over: toolchain
-	@sh scripts/carry-over.sh
 
 # The key builds are signed with, made once. It puts the private half on
 # the clipboard, for GitHub's secrets and a password manager, and writes

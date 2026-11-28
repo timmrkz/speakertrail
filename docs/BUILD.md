@@ -68,25 +68,6 @@ It holds real names, so it stays on this Mac and never goes into the
 repository. `SPEAKERTRAIL_DIR` names another folder for the file, for a
 try that should not touch the real one.
 
-## The people connected in the Docker version
-
-The Docker version kept its database in a Docker volume. Once, while
-Docker Desktop still runs and with the app closed:
-
-```
-make carry-over
-```
-
-This reads the people you connected with, or kept before that, out of the
-old database, with Postgres 16 in a container, and adds them to the app as
-connected, with their LinkedIn
-profile and notes. It changes nothing in the old database and is safe to
-repeat. Afterwards Docker is no longer needed, and the old data can go:
-
-```
-docker volume rm speakertrail_postgres
-```
-
 ## Targets
 
 | Command | What it does |
@@ -96,7 +77,6 @@ docker volume rm speakertrail_postgres
 | `make llama` | builds llama-server, when it is not built or `scripts/build-llama.sh` changed. `make` does it by itself on a Mac |
 | `make install` | the same, copied to `/Applications`, where it updates itself |
 | `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
-| `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `lint`, `unit`, `interface` and `walks` |
 | `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |

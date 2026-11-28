@@ -40,7 +40,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 
 | Path | Contents |
 | --- | --- |
-| `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate and screen recordings, and `carry-over` |
+| `cmd/speakertrail-app` | The app: the window, its updates, its log, Report a Problem with Dictate and screen recordings |
 | `cmd/speakertrail-release` | Makes the update key, packs builds in pieces and patches, signs them, writes the channel list, and comments on a pull request that no longer merges into main |
 | `internal/store` | The file: people, searches, runs, settings, the monthly budget |
 | `internal/engine` | Runs: which searches are due, asking them side by side, stopping |
@@ -57,7 +57,7 @@ The engine never requests LinkedIn itself. Profiles come from Exa's index.
 | `internal/fetch` | Downloading a model, resumed where it stopped and checked as it comes |
 | `internal/workflows` | No code, only tests of the workflows: the Go tests held to what CI's filters start, see CI in [docs/BUILD.md](docs/BUILD.md#ci), and the token of `conflicts.yml` kept from a branch, see When main moves in [docs/WORKFLOW.md](docs/WORKFLOW.md#when-main-moves) |
 | `web` | The interface, Svelte 5 with TypeScript |
-| `scripts` | Installing what is missing, building llama-server, bundling the app, the carry-over, the cloud session setup |
+| `scripts` | Installing what is missing, building llama-server, bundling the app, the cloud session setup |
 | `docs` | Building, the API, the search strategy, working with Claude |
 
 The public calendar, the crawler of event pages, post searches and the

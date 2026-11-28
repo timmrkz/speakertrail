@@ -98,6 +98,15 @@ export function standing(
       }
     case 'failed':
       return { mark: 'err', head: 'The check did not get through', more: `${u.problem} ${when(u.checked, now)}`.trim() }
+    // The channel's newest build went in and did not start, so the build
+    // before it was put back, with the app's files. It is not taken by
+    // itself again, and the next build of the channel is.
+    case 'unstarted':
+      return {
+        mark: 'err',
+        head: 'The newest build did not start',
+        more: `${next}. This build was put back, and the next one goes in as usual. ${when(u.checked, now)}`.trim(),
+      }
     case 'current':
       if (building)
         return {

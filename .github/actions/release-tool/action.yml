@@ -1,0 +1,87 @@
+# Puts speakertrail-release on the path for a job that holds a key or a
+# token that writes, without building it from a cache any run on main can
+# write, and without building it in every job. Ported from FrameFairy,
+# see docs/decisions/2026-11-24-the-release-tool-built-once.md and
+# docs/decisions/2026-11-25-the-release-tool-keys-itself.md.
+#
+# The tool is built by release-tool.yml on main, for Linux and for the
+# Mac, signed there with a build attestation, and kept as the assets
+# speakertrail-release-<system>-<processor> of the release release-tool.
+# Each carries the key of what it was built from and the folders it was
+# built from, see cmd/speakertrail-release/self.go, so nothing here names
+# them. This action downloads the one for this runner, checks that the
+# attestation says main's release-tool.yml made it on GitHub's own
+# runner, and asks it whether it is built from the checkout's code. Any
+# branch can upload an asset, since a push runs the branch's own workflow
+# file, but none can make an attestation that says main. An older build
+# of main's carries its own older key, so it does not fit a newer
+# checkout.
+#
+# With no such asset, one that fails the check, or one built from other
+# code, right after a change to the tool, it builds the tool from the
+# checkout with setup-go and no cache, stamped with its key, into a
+# folder of its own, as every such job did before. With download false it
+# only builds: the job that signs the tool as main runs no tool it
+# downloaded.
+name: Release tool
+description: speakertrail-release on the path, as main built and signed it, or built here with no cache
+
+inputs:
+  download:
+    description: false to build the tool here and never run a downloaded one.
+    default: "true"
+
+outputs:
+  built:
+    description: true when no signed build of this code was there and the tool was built here.
+    value: ${{ steps.fits.outputs.fits != 'true' }}
+
+runs:
+  using: composite
+  steps:
+    - id: download
+      if: inputs.download != 'false'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        DIR: ${{ runner.temp }}/release-tool/download
+        NAME: speakertrail-release-${{ runner.os }}-${{ runner.arch }}
+      run: gh release download release-tool --repo "$GITHUB_REPOSITORY" --pattern "$NAME" --dir "$DIR" --clobber
+    - id: verify
+      if: steps.download.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TOOL: ${{ runner.temp }}/release-tool/download/speakertrail-release-${{ runner.os }}-${{ runner.arch }}
+        SIGNER: ${{ github.server_url }}/${{ github.repository }}/.github/workflows/release-tool.yml@refs/heads/main
+      run: gh attestation verify "$TOOL" --repo "$GITHUB_REPOSITORY" --cert-identity "$SIGNER" --source-ref refs/heads/main --deny-self-hosted-runners
+    - if: steps.verify.outcome == 'failure'
+      shell: bash
+      run: echo "::warning::The release tool in the release release-tool is not signed by main's release-tool.yml, so it is not run and is built here."
+    # Under the name the steps after call it by, in a folder of its own,
+    # which fits puts on the path only when it fits.
+    - id: fits
+      if: steps.verify.outcome == 'success'
+      continue-on-error: true
+      shell: bash
+      env:
+        TOOL: ${{ runner.temp }}/release-tool/download/speakertrail-release-${{ runner.os }}-${{ runner.arch }}
+        BIN: ${{ runner.temp }}/release-tool/download/bin
+      run: mkdir -p "$BIN" && mv "$TOOL" "$BIN/speakertrail-release" && chmod +x "$BIN/speakertrail-release" && "$BIN/speakertrail-release" fits
+    - if: steps.fits.outputs.fits != 'true'
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - if: steps.fits.outputs.fits != 'true'
+      shell: bash
+      env:
+        # self builds with no C either way. The same here lets its build
+        # find every package in this one's cache.
+        CGO_ENABLED: "0"
+        # A folder of its own: a download that failed its check stays
+        # where it was put, and is never built over or put on the path.
+        TOOL: ${{ runner.temp }}/release-tool/built/speakertrail-release
+      run: go run -trimpath ./cmd/speakertrail-release self -out "$TOOL"

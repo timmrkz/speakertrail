@@ -62,7 +62,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -91,10 +90,28 @@ func main() {
 		err = sign(os.Args[2:])
 	case "harden":
 		err = harden(os.Args[2:])
-	case "list":
-		err = list(os.Args[2:])
-	case "unreachable":
-		err = unreachableCommand(os.Args[2:])
+	case "signed-before":
+		err = signedBeforeCommand(os.Args[2:])
+	case "channels":
+		err = channelsCommand()
+	case "unstick":
+		err = unstick(gitHubFromEnv(), time.Now(), os.Stdout)
+	case "publish-plan":
+		err = publishPlanCommand(os.Args[2:])
+	case "publish":
+		err = publishCommand(os.Args[2:])
+	case "not-published":
+		err = notPublishedCommand(os.Args[2:])
+	case "needs-build":
+		err = needsBuildCommand(os.Args[2:])
+	case "self":
+		err = selfCommand(os.Args[2:], os.Stdout)
+	case "fits":
+		err = fitsCommand(os.Stdout)
+	case "keep":
+		g := gitHubFromEnv()
+		g.release = toolBuilds
+		err = keepCommand(os.Args[2:], g, os.Stdout)
 	case "conflicts":
 		err = conflictsCommand(os.Args[2:])
 	case "build-plan":
@@ -109,7 +126,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | harden -zip FILE | sign ... | list -out FILE ENTRY... | unreachable -list FILE -assets FILE | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
 	os.Exit(2)
 }
 
@@ -200,13 +217,78 @@ func sign(args []string) error {
 	out := fs.String("out", "", "where the entry goes")
 	team := fs.String("team", "", "refuse a build not signed by this team's Developer ID with the hardened runtime")
 	parts := fs.String("parts", "", "the parts pack wrote, beside the stored zip and the zip packed, if it was packed")
+	made := fs.String("made", "", "when the run that built it was created, RFC 3339, signed as the build's order")
+	current := fs.String("current", "", "the channel's entry on the release now, which a build made before it does not replace")
 	_ = fs.Parse(args)
 	if *team != "" {
 		if err := checkHardened(*zipPath, *team); err != nil {
 			return err
 		}
 	}
-	return signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out)
+	if err := signBuild(*zipPath, *channel, *name, *version, *commit, *where, *parts, *out); err != nil {
+		return err
+	}
+	if *made == "" {
+		return nil
+	}
+	newer, err := orderEntry(*out, *made, *current)
+	if err != nil {
+		return err
+	}
+	if newer != "" {
+		fmt.Printf("::notice::%s\n", newer)
+		return output("newer", "true")
+	}
+	return nil
+}
+
+// orderEntry signs when the build of the entry in out was made, see
+// updates.Order. When current is an entry of the same channel, signed as
+// made after it, it says so, and the build is not to replace it: a run of
+// an older commit made again would otherwise put an older build in a
+// newer one's place. A current entry that cannot be read, or is not
+// signed so, is replaced, since only a signed time says which is newer.
+func orderEntry(out, made, current string) (string, error) {
+	t, err := time.Parse(time.RFC3339, made)
+	if err != nil {
+		return "", fmt.Errorf("-made: %w", err)
+	}
+	private, public, err := keys()
+	if err != nil {
+		return "", err
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		return "", err
+	}
+	var b updates.Build
+	if err := json.Unmarshal(data, &b); err != nil {
+		return "", err
+	}
+	b.Made = t.UTC()
+	b.Order = updates.SignOrder(private, b)
+	if err := updates.VerifyOrder(public, b); err != nil {
+		return "", err
+	}
+	if err := writeJSON(out, b); err != nil {
+		return "", err
+	}
+	if current == "" {
+		return "", nil
+	}
+	data, err = os.ReadFile(current)
+	if err != nil {
+		return "", nil
+	}
+	var now updates.Build
+	if json.Unmarshal(data, &now) != nil || now.Channel != b.Channel || updates.VerifyOrder(public, now) != nil {
+		return "", nil
+	}
+	if now.Made.After(b.Made) {
+		return fmt.Sprintf("The build of %s on the release, %s, was made %s, after this one, made %s, so this one does not replace it.",
+			b.Channel, now.Version, now.Made.Format(time.RFC3339), b.Made.Format(time.RFC3339)), nil
+	}
+	return "", nil
 }
 
 // signBuild signs the zip and writes its entry. With parts, it signs the
@@ -375,157 +457,10 @@ func signStored(private ed25519.PrivateKey, b updates.Build, packed, parts strin
 	}, nil
 }
 
-// list writes the channel list from every channel's entry. Each entry is
-// read with the same rules as the app reads the list, and checked against
-// the public key, so the list never promises a build no app will take.
-func list(args []string) error {
-	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	out := fs.String("out", "", "where the channel list goes")
-	// A channel's newest commit, when it has one still to be built. The
-	// workflow knows which pull requests have one, and the entry, written
-	// when the build was made, cannot.
-	newest := map[string]string{}
-	fs.Func("newest", "a channel's newest commit still to be built, as CHANNEL=COMMIT", func(v string) error {
-		channel, commit, ok := strings.Cut(v, "=")
-		if !ok || !updates.ValidChannel(channel) {
-			return fmt.Errorf("%q is not a channel and a commit", v)
-		}
-		newest[channel] = commit
-		return nil
-	})
-	// The pull requests that no longer merge into main. Like the newest
-	// commit, the workflow knows it when it writes the list, and the
-	// entry cannot.
-	conflict := map[string]bool{}
-	fs.Func("conflict", "a pull request that no longer merges into main, as its channel", func(v string) error {
-		if !updates.ValidChannel(v) || v == "main" {
-			return fmt.Errorf("%q is not the channel of a pull request", v)
-		}
-		conflict[v] = true
-		return nil
-	})
-	// The pull requests that are not open any more, in files as
-	// `gh pr list --json number,state` writes them, so the app can say
-	// whether the one it followed was merged or closed.
-	var ended []string
-	fs.Func("ended", "a file of pull requests that are not open, as gh pr list --json number,state writes it", func(v string) error {
-		ended = append(ended, v)
-		return nil
-	})
-	_ = fs.Parse(args)
-	text, err := os.ReadFile(publicKeyFile)
-	if err != nil {
-		return err
-	}
-	public, err := updates.PublicKey(string(text))
-	if err != nil || public == nil {
-		return fmt.Errorf("no public key in %s", publicKeyFile)
-	}
-	var l updates.List
-	for _, path := range fs.Args() {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		var b updates.Build
-		if err := json.Unmarshal(data, &b); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if err := b.Check(); err != nil {
-			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-			continue
-		}
-		if err := updates.Verify(public, b); err != nil {
-			fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-			continue
-		}
-		// An entry from before claims were made is kept, for the apps
-		// that do not check them yet, and the apps that do leave it alone.
-		// One whose claim is there and wrong is no build of ours.
-		if b.Claim != "" {
-			if err := updates.VerifyClaim(public, b); err != nil {
-				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-				continue
-			}
-		}
-		// The stored zip is what an app that knows parts installs, so its
-		// signature and claim are held the same way.
-		if st, ok := b.AsStored(); ok {
-			if err := errors.Join(updates.Verify(public, st), updates.VerifyClaim(public, st)); err != nil {
-				fmt.Fprintf(os.Stderr, "left out %s: %v\n", path, err)
-				continue
-			}
-		}
-		b.Newest = newest[b.Channel]
-		b.Conflict = conflict[b.Channel]
-		l.Channels = append(l.Channels, b)
-	}
-	// When it was written, so the app can tell the newer of the list's
-	// two copies, see updates.ListCopies.
-	l.Written = time.Now().UTC().Truncate(time.Second)
-	l.Merged, l.Closed = endedPullRequests(ended)
-	data, err := json.Marshal(l)
-	if err != nil {
-		return err
-	}
-	// The same reading the app does, so what is written is what it keeps,
-	// and a newest commit that is not one is not written.
-	parsed, err := updates.Parse(data)
-	if err != nil {
-		return err
-	}
-	return writeJSON(*out, parsed)
-}
-
 func writeJSON(path string, v any) error {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
-}
-
-// endedPullRequests reads the files of pull requests that are not open
-// any more, as `gh pr list --json number,state` writes them, into the
-// channels of those merged and those closed without a merge, newest
-// first. A file that cannot be read says nothing: the list is still
-// written, and the app says a pull request on neither is not open. One
-// GitHub calls open is on neither, since its entry says so.
-func endedPullRequests(paths []string) (merged, closed []string) {
-	seen := map[int]bool{}
-	type pr struct {
-		Number int    `json:"number"`
-		State  string `json:"state"`
-	}
-	var all []pr
-	for _, path := range paths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "no pull requests read from %s: %v\n", path, err)
-			continue
-		}
-		var prs []pr
-		if err := json.Unmarshal(data, &prs); err != nil {
-			fmt.Fprintf(os.Stderr, "no pull requests read from %s: %v\n", path, err)
-			continue
-		}
-		all = append(all, prs...)
-	}
-	slices.SortStableFunc(all, func(a, b pr) int { return b.Number - a.Number })
-	for _, p := range all {
-		channel := fmt.Sprintf("pr-%d", p.Number)
-		if seen[p.Number] || !updates.ValidChannel(channel) {
-			continue
-		}
-		switch p.State {
-		case "MERGED":
-			merged = append(merged, channel)
-		case "CLOSED":
-			closed = append(closed, channel)
-		default:
-			continue
-		}
-		seen[p.Number] = true
-	}
-	return merged, closed
 }

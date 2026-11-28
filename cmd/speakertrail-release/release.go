@@ -3,11 +3,8 @@ package main
 import (
 	"cmp"
 	"encoding/json"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -29,9 +26,12 @@ import (
 // patched against. A build leaves the list when its pull request is
 // merged or a newer commit replaces it, and the app that runs it is then
 // the one most likely to update next, to main after a merge above all.
-// Each costs the publish a bsdiff of a few seconds for each file that
-// changed, four at a time.
-const leftBases = 8
+// Each costs the publish a download and a bsdiff of a few seconds for
+// each file that changed. Tim runs one app, which runs one build, so the
+// last few merges cover it. Eight cost a third of every publish's
+// patches on 27 November 2026, see
+// docs/decisions/2026-11-27-updates-reach-the-app-sooner-and-safer.md.
+const leftBases = 3
 
 // keptFor is how long a file no build reaches stays on the release: a
 // publish that runs beside the clean-up may have uploaded files whose
@@ -270,27 +270,4 @@ func (b bases) readParts(names []string, log io.Writer) map[string]updates.Parts
 		out[name] = p
 	}
 	return out
-}
-
-// unreachableCommand writes the names of the files of the release that no
-// build an app may run reaches, one a line, for gh to remove.
-func unreachableCommand(args []string) error {
-	fs := flag.NewFlagSet("unreachable", flag.ExitOnError)
-	listPath := fs.String("list", "", "the channel list")
-	assetsPath := fs.String("assets", "", "the release's files, as gh release view dev --json assets writes them")
-	from := fs.String("from", updates.EntriesURL, "the folder of the release the parts are read from")
-	_ = fs.Parse(args)
-	if *listPath == "" || *assetsPath == "" {
-		return errors.New("unreachable needs -list and -assets")
-	}
-	r, err := readRelease(*listPath, *assetsPath)
-	if err != nil {
-		return err
-	}
-	b := bases{from: *from, client: &http.Client{}}
-	for _, name := range r.unreachable(b.readParts(r.bases(), os.Stderr), time.Now()) {
-		fmt.Fprintln(os.Stderr, "removing", name)
-		fmt.Println(name)
-	}
-	return nil
 }

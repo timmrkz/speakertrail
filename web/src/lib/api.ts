@@ -87,7 +87,7 @@ export interface Chrome {
   right: number
 }
 
-export type UpdatePhase = '' | 'checking' | 'current' | 'gone' | 'downloading' | 'ready' | 'failed'
+export type UpdatePhase = '' | 'checking' | 'current' | 'gone' | 'downloading' | 'ready' | 'failed' | 'unstarted'
 
 export interface UpdateState {
   version: string

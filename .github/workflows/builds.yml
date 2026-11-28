@@ -43,8 +43,9 @@
 # make it wrong to test.
 #
 # A commit that is built already, or that only changes the docs against
-# the build there is, gets no build of its own. scripts/needs-build.sh
-# decides that for the build and for the list alike.
+# the build there is, gets no build of its own, and no Mac. needs-build
+# in cmd/speakertrail-release decides that for the build and for the list
+# alike.
 #
 # Two jobs:
 #
@@ -82,7 +83,9 @@ jobs:
       channel: ${{ steps.which.outputs.channel }}
       number: ${{ steps.which.outputs.number }}
       sha: ${{ steps.which.outputs.sha }}
-      build: ${{ steps.which.outputs.build }}
+      # needs says false for a commit that needs no build of its own, and
+      # nothing when it did not run.
+      build: ${{ steps.needs.outputs.build || steps.which.outputs.build }}
     # A close builds nothing, so nothing here runs for it, and build stays
     # empty. The checkout is the commit pushed, or for a pull request the
     # merge GitHub made, whose workflow this is, so the tool and this file
@@ -113,6 +116,22 @@ jobs:
           -event "$EVENT" -action "$ACTION" -branch "$BRANCH"
           -commit "$SHA" -number "$NUMBER" -pushed "$PUSHED"
 
+      # A pull request's commit that is built already, or that only changes
+      # the docs against the build there is, gets no build of its own, and
+      # Tim no restart for nothing. It is measured against the build and
+      # not against the push before. Asked here, on Linux, so such a
+      # commit starts no Mac. See needsBuild in needs.go.
+      - id: needs
+        if: steps.which.outputs.build == 'true' && steps.which.outputs.channel != 'main'
+        name: Does this commit need a build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CHANNEL: ${{ steps.which.outputs.channel }}
+          SHA: ${{ steps.which.outputs.sha }}
+        run: go run ./cmd/speakertrail-release needs-build -channel "$CHANNEL" -commit "$SHA"
+
+
   build:
     needs: which
     if: needs.which.outputs.build == 'true'
@@ -125,8 +144,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The branch as it is, not merged with main: the build Tim tests is
-          # the pull request's own. The history of both commits is fetched
-          # by needs-build.sh when it asks.
+          # the pull request's own.
           ref: ${{ needs.which.outputs.sha }}
 
       # Only the public half is looked at here. The private half is
@@ -141,41 +159,8 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      # A pull request's commit that is built already, or that only changes
-      # the docs against the build there is, gets no build of its own, and
-      # Tim no restart for nothing. It is measured against the build and
-      # not against the push before. main is always built.
-      - id: needs
-        if: steps.key.outputs.ready == 'true'
-        name: Does this commit need a build
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          CHANNEL: ${{ needs.which.outputs.channel }}
-          SHA: ${{ needs.which.outputs.sha }}
-        run: |
-          run=true
-          if [ "$CHANNEL" != main ]; then
-            built=""
-            if gh release download dev --pattern "channel-$CHANNEL.json" --dir built 2>/dev/null; then
-              built=$(jq -r '.commit // empty' "built/channel-$CHANNEL.json")
-            fi
-            rm -rf built
-            case $(sh scripts/needs-build.sh "$built" "$SHA") in
-            built)
-              echo "::notice::$SHA is built already."
-              run=false
-              ;;
-            docs)
-              echo "::notice::Only the docs changed against the build there is, so this commit has no build of its own."
-              run=false
-              ;;
-            esac
-          fi
-          echo "run=$run" >> "$GITHUB_OUTPUT"
-
       - id: what
-        if: steps.needs.outputs.run == 'true'
+        if: steps.key.outputs.ready == 'true'
         name: What this build is
         env:
           NUMBER: ${{ needs.which.outputs.number }}
@@ -202,11 +187,11 @@ jobs:
             echo "commit=$(echo "$SHA" | cut -c1-12)"
           } >> "$GITHUB_OUTPUT"
 
-      - if: steps.needs.outputs.run == 'true'
+      - if: steps.key.outputs.ready == 'true'
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - if: steps.needs.outputs.run == 'true'
+      - if: steps.key.outputs.ready == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -216,14 +201,14 @@ jobs:
       # The llama-server the app carries takes minutes to build, so it is
       # kept until scripts/build-llama.sh changes, the rule make llama
       # follows too. See docs/BUILD.md.
-      - if: steps.needs.outputs.run == 'true'
+      - if: steps.key.outputs.ready == 'true'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .build/llama
           key: llama-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-llama.sh') }}
 
       - name: The app
-        if: steps.needs.outputs.run == 'true'
+        if: steps.key.outputs.ready == 'true'
         run: >-
           make app
           BUILD_VERSION='${{ steps.what.outputs.version }}'
@@ -237,7 +222,7 @@ jobs:
       # program, not in attributes, so nothing is lost. The zip is named and
       # signed by publish.yml.
       - id: zip
-        if: steps.needs.outputs.run == 'true'
+        if: steps.key.outputs.ready == 'true'
         name: Pack it
         run: |
           mkdir -p dist

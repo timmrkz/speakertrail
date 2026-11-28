@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/timmrkz/speakertrail/internal/updates"
 )
@@ -171,23 +172,7 @@ func TestTheListLeavesOutABadStoredZip(t *testing.T) {
 		spoil(&b)
 		entries["channel-"+name+".json"] = mustMarshal(t, b)
 	}
-	var paths []string
-	for name, data := range entries {
-		path := filepath.Join(t.TempDir(), name)
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-		paths = append(paths, path)
-	}
-	out = filepath.Join(t.TempDir(), "channels.json")
-	if err := list(append([]string{"-out", out}, paths...)); err != nil {
-		t.Fatal(err)
-	}
-	written, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	l, err := updates.Parse(written)
+	l, err := makeList(entries, nil, nil, nil, private.Public().(ed25519.PublicKey), time.Date(2026, 11, 27, 21, 0, 0, 0, time.UTC), io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}

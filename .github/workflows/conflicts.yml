@@ -68,10 +68,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+      # No cache: this job holds a token that writes comments, and main's
+      # Go cache is written by jobs that run third-party build code, #55.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - name: Tell each pull request that no longer merges
         env:
           GH_TOKEN: ${{ github.token }}

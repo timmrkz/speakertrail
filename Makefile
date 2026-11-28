@@ -88,7 +88,7 @@ GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -na
 .PHONY: all app run install update-key tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
 
 help:
-	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,30p' Makefile | sed 's/^# \{0,1\}//'
 
 all: app
 

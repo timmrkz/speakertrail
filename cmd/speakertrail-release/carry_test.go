@@ -83,18 +83,28 @@ type server struct {
 	failing int
 }
 
-func (s *server) fetch(url string, w io.Writer) error {
+// get carries on from what path holds, as fetch.Getter does.
+func (s *server) get(url string, expect int64, path, _ string) error {
 	s.mu.Lock()
 	s.asked = append(s.asked, url)
 	failing := s.failing > 0
 	s.failing--
 	s.mu.Unlock()
+	if expect != int64(len(s.archive)) {
+		return errors.New("asked for the wrong size")
+	}
 	if failing {
-		_, _ = w.Write([]byte("half"))
+		have, _ := os.ReadFile(path)
+		n := min(len(have)+4, len(s.archive))
+		_ = os.WriteFile(path, s.archive[:n], 0o644)
 		return errors.New("connection reset")
 	}
-	_, err := w.Write(s.archive)
-	return err
+	return os.WriteFile(path, s.archive, 0o644)
+}
+
+// pinOf is the pin of an archive, its sum and size.
+func pinOf(archive []byte) speechPin {
+	return speechPin{"osx-arm64", hexSum(archive), "libsherpa-onnx-c-api.dylib", int64(len(archive))}
 }
 
 // The speech library without espeak-ng is fetched once, from
@@ -106,10 +116,10 @@ func TestTheSpeechLibraryIsFetchedOnce(t *testing.T) {
 	t.Parallel()
 	archive := theRelease(t, "speech")
 	s := &server{archive: archive}
-	pin := speechPin{"osx-arm64", hexSum(archive), "libsherpa-onnx-c-api.dylib"}
+	pin := pinOf(archive)
 	dir := t.TempDir()
 	var said bytes.Buffer
-	got, err := speechLibs(dir, "v2.0.1", pin, s.fetch, &said)
+	got, err := speechLibs(dir, "v2.0.1", pin, s.get, &said)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +140,7 @@ func TestTheSpeechLibraryIsFetchedOnce(t *testing.T) {
 	}
 
 	said.Reset()
-	if again, err := speechLibs(dir, "v2.0.1", pin, s.fetch, &said); err != nil || again != got {
+	if again, err := speechLibs(dir, "v2.0.1", pin, s.get, &said); err != nil || again != got {
 		t.Errorf("the second build got %s, %v", again, err)
 	}
 	if len(s.asked) != 1 || said.Len() != 0 {
@@ -145,9 +155,9 @@ func TestAChangedSpeechLibraryIsUnpackedAgain(t *testing.T) {
 	t.Parallel()
 	archive := theRelease(t, "speech")
 	s := &server{archive: archive}
-	pin := speechPin{"osx-arm64", hexSum(archive), "libsherpa-onnx-c-api.dylib"}
+	pin := pinOf(archive)
 	dir := t.TempDir()
-	got, err := speechLibs(dir, "v2.0.1", pin, s.fetch, io.Discard)
+	got, err := speechLibs(dir, "v2.0.1", pin, s.get, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +165,7 @@ func TestAChangedSpeechLibraryIsUnpackedAgain(t *testing.T) {
 	if err := os.WriteFile(lib, []byte("changed"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := speechLibs(dir, "v2.0.1", pin, s.fetch, io.Discard); err != nil {
+	if _, err := speechLibs(dir, "v2.0.1", pin, s.get, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(lib); string(b) != "speech" {
@@ -181,9 +191,9 @@ func TestASpeechLibraryNotCheckedIsRefused(t *testing.T) {
 		{"another file", good, hexSum([]byte("other")), 0, "is not the file that was checked"},
 		{"still carrying espeak-ng", theRelease(t, "speech espeak-ng speech"), "", 0, "still carries espeak-ng"},
 		{"without the library", tarBzip2(t, entry{name: testRelease + "/lib/libonnxruntime.dylib", body: "x"}), "", 0, "holds no libsherpa-onnx-c-api.dylib"},
-		{"with a file outside its folder", tarBzip2(t, entry{name: testRelease + "/../evil", body: "x"}), "", 0, "outside"},
-		{"with a file in another folder", tarBzip2(t, entry{name: "other/lib/x", body: "x"}), "", 0, "outside"},
-		{"with a link", tarBzip2(t, entry{name: testRelease + "/lib/libsherpa-onnx-c-api.dylib", link: "/etc/passwd"}), "", 0, "neither a file nor a folder"},
+		{"with a file outside its folder", tarBzip2(t, entry{name: "../evil", body: "x"}), "", 0, "refusing to write outside"},
+		{"with the library in another folder", tarBzip2(t, entry{name: "other/lib/libsherpa-onnx-c-api.dylib", body: "x"}), "", 0, "holds no libsherpa-onnx-c-api.dylib"},
+		{"with the library as a link", tarBzip2(t, entry{name: testRelease + "/lib/libsherpa-onnx-c-api.dylib", link: "/etc/passwd"}), "", 0, "holds no libsherpa-onnx-c-api.dylib"},
 		{"never fetched", good, "", 3, "connection reset"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -194,28 +204,25 @@ func TestASpeechLibraryNotCheckedIsRefused(t *testing.T) {
 			}
 			s := &server{archive: c.archive, failing: c.failing}
 			dir := t.TempDir()
-			_, err := speechLibs(dir, "v2.0.1", speechPin{"osx-arm64", sum, "libsherpa-onnx-c-api.dylib"}, s.fetch, io.Discard)
+			_, err := speechLibs(dir, "v2.0.1", speechPin{"osx-arm64", sum, "libsherpa-onnx-c-api.dylib", int64(len(c.archive))}, s.get, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("got %v, want %q", err, c.want)
 			}
 			if _, err := os.Stat(filepath.Join(dir, testRelease+".ok")); !errors.Is(err, os.ErrNotExist) {
 				t.Errorf("a stamp was written: %v", err)
 			}
-			if _, err := os.Stat(filepath.Join(dir, testRelease+".tar.bz2.part")); !errors.Is(err, os.ErrNotExist) {
-				t.Errorf("the part of the download is left: %v", err)
-			}
 		})
 	}
 }
 
 // A download that breaks off is tried again, three times in all, as
-// curl --retry 2 did.
+// curl --retry 2 did, each carrying on from what came before.
 func TestABrokenDownloadIsTriedAgain(t *testing.T) {
 	t.Parallel()
 	archive := theRelease(t, "speech")
 	s := &server{archive: archive, failing: 2}
-	pin := speechPin{"osx-arm64", hexSum(archive), "libsherpa-onnx-c-api.dylib"}
-	if _, err := speechLibs(t.TempDir(), "v2.0.1", pin, s.fetch, io.Discard); err != nil {
+	pin := pinOf(archive)
+	if _, err := speechLibs(t.TempDir(), "v2.0.1", pin, s.get, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if len(s.asked) != 3 {

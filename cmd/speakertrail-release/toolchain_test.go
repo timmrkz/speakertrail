@@ -63,8 +63,6 @@ func TestABuildNeedsEverythingItNeeds(t *testing.T) {
 		fix string
 	}{
 		{"a Mac with everything", fakeMachine("darwin", "go1.27.1", []string{"node", "cmake"}, mac), ""},
-		{"a newer Go", fakeMachine("darwin", "go1.28rc1", []string{"node", "cmake"}, mac), ""},
-		{"an old Go", fakeMachine("darwin", "go1.26.3", []string{"node", "cmake"}, mac), "brew upgrade go"},
 		{"no Node.js", fakeMachine("darwin", "go1.27.1", []string{"cmake"}, mac), "brew install node"},
 		{"an old Node.js", fakeMachine("darwin", "go1.27.1", []string{"node", "cmake"}, with(with(mac, nodeMajor, "20"), nodeV, "v20.1.0")), "brew upgrade node"},
 		{"a Node.js that says nothing", fakeMachine("darwin", "go1.27.1", []string{"node", "cmake"}, without(mac, nodeMajor)), "brew upgrade node"},
@@ -109,15 +107,15 @@ func TestCheckSaysEverythingAndNeverFails(t *testing.T) {
 		}
 	}
 
-	none := fakeMachine("darwin", "go1.26.0", nil, nil)
+	none := fakeMachine("darwin", "go1.27.1", nil, nil)
 	out.Reset()
 	if err := report(&out, survey(none), true); err != nil {
 		t.Errorf("make check failed: %v", err)
 	}
-	if strings.Contains(out.String(), "Everything is here.") || strings.Count(out.String(), "missing") != 4 {
-		t.Errorf("want four things missing, got %q", out.String())
+	if strings.Contains(out.String(), "Everything is here.") || strings.Count(out.String(), "missing") != 3 {
+		t.Errorf("want three things missing, got %q", out.String())
 	}
-	if !strings.Contains(out.String(), "Go 1.27 or newer, found 1.26.0") {
-		t.Errorf("want the Go found said, got %q", out.String())
+	if !strings.Contains(out.String(), "Node.js 22 or newer, for the interface\n           brew install node") {
+		t.Errorf("want what gets Node.js said, got %q", out.String())
 	}
 }

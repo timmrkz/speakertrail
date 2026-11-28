@@ -24,9 +24,8 @@ package main
 // only ever ran them on a Mac, so that half did not come along.
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/bzip2"
+	"context"
 	"crypto/sha256"
 	"debug/macho"
 	"encoding/hex"
@@ -34,14 +33,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
 	"strings"
-	"time"
+
+	"github.com/timmrkz/speakertrail/internal/fetch"
 )
 
 // speechModule is the Go module whose libraries the program is linked
@@ -49,18 +48,29 @@ import (
 const speechModule = "github.com/k2-fsa/sherpa-onnx-go-macos/v2"
 
 // speechPin is one archive of sherpa-onnx's release built without speech
-// synthesis: its platform in the archive's name, its SHA-256, and the
-// library in it that is read back for espeak-ng.
+// synthesis: its platform in the archive's name, its SHA-256 and size, and
+// the library in it that is read back for espeak-ng.
 type speechPin struct {
 	platform, sum, lib string
+	size               int64
 }
 
 // speechPins are the archives checked so far, by Go's name for the
-// system. The sums are of the v2.0.1 archives, read on 28 November 2026
-// and matching what speech-libs.sh had pinned.
+// system. The sum is of the v2.0.1 archive, read on 28 November 2026 and
+// matching what speech-libs.sh had pinned. speech-libs.sh also pinned the
+// Linux archive, which make never asked for, so it did not come along.
 var speechPins = map[string]speechPin{
-	"darwin/arm64": {"osx-arm64", "ac5594ad237db56ec4a6c4b3fc48700441b33a07bb71c235f35530a52a93f2e3", "libsherpa-onnx-c-api.dylib"},
-	"linux/amd64":  {"linux-x64", "ce437357915491e6f2754b52bec7dcf62ff6fc6aaed9cdcd66f17807bbaef374", "libsherpa-onnx-c-api.so"},
+	"darwin/arm64": {"osx-arm64", "ac5594ad237db56ec4a6c4b3fc48700441b33a07bb71c235f35530a52a93f2e3", "libsherpa-onnx-c-api.dylib", 8455084},
+}
+
+// getter fetches a file to path, as fetch.Getter.Get does, so a test can
+// be the network.
+type getter func(url string, expect int64, path, what string) error
+
+// getHTTP is fetch.Getter, the way the app fetches its models.
+func getHTTP(url string, expect int64, path, what string) error {
+	_, err := fetch.Getter{}.Get(context.Background(), url, expect, path, what)
+	return err
 }
 
 // speechLibs gives the folder holding the speech libraries to ship,
@@ -78,7 +88,7 @@ var speechPins = map[string]speechPin{
 //
 // The archive is pinned by its SHA-256, and what is inside is read back:
 // a library that still carries espeak-ng is refused.
-func speechLibs(dir, version string, pin speechPin, fetch func(url string, w io.Writer) error, say io.Writer) (string, error) {
+func speechLibs(dir, version string, pin speechPin, get getter, say io.Writer) (string, error) {
 	name := fmt.Sprintf("sherpa-onnx-%s-%s-shared-no-tts-lib", version, pin.platform)
 	out := filepath.Join(dir, name, "lib")
 	lib := filepath.Join(out, pin.lib)
@@ -103,7 +113,7 @@ func speechLibs(dir, version string, pin speechPin, fetch func(url string, w io.
 	if got, _ := sumOfFile(archive); got != pin.sum {
 		fmt.Fprintf(say, "Fetching the speech library without speech synthesis, %s\n", name)
 		url := fmt.Sprintf("https://github.com/k2-fsa/sherpa-onnx/releases/download/%s/%s.tar.bz2", version, name)
-		if err := fetchTo(url, archive, fetch); err != nil {
+		if err := getTo(url, pin.size, archive, name, get); err != nil {
 			return "", err
 		}
 	}
@@ -119,7 +129,7 @@ func speechLibs(dir, version string, pin speechPin, fetch func(url string, w io.
 	if err := os.RemoveAll(filepath.Join(dir, name)); err != nil {
 		return "", err
 	}
-	if err := untarBzip2(archive, dir, name); err != nil {
+	if err := fetch.UnpackTarBz2(context.Background(), archive, dir, nil); err != nil {
 		return "", fmt.Errorf("%s.tar.bz2: %w", name, err)
 	}
 	data, err := os.ReadFile(lib)
@@ -151,95 +161,20 @@ func sumOfFile(name string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// fetchTo downloads url to the file to, through a file beside it, so a
+// getTo downloads url to the file to, through a file beside it, so a
 // download that breaks off leaves nothing under the name. It is tried
-// three times, as curl --retry 2 did.
-func fetchTo(url, to string, fetch func(url string, w io.Writer) error) error {
+// three times, as curl --retry 2 did, each carrying on from where the one
+// before stopped, and what arrived stays for the next build to carry on
+// from, as the app's downloads do.
+func getTo(url string, size int64, to, what string, get getter) error {
 	part := to + ".part"
 	var err error
 	for range 3 {
-		if err = fetchOnce(url, part, fetch); err == nil {
+		if err = get(url, size, part, what); err == nil {
 			return os.Rename(part, to)
 		}
 	}
-	_ = os.Remove(part)
 	return err
-}
-
-func fetchOnce(url, part string, fetch func(url string, w io.Writer) error) error {
-	f, err := os.Create(part)
-	if err != nil {
-		return err
-	}
-	err = fetch(url, f)
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
-	}
-	return err
-}
-
-// fetchHTTP downloads url into w.
-func fetchHTTP(url string, w io.Writer) error {
-	client := http.Client{Timeout: 10 * time.Minute}
-	r, err := client.Get(url)
-	if err != nil {
-		return err
-	}
-	defer r.Body.Close()
-	if r.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s: %s", url, r.Status)
-	}
-	_, err = io.Copy(w, r.Body)
-	return err
-}
-
-// untarBzip2 unpacks the archive into dir. Everything in it has to be
-// inside top, and be a folder or a file. The archive is pinned by its
-// sum, so this never meets anything else, and is never asked to.
-func untarBzip2(archive, dir, top string) error {
-	f, err := os.Open(archive)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	r := tar.NewReader(bzip2.NewReader(f))
-	for {
-		h, err := r.Next()
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		name := filepath.Clean(filepath.FromSlash(h.Name))
-		if !filepath.IsLocal(name) || (name != top && !strings.HasPrefix(name, top+string(filepath.Separator))) {
-			return fmt.Errorf("it holds %s, outside %s", h.Name, top)
-		}
-		at := filepath.Join(dir, name)
-		switch h.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(at, 0o755); err != nil {
-				return err
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(at), 0o755); err != nil {
-				return err
-			}
-			out, err := os.OpenFile(at, os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(h.Mode)&0o755|0o600)
-			if err != nil {
-				return err
-			}
-			_, err = io.Copy(out, r)
-			if closeErr := out.Close(); err == nil {
-				err = closeErr
-			}
-			if err != nil {
-				return err
-			}
-		default:
-			return fmt.Errorf("it holds %s, which is neither a file nor a folder", h.Name)
-		}
-	}
 }
 
 // buildTools runs the Mac's own tools a build uses, by their full path,
@@ -515,7 +450,7 @@ func carryLibsCommand(args []string) error {
 	// system with no pin carries them, and a failed fetch stops here.
 	ship := from
 	if pin, ok := speechPins[runtime.GOOS+"/"+runtime.GOARCH]; ok {
-		if ship, err = speechLibs(filepath.Join(".build", "speech"), version, pin, fetchHTTP, os.Stderr); err != nil {
+		if ship, err = speechLibs(filepath.Join(".build", "speech"), version, pin, getHTTP, os.Stderr); err != nil {
 			return err
 		}
 	} else {

@@ -6,9 +6,12 @@ package main
 // with -all. It was scripts/check.sh, and moved here with #57, so the
 // rule of what a build needs is Go with a test.
 //
-// Go is asked about itself: the Go that runs this is the Go make builds
-// with, since make runs it with go run. A Go older than go.mod asks for
-// never gets this far, go run says so itself.
+// Go is not checked, only said: the Go that runs this is the Go make
+// builds with, since make runs it with go run, and a Go older than go.mod
+// asks for never gets this far. go run refuses it with GOTOOLCHAIN=local,
+// or switches to the Go go.mod names with auto. A Mac with no Go at all
+// gets it from make tools before this runs. check.sh said "brew install
+// go" for that, which only make check without make tools can miss now.
 
 import (
 	"flag"
@@ -20,17 +23,14 @@ import (
 	"strings"
 )
 
-// The oldest Go and Node.js a build works with. Go's is the go line of
-// go.mod, Node's what Vite asks for.
-const (
-	minGoMinor = 27
-	minNode    = 22
-)
+// The oldest Node.js a build works with, what Vite asks for.
+const minNode = 22
 
 // machine is what toolchain asks of the computer it runs on, so a test
 // can be any computer.
 type machine struct {
-	goos      string
+	goos string
+	// goVersion is the Go this runs with, runtime.Version().
 	goVersion string
 	// has says whether a program is on the path.
 	has func(name string) bool
@@ -67,15 +67,7 @@ type tool struct {
 
 // survey finds what a build needs on m, in the order it is said.
 func survey(m machine) []tool {
-	var tools []tool
-	goTool := tool{what: fmt.Sprintf("Go 1.%d or newer", minGoMinor), fix: "brew upgrade go"}
-	version := strings.TrimPrefix(m.goVersion, "go")
-	if minor, ok := goMinor(version); ok && minor >= minGoMinor {
-		goTool = tool{what: "Go " + version, ok: true}
-	} else {
-		goTool.found = version
-	}
-	tools = append(tools, goTool)
+	tools := []tool{{what: "Go " + strings.TrimPrefix(m.goVersion, "go"), ok: true}}
 
 	node := tool{what: fmt.Sprintf("Node.js %d or newer, for the interface", minNode), fix: "brew install node"}
 	if m.has("node") {
@@ -104,23 +96,6 @@ func survey(m machine) []tool {
 		tools = append(tools, tool{what: "GTK 4 and WebKitGTK 6, for the app's window", ok: err == nil, fix: "sudo apt install libgtk-4-dev libwebkitgtk-6.0-dev"})
 	}
 	return tools
-}
-
-// goMinor is the minor version of a Go version like 1.27.1 or 1.28rc1.
-func goMinor(version string) (int, bool) {
-	parts := strings.SplitN(version, ".", 3)
-	if len(parts) < 2 || parts[0] != "1" {
-		return 0, false
-	}
-	digits := parts[1]
-	for i, r := range digits {
-		if r < '0' || r > '9' {
-			digits = digits[:i]
-			break
-		}
-	}
-	n, err := strconv.Atoi(digits)
-	return n, err == nil
 }
 
 // report writes what survey found. Without all, only what is missing,

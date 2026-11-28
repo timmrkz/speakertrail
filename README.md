@@ -12,8 +12,7 @@ make run
 ```
 
 builds the app and opens it. [docs/BUILD.md](docs/BUILD.md) has the rest:
-the first start, where things are kept, and how to bring over the people
-connected in the Docker version.
+the first start and where things are kept.
 
 ## How it works
 

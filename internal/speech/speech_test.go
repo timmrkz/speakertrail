@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/timmrkz/speakertrail/internal/fetch"
 )
 
 // Ported from FrameFairy's engine/speech_test.go.
@@ -446,7 +448,7 @@ func TestAnArchiveCannotWriteOutsideWhereItIsPut(t *testing.T) {
 			if err := os.WriteFile(archive, modelArchive(t, map[string]string{name: "got out"}), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			_ = unpackTarBz2(context.Background(), archive, into, nil)
+			_ = fetch.UnpackTarBz2(context.Background(), archive, into, nil)
 			body, _ := os.ReadFile(guard)
 			if string(body) != "untouched" {
 				t.Fatalf("%s wrote over a file outside the folder", name)
@@ -484,7 +486,7 @@ func TestLinksInAnArchiveAreNotWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	into := filepath.Join(dir, "into")
-	if err := unpackTarBz2(context.Background(), archive, into, nil); err != nil {
+	if err := fetch.UnpackTarBz2(context.Background(), archive, into, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(filepath.Join(into, "escape")); err == nil {

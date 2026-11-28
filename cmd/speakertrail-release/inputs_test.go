@@ -495,8 +495,8 @@ func TestABuildThatLooksForLibrariesOutsideItselfIsFound(t *testing.T) {
 		{"the app as it is", exe, bundled.bytes(), nil},
 		{"the speech library as it is", lib, looking(speech, "@loader_path"), nil},
 		{"elsewhere inside the app", exe, looking(app, "@executable_path/../Resources", "@executable_path/../.."), nil},
-		// carry-libs.sh takes it out, and its --verify refuses a program
-		// still looking there, on the Mac that builds it. This is the
+		// carry-libs takes it out, and it and bundle refuse a program
+		// still looking there, on the Mac that builds it, see verifyLibs. This is the
 		// wall after that one.
 		{"the module cache of the Mac that built it", exe, looking(app, "@executable_path/../Frameworks", gomc),
 			[]string{"looks for libraries outside the build, in " + gomc}},
@@ -676,29 +676,19 @@ func TestABuildWithALinkIsNotSigned(t *testing.T) {
 	}
 }
 
-// What bundle-macos.sh writes as the app's Info.plist asks for nothing
+// What bundle writes as the app's Info.plist asks for nothing
 // the lists refuse, so a pull request that adds a reason for the camera or
 // the screen fails here, before its build is refused.
-//
-// On the real disk: what this reads is the script that writes Info.plist.
 func TestTheShippedInfoPlistAsksForNothingRefused(t *testing.T) {
-	script, err := os.ReadFile("../../scripts/bundle-macos.sh")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, plist, ok := strings.Cut(string(script), "<<PLIST\n")
-	plist, _, found := strings.Cut(plist, "\nPLIST\n")
-	if !ok || !found {
-		t.Fatal("scripts/bundle-macos.sh writes no Info.plist between <<PLIST and PLIST")
-	}
-	keys, err := plistKeys([]byte(plist))
+	plist := thePlist("0.1.0-main.8141ac9", true)
+	keys, err := plistKeys(plist)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(keys, "CFBundleIdentifier") {
 		t.Fatalf("read %q from it, which is not the app's Info.plist", keys)
 	}
-	if got := inputsOf("Speaker Trail.app/Contents/Info.plist", []byte(plist)); got != nil {
+	if got := inputsOf("Speaker Trail.app/Contents/Info.plist", plist); got != nil {
 		t.Errorf("the app's Info.plist %s", strings.Join(got, ", "))
 	}
 }

@@ -57,16 +57,6 @@ func main() {
 	// every Relaunch.
 	installIfAsked()
 	go tidyTemp(os.TempDir(), time.Now())
-	// make carry-over hands over the people connected in the Docker version,
-	// see scripts/carry-over.sh. It writes the app's file, opens no window
-	// and says what went wrong in the terminal it was started in.
-	if len(os.Args) == 2 && os.Args[1] == "carry-over" {
-		if err := carryOver(os.Stdin); err != nil {
-			fmt.Fprintln(os.Stderr, "carrying over failed:", err)
-			os.Exit(1)
-		}
-		return
-	}
 	theLog.started()
 	// A build on trial counts its start, and one that did not start
 	// twice puts the build before back and ends here, before it reads the
@@ -386,35 +376,6 @@ func open() (*apipkg.API, *engine.Engine, string, error) {
 	a := apipkg.New(st, e, exa, theLog.slog("api", zerolog.TraceLevel))
 	a.Browsers = apipkg.Mac{Support: browser.Support()}
 	return a, e, dir, nil
-}
-
-// carryOver adds the people connected in the Docker version, read as
-// JSON.
-func carryOver(r io.Reader) error {
-	var people []store.Carried
-	if err := json.NewDecoder(r).Decode(&people); err != nil {
-		return fmt.Errorf("the people from the old database cannot be read: %w", err)
-	}
-	dir, err := Folder()
-	if err != nil {
-		return err
-	}
-	st, err := store.Open(dir, nil)
-	if err != nil {
-		return err
-	}
-	var added, there int
-	if err := st.Update(func(d *store.Data) error {
-		if err := d.Start(st.Now()); err != nil {
-			return err
-		}
-		added, there = d.CarryOver(people, st.Now())
-		return nil
-	}); err != nil {
-		return err
-	}
-	fmt.Printf("Carried over %d connected people, %d were here already. They are in %s\n", added, there, st.Path())
-	return nil
 }
 
 // handler answers everything the window asks for: /api/ goes to api, the

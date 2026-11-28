@@ -33,7 +33,7 @@ import (
 // microphone in a box of its own on every launch, naming the page as
 // wails://wails, and Wails has no way to answer it on a Mac. A recording
 // made by the app gets the one prompt from macOS, with the words of
-// NSMicrophoneUsageDescription in scripts/bundle-macos.sh, and macOS
+// NSMicrophoneUsageDescription in cmd/speakertrail-release/bundle.go, and macOS
 // remembers the answer.
 
 // listenMost is the most of a recording held at once, ten minutes, 38 MB

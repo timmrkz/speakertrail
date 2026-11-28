@@ -1,6 +1,8 @@
 // Command speakertrail-release makes the update key, and signs and lists the
 // builds the app updates itself to. It is not shipped. Tim runs it once, to
 // make the key, and the publish workflow runs the rest. See docs/UPDATES.md.
+// make runs it too, to check the toolchain, carry the speech library and
+// bundle the app on a Mac, see docs/BUILD.md.
 //
 //	speakertrail-release key
 //	    make an update key: the public half into the repository, the
@@ -44,6 +46,18 @@
 //	    say to builds.yml what its run is a build of, main, a pull
 //	    request or nothing, built by a push or by an opening and never by
 //	    both, see plan.go
+//	speakertrail-release carry-libs PROGRAM LIBDIR
+//	    copy the speech library without espeak-ng beside the program, in
+//	    LIBDIR, point the program at it rather than at the Go module
+//	    cache, and read it back, on a Mac, see carry.go
+//	speakertrail-release bundle BINDIR VERSION
+//	    put the program, llama-server and the speech library in BINDIR
+//	    into Speaker Trail.app, sign it ad hoc and read it back, on a
+//	    Mac, see bundle.go
+//	speakertrail-release toolchain [-all]
+//	    say what this machine is missing for a build, and fail when it
+//	    misses anything, or with -all say everything found and never
+//	    fail, see toolchain.go
 package main
 
 import (
@@ -116,6 +130,12 @@ func main() {
 		err = conflictsCommand(os.Args[2:])
 	case "build-plan":
 		err = planCommand(os.Args[2:])
+	case "carry-libs":
+		err = carryLibsCommand(os.Args[2:])
+	case "bundle":
+		err = bundleCommand(os.Args[2:], os.Stdout)
+	case "toolchain":
+		err = toolchainCommand(os.Args[2:], os.Stdout)
 	default:
 		usage()
 	}
@@ -126,7 +146,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ... | carry-libs PROGRAM LIBDIR | bundle BINDIR VERSION | toolchain [-all]")
 	os.Exit(2)
 }
 

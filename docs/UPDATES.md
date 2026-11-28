@@ -116,7 +116,7 @@ Only what changed, and of a file that changed, only the difference.
 - **The programs ship lean.** The app program is built without its
   debug information and without the commit Go stamps in, `-s -w
   -buildvcs=false`, and the speech libraries lose their local symbols,
-  `strip -x` in `scripts/carry-libs.sh`. A build whose code did not
+  `strip -x` in `speakertrail-release carry-libs`. A build whose code did not
   change then has the same bytes as the one before.
 - **Each file is a piece.** `pack` writes the build again as a zip that
   stores its files as they are, and beside it its parts: that zip in

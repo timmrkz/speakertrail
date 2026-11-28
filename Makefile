@@ -18,9 +18,6 @@
 #                   itself, see docs/UPDATES.md
 #   make update-key make the key builds are signed with, once, see
 #                   docs/UPDATES.md
-#   make carry-over the people you connected with in the old Docker
-#                   version, into the app. Once, while Docker still has the
-#                   old database
 #   make mock       the interface alone in a browser, with invented data
 #   make test       all tests: lint, unit, interface and walks
 #   make lint       gofmt, go vet and golangci-lint, see .golangci.yml
@@ -69,7 +66,7 @@ ifeq ($(UNAME),Darwin)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 # -headerpad_max_install_names leaves room in the program's header for the
-# paths carry-libs.sh adds, where it looks for the speech library. Go
+# paths carry-libs adds, where it looks for the speech library. Go
 # leaves that room by itself only while it keeps the debug information,
 # which the app no longer has, see APP_LDFLAGS. Without it
 # install_name_tool has no room and the app cannot find its library, as
@@ -88,10 +85,10 @@ UI_BUILT := web/dist/index.html
 # key builds the app again.
 GO_SOURCES := $(shell find cmd internal web -name '*.go' -o -name '*.csv' -o -name '*.txt' 2>/dev/null) go.mod go.sum
 
-.PHONY: all app run install update-key carry-over tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
+.PHONY: all app run install update-key tools toolchain llama mock test lint golangci-lint unit interface walks check clean help
 
 help:
-	@sed -n '1,33p' Makefile | sed 's/^# \{0,1\}//'
+	@sed -n '1,30p' Makefile | sed 's/^# \{0,1\}//'
 
 all: app
 
@@ -104,7 +101,7 @@ ifeq ($(CI),)
 endif
 
 toolchain: tools
-	@QUIET=1 sh scripts/check.sh --toolchain
+	@$(GO) run ./cmd/speakertrail-release toolchain
 
 # The interface's packages, exactly as locked.
 web/node_modules/.package-lock.json: web/package-lock.json
@@ -121,12 +118,12 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 # pointed at it rather than at the Go module cache, which is where cgo
 # points it and which exists on no Mac but the one that built it. A build
 # from GitHub's Mac, picked on the Updates page, would not start without
-# it. See scripts/carry-libs.sh and docs/BUILD.md.
+# it. See carry.go in cmd/speakertrail-release and docs/BUILD.md.
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
 	@$(GO) build $(SHIP_FLAGS) -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
 ifeq ($(UNAME),Darwin)
-	@sh scripts/carry-libs.sh $@ $(BIN)/lib
+	@$(GO) run ./cmd/speakertrail-release carry-libs $@ $(BIN)/lib
 endif
 
 # The llama-server that runs the language model, built from llama.cpp at
@@ -151,7 +148,7 @@ llama:
 ifeq ($(UNAME),Darwin)
 app: toolchain llama $(EXE)
 	@cp $(LLAMA) $(LLAMA_DIR)/bin/LICENSE-llama.cpp $(BIN)/
-	@sh scripts/bundle-macos.sh $(BIN) "$(VERSION)"
+	@$(GO) run ./cmd/speakertrail-release bundle $(BIN) "$(VERSION)"
 else
 app: toolchain $(EXE)
 	@echo "Ready: $(EXE)"
@@ -175,11 +172,6 @@ ifeq ($(UNAME),Darwin)
 else
 	@echo "make install puts the Mac app in /Applications, and this is not a Mac."
 endif
-
-# The people connected in the old Docker version, read from its database
-# volume and added to the app's file. See scripts/carry-over.sh.
-carry-over: toolchain
-	@sh scripts/carry-over.sh
 
 # The key builds are signed with, made once. It puts the private half on
 # the clipboard, for GitHub's secrets and a password manager, and writes
@@ -251,7 +243,7 @@ walks: web/node_modules/.package-lock.json
 	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) walks/*.mjs
 
 check:
-	@sh scripts/check.sh || true
+	@$(GO) run ./cmd/speakertrail-release toolchain -all
 
 clean:
 	@rm -rf $(BIN) web/node_modules

@@ -68,25 +68,6 @@ It holds real names, so it stays on this Mac and never goes into the
 repository. `SPEAKERTRAIL_DIR` names another folder for the file, for a
 try that should not touch the real one.
 
-## The people connected in the Docker version
-
-The Docker version kept its database in a Docker volume. Once, while
-Docker Desktop still runs and with the app closed:
-
-```
-make carry-over
-```
-
-This reads the people you connected with, or kept before that, out of the
-old database, with Postgres 16 in a container, and adds them to the app as
-connected, with their LinkedIn
-profile and notes. It changes nothing in the old database and is safe to
-repeat. Afterwards Docker is no longer needed, and the old data can go:
-
-```
-docker volume rm speakertrail_postgres
-```
-
 ## Targets
 
 | Command | What it does |
@@ -96,7 +77,6 @@ docker volume rm speakertrail_postgres
 | `make llama` | builds llama-server, when it is not built or `scripts/build-llama.sh` changed. `make` does it by itself on a Mac |
 | `make install` | the same, copied to `/Applications`, where it updates itself |
 | `make update-key` | makes the key builds are signed with, once, see [UPDATES.md](UPDATES.md) |
-| `make carry-over` | the people connected in the Docker version, into the app, see above |
 | `make mock` | the interface alone in a browser with invented data, on http://localhost:5173 |
 | `make test` | `lint`, `unit`, `interface` and `walks` |
 | `make lint` | `gofmt`, `go vet` and golangci-lint with the rules in `.golangci.yml` |
@@ -155,13 +135,16 @@ holds them to that.
 Dictate hears with sherpa-onnx, through `sherpa-onnx-go`, which brings
 the library as dylibs in the Go module cache, and cgo points the program
 there. That folder exists on no Mac but the one that built it, so a build
-from GitHub's Mac would not start on Tim's. `scripts/carry-libs.sh` copies
-the dylibs to `bin/lib` and points the program at
-`@executable_path/../Frameworks`, and `scripts/bundle-macos.sh` puts them
-in the bundle's `Contents/Frameworks` and checks that every one resolves
-there. The library is sherpa-onnx's release without speech synthesis,
-`scripts/speech-libs.sh`, since the one with it carries espeak-ng, which
-is GPL 3, and the bundle refuses it. As in FrameFairy.
+from GitHub's Mac would not start on Tim's. `speakertrail-release
+carry-libs` copies the dylibs to `bin/lib` and points the program at
+`@executable_path/../Frameworks`, and `speakertrail-release bundle` puts
+them in the bundle's `Contents/Frameworks` and checks that every one
+resolves there. The library is sherpa-onnx's release without speech
+synthesis, fetched once into `.build/speech` and pinned by its SHA-256,
+since the one with it carries espeak-ng, which is GPL 3, and the bundle
+refuses it. A fetch that fails stops the build. See `carry.go` and
+`bundle.go` in `cmd/speakertrail-release`. As in FrameFairy, where these
+are still shell scripts.
 
 The bundle's `Info.plist` says why the app wants the microphone, which
 macOS asks Tim the first time Dictate is pressed. A build made here is
@@ -189,7 +172,7 @@ build workflow and CI's `macos` job keep `.build/llama` in their cache by
 the same rule, so a build takes minutes longer only after the script
 changed.
 
-`scripts/bundle-macos.sh` refuses a bundle without llama-server and signs
+`speakertrail-release bundle` refuses a bundle without llama-server and signs
 it ad hoc with the app. The release check, `cmd/speakertrail-release`,
 knows which libraries it links: the system's Metal, MetalKit, Accelerate,
 Foundation and CoreFoundation, and nothing else.

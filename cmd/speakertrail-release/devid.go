@@ -71,16 +71,7 @@ type macOS struct {
 // path, never one found through PATH, which a build's files must never be
 // able to put a program of their own ahead of.
 var macTools = macOS{
-	run: func(name string, args ...string) ([]byte, error) {
-		if !slices.Contains([]string{"security", "codesign", "ditto"}, name) {
-			return nil, fmt.Errorf("%s is no tool harden runs", name)
-		}
-		out, err := exec.Command("/usr/bin/"+name, args...).CombinedOutput()
-		if err != nil {
-			return out, fmt.Errorf("%s %s: %w\n%s", name, args[0], err, strings.TrimSpace(string(out)))
-		}
-		return out, nil
-	},
+	run: macRunner("harden", "security", "codesign", "ditto"),
 	fetch: func(url string) ([]byte, error) {
 		c := http.Client{Timeout: 30 * time.Second}
 		r, err := c.Get(url)
@@ -93,6 +84,22 @@ var macTools = macOS{
 		}
 		return io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	},
+}
+
+// macRunner runs the Mac tools named, and no others, for job. Each by its
+// full path, never one found through PATH, which a build's files must
+// never be able to put a program of their own ahead of.
+func macRunner(job string, tools ...string) func(name string, args ...string) ([]byte, error) {
+	return func(name string, args ...string) ([]byte, error) {
+		if !slices.Contains(tools, name) {
+			return nil, fmt.Errorf("%s is no tool %s runs", name, job)
+		}
+		out, err := exec.Command("/usr/bin/"+name, args...).CombinedOutput()
+		if err != nil {
+			return out, fmt.Errorf("%s %s: %w\n%s", name, args[0], err, strings.TrimSpace(string(out)))
+		}
+		return out, nil
+	}
 }
 
 // devID says how to sign: with which certificate, under which name, and

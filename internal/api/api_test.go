@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,12 +26,18 @@ type memKeys struct {
 }
 
 func (k *memKeys) Has() bool { k.mu.Lock(); defer k.mu.Unlock(); return k.key != "" }
+
+// Set refuses a key of nothing, as keys.Exa does.
 func (k *memKeys) Set(key string) error {
+	if strings.TrimSpace(key) == "" {
+		return errors.New("paste the key from dashboard.exa.ai")
+	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.key = key
 	return nil
 }
+func (k *memKeys) Remove() error { k.mu.Lock(); defer k.mu.Unlock(); k.key = ""; return nil }
 
 type finder struct{}
 
@@ -243,8 +250,14 @@ func TestSettingsAndKeys(t *testing.T) {
 	if len(keys.Keys) != 1 || !keys.Keys[0].Set || keys.Keys[0].Budget != 1000 {
 		t.Errorf("keys = %+v", keys)
 	}
-	if code := call(t, a, "PUT", "/api/keys/exa", `{"key":""}`, nil); code != http.StatusNoContent {
-		t.Errorf("remove the key: %d", code)
+	for _, blank := range []string{`""`, `"   "`} {
+		var refused struct{ Error string }
+		if code := call(t, a, "PUT", "/api/keys/exa", `{"key":`+blank+`}`, &refused); code != http.StatusBadRequest || refused.Error != "Paste the key from dashboard.exa.ai" || !a.Keys.Has() {
+			t.Errorf("save %s: %d %q, key kept %v", blank, code, refused.Error, a.Keys.Has())
+		}
+	}
+	if code := call(t, a, "DELETE", "/api/keys/exa", "", nil); code != http.StatusNoContent || a.Keys.Has() {
+		t.Errorf("remove the key: %d, still there %v", code, a.Keys.Has())
 	}
 	if code := call(t, a, "POST", "/api/runs", `{}`, nil); code != http.StatusConflict {
 		t.Errorf("a run without a key: %d", code)

@@ -283,7 +283,9 @@ this month used, never the key itself:
 ```
 
 `PUT /api/keys/exa` with `{"key": "..."}` saves the key in its file, `exa-key` in the app's folder, and
-answers 204. An empty key removes it.
+answers 204. An empty key, or one of only spaces, gets 400 with words
+the window shows, and the saved key stays. `DELETE /api/keys/exa`
+removes it and answers 204.
 
 ## Where LinkedIn opens
 

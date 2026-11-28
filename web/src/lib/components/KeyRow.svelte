@@ -19,14 +19,12 @@
 
   async function save(e: SubmitEvent) {
     e.preventDefault()
-    if (!key.trim()) {
-      error = 'Paste the key from dashboard.exa.ai'
-      return
-    }
     status = 'saving'
     error = ''
     try {
-      await api.setKey(key.trim())
+      // The app trims the key and refuses one of nothing, with words
+      // shown below.
+      await api.setKey(key)
       key = ''
       toast.show('Saved the Exa key')
       load()
@@ -41,7 +39,7 @@
     status = 'removing'
     error = ''
     try {
-      await api.setKey('')
+      await api.removeKey()
       toast.show('Removed the Exa key')
       load()
     } catch (err) {

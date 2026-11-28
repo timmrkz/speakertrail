@@ -842,6 +842,7 @@ export const api = {
   keys: () => request<{ keys: SearchUse[] }>('GET', '/api/keys').then((r) => r.keys),
   // Saves the Exa key on the Mac. An empty key removes it.
   setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
+  removeKey: () => request<void>('DELETE', '/api/keys/exa'),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),
   // Where LinkedIn opens: the browser and its profile, and what this Mac has.
   linkedin: () => request<LinkedinWhere>('GET', '/api/linkedin'),

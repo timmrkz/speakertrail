@@ -96,7 +96,7 @@ func TestAddPeopleFromLinks(t *testing.T) {
 // wait for the next run.
 func TestAddPeopleWithoutAKey(t *testing.T) {
 	a, _, _ := newAPI(t)
-	if err := a.Keys.Set(""); err != nil {
+	if err := a.Keys.Remove(); err != nil {
 		t.Fatal(err)
 	}
 	var added struct {

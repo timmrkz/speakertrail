@@ -113,6 +113,29 @@ const walks0 = [
     },
   },
   {
+    // The app decides what a key of nothing is, and only Remove removes
+    // the key (#107).
+    name: 'Saving an Exa key of only spaces says what it needs under the field and keeps the key, Remove removes it',
+    async run(page) {
+      await page.goto(`${url}/app/settings`)
+      const state = page.locator('#exa-key').locator('xpath=ancestor::form').locator('.key')
+      await state.filter({ hasText: 'Saved' }).waitFor()
+      await page.locator('#exa-key').fill('   ')
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      const line = page.locator('#exa-key').locator('xpath=ancestor::form').locator('.field-error')
+      await line.waitFor()
+      if ((await words(line)) !== 'Paste the key from dashboard.exa.ai') return `the line says ${JSON.stringify(await words(line))}`
+      if (!(await state.innerText()).startsWith('Saved')) return `the key says ${JSON.stringify(await state.innerText())}`
+      await page.getByRole('button', { name: 'Remove', exact: true }).click()
+      await state.filter({ hasText: 'Not saved yet' }).waitFor()
+      // Put back as it was, for the walks after.
+      await page.locator('#exa-key').fill('invented')
+      await page.getByRole('button', { name: 'Save', exact: true }).click()
+      await state.filter({ hasText: 'Saved' }).waitFor()
+      return ''
+    },
+  },
+  {
     // Undo in the Edit menu has no control of its own, so what went wrong
     // with it is a toast, as Tim chose on 27 November 2026.
     name: 'Undo in the Edit menu the app refuses says so in a toast',

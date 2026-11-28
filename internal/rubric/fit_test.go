@@ -208,16 +208,20 @@ func TestWriting(t *testing.T) {
 // counted as writing.
 func TestWritingAsExaWritesIt(t *testing.T) {
 	for line, wrote := range map[string]bool{
-		"Erika Beispiel liked this":           false,
-		"Erika Beispiel reacted on this":      false,
-		"Dr. med. Erika Beispiel liked this":  false,
-		"Erika Beispiel commented on a post":  true,
-		"Erika Beispiel replied to a comment": true,
-		"Erika Beispiel posted this":          true,
-		"Erika Beispiel shared this":          true,
-		"Erika Beispiel reposted this":        true,
-		"Posted · 3 reactions, 2 comments":    true,
-		"Reshared · 4 reactions":              true,
+		"Erika Beispiel liked this":            false,
+		"Erika Beispiel reacted on this":       false,
+		"Dr. med. Erika Beispiel liked this":   false,
+		"Erika Beispiel commented on a post":   true,
+		"Erika Beispiel replied to a comment":  true,
+		"Erika Beispiel posted this":           true,
+		"Erika Beispiel shared this":           true,
+		"Erika Beispiel reposted this":         true,
+		"Posted · 3 reactions, 2 comments":     true,
+		"Reshared · 4 reactions":               true,
+		"Erika Beispiel loves this":            false,
+		"Erika Beispiel finds this insightful": false,
+		"Erika Beispiel gefällt das":           false,
+		"Erika Beispiel feiert das":            false,
 	} {
 		got, known := Writing("## Social\n\n### Linkedin\n\n- [2026-11-02 · " + line + "] [Ein Beitrag...](https://www.linkedin.com/posts/x)\n")
 		if !known || got.IsZero() != !wrote {

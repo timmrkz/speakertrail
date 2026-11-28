@@ -131,9 +131,10 @@ its activity in up to half of them, see
 [search-strategy.md](search-strategy.md). LinkedIn dates each entry of
 Activity by how long ago it was, like "2w •" or "5 Std. •", so each
 becomes its day, counted back from the paste, in the shape Exa's index
-writes it, like "[2026-11-13 · Post]". An entry under a line like "…
-likes this" or "… gefällt das" is a Reaction, dated by the post it is
-on. The newest entry is when they were last active, unless Exa knew of
+writes it, like "[2026-11-13 · Post]". An entry under a short line of
+their name and a reaction, like "Mara Beispiel likes this" or "Mara
+Beispiel gefällt das", is a Reaction, see `rubric.Reaction`, dated by
+the post it is on. The text of a post is never read as such a line. The newest entry is when they were last active, unless Exa knew of
 something newer, and Active lately scores it as it scores Exa's, see
 [fit-score.md](fit-score.md#2-active-lately).
 LinkedIn's menu and buttons, and its blocks of other people, like

@@ -284,7 +284,8 @@ func TestPastedWithFooterAndMessage(t *testing.T) {
 // The Activity section of a page Tim pasted on 27 November 2026, with
 // every person invented, as LinkedIn dates its entries: by how long ago,
 // from the day of the paste. The newest is a reaction to someone else's
-// post, the one before a post of her own.
+// post, the ones before posts of her own, one of which says "gefällt
+// das" in its text, which makes the next no reaction.
 const activityPage = `Mara Beispiel
 · 1st
 Gründerin Probe Keramik
@@ -302,6 +303,7 @@ Mara Beispiel
 Gründerin Probe Keramik
 2w • Edited •
 Heute haben wir den neuen Brennofen eingeweiht.
+Mir gefällt das.
 Mara Beispiel
 Gründerin Probe Keramik
 3mo •

@@ -10,6 +10,7 @@ import (
 	"unicode"
 
 	"github.com/timmrkz/speakertrail/internal/place"
+	"github.com/timmrkz/speakertrail/internal/rubric"
 )
 
 // TextChars is how much of a profile's text the app keeps, of what Exa
@@ -39,15 +40,15 @@ const TextChars = 8000
 // at reads no ages.
 func Pasted(text, link string, at time.Time) (p Profile, linked bool) {
 	top, sections := sectioned(text)
-	if act, ok := sections["Activity"]; ok && !at.IsZero() {
-		sections["Activity"], p.LastActive = dated(act, at)
-	}
 	start := 0
 	i, linked := nameLine(top, link)
 	if i >= 0 {
 		p.Name, start = nameIn(top[i], linkNames(link)), i
 		top = top[start:]
 		p.Headline, p.Location = topLines(top[1:])
+	}
+	if act, ok := sections["Activity"]; ok && !at.IsZero() {
+		sections["Activity"], p.LastActive = dated(act, p.Name, at)
 	}
 	parts := []string{strings.Join(top, "\n")}
 	for _, h := range order {
@@ -62,15 +63,18 @@ func Pasted(text, link string, at time.Time) (p Profile, linked bool) {
 // dated writes each age in the lines of Activity as the day it was, in
 // the shape Exa's index writes an entry, like "[2026-11-13 · Post]", so
 // the text says when long after the paste, and rubric.Writing reads it
-// as it reads Exa's. An entry under a line like "Mara Beispiel likes
-// this" is a Reaction, any other a Post, as the rubric counts a comment
-// or a share as writing. A reaction is dated by the post it is on, since
-// LinkedIn shows no other day, so it was that day or later. newest is
-// the day of the newest entry, of either kind.
-func dated(lines []string, at time.Time) (out []string, newest time.Time) {
+// as it reads Exa's. An entry under a short line of their name and a
+// reaction, like "Mara Beispiel likes this", is a Reaction, see
+// rubric.Reaction, any other a Post, as the rubric counts a comment or a
+// share as writing. The text of a post that says "gefällt das" is no
+// such line. A reaction is dated by the post it is on, since LinkedIn
+// shows no other day, so it was that day or later. newest is the day of
+// the newest entry, of either kind. Without their name every entry is a
+// Post.
+func dated(lines []string, name string, at time.Time) (out []string, newest time.Time) {
 	reacted := false
 	for _, l := range lines {
-		if reactedLine.MatchString(l) {
+		if what, ok := strings.CutPrefix(l, name+" "); ok && name != "" && len(strings.Fields(what)) <= 4 && rubric.Reaction(what) {
 			reacted = true
 		}
 		day, ok := ago(l, at)
@@ -119,16 +123,10 @@ func ago(l string, at time.Time) (time.Time, bool) {
 	}
 }
 
-var (
-	// age is LinkedIn's age of an entry of Activity, in English or in
-	// German, like "12m", "5h", "2d", "1w", "3mo", "1yr", "5 Std.", "2
-	// T.", "1 Wo.", "3 Mon." or "1 J.", always with a dot after it.
-	age = regexp.MustCompile(`(?i)^(\d{1,3}) ?(mo|mon\.|min\.?|m|h|std\.|d|tg\.|t\.|wo\.|w|yr|y|j\.) *[•·]`)
-	// reactedLine heads an entry of Activity that is a reaction to
-	// someone else's post, like "Mara Beispiel likes this", "… finds
-	// this insightful" or "Mara Beispiel gefällt das".
-	reactedLine = regexp.MustCompile(`(?i)\b(?:likes?|liked|loves|celebrates|supports|reacted to|reacted on|finds) this\b|\b(?:gefällt|feiert|unterstützt|liebt|findet) das\b|\breagiert\b`)
-)
+// age is LinkedIn's age of an entry of Activity, in English or in
+// German, like "12m", "5h", "2d", "1w", "3mo", "1yr", "5 Std.", "2 T.",
+// "1 Wo.", "3 Mon." or "1 J.", always with a dot after it.
+var age = regexp.MustCompile(`(?i)^(\d{1,3}) ?(mo|mon\.|min\.?|m|h|std\.|d|tg\.|t\.|wo\.|w|yr|y|j\.) *[•·]`)
 
 // order is the sections of a profile kept, in the order a first message
 // needs them, in the words of LinkedIn's English interface. A German

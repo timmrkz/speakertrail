@@ -842,7 +842,8 @@ export const api = {
   settings: () => request<{ settings: Setting[] }>('GET', '/api/settings').then((r) => r.settings),
   // Whether the Exa key is saved, and this month's searches. Never the key.
   keys: () => request<{ keys: SearchUse[] }>('GET', '/api/keys').then((r) => r.keys),
-  // Saves the Exa key on the Mac. An empty key removes it.
+  // Saves the Exa key on the Mac. The app refuses an empty one, and
+  // removeKey removes it.
   setKey: (key: string) => request<void>('PUT', '/api/keys/exa', { key }),
   removeKey: () => request<void>('DELETE', '/api/keys/exa'),
   patchSetting: (key: string, value: Json) => request<Setting>('PATCH', `/api/settings/${encodeURIComponent(key)}`, { value }),

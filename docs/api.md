@@ -269,7 +269,8 @@ Exa's index yet is no failure, its person says so.
 ## Settings and the key
 
 `GET /api/settings` lists every setting with its value and what it
-does. `hook_prompt` is the prompt the language model writes the hook of a
+does, and a number setting with `min`, the least it takes, 0, and 1 for
+`new_days`, which its field's arrow keys step no lower than. `hook_prompt` is the prompt the language model writes the hook of a
 first message from, see Drafts, and must keep `{{profile}}`. It was
 `first_message_prompt` while the model wrote the whole message, and a
 prompt kept under that name is dropped when the file is read. `home_city`

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -227,6 +228,25 @@ func TestSettings(t *testing.T) {
 	}
 	if err := d.SetSetting("profile_searches_per_run", json.RawMessage(`10`), t0); err != nil || len(d.Settings) != 0 {
 		t.Errorf("setting the default back should forget the change: %v %v", err, d.Settings)
+	}
+	// Each number says the least it takes, which the window's arrow keys
+	// step no lower than, and the least is what SetSetting takes (#122).
+	for _, s := range d.AllSettings() {
+		var v any
+		_ = json.Unmarshal(s.Value, &v)
+		_, number := v.(float64)
+		switch {
+		case !number && s.Min != nil:
+			t.Errorf("%s is no number and has a least of %d", s.Key, *s.Min)
+		case !number:
+		case s.Min == nil:
+			t.Errorf("%s says no least", s.Key)
+		case d.SetSetting(s.Key, json.RawMessage(strconv.Itoa(*s.Min)), t0) != nil || d.SetSetting(s.Key, json.RawMessage(strconv.Itoa(*s.Min-1)), t0) == nil:
+			t.Errorf("%s takes other than %d or more", s.Key, *s.Min)
+		}
+	}
+	if s, _ := d.Setting(NewDays); s.Min == nil || *s.Min != 1 {
+		t.Errorf("new_days takes the least of %v", s.Min)
 	}
 }
 

@@ -447,6 +447,8 @@ export interface Setting {
   value: Json
   description: string
   updated_at: string
+  // The least a number setting takes, for its field's arrow keys.
+  min?: number
 }
 
 // Transport

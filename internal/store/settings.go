@@ -167,6 +167,9 @@ type Setting struct {
 	Value       json.RawMessage `json:"value"`
 	Description string          `json:"description"`
 	UpdatedAt   time.Time       `json:"updated_at,omitzero"`
+	// Min is the least a number setting takes, so the window's arrow
+	// keys step no lower, and nil for any other kind.
+	Min *int `json:"min,omitempty"`
 }
 
 // AllSettings lists every setting with its value now.
@@ -174,6 +177,10 @@ func (d *Data) AllSettings() []Setting {
 	out := make([]Setting, 0, len(Defaults))
 	for _, def := range Defaults {
 		s := Setting{Key: def.Key, Value: json.RawMessage(def.Value), Description: def.Description}
+		if kindOf(s.Value) == "number" {
+			least := least(def.Key)
+			s.Min = &least
+		}
 		if v, ok := d.Settings[def.Key]; ok {
 			s.Value, s.UpdatedAt = v.Value, v.UpdatedAt
 		}
@@ -234,10 +241,8 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 		if n != math.Trunc(n) {
 			return fmt.Errorf("%s takes a whole number", key)
 		}
-		// New for no day would hide whom Tim just added from links, as
-		// People turns to New for them.
-		if key == NewDays && n < 1 {
-			return fmt.Errorf("%s takes 1 day or more", key)
+		if least := least(key); n < float64(least) {
+			return fmt.Errorf("%s takes %d day or more", key, least)
 		}
 	}
 	var compact bytes.Buffer
@@ -250,6 +255,16 @@ func (d *Data) SetSetting(key string, value json.RawMessage, at time.Time) error
 	}
 	d.Settings[key] = SettingValue{Value: compact.Bytes(), UpdatedAt: at}
 	return nil
+}
+
+// least is the least a number setting takes: 0, and 1 for NewDays, since
+// New for no day would hide whom Tim just added from links, as People
+// turns to New for them.
+func least(key string) int {
+	if key == NewDays {
+		return 1
+	}
+	return 0
 }
 
 func kindOf(raw json.RawMessage) string {

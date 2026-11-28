@@ -428,7 +428,11 @@ export function buildSettings(): Setting[] {
     ['new_days', 7, 'Days someone stays under New after a search found them or you added them'],
     ['hook_prompt', HOOK_PROMPT, 'What the language model is asked, to write the portrait, the reason and the reaction of a first message. The rest comes from the template. {{profile}} is where the profile goes, {{notes}} your notes on them'],
   ]
-  return rows.map(([key, value, description]) => ({ key, value, description, updated_at: t }))
+  // Like the app, a number says the least it takes.
+  return rows.map(([key, value, description]) => ({
+    key, value, description, updated_at: t,
+    ...(typeof value === 'number' ? { min: key === 'new_days' ? 1 : 0 } : {}),
+  }))
 }
 
 export { hoursAgo }

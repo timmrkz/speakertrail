@@ -44,6 +44,10 @@
 //	    say to builds.yml what its run is a build of, main, a pull
 //	    request or nothing, built by a push or by an opening and never by
 //	    both, see plan.go
+//	speakertrail-release toolchain [-all]
+//	    say what this machine is missing for a build, and fail when it
+//	    misses anything, or with -all say everything found and never
+//	    fail, see toolchain.go
 package main
 
 import (
@@ -116,6 +120,8 @@ func main() {
 		err = conflictsCommand(os.Args[2:])
 	case "build-plan":
 		err = planCommand(os.Args[2:])
+	case "toolchain":
+		err = toolchainCommand(os.Args[2:], os.Stdout)
 	default:
 		usage()
 	}
@@ -126,7 +132,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ...")
+	fmt.Fprintln(os.Stderr, "usage: speakertrail-release key | pack -zip FILE -out DIR [-list FILE -assets FILE] | check -zip FILE | signed-before -list FILE -assets FILE -channel C -out DIR | harden -zip FILE [-kept DIR] | sign ... | publish-plan -run R -event E -branch B -commit C | publish ... | not-published -commit C | channels | unstick | needs-build -channel C -commit C | self -out FILE [-goos S -goarch P] | fits | keep FILE... | conflicts [-branch B -pushed X] | build-plan -event E -commit C ... | toolchain [-all]")
 	os.Exit(2)
 }
 

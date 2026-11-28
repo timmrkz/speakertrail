@@ -101,7 +101,7 @@ ifeq ($(CI),)
 endif
 
 toolchain: tools
-	@QUIET=1 sh scripts/check.sh --toolchain
+	@$(GO) run ./cmd/speakertrail-release toolchain
 
 # The interface's packages, exactly as locked.
 web/node_modules/.package-lock.json: web/package-lock.json
@@ -243,7 +243,7 @@ walks: web/node_modules/.package-lock.json
 	@cd web && node --test --test-reporter=spec --test-timeout=$(WALK_LIMIT) walks/*.mjs
 
 check:
-	@sh scripts/check.sh || true
+	@$(GO) run ./cmd/speakertrail-release toolchain -all
 
 clean:
 	@rm -rf $(BIN) web/node_modules

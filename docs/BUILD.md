@@ -135,13 +135,16 @@ holds them to that.
 Dictate hears with sherpa-onnx, through `sherpa-onnx-go`, which brings
 the library as dylibs in the Go module cache, and cgo points the program
 there. That folder exists on no Mac but the one that built it, so a build
-from GitHub's Mac would not start on Tim's. `scripts/carry-libs.sh` copies
-the dylibs to `bin/lib` and points the program at
-`@executable_path/../Frameworks`, and `scripts/bundle-macos.sh` puts them
-in the bundle's `Contents/Frameworks` and checks that every one resolves
-there. The library is sherpa-onnx's release without speech synthesis,
-`scripts/speech-libs.sh`, since the one with it carries espeak-ng, which
-is GPL 3, and the bundle refuses it. As in FrameFairy.
+from GitHub's Mac would not start on Tim's. `speakertrail-release
+carry-libs` copies the dylibs to `bin/lib` and points the program at
+`@executable_path/../Frameworks`, and `speakertrail-release bundle` puts
+them in the bundle's `Contents/Frameworks` and checks that every one
+resolves there. The library is sherpa-onnx's release without speech
+synthesis, fetched once into `.build/speech` and pinned by its SHA-256,
+since the one with it carries espeak-ng, which is GPL 3, and the bundle
+refuses it. A fetch that fails stops the build. See `carry.go` and
+`bundle.go` in `cmd/speakertrail-release`. As in FrameFairy, where these
+are still shell scripts.
 
 The bundle's `Info.plist` says why the app wants the microphone, which
 macOS asks Tim the first time Dictate is pressed. A build made here is
@@ -169,7 +172,7 @@ build workflow and CI's `macos` job keep `.build/llama` in their cache by
 the same rule, so a build takes minutes longer only after the script
 changed.
 
-`scripts/bundle-macos.sh` refuses a bundle without llama-server and signs
+`speakertrail-release bundle` refuses a bundle without llama-server and signs
 it ad hoc with the app. The release check, `cmd/speakertrail-release`,
 knows which libraries it links: the system's Metal, MetalKit, Accelerate,
 Foundation and CoreFoundation, and nothing else.

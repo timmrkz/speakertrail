@@ -66,7 +66,7 @@ ifeq ($(UNAME),Darwin)
 export MACOSX_DEPLOYMENT_TARGET := $(MACOS_MIN)
 export CGO_CFLAGS := -O2 -g -mmacosx-version-min=$(MACOS_MIN)
 # -headerpad_max_install_names leaves room in the program's header for the
-# paths carry-libs.sh adds, where it looks for the speech library. Go
+# paths carry-libs adds, where it looks for the speech library. Go
 # leaves that room by itself only while it keeps the debug information,
 # which the app no longer has, see APP_LDFLAGS. Without it
 # install_name_tool has no room and the app cannot find its library, as
@@ -118,12 +118,12 @@ $(UI_BUILT): $(UI_SOURCES) web/node_modules/.package-lock.json
 # pointed at it rather than at the Go module cache, which is where cgo
 # points it and which exists on no Mac but the one that built it. A build
 # from GitHub's Mac, picked on the Updates page, would not start without
-# it. See scripts/carry-libs.sh and docs/BUILD.md.
+# it. See carry.go in cmd/speakertrail-release and docs/BUILD.md.
 $(EXE): $(GO_SOURCES) $(UI_BUILT)
 	@echo "Building the app"
 	@$(GO) build $(SHIP_FLAGS) -ldflags "$(APP_LDFLAGS)" -o $@ ./cmd/speakertrail-app
 ifeq ($(UNAME),Darwin)
-	@sh scripts/carry-libs.sh $@ $(BIN)/lib
+	@$(GO) run ./cmd/speakertrail-release carry-libs $@ $(BIN)/lib
 endif
 
 # The llama-server that runs the language model, built from llama.cpp at
@@ -148,7 +148,7 @@ llama:
 ifeq ($(UNAME),Darwin)
 app: toolchain llama $(EXE)
 	@cp $(LLAMA) $(LLAMA_DIR)/bin/LICENSE-llama.cpp $(BIN)/
-	@sh scripts/bundle-macos.sh $(BIN) "$(VERSION)"
+	@$(GO) run ./cmd/speakertrail-release bundle $(BIN) "$(VERSION)"
 else
 app: toolchain $(EXE)
 	@echo "Ready: $(EXE)"

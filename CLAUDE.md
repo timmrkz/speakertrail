@@ -35,7 +35,7 @@ Start with [README.md](README.md). In short:
 | Exa, whether a place is in NRW | `internal/search/`, `internal/place/` | |
 | opening LinkedIn in Tim's Chrome profile | `internal/browser/` | [docs/open-in-profile.md](docs/open-in-profile.md) |
 | interface, Svelte 5 | `web/` | [docs/INTERFACE.md](docs/INTERFACE.md) |
-| build, the .app bundle | `Makefile`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
+| build, the .app bundle | `Makefile`, `cmd/speakertrail-release/`, `scripts/` | [docs/BUILD.md](docs/BUILD.md) |
 | who to look for, and where, the fit rubric | `internal/rubric/` | [docs/search-strategy.md](docs/search-strategy.md), [docs/fit-score.md](docs/fit-score.md) |
 | working with Claude, telling a pull request that conflicts with main | `.github/workflows/conflicts.yml`, `cmd/speakertrail-release/conflicts.go` | [docs/WORKFLOW.md](docs/WORKFLOW.md) |
 
